@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Install the project in editable mode
-pip install --no-deps --no-build-isolation --editable .
+# Install the project in editable mode (with dependencies)
+pip install --no-build-isolation --editable .
 
 # Install subquadratic_ops wheel file if not already installed (from Dockerfile)
 # GITLAB_TOKEN is required for this installation
@@ -20,6 +20,15 @@ fi
 
 # Set up git safe directory
 git config --global --add safe.directory /workspace
+
+# Configure bash history search (up/down arrows)
+echo 'Setting up bash history search...'
+cat >> ~/.bashrc << 'EOF'
+
+# Enhanced history search with up/down arrows
+bind '"\e[A": history-search-backward'
+bind '"\e[B": history-search-forward'
+EOF
 
 # Install pre-commit hooks if .pre-commit-config.yaml exists
 if [ -f ".pre-commit-config.yaml" ]; then
