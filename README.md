@@ -56,6 +56,7 @@ The easiest way to get started with full IDE integration is using the provided d
 - **Git Integration**: GitLens extension for enhanced Git workflow
 - **Code Quality**: Ruff, Pylance, auto-formatting, and spell checking
 - **Jupyter Support**: Built-in Jupyter notebook support
+- **Pre-commit Hooks**: Automatically installed and configured
 
 #### Troubleshooting
 
@@ -115,6 +116,7 @@ The easiest way to get started is using the provided Docker container with all d
 - Jupyter Lab for interactive development
 - Volume mounting for live code editing
 - GPU support via NVIDIA Container Toolkit
+- Pre-commit hooks automatically installed and configured
 
 #### Troubleshooting
 
@@ -158,6 +160,35 @@ pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GI
 - CUDA 12.1+ installed on your system
 - GitLab token for subquadratic-ops
 - Proper NVIDIA drivers
+
+## Development Setup
+
+### Pre-commit Hooks
+
+This repository uses pre-commit hooks for code quality and testing. **Hooks are automatically installed** when using the container methods above.
+
+**What the hooks do:**
+
+- **On commit**: Code formatting (ruff), markdown formatting, file cleanup
+- **On push**: Runs all tests - **push is blocked if tests fail**
+
+**For container users (recommended):**
+
+- Pre-commit hooks are automatically installed during container setup
+- No additional setup required
+
+**For local development:**
+
+```bash
+# Install pre-commit (if not already installed)
+pip install pre-commit
+
+# Install the pre-commit hooks
+pre-commit install
+
+# Install pre-push hooks (runs tests before pushing)
+pre-commit install --hook-type pre-push
+```
 
 <!-- ## Quick Start
 

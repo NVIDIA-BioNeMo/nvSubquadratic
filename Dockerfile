@@ -52,6 +52,9 @@ COPY . .
 # Install in development mode
 RUN pip install -e .
 
+# Install pre-commit hooks (both commit and pre-push)
+RUN pre-commit install && pre-commit install --hook-type pre-push
+
 # Expose Jupyter port
 EXPOSE 8888
 

@@ -22,3 +22,12 @@ repos:
           - mdformat-gfm
           - mdformat-black
           - mdformat-frontmatter
+  - repo: local
+    hooks:
+      - id: pytest-pre-push
+        name: pytest-pre-push
+        entry: bash -c 'echo "Running tests before push..." && python -m pytest tests/ -v --tb=short'
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
