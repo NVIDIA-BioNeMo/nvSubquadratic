@@ -21,4 +21,13 @@ fi
 # Set up git safe directory
 git config --global --add safe.directory /workspace
 
+# Install pre-commit hooks if .pre-commit-config.yaml exists
+if [ -f ".pre-commit-config.yaml" ]; then
+    echo "Installing pre-commit hooks..."
+    pre-commit install
+    pre-commit install --hook-type pre-push
+else
+    echo "No .pre-commit-config.yaml found, skipping pre-commit installation"
+fi
+
 exit 0
