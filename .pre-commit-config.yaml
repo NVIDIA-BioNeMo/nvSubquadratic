@@ -14,14 +14,24 @@ repos:
         args: ["--fix"]
       - id: ruff-format
   - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.17 # Use the latest stable version
+    rev: 0.7.17             # Use the latest stable version
     hooks:
       - id: mdformat
         additional_dependencies:
-          - mdformat-tables
-          - mdformat-gfm
-          - mdformat-black
-          - mdformat-frontmatter
+        - mdformat-tables
+        - mdformat-gfm
+        - mdformat-black
+        - mdformat-frontmatter
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: detect-secrets (everything but notebooks)
+        args: ['--baseline', '.secrets.baseline', '--exclude-files', '(.*\.ipynb|.*\.baseline)$', ]
+        exclude: package.lock.json
+      - id: detect-secrets
+        name: detect-secrets (notebooks only)
+        args: ['--baseline', '.secrets-nb.baseline', '--exclude-files', '^.(?!.*\.ipynb)', '--exclude-lines', '"(hash|id|image/\w+)":.*|<.*at 0x[0-9a-f]+>|object at 0x[0-9a-f]+', ]
   - repo: local
     hooks:
       - id: pytest-pre-push
