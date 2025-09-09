@@ -1,32 +1,25 @@
 # David W. Romero, 2025-09-09
 
-"""
-Entry point to run the MNIST classification experiment.
+"""Entry point to run the MNIST classification experiment.
 
 Usage:
-    python run.py --config config/experiments/mnist/mnist_classification_cfg.py
+    PYTHONPATH=. python nvsubquadratic/examples/mnist_classification/run.py --config nvsubquadratic/examples/mnist_classification/mnist_classification_cfg.py
 """
 
 import argparse
-from pathlib import Path
-import importlib.util
-import torch
-import numpy as np
-import random
-import os
-import re
-from typing import Any, List
-
-from nvsubquadratic.src.utils.lazy_config import instantiate
 
 import pytorch_lightning as pl
-from pytorch_lightning import seed_everything
-from rich import print as rprint
-from rich.tree import Tree
-from omegaconf import to_dict
+import torch
 from omegaconf import OmegaConf
-from nvsubquadratic.examples.mnist_classification.utils import load_config_from_file, verify_no_interpolator_overwrites, apply_config_overrides, set_global_seed
+
 from nvsubquadratic.examples.mnist_classification.lightning_wrappers import ClassificationWrapper
+from nvsubquadratic.examples.mnist_classification.utils import (
+    apply_config_overrides,
+    load_config_from_file,
+    set_global_seed,
+    verify_no_interpolator_overwrites,
+)
+from nvsubquadratic.src.utils.lazy_config import instantiate
 
 
 def parse_args():
@@ -49,7 +42,6 @@ def parse_args():
     )
 
     return parser.parse_args()
-
 
 
 def construct_trainer(
@@ -100,7 +92,6 @@ def construct_trainer(
     gpus = torch.cuda.device_count() if cfg.train.distributed else 1
     num_nodes = 1
 
-
     callbacks_list = [
         modelsummary_callback,
         lrmonitor_callback,
@@ -127,8 +118,8 @@ def construct_trainer(
     return trainer, checkpoint_callback
 
 
-
 def main():
+    """Main function to run the MNIST classification experiment."""
     # Parse command line arguments
     args = parse_args()
 
@@ -159,11 +150,6 @@ def main():
 
     # Create trainer
     trainer, checkpoint_callback = construct_trainer(config)
-
-    # Test before training
-    if config.test.before_train:
-        trainer.validate(model, datamodule=datamodule)
-        trainer.test(model, datamodule=datamodule)
 
     # Train
     if config.train.do:

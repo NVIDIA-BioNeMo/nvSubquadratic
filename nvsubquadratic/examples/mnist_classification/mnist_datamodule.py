@@ -2,10 +2,9 @@
 
 """MNIST datamodule."""
 
-from typing import Literal
-
 import os
 import random
+from typing import Literal
 
 import numpy as np
 import pytorch_lightning as pl
@@ -20,15 +19,15 @@ _BASE_SEED = 0
 
 
 def set_base_seed(seed):
-    """Set the base seed for worker initialization"""
+    """Set the base seed for worker initialization."""
     global _BASE_SEED
     _BASE_SEED = seed
 
 
 # Define a worker initialization function to set seeds for data loading workers
-def deterministic_worker_init_fn(worker_id):
-    """
-    Initialize the worker with a deterministic seed derived from base_seed and worker_id.
+def deterministic_worker_init_fn(worker_id: int):
+    """Initialize the worker with a deterministic seed derived from base_seed and worker_id.
+
     Each worker gets a unique but deterministic seed: base_seed + worker_id
     """
     # Use the global base seed plus worker_id as the seed for this worker
@@ -47,6 +46,8 @@ def deterministic_worker_init_fn(worker_id):
 
 
 class MNISTDataModule(pl.LightningDataModule):
+    """MNIST Lightning data module."""
+
     def __init__(
         self,
         data_dir: str,
@@ -54,10 +55,20 @@ class MNISTDataModule(pl.LightningDataModule):
         data_type: Literal["image"],
         num_workers: int,
         pin_memory: bool,
-        permuted: bool,
         use_deterministic_worker_init: bool,
         seed: int,
     ):
+        """Initialize the MNISTDataModule.
+
+        Args:
+            data_dir: Directory to save the data
+            batch_size: Batch size
+            data_type: Type of data
+            num_workers: Number of workers
+            pin_memory: Whether to pin memory
+            use_deterministic_worker_init: Whether to use deterministic worker initialization
+            seed: Seed for the data
+        """
         super().__init__()
 
         # Save parameters to self
@@ -65,7 +76,6 @@ class MNISTDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.permuted = permuted
         self.seed = seed
 
         # Create a generator with the given seed for reproducibility
@@ -91,11 +101,13 @@ class MNISTDataModule(pl.LightningDataModule):
         )
 
     def prepare_data(self):
+        """Function to prepare the data."""
         # download data, train then test
         datasets.MNIST(self.data_dir, train=True, download=True)
         datasets.MNIST(self.data_dir, train=False, download=True)
 
     def setup(self, stage=None):
+        """Function to setup the datamodule."""
         # we set up only relevant datamodules when stage is specified
         if stage == "fit" or stage is None:
             mnist = datasets.MNIST(
@@ -114,6 +126,7 @@ class MNISTDataModule(pl.LightningDataModule):
 
     # we define a separate DataLoader for each of train/val/test
     def train_dataloader(self):
+        """Function to create the train dataloader."""
         train_dataloader = DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -128,6 +141,7 @@ class MNISTDataModule(pl.LightningDataModule):
         return train_dataloader
 
     def val_dataloader(self):
+        """Function to create the validation dataloader."""
         val_dataloader = DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
@@ -141,6 +155,7 @@ class MNISTDataModule(pl.LightningDataModule):
         return val_dataloader
 
     def test_dataloader(self):
+        """Function to create the test dataloader."""
         test_dataloader = DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -154,6 +169,7 @@ class MNISTDataModule(pl.LightningDataModule):
         return test_dataloader
 
     def on_before_batch_transfer(self, batch, dataloader_idx):
+        """Function to rearrange the input format from [B, C, Y, X] to [B, Y, X, C]."""
         if self.data_type == "image":
             # If image, rearrange the input [B, C, Y, X] -> [B, Y, X, C]
             x, y = batch

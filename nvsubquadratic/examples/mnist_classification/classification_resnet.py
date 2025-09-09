@@ -9,6 +9,8 @@ from nvsubquadratic.src.utils.lazy_config import LazyConfig, instantiate
 
 
 class ClassificationResNet(nn.Module):
+    """Simple implementation of a ResNet for classification."""
+
     def __init__(
         self,
         in_channels: int,
@@ -21,6 +23,19 @@ class ClassificationResNet(nn.Module):
         block_cfg: LazyConfig,
         dropout_in_cfg: LazyConfig,
     ):
+        """Initialize the ClassificationResNet.
+
+        Args:
+            in_channels: Number of input channels
+            out_channels: Number of output channels
+            num_blocks: Number of blocks
+            hidden_dim: Number of hidden dimensions
+            in_proj_cfg: Configuration for the input projection
+            out_proj_cfg: Configuration for the output projection
+            norm_cfg: Configuration for the normalization
+            block_cfg: Configuration for the residual block
+            dropout_in_cfg: Configuration for the dropout in layer (applied to the input)
+        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -31,7 +46,7 @@ class ClassificationResNet(nn.Module):
         self.dropout_in = instantiate(dropout_in_cfg)
 
         # Instantiate input projection for the network
-        self.in_proj = instantiate(in_proj_cfg, in_channels=in_channels, out_channels=hidden_dim)
+        self.in_proj = instantiate(in_proj_cfg, in_features=in_channels, out_features=hidden_dim)
 
         # Create residual blocks
         blocks = []
@@ -46,11 +61,19 @@ class ClassificationResNet(nn.Module):
         # Exclude self.out_norm from the parameter group with weight decay
         for param in self.out_norm.parameters():
             param._no_wd = True
-        
+
         # Instantiate output projection
-        self.out_proj = instantiate(out_proj_cfg, in_channels=hidden_dim, out_channels=out_channels)
+        self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)
 
     def forward(self, x):
+        """Forward pass of the ClassificationResNet.
+
+        Args:
+            x: Input tensor of shape (batch_size, *spatial_dims, num_channels)
+
+        Returns:
+            torch.Tensor: Output tensor of shape (batch_size, num_classes)
+        """
         # Apply in_dropout to the input
         x = self.dropout_in(x)
         # Apply input projection

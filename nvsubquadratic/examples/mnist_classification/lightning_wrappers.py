@@ -2,29 +2,29 @@
 
 """Lightning wrapper for classification experiments."""
 
-import torch
 import pytorch_lightning as pl
+import torch
+import torchmetrics
 from omegaconf import OmegaConf
 
-import torchmetrics
+from nvsubquadratic.src.utils.lazy_config import LazyConfig
 
 
 def _construct_optimizer(
     model,
-    optim_cfg: OmegaConf,
+    optimizer_cfg: LazyConfig,
 ):
-    """
-    Constructs an optimizer for a given model given a configuration.
+    """Constructs an optimizer for a given model given a configuration.
+
     It constructs a parameter group for parameters with weight decay and another for parameters without weight decay.
 
     Args:
         model: a pytorch model
-        optim_cfg (OmegaConf): The optimizer configuration.
+        optimizer_cfg (LazyConfig): The optimizer configuration.
 
     Returns:
         torch.optim.Optimizer: The constructed optimizer.
     """
-
     # Create parameter groups based on weight decay flag
     # IMPORTANT: Avoid duplicates by iterating parameters ONCE at the top level
     # and tracking by object identity (id(param)).
@@ -52,7 +52,7 @@ def _construct_optimizer(
 
     # Create parameter groups with appropriate weight decay
     parameters = [
-        {"params": wd_params, "weight_decay": optim_cfg.base_optimizer.weight_decay},
+        {"params": wd_params, "weight_decay": optimizer_cfg.weight_decay},
         {"params": no_wd_params, "weight_decay": 0.0},
     ]
 
@@ -62,7 +62,7 @@ def _construct_optimizer(
     # 3. Instantiate the optimizer
 
     # 1. Convert the optimizer config to a dictionary
-    _optim_cfg = OmegaConf.to_container(optim_cfg.base_optimizer, resolve=True)
+    _optim_cfg = OmegaConf.to_container(optimizer_cfg, resolve=True)
 
     # 2. Import the optimizer class
     _optimizer_cls = _optim_cfg.pop("__target__")
@@ -78,29 +78,39 @@ def _construct_optimizer(
 
 
 class LightningWrapperBase(pl.LightningModule):
+    """Base class for LightningModule wrappers."""
+
     def __init__(
         self,
         network: torch.nn.Module,
         cfg: OmegaConf,
     ):
+        """Initialize the LightningWrapperBase.
+
+        Args:
+            network: The base network that will be wrapped into a LightningModule.
+            cfg: The configuration used for the experiment.
+        """
         super().__init__()
         # Define network
         self.network = network
         # Save optimizer & scheduler parameters
-        self.optim_cfg = cfg.optim
+        self.optimizer_cfg = cfg.optimizer
         # Explicitly define whether we are in distributed mode.
         self.distributed = cfg.train.distributed and torch.cuda.device_count() != 1
         # Log the number of parameters
         self.num_params = sum(p.numel() for p in self.network.parameters())
 
     def forward(self, x):
+        """Forward pass of the LightningModule."""
         return self.network(x)
 
     def configure_optimizers(self):
+        """Configures the optimizer for the LightningModule."""
         # Construct optimizer
         optimizer = _construct_optimizer(
             model=self,
-            optim_cfg=self.optim_cfg,
+            optimizer_cfg=self.optimizer_cfg,
         )
         # Construct output dictionary
         output_dict = {"optimizer": optimizer}
@@ -115,13 +125,21 @@ def _multiclass_prediction(logits):
 def _binary_prediction(logits):
     return (logits > 0.0).squeeze().long()
 
+
 class ClassificationWrapper(LightningWrapperBase):
+    """Wrapper for classification tasks."""
+
     def __init__(
         self,
         network: torch.nn.Module,
         cfg: OmegaConf,
-        **kwargs,
     ):
+        """Initialize the ClassificationWrapper.
+
+        Args:
+            network: The base network that will be wrapped into a LightningModule.
+            cfg: The configuration used for the experiment.
+        """
         super().__init__(
             network=network,
             cfg=cfg,
@@ -170,6 +188,7 @@ class ClassificationWrapper(LightningWrapperBase):
         return predictions, logits, loss
 
     def training_step(self, batch, batch_idx):
+        """Performs a 'training' step and logs the training accuracy and loss after training."""
         # Perform step
         predictions, logits, loss = self._step(batch, self.train_acc)
         # Log and return loss (Required in training step)
@@ -184,6 +203,7 @@ class ClassificationWrapper(LightningWrapperBase):
         return {"loss": loss, "logits": logits.detach()}
 
     def validation_step(self, batch, batch_idx):
+        """Performs a 'validation' step and logs the validation accuracy and loss after validation."""
         # Perform step
         predictions, logits, loss = self._step(batch, self.val_acc)
         # Log and return loss (Required in training step)
@@ -206,6 +226,7 @@ class ClassificationWrapper(LightningWrapperBase):
         return logits  # used to log histograms in validation_epoch_step
 
     def test_step(self, batch, batch_idx):
+        """Performs a 'test' step and logs the test accuracy and loss after testing."""
         # Perform step
         predictions, _, loss = self._step(batch, self.test_acc)
         # Log and return loss (Required in training step)
@@ -227,45 +248,32 @@ class ClassificationWrapper(LightningWrapperBase):
         )
 
     def on_train_epoch_end(self, train_step_outputs=None):
+        """Logs the best training accuracy and loss after training."""
         # Log best accuracy
         train_acc = self.trainer.callback_metrics["train/acc_epoch"]
         if train_acc > self.best_train_acc:
             self.best_train_acc = train_acc.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_acc": self.best_train_acc,
-                    "global_step": self.global_step,
-                }
-            )
+
         # Log best training loss
         train_loss = self.trainer.callback_metrics["train/loss_epoch"]
         if train_loss < self.best_train_loss:
             self.best_train_loss = train_loss.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_loss": self.best_train_loss,
-                    "global_step": self.global_step,
-                }
-            )
 
     def on_validation_epoch_end(self, validation_step_outputs=None):
+        """Logs the best validation accuracy and loss after validation."""
         # Log best accuracy
         val_acc = self.trainer.callback_metrics["val/acc"]
         if val_acc > self.best_val_acc:
             self.best_val_acc = val_acc.item()
-            self.logger.experiment.log(
-                {
-                    "val/best_acc": self.best_val_acc,
-                    "global_step": self.global_step,
-                }
-            )
+
         # Log best validation loss
         val_loss = self.trainer.callback_metrics["val/loss"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss.item()
-            self.logger.experiment.log(
-                {
-                    "val/best_loss": self.best_val_loss,
-                    "global_step": self.global_step,
-                }
-            )
+
+    def on_train_end(self):
+        """Prints the best train and validation accuracy and loss after training."""
+        print(f"Best train acc: {self.best_train_acc}")
+        print(f"Best train loss: {self.best_train_loss}")
+        print(f"Best val acc: {self.best_val_acc}")
+        print(f"Best val loss: {self.best_val_loss}")

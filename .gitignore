@@ -338,3 +338,6 @@ uv.lock
 
 # SpecStory generated documentation
 .specstory/
+
+# Data directory
+.data/

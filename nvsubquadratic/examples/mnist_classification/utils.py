@@ -2,24 +2,23 @@
 
 """Utility functions for the MNIST classification experiment."""
 
+import dataclasses
 import importlib.util
+import os
+import random
+import re
 from pathlib import Path
 from typing import Any, List
 
-import os
-import random
 import numpy as np
-import torch
 import pytorch_lightning as pl
-import re
-
+import torch
 
 from nvsubquadratic.examples.mnist_classification.mnist_classification_cfg import ExperimentConfig
 
 
 def load_config_from_file(config_path: str) -> ExperimentConfig:
-    """
-    Load a configuration from a Python file.
+    """Load a configuration from a Python file.
 
     Args:
         config_path: Path to the configuration file
@@ -51,8 +50,7 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
 
 
 def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> ExperimentConfig:
-    """
-    Apply command-line overrides to a configuration.
+    """Apply command-line overrides to a configuration.
 
     Args:
         config: The base configuration
@@ -175,8 +173,7 @@ def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> Ex
 
 
 def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: List[str]) -> None:
-    """
-    Prevent overriding fields that are defined as OmegaConf interpolations (e.g., "${...}").
+    """Prevent overriding fields that are defined as OmegaConf interpolations (e.g., "${...}").
 
     Args:
         config: The base configuration (dataclass with nested LazyConfigs/DictConfigs)
