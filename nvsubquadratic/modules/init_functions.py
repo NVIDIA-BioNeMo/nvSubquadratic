@@ -12,8 +12,7 @@ import torch
 
 
 def small_init(dim: int) -> Callable[[torch.Tensor], torch.Tensor]:
-    """
-    Creates an initialization function that fills a tensor with values sampled from a normal distribution **in_place**.
+    """Creates an initialization function that fills a tensor with values sampled from a normal distribution **in_place**.
 
     The standard deviation is calculated based on the method described in the paper:
     "Transformers without Tears: Improving the Normalization of Self-Attention" by Nguyen, T. & Salazar, J. (2010).
@@ -38,9 +37,7 @@ def small_init(dim: int) -> Callable[[torch.Tensor], torch.Tensor]:
 
 
 def wang_init(dim: int, num_layers: int) -> Callable[[torch.Tensor], torch.Tensor]:
-    """
-    Creates an initialization function that fills a tensor with values sampled from a normal distribution
-    based on Wang's initialization method  **in_place**.
+    """Creates an initialization function that fills a tensor with values sampled from a normal distribution based on Wang's initialization method  **in_place**.
 
     The standard deviation is calculated using the formula:
         std = 2 / (num_layers * sqrt(dim))
@@ -67,8 +64,7 @@ def wang_init(dim: int, num_layers: int) -> Callable[[torch.Tensor], torch.Tenso
 
 
 def partial_wang_init_fn_with_num_layers(num_layers: int) -> Callable[[int], Callable[[torch.Tensor], torch.Tensor]]:
-    """
-    Factory that returns a function equivalent to ``partial(wang_init, num_layers=...)``.
+    """Factory that returns a function equivalent to ``partial(wang_init, num_layers=...)``.
 
     This is used with LazyConfig so that ``num_layers`` can be provided via
     OmegaConf interpolation (e.g., "${net.num_blocks}") and resolved before

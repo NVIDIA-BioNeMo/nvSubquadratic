@@ -341,3 +341,7 @@ uv.lock
 
 # Data directory
 .data/
+
+# Run logs
+lightning_logs/
+wandb/

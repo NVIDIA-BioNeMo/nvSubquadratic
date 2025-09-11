@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 
-from nvsubquadratic.src.utils.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class ClassificationResNet(nn.Module):

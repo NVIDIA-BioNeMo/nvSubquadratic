@@ -1,7 +1,7 @@
 # David W. Romero, 2025-09-09
 
-"""
-This module contains FFT-based convolution operators for 1D, 2D, and 3D signals.
+"""This module contains FFT-based convolution operators for 1D, 2D, and 3D signals.
+
 It supports inputs formated as [batch_size, * spatial_dims, hidden_dim] as well as [batch_size, hidden_dim, * spatial_dims].
 We refer to [batch_size, * spatial_dims, hidden_dim] and [batch_size, hidden_dim, * spatial_dims] as *_blh and *_bhl respectively.
 
@@ -15,18 +15,18 @@ IMPORTANT: We recommend using the *_bhl_w_reshape variants over the *_bhl varian
 """
 
 __all__ = [
-    "causal_fftconv1d_blh",
-    "fftconv1d_blh",
-    "fftconv2d_blh",
-    "fftconv3d_blh",
-    "causal_fftconv1d_bhl_w_reshape",
-    "fftconv1d_bhl_w_reshape",
-    "fftconv2d_bhl_w_reshape",
-    "fftconv3d_bhl_w_reshape",
     "causal_fftconv1d_bhl",
+    "causal_fftconv1d_bhl_w_reshape",
+    "causal_fftconv1d_blh",
     "fftconv1d_bhl",
+    "fftconv1d_bhl_w_reshape",
+    "fftconv1d_blh",
     "fftconv2d_bhl",
+    "fftconv2d_bhl_w_reshape",
+    "fftconv2d_blh",
     "fftconv3d_bhl",
+    "fftconv3d_bhl_w_reshape",
+    "fftconv3d_blh",
 ]
 
 import torch
@@ -36,6 +36,7 @@ from einops import rearrange
 ###############################################################################
 # BLH variants
 ###############################################################################
+
 
 def causal_fftconv1d_blh(
     x: torch.Tensor,
@@ -218,7 +219,6 @@ def fftconv3d_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, Z_in, hidden_dim).
     """
-
     B, X_in, Y_in, Z_in, hidden_dim = x.shape
 
     assert len(kernel.shape) == 5, f"Unexpected kernel shape: {kernel.shape}."
@@ -277,6 +277,7 @@ def causal_fftconv1d_bhl_w_reshape(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """1D FFT convolution with optional shortcut, for inputs with layout (batch, length, hidden).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     This is a wrapper around fftconv1d_bhl that reshapes the input and kernel to (batch, hidden, length)
@@ -303,6 +304,7 @@ def fftconv1d_bhl_w_reshape(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """1D FFT convolution with optional shortcut, for inputs with layout (batch, length, hidden).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     This is a wrapper around fftconv1d_bhl that reshapes the input and kernel to (batch, hidden, length)
@@ -329,6 +331,7 @@ def fftconv2d_bhl_w_reshape(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """2D FFT convolution with optional shortcut, for inputs with layout (batch, height, width, hidden).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     This is a wrapper around fftconv2d_bhl that reshapes the input and kernel to (batch, hidden, height, width)
@@ -347,6 +350,7 @@ def fftconv3d_bhl_w_reshape(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """3D FFT convolution with optional shortcut, for inputs with layout (batch, depth, height, width, hidden).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     This is a wrapper around fftconv3d_bhl that reshapes the input and kernel to (batch, hidden, depth, height, width)
@@ -363,12 +367,14 @@ def fftconv3d_bhl_w_reshape(
 # BHL variants
 ###############################################################################
 
+
 def causal_fftconv1d_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """1D FFT convolution with optional shortcut, for inputs with layout (batch, hidden, length).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     Args:
@@ -419,6 +425,7 @@ def fftconv1d_bhl(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """1D FFT convolution with optional shortcut, for inputs with layout (batch, hidden, length).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     Args:
@@ -471,6 +478,7 @@ def fftconv2d_bhl(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """2D FFT convolution with optional shortcut, for inputs with layout (batch, hidden, height, width).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     Args:
@@ -538,6 +546,7 @@ def fftconv3d_bhl(
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """3D FFT convolution with optional shortcut, for inputs with layout (batch, hidden, depth, height, width).
+
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     Args:
@@ -548,7 +557,6 @@ def fftconv3d_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in, Z_in).
     """
-
     B, hidden_dim, X_in, Y_in, Z_in = x.shape
 
     assert len(kernel.shape) == 5, f"Unexpected kernel shape: {kernel.shape}."

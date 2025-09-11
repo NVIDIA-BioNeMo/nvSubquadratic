@@ -3,6 +3,7 @@
 """Utility functions for the MNIST classification experiment."""
 
 import dataclasses
+import datetime
 import importlib.util
 import os
 import random
@@ -13,8 +14,70 @@ from typing import Any, List
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from rich.tree import Tree
 
-from nvsubquadratic.examples.mnist_classification.mnist_classification_cfg import ExperimentConfig
+from examples.default_cfg import ExperimentConfig
+from nvsubquadratic.lazy_config import LazyConfig
+
+
+_SHORT_NAME_ALIASES = {
+    "weight_decay": "wd",
+    "warmup_iterations": "warm_its",
+    "iterations": "its",
+    "batch_size": "bs",
+    "augmentation_scheme": "aug",
+    "omega_0": "w0",
+    "__target__": "",
+    # values
+    "advanced_with_cutmix_and_mixup": "adv_cutmix_mixup",
+    "advanced": "adv",
+}
+
+
+def get_deterministic_run_name(config_path: str, overrides: List[str] | None = None) -> str:
+    """Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
+
+    Args:
+        config_path: Path to the configuration file
+        overrides: List of overrides in the format "key=value"
+
+    Returns:
+        A deterministic run name in the format: {config_name}_{timestamp}_{override_hash}
+    """
+    # Extract config name without extension and directory path
+    # Remove the base config/experiments/ folder and the .py extension.
+    # And replace / with .
+    config_name = config_path.replace("experiments/", "").replace(".py", "").replace("/", "_")
+
+    # Get current timestamp in format: YYYY-MM-DD-HH-MM-SS
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
+    # Add override hash if overrides are provided
+    if overrides and len(overrides) > 0:
+        # Filter out debug-related overrides
+        filtered_overrides = [override for override in overrides if not override.startswith("debug")]
+
+        # If we still have overrides after filtering
+        if filtered_overrides:
+            # Remove the first part of the overrides to shorten the name
+            processed_overrides = []
+            for override in filtered_overrides:
+                key, value = override.split("=", 1)
+                short_key = key.split(".")[-1]
+                # replace short key with short alias if it exists
+                short_key = _SHORT_NAME_ALIASES.get(short_key, short_key)
+                # replace value with short alias if it exists
+                value = _SHORT_NAME_ALIASES.get(value, value)
+                processed_overrides.append(f"{short_key}={value}")
+            filtered_overrides = processed_overrides
+            # Sort overrides for deterministic ordering
+            filtered_overrides.sort()
+            # Create a string representation of the overrides
+            override_str = "_".join(filtered_overrides).replace("=", "_")
+            return f"{config_name}_{override_str}_{timestamp}"
+
+    # Default return without overrides or if all overrides were filtered out
+    return f"{config_name}_{timestamp}"
 
 
 def load_config_from_file(config_path: str) -> ExperimentConfig:
@@ -242,3 +305,53 @@ def set_global_seed(seed: int):
     torch.manual_seed(seed)  # CPU RNG
     torch.cuda.manual_seed_all(seed)  # GPU RNG
     pl.seed_everything(seed, workers=True)
+
+
+def config_to_dict_for_rich(config: Any) -> Any:
+    """Recursively convert a dataclass or LazyConfig object to a dictionary for rich printing."""
+    if dataclasses.is_dataclass(config):
+        # Convert dataclass to a dictionary
+        result = {}
+        for f in dataclasses.fields(config):
+            value = getattr(config, f.name)
+            result[f.name] = config_to_dict_for_rich(value)
+        return result
+    elif isinstance(config, LazyConfig):
+        # For LazyConfig, create a dictionary with its target and keyword arguments
+        # and recursively process the kwargs
+        kwargs = {k: config_to_dict_for_rich(v) for k, v in config.kwargs.items()}
+        return {
+            "__target__": config.target,
+            **kwargs,
+        }
+    elif isinstance(config, list):
+        # Recursively process lists
+        return [config_to_dict_for_rich(v) for v in config]
+    elif isinstance(config, dict):
+        # Recursively process dictionaries
+        return {k: config_to_dict_for_rich(v) for k, v in config.items()}
+    else:
+        # Return the value as is if it's not a dataclass, LazyConfig, list, or dict
+        return config
+
+
+def add_to_tree(tree: Tree, data: Any, key: str = ""):
+    """Add a key-value pair to a rich tree. Used for rich printing of the configuration."""
+    # Get a beautiful string representation of the value
+    if hasattr(data, "__name__"):
+        str_data = data.__name__
+    else:
+        str_data = str(data)
+
+    # If the data is a dictionary or a list, create a new branch.
+    if isinstance(data, dict):
+        branch = tree.add(f"[bold]{key}[/bold]")
+        for key, value in data.items():
+            add_to_tree(branch, value, key)
+    elif isinstance(data, list):
+        branch = tree.add(f"[bold]{key}[/bold]")
+        for i, value in enumerate(data):
+            add_to_tree(branch, value, f"item {i}")
+    else:
+        # If the data is a simple type, display it as a key-value pair.
+        tree.add(f"[bold]{key}[/bold]: [green]{str_data}[/green]")

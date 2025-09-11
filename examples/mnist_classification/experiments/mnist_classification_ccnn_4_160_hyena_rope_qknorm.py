@@ -3,21 +3,22 @@
 """Config file for MNIST classification."""
 
 import os
-from dataclasses import dataclass
 
 import torch
 
-from nvsubquadratic.examples.mnist_classification.classification_resnet import ClassificationResNet
-from nvsubquadratic.examples.mnist_classification.mnist_datamodule import MNISTDataModule
-from nvsubquadratic.src.ckconv_nd import CKConvND
-from nvsubquadratic.src.hyena_nd import Hyena
-from nvsubquadratic.src.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.src.kernels_nd import RandomFourierKernelND
-from nvsubquadratic.src.masks_nd import ExponentialModulationND
-from nvsubquadratic.src.mlp import MLP
-from nvsubquadratic.src.residual_block import ResidualBlock
-from nvsubquadratic.src.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.src.utils.lazy_config import LazyConfig
+from examples.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from examples.lightning_wrappers import ClassificationWrapper
+from examples.mnist_classification.mnist_datamodule import MNISTDataModule
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 
 PLACEHOLDER = None
@@ -27,7 +28,7 @@ DATA_DIM = 2
 
 # Model parameters
 BATCH_SIZE = 128
-NUM_HIDDEN_CHANNELS = 128
+NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
@@ -38,42 +39,14 @@ TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS = int(
     TRAINING_ITERATIONS * 0.05
 )  # 5% of the training iterations -- initially 5 epochs from 200 epochs
-NUM_WORKERS = os.cpu_count() // 4
+NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
 GRAD_CLIP = 10.0
 
 WEIGHT_DECAY = 0.01
 LEARNING_RATE = 0.001
 
 
-@dataclass
-class TrainConfig:
-    """Configuration for training parameters."""
-
-    do: bool = True
-    precision: str = "32-true"
-    iterations: int = -1
-    batch_size: int = -1
-    grad_clip: float = 0.0
-    track_grad_norm: int = -1  # -1 for no tracking
-    accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
-    distributed: bool = False
-    num_nodes: int = -1
-    avail_gpus: int = -1
-
-
-@dataclass
-class ExperimentConfig:
-    """Configuration template for MNIST classification."""
-
-    device: str = "cuda"
-    seed: int = 0
-    dataset: LazyConfig = PLACEHOLDER
-    net: LazyConfig = PLACEHOLDER
-    optimizer: LazyConfig = PLACEHOLDER
-    train: TrainConfig = PLACEHOLDER
-
-
-def get_config():
+def get_config() -> ExperimentConfig:
     """Get the configuration for the MNIST classification experiment.
 
     Returns:
@@ -111,23 +84,25 @@ def get_config():
                     global_conv_cfg=LazyConfig(CKConvND)(
                         data_dim=DATA_DIM,
                         hidden_dim="${net.hidden_dim}",
-                        kernel_cfg=LazyConfig(RandomFourierKernelND)(
+                        kernel_cfg=LazyConfig(SIRENKernelND)(
                             data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                             out_dim="${net.hidden_dim}",
                             mlp_hidden_dim=32,
                             num_layers=3,
                             embedding_dim=32,
-                            omega_0=30.0,
-                            L_cache=28,
+                            omega_0=100.0,
+                            L_cache=32,
                             use_bias=True,
-                            nonlinear_cfg=LazyConfig(torch.nn.GELU)(),
-                            init_method=small_init,
+                            hidden_omega_0=1.0,
                         ),
-                        mask_cfg=LazyConfig(ExponentialModulationND)(
+                        mask_cfg=LazyConfig(GaussianModulationND)(
                             data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                             num_channels="${net.hidden_dim}",
-                            fast_decay_pct=13.81,
-                            slow_decay_pct=2.3,
+                            min_std=0.025,
+                            max_std=1.25,
+                            init_std_low=0.05,
+                            init_std_high=1.0,
+                            parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
                     ),
@@ -140,6 +115,10 @@ def get_config():
                         bias=False,
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
+                    pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels="${net.hidden_dim}"),
+                    apply_qk_norm=True,
+                    use_rope=True,
+                    rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
@@ -147,13 +126,19 @@ def get_config():
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
-                activation="relu",
+                activation="glu",
+                expansion_factor=1.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
+                init_method_in=small_init,
+                init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
     )
+
+    # Add lightning wrapper config
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)()
 
     # Add optimizer config
     config.optimizer = LazyConfig(torch.optim.AdamW)(
@@ -168,5 +153,13 @@ def get_config():
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
     )
+
+    # Modify the scheduler config - only set what's different from default
+    config.scheduler = SchedulerConfig(
+        name="cosine", warmup_iterations=WARMUP_ITERATIONS, total_iterations="${train.iterations}"
+    )
+
+    # Add wandb group
+    config.wandb = WandbConfig(job_group="mnist_classification")
 
     return config

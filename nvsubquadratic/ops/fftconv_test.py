@@ -1,11 +1,11 @@
 # David W. Romero, 2025-09-09
 
-"""
-Test the FFT-based 1D (causal & non-causal), 2D, and 3D convolutions against the reference F.conv1d, F.conv2d, and F.conv3d.
+"""Test the FFT-based 1D (causal & non-causal), 2D, and 3D convolutions against the reference F.conv1d, F.conv2d, and F.conv3d.
+
 We only compare against the *_bhl variants, as the fastest *_blh variants use this implementation internally.
 
 Usage:
-    PYTHONPATH=. python nvsubquadratic/src/ops/fftconv_test.py
+    PYTHONPATH=. python nvsubquadratic/ops/fftconv_test.py
 """
 
 import time
@@ -14,14 +14,11 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 
-
-from nvsubquadratic.src.ops.fftconv import causal_fftconv1d_bhl, fftconv1d_bhl, fftconv2d_bhl, fftconv3d_bhl
+from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl, fftconv1d_bhl, fftconv2d_bhl, fftconv3d_bhl
 
 
 def test_fftconv1d():
-    """
-    Tests the 1D FFT-based convolution against the reference F.conv1d.
-    """
+    """Tests the 1D FFT-based convolution against the reference F.conv1d."""
     print("🚀 Running 1D 'Same' Padding Test...")
     # Setup test parameters
     B, H, L = 4, 16, 256 * 256  # 2^16
@@ -105,9 +102,7 @@ def test_fftconv1d():
 
 
 def test_causal_fftconv1d():
-    """
-    Tests the 1D causal FFT-based convolution against the reference F.conv1d (with causal padding).
-    """
+    """Tests the 1D causal FFT-based convolution against the reference F.conv1d (with causal padding)."""
     print("🚀 Running 1D Causal Padding Test...")
     # Setup test parameters
     B, H, L = 4, 16, 256 * 256  # 2^16
@@ -195,9 +190,7 @@ def test_causal_fftconv1d():
 
 
 def test_fftconv2d():
-    """
-    Tests the 2D FFT-based convolution against the reference F.conv2d.
-    """
+    """Tests the 2D FFT-based convolution against the reference F.conv2d."""
     print("🚀 Running 2D 'Same' Padding Test...")
     # Setup test parameters
     B, H, X_in, Y_in = 4, 16, 256, 256
@@ -278,9 +271,7 @@ def test_fftconv2d():
 
 
 def test_fftconv3d():
-    """
-    Tests the 3D FFT-based convolution against the reference F.conv3d.
-    """
+    """Tests the 3D FFT-based convolution against the reference F.conv3d."""
     print("🚀 Running 3D 'Same' Padding Test...")
     # Setup test parameters
     B, H, X_in, Y_in, Z_in = 4, 16, 32, 32, 32

@@ -2,15 +2,14 @@
 
 """CKConv (long-convolution) implementation for ND signals."""
 
-
 import math
 from typing import Literal
 
 import torch
 from einops import rearrange
 
-from nvsubquadratic.src.utils.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.src.ops.fftconv import (
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.ops.fftconv import (
     fftconv1d_bhl,
     fftconv1d_bhl_w_reshape,
     fftconv2d_bhl,
@@ -21,6 +20,8 @@ from nvsubquadratic.src.ops.fftconv import (
 
 
 class CKConvND(torch.nn.Module):
+    """CKConv (long-convolution) implementation for ND signals."""
+
     def __init__(
         self,
         data_dim: int,
@@ -29,6 +30,15 @@ class CKConvND(torch.nn.Module):
         mask_cfg: LazyConfig,
         grid_type: Literal["double", "single"],
     ):
+        """Initialize the CKConvND.
+
+        Args:
+            data_dim: Dimension of input data.
+            hidden_dim: Hidden dimension.
+            kernel_cfg: LazyConfig for the kernel.
+            mask_cfg: LazyConfig for the mask.
+            grid_type: Type of grid to use.
+        """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
 
         super().__init__()

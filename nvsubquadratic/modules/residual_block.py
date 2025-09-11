@@ -2,13 +2,14 @@
 
 """Residual block implementation for ND signals, composed of a sequence mixer and an MLP."""
 
-
 import torch
 
-from nvsubquadratic.src.utils.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class ResidualBlock(torch.nn.Module):
+    """Residual block."""
+
     def __init__(
         self,
         sequence_mixer_cfg: LazyConfig,
@@ -16,6 +17,14 @@ class ResidualBlock(torch.nn.Module):
         norm_cfg: LazyConfig,
         dropout_cfg: LazyConfig,
     ):
+        """Initialize the ResidualBlock.
+
+        Args:
+            sequence_mixer_cfg: LazyConfig for the sequence mixer layer.
+            mlp_cfg: LazyConfig for the MLP layer.
+            norm_cfg: LazyConfig for the input and MLP norms.
+            dropout_cfg: LazyConfig for the dropout layer.
+        """
         super().__init__()
         # Instantiate sequence mixer layer
         self.sequence_mixer = instantiate(sequence_mixer_cfg)

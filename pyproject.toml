@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nvsubquadratic"
 version = "0.1.0"
 description = "A unified PyTorch-native library for subquadratic alternatives to quadratic attention method"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "torch>=2.0.0",
     "einops>=0.6.0",

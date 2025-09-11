@@ -2,19 +2,31 @@
 
 """QKV-based sequence mixer implementation for ND signals."""
 
-import torch
 from typing import Callable
 
-from nvsubquadratic.src.utils.lazy_config import LazyConfig, instantiate
+import torch
+
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
+
 
 class QKVSequenceMixer(torch.nn.Module):
+    """QKV sequence mixer."""
+
     def __init__(
         self,
         hidden_dim: int,
         mixer_cfg: LazyConfig,
-        init_method_in: Callable[[torch.Tensor], torch.Tensor] = None,
-        init_method_out: Callable[[torch.Tensor], torch.Tensor] = None,
+        init_method_in: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        init_method_out: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ):
+        """Initialize the QKV sequence mixer.
+
+        Args:
+            hidden_dim: Hidden dimension.
+            mixer_cfg: LazyConfig for the sequence mixer layer.
+            init_method_in: Optional initialization method for the QKV projection.
+            init_method_out: Optional initialization method for the output projection.
+        """
         super().__init__()
 
         # Instantiate sequence mixer layer (expects a module taking q, k, v)
@@ -32,6 +44,7 @@ class QKVSequenceMixer(torch.nn.Module):
             init_method_out(hidden_dim)(self.out_proj.weight.data)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the QKV sequence mixer."""
         # Q, K, V projections via single linear
         qkv = self.qkv_proj(x)
         q, k, v = torch.chunk(qkv, 3, dim=-1)

@@ -2,19 +2,18 @@
 
 """MLP implementation for ND signals."""
 
-
 from typing import Callable, Literal
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nvsubquadratic.src.utils.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class MLP(nn.Module):
-    """
-    A flexible Multi-Layer Perceptron that supports various activation functions including GLU variants.
+    """A flexible Multi-Layer Perceptron that supports various activation functions including GLU variants.
+
     Always uses exactly two layers with equal input and output dimensions.
 
     Args:
@@ -33,9 +32,20 @@ class MLP(nn.Module):
         dropout_cfg: LazyConfig,
         expansion_factor: float = 2.0,
         bias: bool = False,
-        init_method_in: Callable[[torch.Tensor], torch.Tensor] = None,
-        init_method_out: Callable[[torch.Tensor], torch.Tensor] = None,
+        init_method_in: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        init_method_out: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ):
+        """Initialize the MLP.
+
+        Args:
+            dim: Input and output dimension.
+            activation: Activation function to use.
+            dropout_cfg: LazyConfig for the dropout layer.
+            expansion_factor: Factor to expand the hidden dimension.
+            bias: Whether to use bias in linear layers.
+            init_method_in: Optional initialization method for the first layer.
+            init_method_out: Optional initialization method for the second layer.
+        """
         assert bias is False, f"Modern MLPs do not use bias. Got {bias}"
 
         super().__init__()
@@ -74,6 +84,7 @@ class MLP(nn.Module):
             raise ValueError(f"Unsupported activation: {self.activation}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the MLP."""
         # Apply first layer
         x = self.layer1(x)
         # Apply activation
