@@ -100,6 +100,11 @@ class MNISTDataModule(pl.LightningDataModule):
             ]
         )
 
+        # Placeholders for datasets
+        self.train_dataset = None
+        self.val_dataset = None
+        self.test_dataset = None
+
     def prepare_data(self):
         """Function to prepare the data."""
         # download data, train then test
@@ -124,49 +129,42 @@ class MNISTDataModule(pl.LightningDataModule):
                 transform=self.transform,
             )
 
+    def _build_loader(self, dataset, shuffle: bool, drop_last: bool = False):
+        """Function to create dataloaders given a dataset and a few arguments.
+
+        Reused for train, val and test dataloaders.
+
+        Args:
+            dataset: Dataset to create a dataloader for.
+            shuffle: Whether to shuffle the dataset.
+            drop_last: Whether to drop the last batch if it's not complete.
+
+        Returns:
+            DataLoader: DataLoader for the dataset.
+        """
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=drop_last,
+            worker_init_fn=self.worker_init_fn,
+            persistent_workers=self.num_workers > 0,
+        )
+
     # we define a separate DataLoader for each of train/val/test
     def train_dataloader(self):
         """Function to create the train dataloader."""
-        train_dataloader = DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            drop_last=True,
-            worker_init_fn=self.worker_init_fn,
-            generator=self.generator,
-            persistent_workers=self.num_workers > 0,  # Keep workers alive between epochs
-        )
-        return train_dataloader
+        return self._build_loader(self.train_dataset, shuffle=True, drop_last=True)
 
     def val_dataloader(self):
         """Function to create the validation dataloader."""
-        val_dataloader = DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            worker_init_fn=self.worker_init_fn,
-            generator=self.generator,
-            persistent_workers=self.num_workers > 0,  # Keep workers alive between epochs
-        )
-        return val_dataloader
+        return self._build_loader(self.val_dataset, shuffle=False, drop_last=False)
 
     def test_dataloader(self):
         """Function to create the test dataloader."""
-        test_dataloader = DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            worker_init_fn=self.worker_init_fn,
-            generator=self.generator,
-            persistent_workers=self.num_workers > 0,  # Keep workers alive between epochs
-        )
-        return test_dataloader
+        return self._build_loader(self.test_dataset, shuffle=False, drop_last=False)
 
     def on_before_batch_transfer(self, batch, dataloader_idx):
         """Function to rearrange the input.
