@@ -74,6 +74,33 @@ class Hyena(torch.nn.Module):
             self._rope2d_cache = {}
             self._rope3d_cache = {}
 
+    def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
+        """Precompute and cache 1D RoPE tables for input of length seq_len.
+
+        Args:
+            seq_len: Number of positions T.
+            dim: Per-axis channel dimension. Must be even because rotations operate on pairs.
+            device: Target device for the cached tensors.
+            dtype: Target dtype for the cached tensors.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: ``(cos, sin)``
+            where shapes are:
+            - cos: [dim, seq_len]
+            - sin: [dim, seq_len]
+
+        Notes:
+            The cache key is ``(T, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
+        """
+        key = (int(seq_len), int(dim), str(device), str(dtype))
+        if key in self._rope1d_cache:
+            return self._rope1d_cache[key]
+        # If not in cache, compute and cache
+        with torch.no_grad():
+            cos, sin = rope.construct_rope_1d_cache_bhl(seq_len, dim, device, dtype, self.rope_base)
+            self._rope1d_cache[key] = (cos, sin)
+        return cos, sin
+
     def _rope_cache_2d(
         self, height: int, width: int, dim_half: int, device, dtype
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -89,8 +116,8 @@ class Hyena(torch.nn.Module):
         Returns:
             tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_y, sin_y, cos_x, sin_x)``
             where shapes are:
-            - cos_y/sin_y: [dim_half, H]
-            - cos_x/sin_x: [dim_half, W]
+            - cos_y/sin_y: [dim_half, height]
+            - cos_x/sin_x: [dim_half, width]
 
         Notes:
             The cache key is ``(H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
@@ -105,6 +132,40 @@ class Hyena(torch.nn.Module):
             )
             self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
         return cos_y, sin_y, cos_x, sin_x
+
+    def _rope_cache_3d(
+        self, depth: int, height: int, width: int, dim_third: int, device, dtype
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Precompute and cache 3D RoPE tables for Z, Y, and X axes.
+
+        Args:
+            depth: Number of depth D.
+            height: Number of rows H.
+            width: Number of columns W.
+            dim_third: Per-axis channel dimension. Must be even because rotations operate on pairs.
+            device: Target device for the cached tensors.
+            dtype: Target dtype for the cached tensors.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)``
+            where shapes are:
+            - cos_z, sin_z: [dim_third, depth]
+            - cos_y, sin_y: [dim_third, height]
+            - cos_x, sin_x: [dim_third, width]
+
+        Notes:
+            The cache key is ``(D, H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
+        """
+        key = (int(depth), int(height), int(width), int(dim_third), str(device), str(dtype))
+        if key in self._rope3d_cache:
+            return self._rope3d_cache[key]
+        # If not in cache, compute and cache
+        with torch.no_grad():
+            cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_bhl(
+                depth, height, width, dim_third, device, dtype, self.rope_base
+            )
+            self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
+        return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
         """Forward pass of the Hyena-style global convolutional mixer.

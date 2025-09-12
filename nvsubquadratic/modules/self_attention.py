@@ -71,13 +71,22 @@ class SelfAttention(torch.nn.Module):
             self._rope3d_cache = {}
 
     def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
-        """Cache 1D RoPE cos/sin for input of length seq_len.
+        """Precompute and cache 1D RoPE cos/sin for input of length seq_len.
+
+        Args:
+            seq_len: Number of positions T.
+            dim: Per-axis channel dimension. Must be even because rotations operate on pairs.
+            device: Target device for the cached tensors.
+            dtype: Target dtype for the cached tensors.
 
         Returns:
-            cos, sin
-            with shapes:
+            tuple[torch.Tensor, torch.Tensor]: ``(cos, sin)``
+            where shapes are:
             - cos: [seq_len, dim]
             - sin: [seq_len, dim]
+
+        Notes:
+            The cache key is ``(T, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
         """
         key = (int(seq_len), int(dim), str(device), str(dtype))
         if key in self._rope1d_cache:
@@ -91,13 +100,23 @@ class SelfAttention(torch.nn.Module):
     def _rope_cache_2d(
         self, height: int, width: int, dim_half: int, device, dtype
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Cache 2D RoPE cos/sin for y and x axes.
+        """Precompute and cache 2D RoPE cos/sin for Y and X axes.
+
+        Args:
+            height: Number of rows H.
+            width: Number of columns W.
+            dim_half: Per-axis channel dimension. Must be even because rotations operate on pairs.
+            device: Target device for the cached tensors.
+            dtype: Target dtype for the cached tensors.
 
         Returns:
-            cos_y, sin_y, cos_x, sin_x
-            with shapes:
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_y, sin_y, cos_x, sin_x)``
+            where shapes are:
             - cos_y, sin_y: [height, dim_half]
             - cos_x, sin_x: [width, dim_half]
+
+        Notes:
+            The cache key is ``(H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
         """
         key = (int(height), int(width), int(dim_half), str(device), str(dtype))
         if key in self._rope2d_cache:
@@ -113,14 +132,25 @@ class SelfAttention(torch.nn.Module):
     def _rope_cache_3d(
         self, depth: int, height: int, width: int, dim_third: int, device, dtype
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Cache 3D RoPE cos/sin for z, y, and x axes.
+        """Precompute and cache 3D RoPE cos/sin for Z, Y, and X axes.
+
+        Args:
+            depth: Number of depth D.
+            height: Number of rows H.
+            width: Number of columns W.
+            dim_third: Per-axis channel dimension. Must be even because rotations operate on pairs.
+            device: Target device for the cached tensors.
+            dtype: Target dtype for the cached tensors.
 
         Returns:
-            cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
-            with shapes:
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)``
+            where shapes are:
             - cos_z, sin_z: [depth, dim_third]
             - cos_y, sin_y: [height, dim_third]
             - cos_x, sin_x: [width, dim_third]
+
+        Notes:
+            The cache key is ``(D, H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
         """
         key = (int(depth), int(height), int(width), int(dim_third), str(device), str(dtype))
         if key in self._rope3d_cache:

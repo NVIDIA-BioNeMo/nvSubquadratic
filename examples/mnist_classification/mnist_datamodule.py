@@ -52,7 +52,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self,
         data_dir: str,
         batch_size: int,
-        data_type: Literal["image"],
+        data_type: Literal["sequence", "image"],
         num_workers: int,
         pin_memory: bool,
         use_deterministic_worker_init: bool,
@@ -63,7 +63,7 @@ class MNISTDataModule(pl.LightningDataModule):
         Args:
             data_dir: Directory to save the data
             batch_size: Batch size
-            data_type: Type of data
+            data_type: Type of data. Can be "sequence" or "image".
             num_workers: Number of workers
             pin_memory: Whether to pin memory
             use_deterministic_worker_init: Whether to use deterministic worker initialization
@@ -89,7 +89,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self.output_channels = 10
 
         # Assert that data_type is in the allowed options
-        assert data_type == "image", f"data_type must be 'image', got {data_type}"
+        assert data_type in ["sequence", "image"], f"data_type must be 'sequence' or 'image', got {data_type}"
         self.data_type = data_type
 
         # Create transform
@@ -169,11 +169,16 @@ class MNISTDataModule(pl.LightningDataModule):
         return test_dataloader
 
     def on_before_batch_transfer(self, batch, dataloader_idx):
-        """Function to rearrange the input format from [B, C, Y, X] to [B, Y, X, C]."""
+        """Function to rearrange the input.
+
+        For image data_type, from [B, C, Y, X] to [B, Y, X, C].
+        For sequence data_type, from [B, C, T] to [B, T, C].
+        """
+        x, y = batch
         if self.data_type == "image":
-            # If image, rearrange the input [B, C, Y, X] -> [B, Y, X, C]
-            x, y = batch
             x = rearrange(x, "b c y x -> b y x c")
+        elif self.data_type == "sequence":
+            x = rearrange(x, "b c y x -> b (y x) c")
         else:
             raise ValueError(f"Unsupported data type: {self.data_type}")
         batch = x, y

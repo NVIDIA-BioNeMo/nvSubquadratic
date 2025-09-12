@@ -1,6 +1,92 @@
 # David W. Romero, 2025-09-09
 
-"""RoPE utilities."""
+"""Rotary Position Embeddings (RoPE) utilities.
+
+This module provides fast, allocation-friendly primitives to construct and apply
+Rotary Position Embeddings for 1D, 2D, and 3D inputs in two common memory
+layouts:
+
+- BHL: ``[batch, hidden, * spatial_dims]``
+- BLH: ``[batch, * spatial_dims, hidden]``
+
+Both families expose:
+
+- rotate_half_XXX (BHL or BLH): Pairwise channel rotation ``[x1, x2] -> [-x2, x1]`` along the
+  hidden/channel dimension.
+- construct_rope_{1d,2d,3d}_cache_XXX: Build per-axis cosine/sine caches.
+- apply_rope_{1d,2d,3d}_XXX: Apply RoPE in-place via fused ops using the caches.
+
+Channel partition and constraints
+---------------------------------
+- 1D: Channels are used as one block. Per-axis dim must be even.
+  Overall hidden dim must be divisible by 2.
+- 2D: Channels are split in two equal parts: first half for Y, second half for X.
+  Each half must be even. Overall hidden dim must be divisible by 4.
+- 3D: Channels are split in three equal parts: first third for Z, second third for Y,
+  final third for X. Each third must be even. Overall hidden dim must be divisible by 6.
+
+Cache organization and shapes
+-----------------------------
+- BHL caches (channel-first per-axis):
+  - 1D: ``(cos, sin)`` with shapes ``[dim, T]``
+  - 2D: ``(cos_y, sin_y, cos_x, sin_x)`` with shapes ``[dim_half, H]``, ``[dim_half, W]``
+  - 3D: ``(cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)`` with shapes
+    ``[dim_third, D]``, ``[dim_third, H]``, ``[dim_third, W]``
+- BLH caches (time/space-first per-axis):
+  - 1D: ``(cos, sin)`` with shapes ``[T, dim]``
+  - 2D: ``(cos_y, sin_y, cos_x, sin_x)`` with shapes ``[H, dim_half]``, ``[W, dim_half]``
+  - 3D: ``(cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)`` with shapes
+    ``[D, dim_third]``, ``[H, dim_third]``, ``[W, dim_third]``
+
+Broadcasting (apply functions)
+------------------------------
+Each ``apply_rope_*`` reshapes caches for broadcast along the appropriate spatial axis
+and channel slice. See the function docstrings for the exact broadcast shapes used.
+
+Performance and semantics
+-------------------------
+- ``apply_rope_*`` perform in-place fused operations (``mul_`` and ``addcmul_``) on
+  views of the input to minimize allocations. A temporary rotated view is created via
+  ``rotate_half_*``.
+- Caches are constructed with explicit ``device`` and ``dtype``; build them once and
+  reuse across forward calls when shape-compatible.
+- The angular frequency schedule uses ``theta = 1 / (rope_base ** (arange(0, d/2) / (d/2)))``
+  expanded by interleaving to match the full per-axis channel size.
+
+Layouts summary
+---------------
+- BHL inputs:
+  - 1D: ``x.shape == [B, C, T]`` -> use ``construct_rope_1d_cache_bhl`` and ``apply_rope_1d_bhl``
+  - 2D: ``x.shape == [B, C, H, W]`` -> use ``construct_rope_2d_cache_bhl`` and ``apply_rope_2d_bhl``
+  - 3D: ``x.shape == [B, C, D, H, W]`` -> use ``construct_rope_3d_cache_bhl`` and ``apply_rope_3d_bhl``
+- BLH inputs:
+  - 1D: ``x.shape == [B, T, C]`` -> use ``construct_rope_1d_cache_blh`` and ``apply_rope_1d_blh``
+  - 2D: ``x.shape == [B, H, W, C]`` -> use ``construct_rope_2d_cache_blh`` and ``apply_rope_2d_blh``
+  - 3D: ``x.shape == [B, D, H, W, C]`` -> use ``construct_rope_3d_cache_blh`` and ``apply_rope_3d_blh``
+
+Notes:
+-----
+- "per-axis dim" refers to the channel slice assigned to each spatial axis before
+  pairwise rotation; it must be even for the rotation to be well-defined.
+- Ensure hidden dimension divisibility as stated above before calling ``apply_rope_*``.
+"""
+
+__all__ = [
+    "apply_rope_1d_bhl",
+    "apply_rope_1d_blh",
+    "apply_rope_2d_bhl",
+    "apply_rope_2d_blh",
+    "apply_rope_3d_bhl",
+    "apply_rope_3d_blh",
+    "construct_rope_1d_cache_bhl",
+    "construct_rope_1d_cache_blh",
+    "construct_rope_2d_cache_bhl",
+    "construct_rope_2d_cache_blh",
+    "construct_rope_3d_cache_bhl",
+    "construct_rope_3d_cache_blh",
+    "rotate_half_bhl",
+    "rotate_half_blh",
+]
 
 import torch
 from einops import rearrange

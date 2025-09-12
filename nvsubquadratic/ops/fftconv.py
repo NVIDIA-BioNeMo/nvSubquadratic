@@ -1,17 +1,60 @@
 # David W. Romero, 2025-09-09
 
-"""This module contains FFT-based convolution operators for 1D, 2D, and 3D signals.
+"""FFT-based convolution operators for 1D, 2D, and 3D signals.
 
-It supports inputs formated as [batch_size, * spatial_dims, hidden_dim] as well as [batch_size, hidden_dim, * spatial_dims].
-We refer to [batch_size, * spatial_dims, hidden_dim] and [batch_size, hidden_dim, * spatial_dims] as *_blh and *_bhl respectively.
+This module provides fast FFT convolutions for both common memory layouts:
 
-It contains:
+- BLH: ``[batch, * spatial_dims, hidden]``
+- BHL: ``[batch, hidden, * spatial_dims]``
 
-- 1D FFT convolutions (causal and non-causal) with optional shortcut.
-- 2D FFT convolutions with optional shortcut.
-- 3D FFT convolutions with optional shortcut.
+Families provided
+-----------------
+- 1D convolutions (causal and non-causal) with optional per-channel shortcut
+  - BLH: ``causal_fftconv1d_blh``, ``fftconv1d_blh``
+  - BHL: ``causal_fftconv1d_bhl``, ``fftconv1d_bhl``
+- 2D convolutions with optional per-channel shortcut
+  - BLH: ``fftconv2d_blh``
+  - BHL: ``fftconv2d_bhl``
+- 3D convolutions with optional per-channel shortcut
+  - BLH: ``fftconv3d_blh``
+  - BHL: ``fftconv3d_bhl``
 
-IMPORTANT: We recommend using the *_bhl_w_reshape variants over the *_bhl variants as our benchmarking results shows they are faster.
+Wrapper variants (recommended for BLH inputs)
+--------------------------------------------
+- ``*_bhl_w_reshape`` wrappers accept BLH inputs, internally reshape to BHL for
+  faster execution, apply the BHL operator, and then reshape back. They return
+  tensors in the same layout they received (BLH).
+
+Shapes and conventions
+----------------------
+- BLH inputs and kernels:
+  - 1D: ``x: [B, L, H]``, ``kernel: [1|B, K, H]``
+  - 2D: ``x: [B, X_in, Y_in, H]``, ``kernel: [1|B, K_x, K_y, H]``
+  - 3D: ``x: [B, X_in, Y_in, Z_in, H]``, ``kernel: [1|B, K_x, K_y, K_z, H]``
+- BHL inputs and kernels:
+  - 1D: ``x: [B, H, L]``, ``kernel: [1|B, H, K]``
+  - 2D: ``x: [B, H, X_in, Y_in]``, ``kernel: [1|B, H, K_x, K_y]``
+  - 3D: ``x: [B, H, X_in, Y_in, Z_in]``, ``kernel: [1|B, H, K_x, K_y, K_z]``
+
+Cropping and causality
+----------------------
+- Non-causal variants produce "same" outputs by cropping the linear convolution
+  result centered on the input. Crop offsets are ``K//2`` (1D) or per-axis.
+- Causal 1D uses ``fft_len = min(L + K, 2L)`` and crops the tail to length ``L``.
+  Non-causal 1D uses ``fft_len = min(L + ceil(K/2), 2L)`` and centers the crop.
+- Non-causal variants are faster and more memory efficient, as they require
+  less padding.
+
+Shortcuts and dtype
+-------------------
+- Optional ``shortcut: [H]`` scales the input per-channel and is added to the
+  convolution output: ``y += shortcut * x`` (broadcasted along spatial dims).
+- All operators expect ``float32`` inputs, kernels, and shortcut.
+
+Performance
+-----------
+- For BLH inputs, prefer the ``*_bhl_w_reshape`` wrappers; benchmarks show they
+  are faster than operating directly in BLH layout.
 """
 
 __all__ = [
@@ -290,7 +333,7 @@ def causal_fftconv1d_bhl_w_reshape(
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len).
+        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim).
     """
     x = rearrange(x, "b l h -> b h l")
     kernel = rearrange(kernel, "b l h -> b h l")
@@ -317,7 +360,7 @@ def fftconv1d_bhl_w_reshape(
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len).
+        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim).
     """
     x = rearrange(x, "b l h -> b h l")
     kernel = rearrange(kernel, "b l h -> b h l")
