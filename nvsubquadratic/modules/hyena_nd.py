@@ -36,15 +36,15 @@ class Hyena(torch.nn.Module):
             rope_base: float - The base of the RoPE (default: 10000.0).
 
         Raises:
-            AssertionError: If the short conv is not an instance of torch.nn.ConvNd (1d, 2d, or 3d).
+            AssertionError: If the short conv is not an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity.
         """
         super().__init__()
 
         # Core global convs: feature and gate branches
         self.global_conv = instantiate(global_conv_cfg)
         self.short_conv = instantiate(short_conv_cfg)
-        assert isinstance(self.short_conv, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d)), (
-            f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d). Current type: {type(self.short_conv)}"
+        assert isinstance(self.short_conv, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Identity)), (
+            f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity. Current type: {type(self.short_conv)}"
         )
 
         # Initialize the short conv
@@ -165,11 +165,11 @@ class Hyena(torch.nn.Module):
                 key = rope.apply_rope_2d_bhl(key, rope_2d_cache)
 
             elif dimensionality_input == 3:
-                assert query.shape[1] % 8 == 0, (
-                    f"With 3D RoPE, the number of channels must be divisible by 8. Got {query.shape[1]}."
+                assert query.shape[1] % 6 == 0, (
+                    f"With 3D RoPE, the number of channels must be divisible by 6. Got {query.shape[1]}."
                 )
-                assert key.shape[1] % 8 == 0, (
-                    f"With 3D RoPE, the number of channels must be divisible by 8. Got {key.shape[1]}."
+                assert key.shape[1] % 6 == 0, (
+                    f"With 3D RoPE, the number of channels must be divisible by 6. Got {key.shape[1]}."
                 )
                 raise NotImplementedError("3D RoPE is not implemented yet.")
             else:
