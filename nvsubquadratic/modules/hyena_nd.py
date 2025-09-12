@@ -134,12 +134,9 @@ class Hyena(torch.nn.Module):
             key = key.contiguous()
             value = value.contiguous()
 
-        # Apply QK normalization
-        if self.apply_qk_norm:
-            query, key = qk_norm.apply_qk_norm(query, key, dim=1)
-
-        # Apply RoPE
+        # Optional RoPE positional encoding (before normalization)
         if self.use_rope:
+            # Get the dimensionality of the input and apply RoPE based on the dimensionality
             dimensionality_input = query.ndim - 2
             if dimensionality_input == 1:
                 assert query.shape[1] % 2 == 0, (
@@ -148,7 +145,13 @@ class Hyena(torch.nn.Module):
                 assert key.shape[1] % 2 == 0, (
                     f"With 1D RoPE, the number of channels must be divisible by 2. Got {key.shape[1]}."
                 )
-                raise NotImplementedError("1D RoPE is not implemented yet.")
+                # Gather or contsruct the RoPE 1D cache
+                _, hidden_dim, seq_len = query.shape
+                rope_1d_cache = self._rope_cache_1d(seq_len, hidden_dim, query.device, query.dtype)
+                # Apply RoPE to query and key
+                query = rope.apply_rope_1d_bhl(query, rope_1d_cache)
+                key = rope.apply_rope_1d_bhl(key, rope_1d_cache)
+
             elif dimensionality_input == 2:
                 assert query.shape[1] % 4 == 0, (
                     f"With 2D RoPE, the number of channels must be divisible by 4. Got {query.shape[1]}."
@@ -156,7 +159,6 @@ class Hyena(torch.nn.Module):
                 assert key.shape[1] % 4 == 0, (
                     f"With 2D RoPE, the number of channels must be divisible by 4. Got {key.shape[1]}."
                 )
-
                 # Gather or contsruct the RoPE 2D cache
                 _, hidden_dim, height, width = query.shape
                 rope_2d_cache = self._rope_cache_2d(height, width, hidden_dim // 2, query.device, query.dtype)
@@ -171,13 +173,32 @@ class Hyena(torch.nn.Module):
                 assert key.shape[1] % 6 == 0, (
                     f"With 3D RoPE, the number of channels must be divisible by 6. Got {key.shape[1]}."
                 )
-                raise NotImplementedError("3D RoPE is not implemented yet.")
+                # Gather or contsruct the RoPE 3D cache
+                _, hidden_dim, depth, height, width = query.shape
+                rope_3d_cache = self._rope_cache_3d(depth, height, width, hidden_dim // 3, query.device, query.dtype)
+                # Apply RoPE to query and key
+                query = rope.apply_rope_3d_bhl(query, rope_3d_cache)
+                key = rope.apply_rope_3d_bhl(key, rope_3d_cache)
+
             else:
                 raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
+
+        # Apply QK normalization (after RoPE)
+        if self.apply_qk_norm:
+            query, key = qk_norm.apply_qk_norm(query, key, dim=1)
 
         # First gate
         # z = query * self.gate_nonlinear(key)
         query.mul_(self.gate_nonlinear(key))
+
+        # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
+        if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
+            if isinstance(self.pixelhyena_norm, torch.nn.GroupNorm):
+                query = self.pixelhyena_norm(query)
+            else:  # torch.nn.LayerNorm
+                query = rearrange(query, "b c ... -> b ... c")
+                query = self.pixelhyena_norm(query)
+                query = rearrange(query, "b ... c -> b c ...")
 
         # Apply global convolution
         y = self.global_conv(query, is_bhl_input=True)
