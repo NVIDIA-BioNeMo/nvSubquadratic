@@ -25,7 +25,6 @@ from examples.utils import (
     config_to_dict_for_rich,
     get_deterministic_run_name,
     load_config_from_file,
-    set_global_seed,
     verify_no_interpolator_overwrites,
 )
 from nvsubquadratic.lazy_config import instantiate
@@ -66,7 +65,7 @@ def main():
     config = apply_config_overrides(config, args.overrides)
 
     # Set seed
-    set_global_seed(config.seed)
+    pl.seed_everything(config.seed, workers=True)
 
     # Set deterministic mode
     torch.backends.cudnn.deterministic = config.deterministic
@@ -190,10 +189,14 @@ def construct_trainer(
     # Distributed training params
     assert cfg.device == "cuda", "Only CUDA training is supported."
 
-    sync_batchnorm = cfg.train.distributed
-    strategy = "ddp_find_unused_parameters_false" if cfg.train.distributed else "auto"
-    gpus = cfg.train.avail_gpus if cfg.train.distributed else 1
-    num_nodes = cfg.train.num_nodes if (cfg.train.num_nodes != -1) else 1
+    device_count = torch.cuda.device_count()
+    if device_count > 1:  # Multi-GPU training
+        strategy = "ddp"
+        sync_batchnorm = True
+    else:
+        strategy = "auto"
+        sync_batchnorm = False
+    num_nodes = 1  # Multi-node training not verified.
 
     # Merge default callbacks with any experiment-defined callbacks
     user_callbacks = [instantiate(cb_cfg) for cb_cfg in cfg.callbacks] if cfg.callbacks else []
@@ -217,7 +220,7 @@ def construct_trainer(
         callbacks=callbacks_list,
         # Multi-GPU
         num_nodes=num_nodes,
-        devices=gpus,
+        devices=list(range(device_count)),  # [0, ..., device_count-1]
         strategy=strategy,
         sync_batchnorm=sync_batchnorm,
         # Precision

@@ -33,7 +33,7 @@ class CKConvND(torch.nn.Module):
         """Initialize the CKConvND.
 
         Args:
-            data_dim: Dimension of input data.
+            data_dim: Dimension of input data (1D for sequences, 2D for images, 3D for videos, etc.).
             hidden_dim: Hidden dimension.
             kernel_cfg: LazyConfig for the kernel.
             mask_cfg: LazyConfig for the mask.

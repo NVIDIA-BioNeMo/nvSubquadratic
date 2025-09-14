@@ -361,7 +361,8 @@ class UCF101DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=drop_last,
-            worker_init_fn=self.worker_init_fn,
+            # worker_init_fn=self.worker_init_fn,  # No longer needed with pl.seed_everything(workers=True)
+            generator=self.generator,
             persistent_workers=self.num_workers > 0,
             collate_fn=self._ignore_audio_collate_fn,
         )

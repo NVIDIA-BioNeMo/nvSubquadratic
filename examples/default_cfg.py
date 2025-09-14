@@ -22,9 +22,6 @@ class TrainConfig:
     grad_clip: float = 0.0
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
-    distributed: bool = False
-    num_nodes: int = -1
-    avail_gpus: int = -1
 
 
 @dataclass

@@ -1,3 +1,7 @@
+# David W. Romero, 2025-09-09
+
+"""Multi-head self-attention with optional QK normalization and Rotary Positional Embeddings (RoPE)."""
+
 import torch
 import torch.nn.functional as F
 from einops import rearrange

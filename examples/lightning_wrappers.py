@@ -169,7 +169,7 @@ class LightningWrapperBase(pl.LightningModule):
         self.scheduler_cfg = cfg.scheduler
 
         # Explicitly define whether we are in distributed mode.
-        self.distributed = cfg.train.distributed and cfg.train.avail_gpus != 1
+        self.distributed = torch.cuda.device_count() > 1
 
         # Calculate the number of parameters
         num_params = sum(p.numel() for p in self.parameters())

@@ -5,15 +5,10 @@
 import dataclasses
 import datetime
 import importlib.util
-import os
-import random
 import re
 from pathlib import Path
 from typing import Any, List
 
-import numpy as np
-import pytorch_lightning as pl
-import torch
 from rich.tree import Tree
 
 from examples.default_cfg import ExperimentConfig
@@ -295,16 +290,6 @@ def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: List[
         raise ValueError(
             "The following overrides target interpolated fields and are not allowed: " + ", ".join(violations)
         )
-
-
-def set_global_seed(seed: int):
-    """Set the global seed for the program."""
-    os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash seed
-    random.seed(seed)  # Python RNG
-    np.random.seed(seed)  # NumPy RNG
-    torch.manual_seed(seed)  # CPU RNG
-    torch.cuda.manual_seed_all(seed)  # GPU RNG
-    pl.seed_everything(seed, workers=True)
 
 
 def config_to_dict_for_rich(config: Any) -> Any:

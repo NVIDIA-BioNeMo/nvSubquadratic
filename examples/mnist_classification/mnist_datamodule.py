@@ -2,11 +2,8 @@
 
 """MNIST datamodule."""
 
-import os
-import random
 from typing import Literal
 
-import numpy as np
 import pytorch_lightning as pl
 import torch
 from einops import rearrange
@@ -14,35 +11,35 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 
 
-# Global seed value used for worker initialization
-_BASE_SEED = 0
+# # Global seed value used for worker initialization
+# _BASE_SEED = 0
 
 
-def set_base_seed(seed):
-    """Set the base seed for worker initialization."""
-    global _BASE_SEED
-    _BASE_SEED = seed
+# def set_base_seed(seed):
+#     """Set the base seed for worker initialization."""
+#     global _BASE_SEED
+#     _BASE_SEED = seed
 
 
-# Define a worker initialization function to set seeds for data loading workers
-def deterministic_worker_init_fn(worker_id: int):
-    """Initialize the worker with a deterministic seed derived from base_seed and worker_id.
+# # Define a worker initialization function to set seeds for data loading workers
+# def deterministic_worker_init_fn(worker_id: int):
+#     """Initialize the worker with a deterministic seed derived from base_seed and worker_id.
 
-    Each worker gets a unique but deterministic seed: base_seed + worker_id
-    """
-    # Use the global base seed plus worker_id as the seed for this worker
-    global _BASE_SEED
-    seed = _BASE_SEED + worker_id
+#     Each worker gets a unique but deterministic seed: base_seed + worker_id
+#     """
+#     # Use the global base seed plus worker_id as the seed for this worker
+#     global _BASE_SEED
+#     seed = _BASE_SEED + worker_id
 
-    # Set Python hash seed for this process
-    os.environ["PYTHONHASHSEED"] = str(seed)
+#     # Set Python hash seed for this process
+#     os.environ["PYTHONHASHSEED"] = str(seed)
 
-    # Set all relevant random states with this seed
-    random.seed(seed)  # Set Python's random seed
-    np.random.seed(seed)  # Set NumPy's random seed
-    torch.manual_seed(seed)  # Set PyTorch's CPU RNG seed
-    torch.cuda.manual_seed(seed)  # Set CUDA RNG seed for current device
-    torch.cuda.manual_seed_all(seed)  # Set CUDA RNG seed for all devices
+#     # Set all relevant random states with this seed
+#     random.seed(seed)  # Set Python's random seed
+#     np.random.seed(seed)  # Set NumPy's random seed
+#     torch.manual_seed(seed)  # Set PyTorch's CPU RNG seed
+#     torch.cuda.manual_seed(seed)  # Set CUDA RNG seed for current device
+#     torch.cuda.manual_seed_all(seed)  # Set CUDA RNG seed for all devices
 
 
 class MNISTDataModule(pl.LightningDataModule):
@@ -82,7 +79,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self.generator = torch.Generator().manual_seed(seed)
 
         # Handle worker initialization. Use deterministic worker initialization if specified.
-        self.worker_init_fn = deterministic_worker_init_fn if use_deterministic_worker_init else None
+        # self.worker_init_fn = deterministic_worker_init_fn if use_deterministic_worker_init else None
 
         # Determine sizes of dataset
         self.input_channels = 1
@@ -149,7 +146,8 @@ class MNISTDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=drop_last,
-            worker_init_fn=self.worker_init_fn,
+            # worker_init_fn=self.worker_init_fn,  # No longer needed with pl.seed_everything(workers=True)
+            generator=self.generator,
             persistent_workers=self.num_workers > 0,
         )
 
