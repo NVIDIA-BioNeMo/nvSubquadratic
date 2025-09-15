@@ -7,8 +7,8 @@ from typing import Literal
 import pytorch_lightning as pl
 import torch
 import torchmetrics
-from lightning.pytorch.utilities import grad_norm
 from omegaconf import OmegaConf
+from pytorch_lightning.utilities import grad_norm
 
 import wandb
 from examples.default_cfg import PLACEHOLDER, ExperimentConfig, SchedulerConfig
