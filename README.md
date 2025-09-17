@@ -18,7 +18,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 
 - CUDA-compatible NVIDIA GPU (Ampere or Hopper architecture)
 - CUDA Toolkit 12.0 or higher
-- Python 3.12 or higher
+- Python 3.9 or higher
 
 ## Architecture
 
@@ -26,6 +26,7 @@ nvSubquadratic provides a **high-level PyTorch interface** that depends on the *
 
 - **nvSubquadratic**: Focuses on API design, user experience, and PyTorch integration
 - **subquadratic-ops**: Focuses on kernel optimization and CUDA performance
+- **megatron-core**: Provides distributed training and model parallelism capabilities
 
 ## Installation
 

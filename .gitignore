@@ -338,3 +338,10 @@ uv.lock
 
 # SpecStory generated documentation
 .specstory/
+
+# Data directory
+.data/
+
+# Run logs
+lightning_logs/
+wandb/
