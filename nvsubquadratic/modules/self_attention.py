@@ -201,13 +201,16 @@ class SelfAttention(torch.nn.Module):
         else:
             return rearrange(x, "b (h w d) c -> b h w d c", h=spatial_shape[0], w=spatial_shape[1], d=spatial_shape[2])
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, _use_cp: bool = False
+    ) -> torch.Tensor:
         """Apply multi-head self-attention with optional QK-norm and RoPE.
 
         Args:
             query: [B, *spatial_dims, hidden_dim]
             key: [B, *spatial_dims, hidden_dim]
             value: [B, *spatial_dims, hidden_dim]
+            _use_cp: bool - Whether to use context parallelism (CP). It is not used in the forward pass.
 
         Returns:
             out: [B, *spatial_dims, hidden_dim] (same as input)

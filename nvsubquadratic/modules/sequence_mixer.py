@@ -43,13 +43,21 @@ class QKVSequenceMixer(torch.nn.Module):
         if init_method_out is not None:
             init_method_out(hidden_dim)(self.out_proj.weight.data)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the QKV sequence mixer."""
+    def forward(self, x: torch.Tensor, _use_cp: bool = False) -> torch.Tensor:
+        """Forward pass of the QKV sequence mixer.
+
+        Args:
+            x: torch.Tensor - The input tensor of shape [batch_size, *spatial_dims, hidden_dim].
+            _use_cp: bool - Whether to use context parallelism (CP).
+
+        Returns:
+            torch.Tensor - The output tensor of shape [batch_size, *spatial_dims, hidden_dim].
+        """
         # Q, K, V projections via single linear
         qkv = self.qkv_proj(x)
         q, k, v = torch.chunk(qkv, 3, dim=-1)
         # Sequence mixer (e.g., self-attention, hyena, etc.)
-        x = self.mixer(q, k, v)
+        x = self.mixer(q, k, v, _use_cp)
         # Output projection
         x = self.out_proj(x)
         return x

@@ -54,38 +54,75 @@ def all_to_all_single_fn(
     input: torch.Tensor,
     with_zigzag_splitting: bool = True,
 ) -> torch.Tensor:
-    """Autograd-aware all_to_all_single communication function.
+    """Autograd-aware all_to_all_single communication function for 1D, 2D, and 3D tensors.
+
+    This function performs all-to-all communication with optional zigzag splitting for load balancing.
+    Zigzag splitting is applied to the third dimension (shape[2]) which is treated as the "temporal"
+    or "sequence" dimension across all tensor types.
+
+    Communication Pattern:
+        - split_to_full: Gathers the full sequence while splitting across channels
+        - full_to_split: Splits across sequence length while gathering channels
+
+    Zigzag Splitting:
+        - Applied to shape[2] (seq_len/height/temporal_len) for 1D/2D/3D tensor types
+        - Helps balance communication load across devices
+        - Spatial relationships are preserved since the full spatial structure is reconstructed
+          during the all-gather process while distributing the hidden dimension
 
     Args:
         group (dist.ProcessGroup): The process group for communication.
         type (str): Either 'split_to_full' or 'full_to_split' to specify the communication pattern.
         input (torch.Tensor): Input tensor to be communicated.
+            For 1D: Shape should be (batch_size, hidden_size, seq_len).
+            For 2D: Shape should be (batch_size, hidden_size, height, width).
+            For 3D: Shape should be (batch_size, hidden_size, temporal_len, height, width).
         with_zigzag_splitting (bool, optional): Whether to apply zigzag splitting. Defaults to True.
+            Applied to shape[2] (seq_len/height/temporal_len) for 1D/2D/3D tensor types.
 
     Returns:
-        torch.Tensor: Output tensor after communication.
+        torch.Tensor: Output tensor after communication with same shape as input.
     """
     world_size = dist.get_world_size(group=group)
+    input_ndim = input.ndim
+
+    if input_ndim not in [3, 4, 5]:
+        raise ValueError(
+            f"Unsupported input tensor dimension: {input_ndim}. Expected 3D (1D), 4D (2D), or 5D (3D) tensors."
+        )
+
+    # Determine model dimensionality from input tensor dimension
+    dimensionality = input_ndim - 2
 
     if type == "split_to_full":
         # Given a split sequence, it gathers the whole sequence, while splitting across the channels dimension.
-
-        B, D, local_length = input.shape
+        # Unpack shape: B, D, local_length for 1D or B, D, H, W for 2D or B, D, t, H, W for 3D
+        B, D, local_length, *_ = input.shape
         L = local_length * world_size
         d = D // world_size
 
+        # Define reshape patterns based on dimensionality
+        if dimensionality == 1:
+            input_pattern = "B (cp d) l -> cp B d l"
+            output_pattern = "cp B d l -> B d (cp l)"
+        elif dimensionality == 2:
+            input_pattern = "B (cp d) H W -> cp B d H W"
+            output_pattern = "cp B d H W -> B d (cp H) W"
+        elif dimensionality == 3:
+            input_pattern = "B (cp d) t H W -> cp B d t H W"
+            output_pattern = "cp B d t H W -> B d (cp t) H W"
+
         # Reshape and permute input for communication
-        input_reshaped = rearrange(
-            input, "B (cp d) l -> cp B d l", cp=world_size
-        ).contiguous()  # [cp_world_size, B, d, l]
+        input_reshaped = rearrange(input, input_pattern, cp=world_size).contiguous()
 
         # Perform all_to_all_single communication
         output_reshaped = torch.empty_like(input_reshaped)
-        dist.all_to_all_single(output_reshaped, input_reshaped, group=group)  # [cp_world_size, B, d, l]
+        dist.all_to_all_single(output_reshaped, input_reshaped, group=group)
 
         # Permute and reshape output back to original form
-        output = rearrange(output_reshaped, "cp B d l -> B d (cp l)", cp=world_size).contiguous()
+        output = rearrange(output_reshaped, output_pattern, cp=world_size).contiguous()
 
+        # Apply zigzag splitting to shape[2] (temporal/sequence dimension) for all cases
         if with_zigzag_splitting:
             num_chunks = 2 * world_size
             unzigzagged_split_length = L // num_chunks  # Length of each small chunk
@@ -93,19 +130,35 @@ def all_to_all_single_fn(
             inverse_zigzag_idx = _get_inverse_zigzag_indices(num_chunks, device=device)
 
             # Vectorized rearrangement using inverse zigzag indices
+            # Reshape to (B, d, num_chunks, unzigzagged_split_length, ...) and apply inverse zigzag
+            # 1D: (B, d, L) -> (B, d, num_chunks, unzigzagged_split_length)
+            # 2D: (B, d, L, W) -> (B, d, num_chunks, unzigzagged_split_length, W)
+            # 3D: (B, d, L, H, W) -> (B, d, num_chunks, unzigzagged_split_length, H, W)
             output = (
-                output.reshape(B, d, num_chunks, unzigzagged_split_length)
-                .index_select(dim=-2, index=inverse_zigzag_idx)
-                .reshape(B, d, L)
+                output.reshape(B, d, num_chunks, unzigzagged_split_length, -1)
+                .index_select(dim=2, index=inverse_zigzag_idx)
+                .reshape(B, d, L, *([-1] * (input_ndim - 3)))
             )
 
         return output
 
     elif type == "full_to_split":
         # Given a full sequence split across channels, splits across the sequence length while gathering the channels.
+        # Unpack shape: B, d, L for 1D or B, d, H, W for 2D or B, d, T, H, W for 3D
+        B, d, L, *_ = input.shape
 
-        B, d, L = input.shape
+        # Define reshape patterns based on dimensionality
+        if dimensionality == 1:
+            input_pattern = "b d (cp l) -> cp b d l"
+            output_pattern = "cp b d l -> b (cp d) l"
+        elif dimensionality == 2:
+            input_pattern = "B d (cp H) W -> cp B d H W"
+            output_pattern = "cp B d H W -> B (cp d) H W"
+        elif dimensionality == 3:
+            input_pattern = "B d (cp t) H W -> cp B d t H W"
+            output_pattern = "cp B d t H W -> B (cp d) t H W"
 
+        # Apply zigzag splitting to shape[2] (temporal/sequence dimension) for all cases
         if with_zigzag_splitting:
             num_chunks = 2 * world_size
             chunk_length = L // num_chunks  # Length of each small chunk
@@ -117,21 +170,25 @@ def all_to_all_single_fn(
                 raise ValueError(f"Sequence length {L} is not divisible by num_chunks {num_chunks}")
 
             # Vectorized rearrangement using zigzag indices
+            # Reshape to (B, d, num_chunks, chunk_length, ...) and apply zigzag
+            # 1D: (B, d, L) -> (B, d, num_chunks, chunk_length)
+            # 2D: (B, d, L, W) -> (B, d, num_chunks, chunk_length, W)
+            # 3D: (B, d, L, H, W) -> (B, d, num_chunks, chunk_length, H, W)
             input = (
-                input.reshape(B, d, num_chunks, chunk_length).index_select(dim=-2, index=zigzag_idx).reshape(B, d, L)
+                input.reshape(B, d, num_chunks, chunk_length, -1)
+                .index_select(dim=2, index=zigzag_idx)
+                .reshape(B, d, L, *([-1] * (input_ndim - 3)))
             )
 
         # Reshape and permute inputs for communication
-        input_reshaped = rearrange(
-            input, "b d (cp l) -> cp b d l", cp=world_size
-        ).contiguous()  # [cp_world_size, b, d, l]
+        input_reshaped = rearrange(input, input_pattern, cp=world_size).contiguous()
 
         # Perform all_to_all_single communication
         output_reshaped = torch.empty_like(input_reshaped)
-        dist.all_to_all_single(output_reshaped, input_reshaped, group=group)  # [cp_world_size, B, d, l]
+        dist.all_to_all_single(output_reshaped, input_reshaped, group=group)
 
         # Permute and reshape outputs back to original form
-        output = rearrange(output_reshaped, "cp b d l -> b (cp d) l", cp=world_size).contiguous()
+        output = rearrange(output_reshaped, output_pattern, cp=world_size).contiguous()
 
         return output
 
@@ -140,13 +197,16 @@ def all_to_all_single_fn(
 
 
 class AllToAllSingleFunction(Function):
-    """A custom autograd function for performing all_to_all_single communication with optional zigzag splitting.
+    """Custom autograd function for all_to_all_single communication with optional zigzag splitting.
+
+    A custom autograd function for performing all_to_all_single communication with optional zigzag splitting.
+    Supports both 1D and 3D tensors.
 
     Attributes:
     - ctx: A context object that stores information for the forward and backward passes.
     - group: The process group for communication.
     - type: The type of communication pattern ('split_to_full' or 'full_to_split').
-    - with_zigzag_splitting: A boolean indicating whether to apply zigzag splitting.
+    - with_zigzag_splitting: A boolean indicating whether to apply zigzag splitting (1D only).
     """
 
     @staticmethod
