@@ -9,11 +9,7 @@ from torch.autograd.function import Function
 __all__ = ["all_to_all_single_fn"]
 
 
-# 1D Tensor Communication
-# -----------------------------------------------------------------------------
-
-
-def _get_zigzag_indices(N: int, device=None) -> torch.Tensor:
+def _get_zigzag_indices(N: int, device: torch.device | None = None) -> torch.Tensor:
     """Generates the zigzag indices for rearrangement.
 
     Args:
@@ -32,7 +28,7 @@ def _get_zigzag_indices(N: int, device=None) -> torch.Tensor:
     return zigzag_idx
 
 
-def _get_inverse_zigzag_indices(N: int, device=None) -> torch.Tensor:
+def _get_inverse_zigzag_indices(N: int, device: torch.device | None = None) -> torch.Tensor:
     """Generates the inverse zigzag indices for rearrangement.
 
     Args:
@@ -63,16 +59,16 @@ def all_to_all_single_fn(
     Args:
         group (dist.ProcessGroup): The process group for communication.
         type (str): Either 'split_to_full' or 'full_to_split' to specify the communication pattern.
-        input (torch.Tensor): Input tensor to be communicated. Shape should be (batch_size, hidden_size, seq_len).
+        input (torch.Tensor): Input tensor to be communicated.
         with_zigzag_splitting (bool, optional): Whether to apply zigzag splitting. Defaults to True.
 
     Returns:
-        torch.Tensor: Output tensor after communication. Shape (batch_size, hidden_size, seq_len).
+        torch.Tensor: Output tensor after communication.
     """
     world_size = dist.get_world_size(group=group)
 
     if type == "split_to_full":
-        """Given an split sequence, it gathers the whole sequence, while splitting across the channels dimension."""
+        # Given a split sequence, it gathers the whole sequence, while splitting across the channels dimension.
 
         B, D, local_length = input.shape
         L = local_length * world_size
@@ -106,7 +102,7 @@ def all_to_all_single_fn(
         return output
 
     elif type == "full_to_split":
-        """Given a full sequence split across channels, splits across the sequence length and while gathering the channels."""
+        # Given a full sequence split across channels, splits across the sequence length while gathering the channels.
 
         B, d, L = input.shape
 
@@ -143,7 +139,7 @@ def all_to_all_single_fn(
         raise ValueError(f"Unknown type {type}")
 
 
-class AllToAllSingleFunction1D(Function):
+class AllToAllSingleFunction(Function):
     """A custom autograd function for performing all_to_all_single communication with optional zigzag splitting.
 
     Attributes:
@@ -161,6 +157,7 @@ class AllToAllSingleFunction1D(Function):
         type: Literal["split_to_full", "full_to_split"],
         with_zigzag_splitting: bool,
     ):
+        """Forward pass for the AllToAllSingleFunction."""
         ctx.group = group
         ctx.type = type
         ctx.with_zigzag_splitting = with_zigzag_splitting
@@ -176,7 +173,8 @@ class AllToAllSingleFunction1D(Function):
         return output
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, grad_output: torch.Tensor):
+        """Backward pass for the AllToAllSingleFunction."""
         # The backward pass will perform the reverse communication
         grad_input = all_to_all_single_fn(
             group=ctx.group,
