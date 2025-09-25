@@ -25,8 +25,11 @@ from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.parallel.a2a_comms import zigzag_gather_from_group_ranks, zigzag_split_across_group_ranks
-from nvsubquadratic.parallel.utils import init_parallel_state
+from nvsubquadratic.parallel.utils import (
+    init_parallel_state,
+    zigzag_gather_from_group_ranks,
+    zigzag_split_across_group_ranks,
+)
 
 
 def sequence_mixer_config(data_dim: int = 1) -> LazyConfig:
