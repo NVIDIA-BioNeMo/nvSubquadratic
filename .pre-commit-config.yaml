@@ -2,7 +2,6 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v2.3.0
     hooks:
-      - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
         exclude: "mkdocs.yml"
@@ -48,10 +47,18 @@ repos:
           ]
   - repo: local
     hooks:
+      - id: license-check
+        name: License header check
+        entry: python scripts/license_check.py
+        language: system
+        files: \.py$
+        args: [--check-dirs, nvsubquadratic/, --check-dirs, tests/, --check-dirs, examples/]
+        pass_filenames: false
+        always_run: false
+        description: Ensure all Python files have proper NVIDIA license headers
       - id: pytest-pre-push
         name: pytest-pre-push
         entry: bash -c 'echo "Running tests before push..." && python -m pytest nvsubquadratic/ tests/ -v --tb=short'
         language: system
-        stages: [pre-push]
+        stages: [push]
         pass_filenames: false
-        always_run: true
