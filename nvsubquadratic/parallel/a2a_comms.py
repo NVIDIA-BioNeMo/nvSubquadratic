@@ -6,7 +6,7 @@ from einops import rearrange
 from torch.autograd.function import Function
 
 
-__all__ = ["all_to_all_single_fn"]
+__all__ = ["AllToAllSingleFunction"]
 
 
 def _get_zigzag_indices(N: int, device: torch.device | None = None) -> torch.Tensor:

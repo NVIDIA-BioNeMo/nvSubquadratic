@@ -124,16 +124,6 @@ class TestZigzagSplitting:
         assert torch.allclose(input_tensor, recovered_tensor), "Zigzag splitting round-trip failed for 3D"
 
 
-class TestAllToAllCommunication:
-    """Test cases for all-to-all communication functions."""
-
-    def test_zigzag_splitting_sequence_length_validation(self):
-        """Test that sequence length validation works correctly."""
-        # This test would require a mock process group, so we'll test the logic separately
-        # by checking the validation logic in the function
-        pass
-
-
 if __name__ == "__main__":
     # Run the tests
     import pytest
