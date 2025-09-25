@@ -271,8 +271,8 @@ class Hyena(torch.nn.Module):
             query, key = qk_norm.apply_qk_norm(query, key, dim=1)
 
         # First gate
-        # z = query * self.gate_nonlinear(key)
-        query.mul_(self.gate_nonlinear(key))
+        # z = query * self.gate_nonlinear(key) out-of-place to avoid view issues
+        query = query * self.gate_nonlinear(key)
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
@@ -295,8 +295,8 @@ class Hyena(torch.nn.Module):
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
         # Second gate
-        # y = self.gate_nonlinear(y) * value in-place
-        value.mul_(self.gate_nonlinear(y))
+        # y = self.gate_nonlinear(y) * value out-of-place to avoid view issues
+        value = value * self.gate_nonlinear(y)
 
         # Reshape back to [B, * spatial_dims, C]
         return rearrange(value, "b c ... -> b ... c")
