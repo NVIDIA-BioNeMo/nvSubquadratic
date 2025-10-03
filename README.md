@@ -47,7 +47,7 @@ export GITLAB_TOKEN="your_gitlab_token_here"
 
 # Build and run
 docker build --build-arg GITLAB_TOKEN=$GITLAB_TOKEN -t nvsubquadratic:dev .
-docker run --gpus all -p 8888:8888 -v $(pwd):/workspace nvsubquadratic:dev
+docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces nvsubquadratic:dev
 ```
 
 ### Local Installation

@@ -19,7 +19,7 @@ else
 fi
 
 # Set up git safe directory
-git config --global --add safe.directory /workspace
+git config --global --add safe.directory /workspaces
 
 # Configure bash history search (up/down arrows)
 echo 'Setting up bash history search...'
