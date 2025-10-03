@@ -48,7 +48,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from megatron.core.parallel_state import (
-    get_context_parallel_group,
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
@@ -94,24 +93,22 @@ def get_groups_and_group_sizes(
 
 
 def slice_weight_for_context_parallel(
-    weight: torch.Tensor, _use_cp: bool, cp_group: torch.distributed.ProcessGroup
+    weight: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None
 ) -> torch.Tensor:
     """Slice weight tensor for context parallel processing.
 
     Args:
         weight: Weight tensor to slice
-        _use_cp: Whether context parallel is enabled
-        cp_world_size: Context parallel world size
         cp_group: Context parallel process group
 
     Returns:
         Sliced weight tensor for current CP rank
     """
+    if cp_group is None:
+        return weight
+
     cp_rank = cp_group.rank()
     cp_world_size = cp_group.size()
-
-    if not _use_cp or cp_world_size <= 1:
-        return weight
 
     weight_per_rank = weight.shape[0] // cp_world_size
     start_idx = cp_rank * weight_per_rank
@@ -120,22 +117,21 @@ def slice_weight_for_context_parallel(
 
 
 def slice_bias_for_context_parallel(
-    bias: torch.Tensor, _use_cp: bool, cp_group: torch.distributed.ProcessGroup
+    bias: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None
 ) -> torch.Tensor:
     """Slice bias tensor for context parallel processing.
 
     Args:
         bias: Bias tensor to slice
-        _use_cp: Whether context parallel is enabled
         cp_group: Context parallel process group
     Returns:
         Sliced bias tensor for current CP rank
     """
+    if cp_group is None:
+        return bias
+
     cp_rank = cp_group.rank()
     cp_world_size = cp_group.size()
-
-    if not _use_cp or cp_world_size <= 1:
-        return bias
 
     bias_per_rank = bias.shape[0] // cp_world_size
     start_idx = cp_rank * bias_per_rank
@@ -147,8 +143,7 @@ def prepare_depthwise_weights_for_cp(
     weight: torch.Tensor,
     actual_in_channels: int,
     group_dim: int,
-    _use_cp: bool,
-    cp_group: torch.distributed.ProcessGroup,
+    cp_group: torch.distributed.ProcessGroup = None,
 ) -> Tuple[torch.Tensor, int]:
     """Prepare depthwise convolution weights for context parallel processing.
 
@@ -156,15 +151,14 @@ def prepare_depthwise_weights_for_cp(
         weight: Base weight tensor [num_groups_per_tp, 1, *kernel_size]
         actual_in_channels: Number of input channels after CP split
         group_dim: Group dimension for weight repetition
-        _use_cp: Whether context parallel is enabled
         cp_group: Context parallel process group
 
     Returns:
         Tuple of (prepared_weight, groups) for convolution
     """
-    if _use_cp and cp_group.size() > 1:
+    if cp_group is not None and cp_group.size() > 1:
         # Slice weights for this CP rank
-        weight_slice = slice_weight_for_context_parallel(weight, _use_cp, cp_group)
+        weight_slice = slice_weight_for_context_parallel(weight, cp_group)
 
         # Calculate effective repetition factor for this CP rank
         effective_group_dim = actual_in_channels // weight_slice.shape[0]
@@ -184,8 +178,7 @@ def prepare_standard_weights_for_cp(
     group_dim: int,
     groups: int,
     kernel_size: Tuple[int, ...],
-    _use_cp: bool,
-    cp_group: torch.distributed.ProcessGroup,
+    cp_group: torch.distributed.ProcessGroup = None,
 ) -> Tuple[torch.Tensor, int]:
     """Prepare standard grouped convolution weights for context parallel processing.
 
@@ -195,15 +188,14 @@ def prepare_standard_weights_for_cp(
         group_dim: Group dimension
         groups: Number of convolution groups
         kernel_size: Convolution kernel size
-        _use_cp: Whether context parallel is enabled
         cp_group: Context parallel process group
 
     Returns:
         Tuple of (prepared_weight, groups) for convolution
     """
-    if _use_cp and cp_group.size() > 1:
+    if cp_group is not None and cp_group.size() > 1:
         # Slice weights for this CP rank
-        weight_slice = slice_weight_for_context_parallel(weight, _use_cp, cp_group)
+        weight_slice = slice_weight_for_context_parallel(weight, cp_group)
 
         effective_out_channels = out_channels // cp_group.size()
         effective_group_dim = group_dim // cp_group.size()
@@ -330,11 +322,12 @@ class DistributedConv1d(nn.Module):
         else:
             self.bias = None
 
-    def forward(self, x: torch.Tensor, _use_cp: bool = True) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None) -> torch.Tensor:
         """Forward pass with distributed awareness.
 
         Args:
             x: Input tensor of shape [batch_size, in_channels, length]
+            cp_group: Context parallel process group
 
         Returns:
             Output tensor of shape [batch_size, out_channels, output_length]
@@ -342,12 +335,11 @@ class DistributedConv1d(nn.Module):
         assert x.ndim == 3, f"Input must be 3D [batch, channels, length], got {x.ndim}D"
 
         # Get context parallel world size to handle channel dimension adjustments
-        cp_group = get_context_parallel_group() if _use_cp else None
         cp_world_size = cp_group.size() if cp_group is not None else 1
 
         # Adjust channel dimensions for context parallel
         actual_in_channels = x.shape[1]
-        if _use_cp and cp_world_size > 1:
+        if cp_group is not None and cp_world_size > 1:
             expected_in_channels = self.in_channels // cp_group.size()
         else:
             # When not using CP or CP world size is 1, expect full input channels
@@ -357,7 +349,7 @@ class DistributedConv1d(nn.Module):
         if actual_in_channels != expected_in_channels:
             raise RuntimeError(
                 f"Input has {actual_in_channels} channels, but expected {expected_in_channels} "
-                f"(original: {self.in_channels}, CP world size: {cp_world_size}, use_cp: {_use_cp})"
+                f"(original: {self.in_channels}, CP world size: {cp_world_size})"
             )
 
         # For grouped convolution, PyTorch expects:
@@ -367,11 +359,11 @@ class DistributedConv1d(nn.Module):
         # Prepare weights and groups for convolution
         if self.use_depthwise_grouping:
             weight, groups = prepare_depthwise_weights_for_cp(
-                self.weight, actual_in_channels, self.group_dim, _use_cp, cp_group
+                self.weight, actual_in_channels, self.group_dim, cp_group
             )
         else:
             weight, groups = prepare_standard_weights_for_cp(
-                self.weight, self.out_channels, self.group_dim, self.groups, self.kernel_size, _use_cp, cp_group
+                self.weight, self.out_channels, self.group_dim, self.groups, self.kernel_size, cp_group
             )
 
         # Handle bias
@@ -379,15 +371,15 @@ class DistributedConv1d(nn.Module):
         if self.bias_enabled and self.bias is not None:
             if self.use_depthwise_grouping:
                 # For depthwise, bias follows the same pattern as weights
-                if _use_cp and cp_world_size > 1:
-                    bias_slice = slice_bias_for_context_parallel(self.bias, _use_cp, cp_group)
+                if cp_group is not None and cp_world_size > 1:
+                    bias_slice = slice_bias_for_context_parallel(self.bias, cp_group)
                     effective_group_dim = actual_in_channels // bias_slice.shape[0]
                     bias = bias_slice.repeat_interleave(effective_group_dim, dim=0)
                 else:
                     bias = self.bias.repeat_interleave(self.group_dim, dim=0)
             else:
                 # For standard grouping, slice bias to match effective output channels
-                bias = slice_bias_for_context_parallel(self.bias, _use_cp, cp_group)
+                bias = slice_bias_for_context_parallel(self.bias, cp_group)
 
         # Apply padding if needed
         if isinstance(self.padding, str):
@@ -523,12 +515,12 @@ class DistributedConv2d(nn.Module):
         else:
             self.bias = None
 
-    def forward(self, x: torch.Tensor, _use_cp: bool = True) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None) -> torch.Tensor:
         """Forward pass with distributed awareness.
 
         Args:
             x: Input tensor of shape [batch_size, in_channels, height, width]
-            _use_cp: Whether to use context parallelism
+            cp_group: Context parallel process group
 
         Returns:
             Output tensor of shape [batch_size, out_channels, output_height, output_width]
@@ -536,12 +528,11 @@ class DistributedConv2d(nn.Module):
         assert x.ndim == 4, f"Input must be 4D [batch, channels, height, width], got {x.ndim}D"
 
         # Get context parallel group to handle channel dimension adjustments
-        cp_group = get_context_parallel_group() if _use_cp else None
         cp_world_size = cp_group.size() if cp_group is not None else 1
 
         # Adjust channel dimensions for context parallel
         actual_in_channels = x.shape[1]
-        if _use_cp and cp_world_size > 1:
+        if cp_group is not None and cp_world_size > 1:
             expected_in_channels = self.in_channels // cp_world_size
         else:
             # When not using CP or CP world size is 1, expect full input channels
@@ -551,7 +542,7 @@ class DistributedConv2d(nn.Module):
         if actual_in_channels != expected_in_channels:
             raise RuntimeError(
                 f"Input has {actual_in_channels} channels, but expected {expected_in_channels} "
-                f"(original: {self.in_channels}, CP world size: {cp_world_size}, use_cp: {_use_cp})"
+                f"(original: {self.in_channels}, CP world size: {cp_world_size})"
             )
 
         # For grouped convolution, PyTorch expects:
@@ -560,12 +551,10 @@ class DistributedConv2d(nn.Module):
 
         # Prepare weights and groups for convolution
         if self.use_depthwise_grouping:
-            weight, groups = prepare_depthwise_weights_for_cp(
-                self.weight, x.shape[1], self.group_dim, _use_cp, cp_group
-            )
+            weight, groups = prepare_depthwise_weights_for_cp(self.weight, x.shape[1], self.group_dim, cp_group)
         else:
             weight, groups = prepare_standard_weights_for_cp(
-                self.weight, self.out_channels, self.group_dim, self.groups, self.kernel_size, _use_cp, cp_group
+                self.weight, self.out_channels, self.group_dim, self.groups, self.kernel_size, cp_group
             )
 
         # Handle bias
@@ -573,15 +562,15 @@ class DistributedConv2d(nn.Module):
         if self.bias_enabled and self.bias is not None:
             if self.use_depthwise_grouping:
                 # For depthwise, bias follows the same pattern as weights
-                if _use_cp and cp_world_size > 1:
-                    bias_slice = slice_bias_for_context_parallel(self.bias, _use_cp, cp_group)
+                if cp_group is not None and cp_world_size > 1:
+                    bias_slice = slice_bias_for_context_parallel(self.bias, cp_group)
                     effective_group_dim = x.shape[1] // bias_slice.shape[0]
                     bias = bias_slice.repeat_interleave(effective_group_dim, dim=0)
                 else:
                     bias = self.bias.repeat_interleave(self.group_dim, dim=0)
             else:
                 # For standard grouping, slice bias to match effective output channels
-                bias = slice_bias_for_context_parallel(self.bias, _use_cp, cp_group)
+                bias = slice_bias_for_context_parallel(self.bias, cp_group)
 
         # Apply padding if needed
         if isinstance(self.padding, str):
@@ -720,12 +709,12 @@ class DistributedConv3d(nn.Module):
         else:
             self.bias = None
 
-    def forward(self, x: torch.Tensor, _use_cp: bool = True) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None) -> torch.Tensor:
         """Forward pass with distributed awareness.
 
         Args:
             x: Input tensor of shape [batch_size, in_channels, depth, height, width]
-            _use_cp: Whether to use context parallelism
+            cp_group: Context parallel process group
 
         Returns:
             Output tensor of shape [batch_size, out_channels, output_depth, output_height, output_width]
@@ -733,12 +722,11 @@ class DistributedConv3d(nn.Module):
         assert x.ndim == 5, f"Input must be 5D [batch, channels, depth, height, width], got {x.ndim}D"
 
         # Get context parallel world size to handle channel dimension adjustments
-        cp_group = get_context_parallel_group() if _use_cp else None
         cp_world_size = cp_group.size() if cp_group is not None else 1
 
         # Adjust channel dimensions for context parallel
         actual_in_channels = x.shape[1]
-        if _use_cp and cp_world_size > 1:
+        if cp_group is not None and cp_world_size > 1:
             expected_in_channels = self.in_channels // cp_world_size
         else:
             # When not using CP or CP world size is 1, expect full input channels
@@ -748,7 +736,7 @@ class DistributedConv3d(nn.Module):
         if actual_in_channels != expected_in_channels:
             raise RuntimeError(
                 f"Input has {actual_in_channels} channels, but expected {expected_in_channels} "
-                f"(original: {self.in_channels}, CP world size: {cp_world_size}, use_cp: {_use_cp})"
+                f"(original: {self.in_channels}, CP world size: {cp_world_size})"
             )
 
         # For grouped convolution, PyTorch expects:
@@ -757,12 +745,10 @@ class DistributedConv3d(nn.Module):
 
         # Prepare weights and groups for convolution
         if self.use_depthwise_grouping:
-            weight, groups = prepare_depthwise_weights_for_cp(
-                self.weight, x.shape[1], self.group_dim, _use_cp, cp_group
-            )
+            weight, groups = prepare_depthwise_weights_for_cp(self.weight, x.shape[1], self.group_dim, cp_group)
         else:
             weight, groups = prepare_standard_weights_for_cp(
-                self.weight, self.out_channels, self.group_dim, self.groups, self.kernel_size, _use_cp, cp_group
+                self.weight, self.out_channels, self.group_dim, self.groups, self.kernel_size, cp_group
             )
 
         # Handle bias
@@ -770,15 +756,15 @@ class DistributedConv3d(nn.Module):
         if self.bias_enabled and self.bias is not None:
             if self.use_depthwise_grouping:
                 # For depthwise, bias follows the same pattern as weights
-                if _use_cp and cp_world_size > 1:
-                    bias_slice = slice_bias_for_context_parallel(self.bias, _use_cp, cp_group)
+                if cp_group is not None and cp_world_size > 1:
+                    bias_slice = slice_bias_for_context_parallel(self.bias, cp_group)
                     effective_group_dim = x.shape[1] // bias_slice.shape[0]
                     bias = bias_slice.repeat_interleave(effective_group_dim, dim=0)
                 else:
                     bias = self.bias.repeat_interleave(self.group_dim, dim=0)
             else:
                 # For standard grouping, slice bias to match effective output channels
-                bias = slice_bias_for_context_parallel(self.bias, _use_cp, cp_group)
+                bias = slice_bias_for_context_parallel(self.bias, cp_group)
 
         # Apply padding if needed
         if isinstance(self.padding, str):

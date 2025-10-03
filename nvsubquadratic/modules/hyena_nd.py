@@ -6,10 +6,9 @@ import math
 
 import torch
 from einops import rearrange
-from megatron.core import parallel_state
-from megatron.core.parallel_state import get_context_parallel_group
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.distributed import DistributedConv1d, DistributedConv2d, DistributedConv3d
 from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
 from nvsubquadratic.utils import qk_norm, rope
 
@@ -46,7 +45,18 @@ class Hyena(torch.nn.Module):
         # Core global convs: feature and gate branches
         self.global_conv = instantiate(global_conv_cfg)
         self.short_conv = instantiate(short_conv_cfg)
-        assert isinstance(self.short_conv, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Identity)), (
+        assert isinstance(
+            self.short_conv,
+            (
+                torch.nn.Conv1d,
+                torch.nn.Conv2d,
+                torch.nn.Conv3d,
+                torch.nn.Identity,
+                DistributedConv1d,
+                DistributedConv2d,
+                DistributedConv3d,
+            ),
+        ), (
             f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity. Current type: {type(self.short_conv)}"
         )
 
@@ -171,7 +181,11 @@ class Hyena(torch.nn.Module):
         return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
     def forward(
-        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, _use_cp: bool = False
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        cp_group: torch.distributed.ProcessGroup = None,
     ) -> torch.Tensor:
         """Forward pass of the Hyena-style global convolutional mixer.
 
@@ -179,7 +193,7 @@ class Hyena(torch.nn.Module):
             query: torch.Tensor - The query tensor of shape (batch_size, * spatial_dims, hidden_dim).
             key: torch.Tensor - The key tensor of shape (batch_size, * spatial_dims, hidden_dim).
             value: torch.Tensor - The value tensor of shape (batch_size, * spatial_dims, hidden_dim).
-            _use_cp: bool - Whether to use context parallelism (CP).
+            cp_group: torch.distributed.ProcessGroup - Context parallel process group.
 
         Returns:
             torch.Tensor: The output tensor of shape (batch_size, * spatial_dims, hidden_dim).
@@ -189,25 +203,24 @@ class Hyena(torch.nn.Module):
         key = rearrange(key, "b ... c -> b c ...")
         value = rearrange(value, "b ... c -> b c ...")
 
-        # Get the context parallel group
-        if _use_cp:
-            cp_group = get_context_parallel_group()
-        else:
-            cp_group = None
-
         # Apply short convolutional projection
         if not isinstance(self.short_conv, torch.nn.Identity):
             # Concatenate query, key, and value, apply the short conv projection and split again
             x = torch.cat([query, key, value], dim=1)  # [B, 3 * hidden_dim, *spatial_dims]
 
             # CP communication - gather along first spatial dimension while splitting across channels/hidden dimension
-            if parallel_state.get_context_parallel_world_size() > 1 and _use_cp:
+            if cp_group is not None and cp_group.size() > 1:
                 x = AllToAllSingleFunction.apply(x, cp_group, "split_to_full", True)
 
-            x = self.short_conv(x)
+            # Always pass _use_cp parameter to distributed convolutions
+            if hasattr(self.short_conv, "__class__") and "Distributed" in self.short_conv.__class__.__name__:
+                x = self.short_conv(x, cp_group)
+            else:
+                # Standard PyTorch convolution doesn't support _use_cp parameter
+                x = self.short_conv(x)
 
             # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
-            if parallel_state.get_context_parallel_world_size() > 1 and _use_cp:
+            if cp_group is not None and cp_group.size() > 1:
                 x = AllToAllSingleFunction.apply(x, cp_group, "full_to_split", True)
 
             # Split query, key, and value along channels/hidden dimension
@@ -284,14 +297,14 @@ class Hyena(torch.nn.Module):
                 query = rearrange(query, "b ... c -> b c ...")
 
         # CP communication - gather along first spatial dimension while splitting across channels/hidden dimension
-        if parallel_state.get_context_parallel_world_size() > 1 and _use_cp:
+        if cp_group is not None and cp_group.size() > 1:
             query = AllToAllSingleFunction.apply(query, cp_group, "split_to_full", True)
 
         # Apply global convolution
-        y = self.global_conv(query, is_bhl_input=True)
+        y = self.global_conv(query, is_bhl_input=True, cp_group=cp_group)
 
         # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
-        if parallel_state.get_context_parallel_world_size() > 1 and _use_cp:
+        if cp_group is not None and cp_group.size() > 1:
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
         # Second gate
