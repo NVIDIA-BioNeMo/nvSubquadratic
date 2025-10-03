@@ -1,30 +1,18 @@
-"""Distributed-aware convolution wrappers for TP/CP parallelism.
+"""Distributed-aware convolution wrappers for Context Parallelism.
 
 This module provides distributed-aware wrappers for 1D, 2D, and 3D convolutions that handle:
 
-1. **Tensor Parallel (TP) Weight Sharding**: Weights are automatically sharded across TP ranks
-   based on the configured number of groups and group dimensions.
-
-2. **Context Parallel (CP) Communication**: Placeholder for CP-aware communication patterns
+1. **Context Parallel (CP) Communication**: Handles CP-aware communication patterns
    that would handle overlapping regions and sequence splitting.
 
-3. **Proper Weight Dimensionality**: Weight shapes are determined based on:
+2. **Proper Weight Dimensionality**: Weight shapes are determined based on:
    - num_groups: Number of groups for weight sharing (reduces parameters)
    - use_depthwise_grouping: Whether to use depthwise convolution grouping
-   - TP world size: Automatic sharding across tensor parallel ranks
 
 Key Features:
 - Drop-in replacements for torch.nn.Conv1d/Conv2d/Conv3d
-- Automatic weight initialization with proper TP-aware seeding
 - Group-based parameter sharing to reduce memory usage
 - Support for both standard and depthwise grouped convolutions
-
-Weight Dimensionality Logic (adapted from Hyena implementation):
-- width_per_tp_group = hidden_size // tp_world_size
-- num_groups_per_tp = num_groups // tp_world_size
-- group_dim = width_per_tp_group // num_groups_per_tp
-- Weight shape: [num_groups_per_tp, group_dim, *kernel_size] or [num_groups_per_tp, 1, *kernel_size]
-- Runtime expansion: weight.repeat_interleave(group_dim, dim=0) to match input channels
 
 Example Usage:
     # 1D convolution with 128 groups for weight sharing
@@ -41,16 +29,11 @@ Example Usage:
 """
 
 import math
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from megatron.core.parallel_state import (
-    get_tensor_model_parallel_rank,
-    get_tensor_model_parallel_world_size,
-)
 
 
 def ensure_divisibility(numerator: int, denominator: int) -> None:
@@ -64,32 +47,20 @@ def divide(numerator: int, denominator: int) -> int:
     return numerator // denominator
 
 
-def initialize_affine_weight_gpu(weight: torch.Tensor, init_method, partition_dim: int, stride: int = 1) -> None:
-    """Initialize affine weight for model parallel on GPU."""
-    weight.model_parallel = True
-    weight.partition_dim = partition_dim
-    weight.partition_stride = stride
-    init_method(weight.data)  # modify the data in place
-
-
-def get_groups_and_group_sizes(
-    hidden_size: int, num_groups: int, world_size: int, expand_factor: float = 1.0
-) -> Tuple[int, int, int]:
+def get_groups_and_group_sizes(hidden_size: int, num_groups: int, expand_factor: float = 1.0) -> Tuple[int, int, int]:
     """Get the groups and group sizes for the model.
 
     Args:
         hidden_size: The hidden size of the model
         num_groups: The number of groups for convolution
-        world_size: The tensor parallel world size
         expand_factor: Factor to expand the number of groups
 
     Returns:
-        Tuple of (width_per_tp_group, num_groups_per_tp, group_dim)
+        Tuple of (width_per_group, num_groups_expanded, group_dim)
     """
-    width_per_tp_group = divide(hidden_size, world_size)
-    num_groups_per_tp = int(divide(num_groups, world_size) * expand_factor)
-    group_dim = width_per_tp_group // num_groups_per_tp
-    return width_per_tp_group, num_groups_per_tp, group_dim
+    num_groups_expanded = int(num_groups * expand_factor)
+    group_dim = hidden_size // num_groups_expanded
+    return hidden_size, num_groups_expanded, group_dim
 
 
 def slice_weight_for_context_parallel(
@@ -275,50 +246,38 @@ class DistributedConv1d(nn.Module):
             dtype = torch.float32
         self.dtype = dtype
 
-        # Get parallel sizes
-        self.model_parallel_size = get_tensor_model_parallel_world_size()
-        self.model_parallel_rank = get_tensor_model_parallel_rank()
-
         # Handle num_groups for weight sharing
         if num_groups is None:
             self.num_groups = groups
         else:
             self.num_groups = num_groups
 
-        # Calculate group dimensions based on parallel settings
-        self.width_per_tp_group, self.num_groups_per_tp, self.group_dim = get_groups_and_group_sizes(
-            self.out_channels, self.num_groups, self.model_parallel_size
+        # Calculate group dimensions
+        self.width_per_group, self.num_groups_expanded, self.group_dim = get_groups_and_group_sizes(
+            self.out_channels, self.num_groups
         )
 
         # Determine weight shape based on grouping strategy
         if self.use_depthwise_grouping:
-            # Depthwise: [num_groups_per_tp, 1, kernel_size]
-            weight_shape = [self.num_groups_per_tp, 1] + list(self.kernel_size)
-            self.conv_groups = self.width_per_tp_group
+            # Depthwise: [num_groups_expanded, 1, kernel_size]
+            weight_shape = [self.num_groups_expanded, 1] + list(self.kernel_size)
+            self.conv_groups = self.width_per_group
         else:
-            # Standard grouped: [num_groups_per_tp, group_dim, kernel_size]
-            weight_shape = [self.num_groups_per_tp, self.group_dim] + list(self.kernel_size)
-            self.conv_groups = self.num_groups_per_tp
+            # Standard grouped: [num_groups_expanded, group_dim, kernel_size]
+            weight_shape = [self.num_groups_expanded, self.group_dim] + list(self.kernel_size)
+            self.conv_groups = self.num_groups_expanded
 
         # Initialize weight parameter
         self.weight = nn.Parameter(torch.empty(weight_shape, device=self.device, dtype=self.dtype))
-        setattr(self.weight, "tensor_model_parallel", True)
 
         # Initialize using standard Conv1d initialization
         bounds = math.sqrt(1.0 / (self.in_channels * math.prod(self.kernel_size)))
-        conv_init_method = partial(torch.nn.init.uniform_, a=-bounds, b=bounds)
-        initialize_affine_weight_gpu(self.weight, conv_init_method, partition_dim=0)
+        torch.nn.init.uniform_(self.weight, a=-bounds, b=bounds)
 
         # Initialize bias if enabled
         if self.bias_enabled:
-            self.bias = nn.Parameter(torch.empty(self.width_per_tp_group, device=self.device, dtype=self.dtype))
-            setattr(self.bias, "tensor_model_parallel", True)
-            bounds = math.sqrt(1.0 / (self.in_channels * math.prod(self.kernel_size)))
-            bias_init_method = partial(torch.nn.init.uniform_, a=-bounds, b=bounds)
-            self.bias.data = bias_init_method(self.bias.data)
-            self.bias.model_parallel = True
-            self.bias.partition_dim = 0
-            self.bias.stride = 1
+            self.bias = nn.Parameter(torch.empty(self.width_per_group, device=self.device, dtype=self.dtype))
+            torch.nn.init.uniform_(self.bias, a=-bounds, b=bounds)
         else:
             self.bias = None
 
@@ -468,50 +427,38 @@ class DistributedConv2d(nn.Module):
             dtype = torch.float32
         self.dtype = dtype
 
-        # Get parallel sizes
-        self.model_parallel_size = get_tensor_model_parallel_world_size()
-        self.model_parallel_rank = get_tensor_model_parallel_rank()
-
         # Handle num_groups for weight sharing
         if num_groups is None:
             self.num_groups = groups
         else:
             self.num_groups = num_groups
 
-        # Calculate group dimensions based on parallel settings
-        self.width_per_tp_group, self.num_groups_per_tp, self.group_dim = get_groups_and_group_sizes(
-            self.out_channels, self.num_groups, self.model_parallel_size
+        # Calculate group dimensions
+        self.width_per_group, self.num_groups_expanded, self.group_dim = get_groups_and_group_sizes(
+            self.out_channels, self.num_groups
         )
 
         # Determine weight shape based on grouping strategy
         if self.use_depthwise_grouping:
-            # Depthwise: [num_groups_per_tp, 1, kernel_h, kernel_w]
-            weight_shape = [self.num_groups_per_tp, 1] + list(self.kernel_size)
-            self.conv_groups = self.width_per_tp_group
+            # Depthwise: [num_groups_expanded, 1, kernel_h, kernel_w]
+            weight_shape = [self.num_groups_expanded, 1] + list(self.kernel_size)
+            self.conv_groups = self.width_per_group
         else:
-            # Standard grouped: [num_groups_per_tp, group_dim, kernel_h, kernel_w]
-            weight_shape = [self.num_groups_per_tp, self.group_dim] + list(self.kernel_size)
-            self.conv_groups = self.num_groups_per_tp
+            # Standard grouped: [num_groups_expanded, group_dim, kernel_h, kernel_w]
+            weight_shape = [self.num_groups_expanded, self.group_dim] + list(self.kernel_size)
+            self.conv_groups = self.num_groups_expanded
 
         # Initialize weight parameter
         self.weight = nn.Parameter(torch.empty(weight_shape, device=self.device, dtype=self.dtype))
-        setattr(self.weight, "tensor_model_parallel", True)
 
         # Initialize using standard Conv2d initialization
         bounds = math.sqrt(1.0 / (self.in_channels * math.prod(self.kernel_size)))
-        conv_init_method = partial(torch.nn.init.uniform_, a=-bounds, b=bounds)
-        initialize_affine_weight_gpu(self.weight, conv_init_method, partition_dim=0)
+        torch.nn.init.uniform_(self.weight, a=-bounds, b=bounds)
 
         # Initialize bias if enabled
         if self.bias_enabled:
-            self.bias = nn.Parameter(torch.empty(self.width_per_tp_group, device=self.device, dtype=self.dtype))
-            setattr(self.bias, "tensor_model_parallel", True)
-            bounds = math.sqrt(1.0 / (self.in_channels * math.prod(self.kernel_size)))
-            bias_init_method = partial(torch.nn.init.uniform_, a=-bounds, b=bounds)
-            self.bias.data = bias_init_method(self.bias.data)
-            self.bias.model_parallel = True
-            self.bias.partition_dim = 0
-            self.bias.stride = 1
+            self.bias = nn.Parameter(torch.empty(self.width_per_group, device=self.device, dtype=self.dtype))
+            torch.nn.init.uniform_(self.bias, a=-bounds, b=bounds)
         else:
             self.bias = None
 
@@ -662,50 +609,38 @@ class DistributedConv3d(nn.Module):
             dtype = torch.float32
         self.dtype = dtype
 
-        # Get parallel sizes
-        self.model_parallel_size = get_tensor_model_parallel_world_size()
-        self.model_parallel_rank = get_tensor_model_parallel_rank()
-
         # Handle num_groups for weight sharing
         if num_groups is None:
             self.num_groups = groups
         else:
             self.num_groups = num_groups
 
-        # Calculate group dimensions based on parallel settings
-        self.width_per_tp_group, self.num_groups_per_tp, self.group_dim = get_groups_and_group_sizes(
-            self.out_channels, self.num_groups, self.model_parallel_size
+        # Calculate group dimensions
+        self.width_per_group, self.num_groups_expanded, self.group_dim = get_groups_and_group_sizes(
+            self.out_channels, self.num_groups
         )
 
         # Determine weight shape based on grouping strategy
         if self.use_depthwise_grouping:
-            # Depthwise: [num_groups_per_tp, 1, kernel_d, kernel_h, kernel_w]
-            weight_shape = [self.num_groups_per_tp, 1] + list(self.kernel_size)
-            self.conv_groups = self.width_per_tp_group
+            # Depthwise: [num_groups_expanded, 1, kernel_d, kernel_h, kernel_w]
+            weight_shape = [self.num_groups_expanded, 1] + list(self.kernel_size)
+            self.conv_groups = self.width_per_group
         else:
-            # Standard grouped: [num_groups_per_tp, group_dim, kernel_d, kernel_h, kernel_w]
-            weight_shape = [self.num_groups_per_tp, self.group_dim] + list(self.kernel_size)
-            self.conv_groups = self.num_groups_per_tp
+            # Standard grouped: [num_groups_expanded, group_dim, kernel_d, kernel_h, kernel_w]
+            weight_shape = [self.num_groups_expanded, self.group_dim] + list(self.kernel_size)
+            self.conv_groups = self.num_groups_expanded
 
         # Initialize weight parameter
         self.weight = nn.Parameter(torch.empty(weight_shape, device=self.device, dtype=self.dtype))
-        setattr(self.weight, "tensor_model_parallel", True)
 
         # Initialize using standard Conv3d initialization
         bounds = math.sqrt(1.0 / (self.in_channels * math.prod(self.kernel_size)))
-        conv_init_method = partial(torch.nn.init.uniform_, a=-bounds, b=bounds)
-        initialize_affine_weight_gpu(self.weight, conv_init_method, partition_dim=0)
+        torch.nn.init.uniform_(self.weight, a=-bounds, b=bounds)
 
         # Initialize bias if enabled
         if self.bias_enabled:
-            self.bias = nn.Parameter(torch.empty(self.width_per_tp_group, device=self.device, dtype=self.dtype))
-            setattr(self.bias, "tensor_model_parallel", True)
-            bounds = math.sqrt(1.0 / (self.in_channels * math.prod(self.kernel_size)))
-            bias_init_method = partial(torch.nn.init.uniform_, a=-bounds, b=bounds)
-            self.bias.data = bias_init_method(self.bias.data)
-            self.bias.model_parallel = True
-            self.bias.partition_dim = 0
-            self.bias.stride = 1
+            self.bias = nn.Parameter(torch.empty(self.width_per_group, device=self.device, dtype=self.dtype))
+            torch.nn.init.uniform_(self.bias, a=-bounds, b=bounds)
         else:
             self.bias = None
 
