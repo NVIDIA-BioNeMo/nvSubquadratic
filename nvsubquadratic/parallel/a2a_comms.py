@@ -149,10 +149,16 @@ def all_to_all_single_fn(
             # 1D: (B, d, L) -> (B, d, num_chunks, unzigzagged_split_length)
             # 2D: (B, d, L, W) -> (B, d, num_chunks, unzigzagged_split_length, W)
             # 3D: (B, d, L, H, W) -> (B, d, num_chunks, unzigzagged_split_length, H, W)
+
+            # Get spatial dimensions (everything after L)
+            spatial_dims = list(output.shape[3:]) if input_ndim > 3 else []
+
+            # Reshape with explicit spatial dimensions
+            reshape_dims_1 = [B, d, num_chunks, unzigzagged_split_length] + spatial_dims
+            reshape_dims_2 = [B, d, L] + spatial_dims
+
             output = (
-                output.reshape(B, d, num_chunks, unzigzagged_split_length, -1)
-                .index_select(dim=2, index=inverse_zigzag_idx)
-                .reshape(B, d, L, *([-1] * (input_ndim - 3)))
+                output.reshape(reshape_dims_1).index_select(dim=2, index=inverse_zigzag_idx).reshape(reshape_dims_2)
             )
 
         return output
@@ -189,11 +195,15 @@ def all_to_all_single_fn(
             # 1D: (B, d, L) -> (B, d, num_chunks, chunk_length)
             # 2D: (B, d, L, W) -> (B, d, num_chunks, chunk_length, W)
             # 3D: (B, d, L, H, W) -> (B, d, num_chunks, chunk_length, H, W)
-            input = (
-                input.reshape(B, d, num_chunks, chunk_length, -1)
-                .index_select(dim=2, index=zigzag_idx)
-                .reshape(B, d, L, *([-1] * (input_ndim - 3)))
-            )
+
+            # Get spatial dimensions (everything after L)
+            spatial_dims = list(input.shape[3:]) if input_ndim > 3 else []
+
+            # Reshape with explicit spatial dimensions
+            reshape_dims_1 = [B, d, num_chunks, chunk_length] + spatial_dims
+            reshape_dims_2 = [B, d, L] + spatial_dims
+
+            input = input.reshape(reshape_dims_1).index_select(dim=2, index=zigzag_idx).reshape(reshape_dims_2)
 
         # Reshape and permute inputs for communication
         input_reshaped = rearrange(input, input_pattern, cp=world_size).contiguous()

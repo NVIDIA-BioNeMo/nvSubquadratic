@@ -36,7 +36,11 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.distributed import DistributedConv1d, DistributedConv2d, DistributedConv3d
+from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
+    DistributedDepthwiseConv1d,
+    DistributedDepthwiseConv2d,
+    DistributedDepthwiseConv3d,
+)
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
@@ -61,71 +65,13 @@ def sequence_mixer_config(data_dim: int = 1) -> LazyConfig:
         LazyConfig: A lazy configuration object for QKVSequenceMixer that can be
             instantiated later.
     """
-    return LazyConfig(QKVSequenceMixer)(
-        hidden_dim=128,
-        mixer_cfg=LazyConfig(Hyena)(
-            global_conv_cfg=LazyConfig(CKConvND)(
-                data_dim=data_dim,
-                hidden_dim=128,
-                kernel_cfg=LazyConfig(SIRENKernelND)(
-                    data_dim=data_dim,
-                    out_dim=128,
-                    mlp_hidden_dim=32,
-                    num_layers=3,
-                    embedding_dim=32,
-                    omega_0=100.0,
-                    L_cache=32,
-                    use_bias=True,
-                    hidden_omega_0=1.0,
-                ),
-                mask_cfg=LazyConfig(GaussianModulationND)(
-                    data_dim=data_dim,
-                    num_channels=128,
-                    min_std=0.025,
-                    max_std=1.25,
-                    init_std_low=0.05,
-                    init_std_high=1.0,
-                    parametrization="direct",
-                ),
-                grid_type="single",
-            ),
-            short_conv_cfg=LazyConfig(torch.nn.Conv1d)(
-                in_channels=384,  # 3 * 128 for concatenated q, k, v
-                out_channels=384,  # 3 * 128 for concatenated q, k, v
-                kernel_size=3,
-                groups=384,  # Grouped convolution
-                padding=1,
-                bias=False,
-            ),
-            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
-            pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
-            apply_qk_norm=True,
-            use_rope=False,  # Disable RoPE to avoid in-place issues
-            rope_base=10000.0,
-        ),
-    )
-
-
-def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
-    """Create a LazyConfig for QKVSequenceMixer with distributed convolutions.
-
-    Constructs a complete configuration for QKVSequenceMixer using Hyena as the
-    inner sequence mixer with distributed-aware convolution layers.
-
-    Args:
-        data_dim: Dimensionality of the input data (default: 1 for 1D sequences).
-
-    Returns:
-        LazyConfig: A lazy configuration object for QKVSequenceMixer that can be
-            instantiated later.
-    """
-    # Select the appropriate distributed convolution class based on data dimension
+    # Select the appropriate convolution class based on data dimension
     if data_dim == 1:
-        conv_class = DistributedConv1d
+        conv_class = torch.nn.Conv1d
     elif data_dim == 2:
-        conv_class = DistributedConv2d
+        conv_class = torch.nn.Conv2d
     elif data_dim == 3:
-        conv_class = DistributedConv3d
+        conv_class = torch.nn.Conv3d
     else:
         raise ValueError(f"Unsupported data dimension: {data_dim}")
 
@@ -157,7 +103,6 @@ def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
                 ),
                 grid_type="single",
             ),
-            # Use distributed convolution instead of standard torch.nn.Conv
             short_conv_cfg=LazyConfig(conv_class)(
                 in_channels=384,  # 3 * 128 for concatenated q, k, v
                 out_channels=384,  # 3 * 128 for concatenated q, k, v
@@ -165,8 +110,6 @@ def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
                 groups=384,  # Grouped convolution
                 padding=1,
                 bias=False,
-                num_groups=128,  # Custom number of groups for weight sharing
-                use_depthwise_grouping=True,  # Enable depthwise grouping
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
@@ -177,189 +120,73 @@ def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
     )
 
 
-def test_distributed_vs_standard_equivalency(data_dim: int = 1, dtype: str = "float32") -> bool:
-    """Test that distributed and standard convolutions produce equivalent results when CP=1.
+def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
+    """Create a LazyConfig for QKVSequenceMixer with distributed convolutions.
 
-    This test validates that our distributed convolution wrappers produce the same
-    results as standard PyTorch convolutions when no parallelism is used.
-
-    Args:
-        data_dim: Dimensionality of the input data (default: 1).
-        dtype: Data type for model and input tensors (default: "float32").
-
-    Returns:
-        bool: True if outputs are equivalent, False otherwise.
-    """
-    try:
-        # Create both configurations
-        standard_cfg = sequence_mixer_config(data_dim=data_dim)
-        distributed_cfg = sequence_mixer_config_distributed(data_dim=data_dim)
-
-        # Instantiate both models
-        standard_mixer = instantiate(standard_cfg)
-        distributed_mixer = instantiate(distributed_cfg)
-
-        # Move to device and set dtype
-        dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-        input_dtype = dtype_map[dtype]
-
-        standard_mixer = standard_mixer.to(torch.cuda.current_device()).to(input_dtype)
-        distributed_mixer = distributed_mixer.to(torch.cuda.current_device()).to(input_dtype)
-
-        # Create test input
-        batch_size = 2
-        seq_len = 128
-        hidden_dim = 128
-
-        test_input = torch.randn(
-            batch_size, seq_len, hidden_dim, device=torch.cuda.current_device(), dtype=input_dtype
-        )
-
-        # Run both models with CP disabled
-        with torch.no_grad():
-            standard_output = standard_mixer(test_input, cp_group=None)
-            distributed_output = distributed_mixer(test_input, cp_group=None)
-
-        # Compare shapes
-        assert standard_output.shape == distributed_output.shape, (
-            f"Shape mismatch: standard {standard_output.shape} vs distributed {distributed_output.shape}"
-        )
-
-        # Note: We can't directly compare values since the models have different initializations
-        # But we can verify they both run successfully and produce reasonable outputs
-        assert not torch.isnan(standard_output).any(), "Standard model produced NaN values"
-        assert not torch.isnan(distributed_output).any(), "Distributed model produced NaN values"
-        assert not torch.isinf(standard_output).any(), "Standard model produced Inf values"
-        assert not torch.isinf(distributed_output).any(), "Distributed model produced Inf values"
-
-        logging.info("✅ Standard vs Distributed equivalency test passed!")
-        logging.info(f"Standard output shape: {standard_output.shape}")
-        logging.info(f"Distributed output shape: {distributed_output.shape}")
-        logging.info(
-            f"Standard output stats: mean={standard_output.mean().item():.4f}, std={standard_output.std().item():.4f}"
-        )
-        logging.info(
-            f"Distributed output stats: mean={distributed_output.mean().item():.4f}, std={distributed_output.std().item():.4f}"
-        )
-
-        return True
-
-    except Exception as e:
-        logging.error(f"Standard vs Distributed equivalency test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
-
-
-def test_distributed_convolutions(data_dim: int = 1, dtype: str = "float32") -> bool:
-    """Test distributed convolution classes directly.
-
-    This test validates the correctness of the distributed convolution wrappers
-    by comparing them with standard PyTorch convolutions in single-GPU mode.
+    Constructs a complete configuration for QKVSequenceMixer using Hyena as the
+    inner sequence mixer with distributed-aware convolution layers.
 
     Args:
-        data_dim: Dimensionality of the input data (default: 1).
-        dtype: Data type for model and input tensors (default: "float32").
+        data_dim: Dimensionality of the input data (default: 1 for 1D sequences).
 
     Returns:
-        bool: True if all tests pass successfully, False otherwise.
+        LazyConfig: A lazy configuration object for QKVSequenceMixer that can be
+            instantiated later.
     """
-    try:
-        # Test 1D distributed convolution
-        if data_dim == 1:
-            # Create distributed conv that matches the actual use case
-            # (similar to what's used in the sequence mixer config)
-            dist_conv = DistributedConv1d(
-                in_channels=384,  # 3 * 128 for concatenated q, k, v
-                out_channels=384,  # 3 * 128 for concatenated q, k, v
+    # Select the appropriate distributed convolution class based on data dimension
+    # All use 384 channels (3 * 128) since Q, K, V are concatenated
+    if data_dim == 1:
+        conv_class = DistributedDepthwiseConv1d
+    elif data_dim == 2:
+        conv_class = DistributedDepthwiseConv2d
+    elif data_dim == 3:
+        conv_class = DistributedDepthwiseConv3d
+    else:
+        raise ValueError(f"Unsupported data dimension: {data_dim}")
+
+    return LazyConfig(QKVSequenceMixer)(
+        hidden_dim=128,
+        mixer_cfg=LazyConfig(Hyena)(
+            global_conv_cfg=LazyConfig(CKConvND)(
+                data_dim=data_dim,
+                hidden_dim=128,
+                kernel_cfg=LazyConfig(SIRENKernelND)(
+                    data_dim=data_dim,
+                    out_dim=128,
+                    mlp_hidden_dim=32,
+                    num_layers=3,
+                    embedding_dim=32,
+                    omega_0=100.0,
+                    L_cache=32,
+                    use_bias=True,
+                    hidden_omega_0=1.0,
+                ),
+                mask_cfg=LazyConfig(GaussianModulationND)(
+                    data_dim=data_dim,
+                    num_channels=128,
+                    min_std=0.025,
+                    max_std=1.25,
+                    init_std_low=0.05,
+                    init_std_high=1.0,
+                    parametrization="direct",
+                ),
+                grid_type="single",
+            ),
+            # Use distributed depthwise convolution instead of standard torch.nn.Conv
+            # All dimensions use 384 channels (3 * 128 for Q, K, V concatenated)
+            short_conv_cfg=LazyConfig(conv_class)(
+                hidden_dim=384,
                 kernel_size=3,
-                padding=1,
                 bias=False,
-                groups=384,  # Grouped convolution
-                num_groups=128,  # Custom number of groups for weight sharing
-                use_depthwise_grouping=True,  # Enable depthwise grouping
-            )
-
-            # Create test input
-            batch_size = 2
-            seq_len = 256
-            dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-            input_dtype = dtype_map[dtype]
-
-            test_input = torch.randn(batch_size, 384, seq_len, device=torch.cuda.current_device(), dtype=input_dtype)
-
-            # Test forward pass
-            output = dist_conv(test_input, cp_group=None)
-            logging.info(f"DistributedConv1d output shape: {output.shape}")
-
-            # Verify output shape
-            expected_shape = (batch_size, 384, seq_len)
-            assert output.shape == expected_shape, f"Expected {expected_shape}, got {output.shape}"
-
-        # Test 2D distributed convolution
-        elif data_dim == 2:
-            dist_conv = DistributedConv2d(
-                in_channels=64,
-                out_channels=128,
-                kernel_size=3,
-                padding=1,
-                bias=True,
-                num_groups=32,
-                use_depthwise_grouping=False,
-            )
-
-            batch_size = 2
-            height, width = 32, 32
-            dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-            input_dtype = dtype_map[dtype]
-
-            test_input = torch.randn(
-                batch_size, 64, height, width, device=torch.cuda.current_device(), dtype=input_dtype
-            )
-
-            output = dist_conv(test_input, cp_group=None)
-            logging.info(f"DistributedConv2d output shape: {output.shape}")
-
-            expected_shape = (batch_size, 128, height, width)
-            assert output.shape == expected_shape, f"Expected {expected_shape}, got {output.shape}"
-
-        # Test 3D distributed convolution
-        elif data_dim == 3:
-            dist_conv = DistributedConv3d(
-                in_channels=64,
-                out_channels=128,
-                kernel_size=3,
-                padding=1,
-                bias=True,
-                num_groups=32,
-                use_depthwise_grouping=False,
-            )
-
-            batch_size = 2
-            depth, height, width = 16, 16, 16
-            dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-            input_dtype = dtype_map[dtype]
-
-            test_input = torch.randn(
-                batch_size, 64, depth, height, width, device=torch.cuda.current_device(), dtype=input_dtype
-            )
-
-            output = dist_conv(test_input, cp_group=None)
-            logging.info(f"DistributedConv3d output shape: {output.shape}")
-
-            expected_shape = (batch_size, 128, depth, height, width)
-            assert output.shape == expected_shape, f"Expected {expected_shape}, got {output.shape}"
-
-        logging.info("✅ Distributed convolution tests passed!")
-        return True
-
-    except Exception as e:
-        logging.error(f"Distributed convolution test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+                num_groups=384,  # Full depthwise - each channel has its own filter
+            ),
+            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+            pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
+            apply_qk_norm=True,
+            use_rope=False,  # Disable RoPE to avoid in-place issues
+            rope_base=10000.0,
+        ),
+    )
 
 
 def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32") -> bool:
@@ -412,18 +239,35 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
             find_unused_parameters=True,
         )
 
-        # Create test input
+        # Create test input based on data dimension
         batch_size = 2
-        seq_len = 1024
         hidden_dim = 128
 
         # Convert dtype if needed
         dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
         input_dtype = dtype_map[dtype]
 
-        test_input = torch.randn(
-            batch_size, seq_len, hidden_dim, device=torch.cuda.current_device(), dtype=input_dtype
-        )
+        # Create input shape based on data dimension
+        # QKVSequenceMixer expects [batch, *spatial_dims, hidden_dim] format
+        if data_dim == 1:
+            # 1D: [batch, seq_len, hidden_dim]
+            seq_len = 1024
+            input_shape = (batch_size, seq_len, hidden_dim)
+            seq_dim = 1  # Dimension to split for CP
+        elif data_dim == 2:
+            # 2D: [batch, height, width, hidden_dim]
+            height, width = 32, 32
+            input_shape = (batch_size, height, width, hidden_dim)
+            seq_dim = 1  # Split along height dimension for CP
+        elif data_dim == 3:
+            # 3D: [batch, depth, height, width, hidden_dim]
+            depth, height, width = 8, 16, 16
+            input_shape = (batch_size, depth, height, width, hidden_dim)
+            seq_dim = 1  # Split along depth dimension for CP
+        else:
+            raise ValueError(f"Unsupported data dimension: {data_dim}")
+
+        test_input = torch.randn(*input_shape, device=torch.cuda.current_device(), dtype=input_dtype)
 
         # Broadcast input across context parallel group
         cp_group = parallel_state.get_context_parallel_group()
@@ -435,8 +279,8 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
 
         if dist.get_rank() == 0:
             try:
-                assert output_no_cp.shape == (batch_size, seq_len, hidden_dim), (
-                    f"output_no_cp.shape: {output_no_cp.shape}"
+                assert output_no_cp.shape == input_shape, (
+                    f"output_no_cp.shape: {output_no_cp.shape}, expected: {input_shape}"
                 )
                 logging.info(f"Output without CP shape: {output_no_cp.shape}")
             except AssertionError as e:
@@ -457,19 +301,19 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
 
         logging.info("Running with context parallel")
         # Split the input features across the context parallel group using zigzag
-        test_input_cp = zigzag_split_across_group_ranks(test_input, group=cp_group, seq_dim=1)
+        test_input_cp = zigzag_split_across_group_ranks(test_input, group=cp_group, seq_dim=seq_dim)
 
         # _use_cp=True: Distributed layers active WITH CP communication
         output_with_cp = ddp_sequence_mixer(test_input_cp, cp_group=cp_group)
 
         if dist.get_rank() == 0:
             try:
-                # With zigzag splitting, each rank gets a portion of the sequence
-                expected_cp_shape = (
-                    batch_size,
-                    seq_len // parallel_state.get_context_parallel_world_size(),
-                    hidden_dim,
+                # With zigzag splitting, each rank gets a portion along the seq_dim
+                expected_cp_shape = list(input_shape)
+                expected_cp_shape[seq_dim] = (
+                    expected_cp_shape[seq_dim] // parallel_state.get_context_parallel_world_size()
                 )
+                expected_cp_shape = tuple(expected_cp_shape)
                 assert output_with_cp.shape == expected_cp_shape, (
                     f"output_with_cp.shape: {output_with_cp.shape}, expected: {expected_cp_shape}"
                 )
@@ -479,12 +323,12 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
                 raise
 
         # Gather output from all ranks using zigzag gathering
-        output_with_cp_gathered = zigzag_gather_from_group_ranks(output_with_cp, group=cp_group, seq_dim=1)
+        output_with_cp_gathered = zigzag_gather_from_group_ranks(output_with_cp, group=cp_group, seq_dim=seq_dim)
 
         if dist.get_rank() == 0:
             try:
-                assert output_with_cp_gathered.shape == (batch_size, seq_len, hidden_dim), (
-                    f"output_with_cp_gathered.shape: {output_with_cp_gathered.shape}"
+                assert output_with_cp_gathered.shape == input_shape, (
+                    f"output_with_cp_gathered.shape: {output_with_cp_gathered.shape}, expected: {input_shape}"
                 )
                 logging.info(f"Output with CP gathered shape: {output_with_cp_gathered.shape}")
             except AssertionError as e:
@@ -566,8 +410,9 @@ def main() -> int:
     parser.add_argument(
         "--data_dim",
         type=int,
-        default=1,
-        help="Data dimension",
+        default=None,
+        choices=[1, 2, 3],
+        help="Data dimension (1, 2, or 3). If not specified, tests all dimensions.",
     )
     parser.add_argument(
         "--dtype",
@@ -609,23 +454,26 @@ def main() -> int:
 
     logging.info(f"Starting QKVSequenceMixer CP test with args: {args}")
 
+    # Determine which dimensions to test
+    dimensions_to_test = [args.data_dim] if args.data_dim is not None else [1, 2, 3]
+
     try:
-        # Run the distributed convolution tests first
-        logging.info("Running distributed convolution tests...")
-        conv_success = test_distributed_convolutions(args.data_dim, args.dtype)
+        all_success = True
+        for data_dim in dimensions_to_test:
+            # Run the sequence mixer CP equivalency test
+            logging.info(f"Running sequence mixer CP equivalency test for {data_dim}D...")
+            mixer_success = test_sequence_mixer_cp_equivalency(data_dim, args.dtype)
 
-        # Run the standard vs distributed equivalency test
-        logging.info("Running standard vs distributed equivalency test...")
-        equiv_success = test_distributed_vs_standard_equivalency(args.data_dim, args.dtype)
+            if mixer_success:
+                logging.info(f"{data_dim}D tests passed successfully!")
+            else:
+                logging.error(f"{data_dim}D tests failed!")
+                all_success = False
 
-        # Run the sequence mixer CP equivalency test (now using distributed config for both cases)
-        logging.info("Running sequence mixer CP equivalency test...")
-        mixer_success = test_sequence_mixer_cp_equivalency(args.data_dim, args.dtype)
-
-        if conv_success and equiv_success and mixer_success:
-            logging.info("✅ All tests passed successfully!")
+        if all_success:
+            logging.info("All tests passed successfully!")
         else:
-            logging.error("❌ Some tests failed!")
+            logging.error("Some tests failed!")
             return 1
 
     finally:

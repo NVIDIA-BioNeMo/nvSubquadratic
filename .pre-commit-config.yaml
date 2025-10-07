@@ -52,7 +52,15 @@ repos:
         entry: python scripts/license_check.py
         language: system
         files: \.py$
-        args: [--check-dirs, nvsubquadratic/, --check-dirs, tests/, --check-dirs, examples/]
+        args:
+          [
+            --check-dirs,
+            nvsubquadratic/,
+            --check-dirs,
+            tests/,
+            --check-dirs,
+            examples/,
+          ]
         pass_filenames: false
         always_run: false
         description: Ensure all Python files have proper NVIDIA license headers
@@ -62,3 +70,10 @@ repos:
         language: system
         stages: [push]
         pass_filenames: false
+      - id: torchrun-cp-tests
+        name: torchrun-cp-tests (1D, 2D, 3D)
+        entry: bash -c 'if [ $(python -c "import torch; print(torch.cuda.device_count())") -ge 2 ]; then echo "Running distributed CP tests for all dimensions..." && torchrun --nproc_per_node=2 tests/torchrun_sequence_mixer_cp_test.py --context_parallel_size=2 --dtype=float32; else echo "Skipping torchrun tests (requires 2+ GPUs)"; fi'
+        language: system
+        stages: [push]
+        pass_filenames: false
+        always_run: true
