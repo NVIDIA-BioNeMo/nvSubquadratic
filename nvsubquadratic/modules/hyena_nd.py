@@ -16,13 +16,15 @@
 
 """Hyena-style global convolutional mixer implementation for ND signals."""
 
-import math
-
 import torch
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.modules.distributed import DistributedConv1d, DistributedConv2d, DistributedConv3d
+from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
+    DistributedDepthwiseConv1d,
+    DistributedDepthwiseConv2d,
+    DistributedDepthwiseConv3d,
+)
 from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
 from nvsubquadratic.utils import qk_norm, rope
 
@@ -66,19 +68,13 @@ class Hyena(torch.nn.Module):
                 torch.nn.Conv2d,
                 torch.nn.Conv3d,
                 torch.nn.Identity,
-                DistributedConv1d,
-                DistributedConv2d,
-                DistributedConv3d,
+                DistributedDepthwiseConv1d,
+                DistributedDepthwiseConv2d,
+                DistributedDepthwiseConv3d,
             ),
         ), (
             f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity. Current type: {type(self.short_conv)}"
         )
-
-        # Initialize the short conv
-        bound = math.sqrt(1.0 / math.prod(self.short_conv.kernel_size))
-        torch.nn.init.uniform_(self.short_conv.weight, -bound, bound)
-        if self.short_conv.bias is not None:
-            torch.nn.init.zeros_(self.short_conv.bias)
 
         # Nonlinear gate
         self.gate_nonlinear = instantiate(gate_nonlinear_cfg)
@@ -226,11 +222,11 @@ class Hyena(torch.nn.Module):
             if cp_group is not None and cp_group.size() > 1:
                 x = AllToAllSingleFunction.apply(x, cp_group, "split_to_full", True)
 
-            # Always pass _use_cp parameter to distributed convolutions
+            # Always pass cp_group to distributed convolutions
             if hasattr(self.short_conv, "__class__") and "Distributed" in self.short_conv.__class__.__name__:
                 x = self.short_conv(x, cp_group)
             else:
-                # Standard PyTorch convolution doesn't support _use_cp parameter
+                # Standard PyTorch convolution doesn't support cp_group
                 x = self.short_conv(x)
 
             # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
