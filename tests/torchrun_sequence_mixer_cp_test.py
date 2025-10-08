@@ -44,9 +44,11 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
+from nvsubquadratic.modules.self_attention import SelfAttention
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.parallel.utils import (
     init_parallel_state,
+    setup_rank0_logging,
     zigzag_gather_from_group_ranks,
     zigzag_split_across_group_ranks,
 )
@@ -189,7 +191,33 @@ def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
     )
 
 
-def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32") -> bool:
+def sequence_mixer_config_self_attention(data_dim: int = 1) -> LazyConfig:
+    """Create a LazyConfig for QKVSequenceMixer with SelfAttention as inner mixer.
+
+    Constructs a complete configuration for QKVSequenceMixer using SelfAttention as the
+    inner sequence mixer, which supports CP natively.
+
+    Args:
+        data_dim: Dimensionality of the input data (default: 1 for 1D sequences).
+
+    Returns:
+        LazyConfig: A lazy configuration object for QKVSequenceMixer that can be
+            instantiated later.
+    """
+    return LazyConfig(QKVSequenceMixer)(
+        hidden_dim=288,  # 288 / 8 = 36 head_dim (divisible by 6 for 3D RoPE)
+        mixer_cfg=LazyConfig(SelfAttention)(
+            hidden_dim=288,
+            num_heads=8,
+            apply_qk_norm=True,
+            use_rope=True,
+            rope_base=10000.0,
+            attn_dropout=0.0,
+        ),
+    )
+
+
+def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32", mixer_type: str = "hyena") -> bool:
     """Test that the sequence mixer works correctly with and without context parallelism.
 
     This comprehensive test validates the correctness of QKVSequenceMixer when using
@@ -201,6 +229,7 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         data_dim: Dimensionality of the input data (default: 1).
         dtype: Data type for model and input tensors (default: "float32").
             Supported types: "float32", "float16", "bfloat16".
+        mixer_type: Type of mixer to test ("hyena" or "self_attention").
 
     Returns:
         bool: True if all tests pass successfully, False otherwise.
@@ -220,9 +249,14 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         return False
 
     try:
-        # Use distributed configuration for both CP=1 and CP>1 cases
-        # This ensures we test CP communication logic rather than different layer types
-        sequence_mixer_cfg = sequence_mixer_config_distributed(data_dim=data_dim)
+        # Select the appropriate mixer configuration
+        if mixer_type == "self_attention":
+            sequence_mixer_cfg = sequence_mixer_config_self_attention(data_dim=data_dim)
+        elif mixer_type == "hyena":
+            sequence_mixer_cfg = sequence_mixer_config_distributed(data_dim=data_dim)
+        else:
+            raise ValueError(f"Unknown mixer_type: {mixer_type}")
+
         sequence_mixer = instantiate(sequence_mixer_cfg)
 
         # Move model to the correct device
@@ -241,7 +275,8 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
 
         # Create test input based on data dimension
         batch_size = 2
-        hidden_dim = 128
+        # Hidden dim depends on mixer type (SelfAttention needs 288 for 3D RoPE compatibility)
+        hidden_dim = 288 if mixer_type == "self_attention" else 128
 
         # Convert dtype if needed
         dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
@@ -438,16 +473,10 @@ def main() -> int:
     # Create log directory
     os.makedirs(args.log_dir, exist_ok=True)
 
-    # Set up file handler for logging
+    # Set up rank-0-only logging (console output from rank 0, files from all ranks)
     rank = int(os.getenv("RANK", "0"))
     log_file = os.path.join(args.log_dir, f"rank_{rank}.log")
-
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
-    )
+    setup_rank0_logging(log_file)
 
     # Initialize parallel state
     init_parallel_state(context_parallel_size=args.context_parallel_size)
@@ -457,18 +486,23 @@ def main() -> int:
     # Determine which dimensions to test
     dimensions_to_test = [args.data_dim] if args.data_dim is not None else [1, 2, 3]
 
+    # Test both Hyena and SelfAttention mixers
+    mixer_types_to_test = ["hyena", "self_attention"]
+
     try:
         all_success = True
-        for data_dim in dimensions_to_test:
-            # Run the sequence mixer CP equivalency test
-            logging.info(f"Running sequence mixer CP equivalency test for {data_dim}D...")
-            mixer_success = test_sequence_mixer_cp_equivalency(data_dim, args.dtype)
+        for mixer_type in mixer_types_to_test:
+            logging.info(f"Testing with {mixer_type} mixer...")
+            for data_dim in dimensions_to_test:
+                # Run the sequence mixer CP equivalency test
+                logging.info(f"Running sequence mixer CP equivalency test for {mixer_type} {data_dim}D...")
+                mixer_success = test_sequence_mixer_cp_equivalency(data_dim, args.dtype, mixer_type)
 
-            if mixer_success:
-                logging.info(f"{data_dim}D tests passed successfully!")
-            else:
-                logging.error(f"{data_dim}D tests failed!")
-                all_success = False
+                if mixer_success:
+                    logging.info(f"{mixer_type} {data_dim}D tests passed successfully!")
+                else:
+                    logging.error(f"{mixer_type} {data_dim}D tests failed!")
+                    all_success = False
 
         if all_success:
             logging.info("All tests passed successfully!")

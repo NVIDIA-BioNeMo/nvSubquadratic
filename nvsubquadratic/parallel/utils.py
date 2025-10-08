@@ -176,3 +176,45 @@ def zigzag_gather_from_group_ranks(data, group, seq_dim=0):
     reconstructed_data = torch.cat(seq_chunks, dim=seq_dim)
 
     return reconstructed_data
+
+
+def setup_rank0_logging(log_file: str | None = None) -> None:
+    """Set up logging that only prints to console from rank 0, but logs all ranks to files.
+
+    This is useful for distributed training where you want clean console output
+    without duplicate messages from each rank, but still want detailed logs
+    from all ranks saved to separate files.
+
+    Args:
+        log_file: Path to log file. If None, uses /tmp/rank_{rank}.log.
+            The actual filename will have the rank appended (e.g., rank_0.log).
+
+    Example:
+        >>> from nvsubquadratic.parallel.utils import setup_rank0_logging
+        >>> setup_rank0_logging("/tmp/my_test.log")
+        >>> logging.info("This only prints to console from rank 0")
+    """
+    rank = int(os.getenv("RANK", "0"))
+
+    # Determine log file path
+    if log_file is None:
+        log_file = f"/tmp/rank_{rank}.log"
+
+    # Create handlers
+    file_handler = logging.FileHandler(log_file)
+    console_handler = logging.StreamHandler()
+
+    # Add filter to console handler to only show rank 0 logs
+    class Rank0Filter(logging.Filter):
+        def filter(self, record):
+            return int(os.getenv("RANK", "0")) == 0
+
+    console_handler.addFilter(Rank0Filter())
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[file_handler, console_handler],
+        force=True,  # Override any existing configuration
+    )
