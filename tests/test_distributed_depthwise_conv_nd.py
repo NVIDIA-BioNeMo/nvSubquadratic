@@ -26,6 +26,7 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv2d,
     DistributedDepthwiseConv3d,
 )
+from nvsubquadratic.testing import compute_relative_error
 
 
 def depthwise_conv_config(data_dim: int = 1) -> LazyConfig:
@@ -187,8 +188,10 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_fixture, device):
     loss_distributed = distributed_output.mean()
     loss_distributed.backward()
 
-    # Compare input gradients (uses automatic dtype-based tolerances)
+    # Compare input gradients using both absolute and relative error metrics
     torch.testing.assert_close(test_input.grad, test_input_dist.grad)
+    rel_err_input = compute_relative_error(test_input.grad, test_input_dist.grad)
+    assert rel_err_input < 1e-3, f"Input gradient relative error {rel_err_input:.2e} exceeds threshold"
 
     # Compare parameter gradients (allow shape mismatches for short_conv.weight)
     for (name_std, param_std), (name_dist, param_dist) in zip(
@@ -202,6 +205,8 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_fixture, device):
         if param_std.grad.shape != param_dist.grad.shape:
             continue
         torch.testing.assert_close(param_std.grad, param_dist.grad)
+        rel_err = compute_relative_error(param_std.grad, param_dist.grad)
+        assert rel_err < 1e-3, f"Parameter {name_std} gradient relative error {rel_err:.2e} exceeds threshold"
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

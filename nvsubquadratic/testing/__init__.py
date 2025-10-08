@@ -13,4 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Test package for nvSubquadratic."""
+"""Testing utilities for distributed training validation."""
+
+from nvsubquadratic.testing.utils import compute_relative_error
+
+
+__all__ = ["compute_relative_error"]

@@ -52,6 +52,7 @@ from nvsubquadratic.parallel.utils import (
     zigzag_gather_from_group_ranks,
     zigzag_split_across_group_ranks,
 )
+from nvsubquadratic.testing import compute_relative_error
 
 
 def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
@@ -328,7 +329,8 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
 
             try:
                 torch.testing.assert_close(output_no_cp, output_with_cp_gathered)
-                logging.info("Output tensor comparison successful")
+                rel_err_output = compute_relative_error(output_no_cp, output_with_cp_gathered)
+                logging.info(f"Output tensor comparison successful (relative error: {rel_err_output:.2e})")
             except AssertionError as e:
                 logging.error(f"Output tensor comparison failed: {e}")
                 raise
@@ -345,6 +347,9 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
             for (n_without_cp, g_without_cp), (n_with_cp, g_with_cp) in zip(grads_without_cp, grads_with_cp):
                 try:
                     torch.testing.assert_close(g_without_cp, g_with_cp)
+                    rel_err = compute_relative_error(g_without_cp, g_with_cp)
+                    # Validate relative error is small (TTrace-style validation)
+                    assert rel_err < 1e-3, f"Gradient {n_without_cp} relative error {rel_err:.2e} exceeds threshold"
                 except AssertionError as e:
                     gradient_mismatch = True
                     logging.error(f"Gradient mismatch for {n_without_cp}: {e}")
