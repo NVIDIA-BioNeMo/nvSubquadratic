@@ -140,6 +140,11 @@ def all_to_all_single_fn(
         # Apply zigzag splitting to shape[2] (temporal/sequence dimension) for all cases
         if with_zigzag_splitting:
             num_chunks = 2 * world_size
+
+            # Ensure L is divisible by num_chunks
+            if L % num_chunks != 0:
+                raise ValueError(f"Spatial dimension length {L} is not divisible by num_chunks {num_chunks}")
+
             unzigzagged_split_length = L // num_chunks  # Length of each small chunk
             device = output.device
             inverse_zigzag_idx = _get_inverse_zigzag_indices(num_chunks, device=device)
@@ -188,7 +193,7 @@ def all_to_all_single_fn(
 
             # Ensure L is divisible by num_chunks
             if L % num_chunks != 0:
-                raise ValueError(f"Sequence length {L} is not divisible by num_chunks {num_chunks}")
+                raise ValueError(f"Spatial dimension length {L} is not divisible by num_chunks {num_chunks}")
 
             # Vectorized rearrangement using zigzag indices
             # Reshape to (B, d, num_chunks, chunk_length, ...) and apply zigzag
