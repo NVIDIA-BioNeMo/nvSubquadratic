@@ -28,21 +28,6 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
 )
 
 
-@pytest.fixture
-def device():
-    """Get CUDA device if available, otherwise CPU."""
-    if torch.cuda.is_available():
-        return torch.cuda.current_device()
-    return torch.device("cpu")
-
-
-@pytest.fixture(params=["float32", "float16", "bfloat16"])
-def dtype_fixture(request):
-    """Parametrize tests across different dtypes."""
-    dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-    return dtype_map[request.param], request.param
-
-
 def depthwise_conv_config(data_dim: int = 1) -> LazyConfig:
     """Create a LazyConfig for QKVSequenceMixer with Hyena as inner mixer.
 
@@ -109,8 +94,7 @@ def distributed_depthwise_conv_config(data_dim: int = 1) -> LazyConfig:
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.parametrize("data_dim", [1, 2, 3])
-@pytest.mark.parametrize("dtype_str", ["float32", "float16", "bfloat16"])
-def test_distributed_vs_standard_equivalency(data_dim, dtype_str, device):
+def test_distributed_vs_standard_equivalency(data_dim, dtype_fixture, device):
     """Test that distributed and standard convolutions produce equivalent results when CP=1.
 
     This test validates that our distributed convolution wrappers produce the same
@@ -120,8 +104,6 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_str, device):
 
     Supports data_dim=1 (1D sequences), data_dim=2 (2D images), and data_dim=3 (3D volumes).
     """
-    dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-    input_dtype = dtype_map[dtype_str]
 
     # Create both configurations
     standard_cfg = depthwise_conv_config(data_dim=data_dim)
@@ -132,8 +114,8 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_str, device):
     distributed_conv = instantiate(distributed_cfg)
 
     # Move to device and set dtype
-    standard_conv = standard_conv.to(dtype=input_dtype, device=device)
-    distributed_conv = distributed_conv.to(dtype=input_dtype, device=device)
+    standard_conv = standard_conv.to(dtype=dtype_fixture, device=device)
+    distributed_conv = distributed_conv.to(dtype=dtype_fixture, device=device)
 
     # Copy weights from standard model to distributed model
     standard_state_dict = standard_conv.state_dict()
@@ -163,18 +145,18 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_str, device):
     if data_dim == 1:
         # 1D: [batch, channels, length]
         seq_len = 128
-        test_input = torch.randn(batch_size, channels, seq_len, dtype=input_dtype, device=device, requires_grad=True)
+        test_input = torch.randn(batch_size, channels, seq_len, dtype=dtype_fixture, device=device, requires_grad=True)
     elif data_dim == 2:
         # 2D: [batch, channels, height, width]
         height, width = 32, 32
         test_input = torch.randn(
-            batch_size, channels, height, width, dtype=input_dtype, device=device, requires_grad=True
+            batch_size, channels, height, width, dtype=dtype_fixture, device=device, requires_grad=True
         )
     elif data_dim == 3:
         # 3D: [batch, channels, depth, height, width]
         depth, height, width = 16, 16, 16
         test_input = torch.randn(
-            batch_size, channels, depth, height, width, dtype=input_dtype, device=device, requires_grad=True
+            batch_size, channels, depth, height, width, dtype=dtype_fixture, device=device, requires_grad=True
         )
 
     # Clone input for distributed model to ensure identical inputs
@@ -195,20 +177,18 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_str, device):
     assert not torch.isinf(standard_output).any()
     assert not torch.isinf(distributed_output).any()
 
-    # Compare forward pass outputs
-    rtol = 1e-4 if dtype_str == "float32" else 1e-2
-    atol = 1e-5 if dtype_str == "float32" else 1e-3
-    torch.testing.assert_close(standard_output, distributed_output, rtol=rtol, atol=atol)
+    # Compare forward pass outputs (uses automatic dtype-based tolerances)
+    torch.testing.assert_close(standard_output, distributed_output)
 
     # Test backward pass
-    loss_standard = standard_output.float().mean()
+    loss_standard = standard_output.mean()
     loss_standard.backward()
 
-    loss_distributed = distributed_output.float().mean()
+    loss_distributed = distributed_output.mean()
     loss_distributed.backward()
 
-    # Compare input gradients
-    torch.testing.assert_close(test_input.grad, test_input_dist.grad, rtol=rtol, atol=atol)
+    # Compare input gradients (uses automatic dtype-based tolerances)
+    torch.testing.assert_close(test_input.grad, test_input_dist.grad)
 
     # Compare parameter gradients (allow shape mismatches for short_conv.weight)
     for (name_std, param_std), (name_dist, param_dist) in zip(
@@ -221,21 +201,17 @@ def test_distributed_vs_standard_equivalency(data_dim, dtype_str, device):
         # Skip gradient comparison if shapes don't match (e.g., short_conv.weight)
         if param_std.grad.shape != param_dist.grad.shape:
             continue
-        torch.testing.assert_close(param_std.grad, param_dist.grad, rtol=rtol, atol=atol)
+        torch.testing.assert_close(param_std.grad, param_dist.grad)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.parametrize("data_dim", [1, 2, 3])
-@pytest.mark.parametrize("dtype_str", ["float32"])  # Use float32 for basic tests
-def test_distributed_convolutions(data_dim, dtype_str, device):
+def test_distributed_convolutions(data_dim, dtype_fixture, device):
     """Test distributed convolution classes directly.
 
     This test validates the correctness of the distributed convolution wrappers
     by testing basic forward pass functionality.
     """
-    dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-    input_dtype = dtype_map[dtype_str]
-
     # Test 1D distributed depthwise convolution
     if data_dim == 1:
         dist_conv = DistributedDepthwiseConv1d(
@@ -243,10 +219,10 @@ def test_distributed_convolutions(data_dim, dtype_str, device):
             kernel_size=3,
             bias=False,
             num_groups=128,  # Custom number of groups for weight sharing
-        )
+        ).to(device, dtype=dtype_fixture)
         batch_size = 2
         seq_len = 256
-        test_input = torch.randn(batch_size, 384, seq_len, device=device, dtype=input_dtype)
+        test_input = torch.randn(batch_size, 384, seq_len, device=device, dtype=dtype_fixture)
         expected_shape = (batch_size, 384, seq_len)
 
     # Test 2D distributed depthwise convolution
@@ -256,10 +232,10 @@ def test_distributed_convolutions(data_dim, dtype_str, device):
             kernel_size=3,
             bias=True,
             num_groups=32,
-        )
+        ).to(device, dtype=dtype_fixture)
         batch_size = 2
         height, width = 32, 32
-        test_input = torch.randn(batch_size, 128, height, width, device=device, dtype=input_dtype)
+        test_input = torch.randn(batch_size, 128, height, width, device=device, dtype=dtype_fixture)
         expected_shape = (batch_size, 128, height, width)
 
     # Test 3D distributed depthwise convolution
@@ -269,10 +245,10 @@ def test_distributed_convolutions(data_dim, dtype_str, device):
             kernel_size=3,
             bias=True,
             num_groups=32,
-        )
+        ).to(device, dtype=dtype_fixture)
         batch_size = 2
         depth, height, width = 16, 16, 16
-        test_input = torch.randn(batch_size, 128, depth, height, width, device=device, dtype=input_dtype)
+        test_input = torch.randn(batch_size, 128, depth, height, width, device=device, dtype=dtype_fixture)
         expected_shape = (batch_size, 128, depth, height, width)
 
     # Test forward pass
@@ -284,7 +260,7 @@ def test_distributed_convolutions(data_dim, dtype_str, device):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.parametrize("data_dim", [1, 2, 3])
-def test_weight_sharing(data_dim, device):
+def test_weight_sharing(data_dim, dtype_fixture, device):
     """Test that weight sharing via num_groups works correctly.
 
     Validates that when num_groups < hidden_dim, weights are properly shared
@@ -300,8 +276,8 @@ def test_weight_sharing(data_dim, device):
             kernel_size=kernel_size,
             num_groups=num_groups,
             bias=False,
-        ).to(device)
-        test_input = torch.randn(2, hidden_dim, 64, device=device)
+        ).to(device, dtype=dtype_fixture)
+        test_input = torch.randn(2, hidden_dim, 64, device=device, dtype=dtype_fixture)
 
     elif data_dim == 2:
         conv = DistributedDepthwiseConv2d(
@@ -309,8 +285,8 @@ def test_weight_sharing(data_dim, device):
             kernel_size=kernel_size,
             num_groups=num_groups,
             bias=False,
-        ).to(device)
-        test_input = torch.randn(2, hidden_dim, 16, 16, device=device)
+        ).to(device, dtype=dtype_fixture)
+        test_input = torch.randn(2, hidden_dim, 16, 16, device=device, dtype=dtype_fixture)
 
     elif data_dim == 3:
         conv = DistributedDepthwiseConv3d(
@@ -318,8 +294,8 @@ def test_weight_sharing(data_dim, device):
             kernel_size=kernel_size,
             num_groups=num_groups,
             bias=False,
-        ).to(device)
-        test_input = torch.randn(2, hidden_dim, 8, 8, 8, device=device)
+        ).to(device, dtype=dtype_fixture)
+        test_input = torch.randn(2, hidden_dim, 8, 8, 8, device=device, dtype=dtype_fixture)
 
     # Verify weight shape
     assert conv.weight.shape[0] == num_groups, f"Expected {num_groups} weight groups"
