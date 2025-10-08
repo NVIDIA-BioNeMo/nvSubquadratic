@@ -54,75 +54,7 @@ from nvsubquadratic.parallel.utils import (
 )
 
 
-def sequence_mixer_config(data_dim: int = 1) -> LazyConfig:
-    """Create a LazyConfig for QKVSequenceMixer with Hyena as inner mixer.
-
-    Constructs a complete configuration for QKVSequenceMixer using Hyena as the
-    inner sequence mixer.
-
-    Args:
-        data_dim: Dimensionality of the input data (default: 1 for 1D sequences).
-
-    Returns:
-        LazyConfig: A lazy configuration object for QKVSequenceMixer that can be
-            instantiated later.
-    """
-    # Select the appropriate convolution class based on data dimension
-    if data_dim == 1:
-        conv_class = torch.nn.Conv1d
-    elif data_dim == 2:
-        conv_class = torch.nn.Conv2d
-    elif data_dim == 3:
-        conv_class = torch.nn.Conv3d
-    else:
-        raise ValueError(f"Unsupported data dimension: {data_dim}")
-
-    return LazyConfig(QKVSequenceMixer)(
-        hidden_dim=128,
-        mixer_cfg=LazyConfig(Hyena)(
-            global_conv_cfg=LazyConfig(CKConvND)(
-                data_dim=data_dim,
-                hidden_dim=128,
-                kernel_cfg=LazyConfig(SIRENKernelND)(
-                    data_dim=data_dim,
-                    out_dim=128,
-                    mlp_hidden_dim=32,
-                    num_layers=3,
-                    embedding_dim=32,
-                    omega_0=100.0,
-                    L_cache=32,
-                    use_bias=True,
-                    hidden_omega_0=1.0,
-                ),
-                mask_cfg=LazyConfig(GaussianModulationND)(
-                    data_dim=data_dim,
-                    num_channels=128,
-                    min_std=0.025,
-                    max_std=1.25,
-                    init_std_low=0.05,
-                    init_std_high=1.0,
-                    parametrization="direct",
-                ),
-                grid_type="single",
-            ),
-            short_conv_cfg=LazyConfig(conv_class)(
-                in_channels=384,  # 3 * 128 for concatenated q, k, v
-                out_channels=384,  # 3 * 128 for concatenated q, k, v
-                kernel_size=3,
-                groups=384,  # Grouped convolution
-                padding=1,
-                bias=False,
-            ),
-            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
-            pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
-            apply_qk_norm=True,
-            use_rope=False,  # Disable RoPE to avoid in-place issues
-            rope_base=10000.0,
-        ),
-    )
-
-
-def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
+def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
     """Create a LazyConfig for QKVSequenceMixer with distributed convolutions.
 
     Constructs a complete configuration for QKVSequenceMixer using Hyena as the
@@ -191,7 +123,7 @@ def sequence_mixer_config_distributed(data_dim: int = 1) -> LazyConfig:
     )
 
 
-def sequence_mixer_config_self_attention(data_dim: int = 1) -> LazyConfig:
+def self_attention_mixer_config(data_dim: int = 1) -> LazyConfig:
     """Create a LazyConfig for QKVSequenceMixer with SelfAttention as inner mixer.
 
     Constructs a complete configuration for QKVSequenceMixer using SelfAttention as the
@@ -251,9 +183,9 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
     try:
         # Select the appropriate mixer configuration
         if mixer_type == "self_attention":
-            sequence_mixer_cfg = sequence_mixer_config_self_attention(data_dim=data_dim)
+            sequence_mixer_cfg = self_attention_mixer_config(data_dim=data_dim)
         elif mixer_type == "hyena":
-            sequence_mixer_cfg = sequence_mixer_config_distributed(data_dim=data_dim)
+            sequence_mixer_cfg = hyena_mixer_config(data_dim=data_dim)
         else:
             raise ValueError(f"Unknown mixer_type: {mixer_type}")
 
