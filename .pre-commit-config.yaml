@@ -68,7 +68,7 @@ repos:
         name: pytest-pre-push
         entry: bash -c 'echo "Running tests before push..." && python -m pytest nvsubquadratic/ tests/ -v --tb=short'
         language: system
-        stages: [push]
+        stages: [pre-push]
         pass_filenames: false
       - id: torchrun-cp-tests
         name: torchrun-cp-tests (1D, 2D, 3D)
