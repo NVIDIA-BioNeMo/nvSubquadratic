@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
+from nvsubquadratic.parallel.utils import zigzag_gather_from_group_ranks, zigzag_split_across_group_ranks
 from nvsubquadratic.utils import qk_norm, rope
 
 
@@ -33,6 +34,15 @@ class SelfAttention(torch.nn.Module):
 
     Implementation notes
     - Uses PyTorch scaled_dot_product_attention and prefers FlashAttention kernels when available.
+
+    Context Parallelism Limitations
+    - **WARNING**: This implementation is for **illustration and compatibility only**.
+    - It uses zigzag all-gather/split for CP, which causes significant memory issues at long context
+      lengths because the attention layer does not implement internal ring attention.
+    - **For production use with long contexts**, use PyTorch's standard context-parallel attention
+      blocks (e.g., as in torchtitan: https://docs.pytorch.org/tutorials/unstable/context_parallel.html).
+    - Future work: Migrate to PyTorch's standard CP attention API, which may also eliminate
+      the requirement for zigzag-style communication patterns.
     """
 
     def __init__(
@@ -202,21 +212,42 @@ class SelfAttention(torch.nn.Module):
         else:
             return rearrange(x, "b (h w d) c -> b h w d c", h=spatial_shape[0], w=spatial_shape[1], d=spatial_shape[2])
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        cp_group: torch.distributed.ProcessGroup = None,
+    ) -> torch.Tensor:
         """Apply multi-head self-attention with optional QK-norm and RoPE.
 
         Args:
             query: [B, *spatial_dims, hidden_dim]
             key: [B, *spatial_dims, hidden_dim]
             value: [B, *spatial_dims, hidden_dim]
+            cp_group: torch.distributed.ProcessGroup - Context parallel process group.
 
         Returns:
             out: [B, *spatial_dims, hidden_dim] (same as input)
         """
+        # CP communication for self-attention (Megatron-style):
+        # CP only splits sequence/spatial dimension, not hidden_dim or heads
+        # Pattern: All-gather K/V along sequence, keep Q local (or gather Q too for non-causal)
+
+        if cp_group is not None and cp_group.size() > 1:
+            # For non-causal attention, gather full sequence for Q, K, V
+            # Input: [B, *spatial_partial, hidden_dim] where spatial_partial = spatial/cp_size
+            # Output: [B, *spatial_full, hidden_dim]
+            query = zigzag_gather_from_group_ranks(query, group=cp_group, seq_dim=1)
+            key = zigzag_gather_from_group_ranks(key, group=cp_group, seq_dim=1)
+            value = zigzag_gather_from_group_ranks(value, group=cp_group, seq_dim=1)
+
         # [B, * spatial_dims, hidden_dim] -> [B * num_heads, * spatial_dims, head_dim]
+        # All heads are computed locally (no head splitting with CP)
         query = rearrange(query, "b ... (h d) -> (b h) ... d", h=self.num_heads)
         key = rearrange(key, "b ... (h d) -> (b h) ... d", h=self.num_heads)
         value = rearrange(value, "b ... (h d) -> (b h) ... d", h=self.num_heads)
+        local_num_heads = self.num_heads
 
         # Optional RoPE positional encoding (before normalization)
         if self.use_rope:
@@ -283,9 +314,9 @@ class SelfAttention(torch.nn.Module):
         with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
             out = F.scaled_dot_product_attention(
                 # Requires unpacking the number of heads from the batch dimension
-                rearrange(query.to(torch.bfloat16), "(b h) t d -> b h t d", h=self.num_heads),
-                rearrange(key.to(torch.bfloat16), "(b h) t d -> b h t d", h=self.num_heads),
-                rearrange(value.to(torch.bfloat16), "(b h) t d -> b h t d", h=self.num_heads),
+                rearrange(query.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
+                rearrange(key.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
+                rearrange(value.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
                 dropout_p=self.attn_dropout if self.training else 0.0,
                 is_causal=False,
                 # Scale is 1.0 if QK normalization is applied, otherwise self.scale
@@ -294,12 +325,19 @@ class SelfAttention(torch.nn.Module):
                 # logits too small by a factor sqrt(d), flattening attention and harming learning.
                 scale=self.scale if not self.apply_qk_norm else 1.0,
             )
-        # Convert back to original dtype [batch_size, num_heads, flatten(* spatial_dims), head_dim]
+        # Convert back to original dtype [batch_size, local_num_heads, flatten(* spatial_dims), head_dim]
         out = out.to(in_dtype)
 
-        # Merge heads: [batch_size, num_heads, flatten(* spatial_dims), head_dim] -> [batch_size, flatten(* spatial_dims), (num_heads * head_dim)]
-        out = rearrange(out, "b h t d -> b t (h d)", h=self.num_heads)
+        # Merge local heads: [batch_size, local_num_heads, flatten(* spatial_dims), head_dim] -> [batch_size, flatten(* spatial_dims), (local_num_heads * head_dim)]
+        out = rearrange(out, "b h t d -> b t (h d)", h=local_num_heads)
 
         # Unflatten back to spatial dims
         out = self._unflatten_spatial(out, spatial_shape)
+
+        # CP communication: split sequence back to original distribution
+        if cp_group is not None and cp_group.size() > 1:
+            # Each rank has: [B, *spatial_full, hidden_dim] (full sequence, full hidden_dim)
+            # Split sequence back: [B, *spatial_full, hidden_dim] -> [B, *spatial/cp, hidden_dim]
+            out = zigzag_split_across_group_ranks(out, group=cp_group, seq_dim=1)
+
         return out

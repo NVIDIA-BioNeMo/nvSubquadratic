@@ -3,12 +3,16 @@
 
 """Hyena-style global convolutional mixer implementation for ND signals."""
 
-import math
-
 import torch
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
+    DistributedDepthwiseConv1d,
+    DistributedDepthwiseConv2d,
+    DistributedDepthwiseConv3d,
+)
+from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
 from nvsubquadratic.utils import qk_norm, rope
 
 
@@ -44,15 +48,20 @@ class Hyena(torch.nn.Module):
         # Core global convs: feature and gate branches
         self.global_conv = instantiate(global_conv_cfg)
         self.short_conv = instantiate(short_conv_cfg)
-        assert isinstance(self.short_conv, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Identity)), (
+        assert isinstance(
+            self.short_conv,
+            (
+                torch.nn.Conv1d,
+                torch.nn.Conv2d,
+                torch.nn.Conv3d,
+                torch.nn.Identity,
+                DistributedDepthwiseConv1d,
+                DistributedDepthwiseConv2d,
+                DistributedDepthwiseConv3d,
+            ),
+        ), (
             f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity. Current type: {type(self.short_conv)}"
         )
-
-        # Initialize the short conv
-        bound = math.sqrt(1.0 / math.prod(self.short_conv.kernel_size))
-        torch.nn.init.uniform_(self.short_conv.weight, -bound, bound)
-        if self.short_conv.bias is not None:
-            torch.nn.init.zeros_(self.short_conv.bias)
 
         # Nonlinear gate
         self.gate_nonlinear = instantiate(gate_nonlinear_cfg)
@@ -168,13 +177,20 @@ class Hyena(torch.nn.Module):
             self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
         return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        cp_group: torch.distributed.ProcessGroup = None,
+    ) -> torch.Tensor:
         """Forward pass of the Hyena-style global convolutional mixer.
 
         Args:
             query: torch.Tensor - The query tensor of shape (batch_size, * spatial_dims, hidden_dim).
             key: torch.Tensor - The key tensor of shape (batch_size, * spatial_dims, hidden_dim).
             value: torch.Tensor - The value tensor of shape (batch_size, * spatial_dims, hidden_dim).
+            cp_group: torch.distributed.ProcessGroup - Context parallel process group.
 
         Returns:
             torch.Tensor: The output tensor of shape (batch_size, * spatial_dims, hidden_dim).
@@ -187,9 +203,24 @@ class Hyena(torch.nn.Module):
         # Apply short convolutional projection
         if not isinstance(self.short_conv, torch.nn.Identity):
             # Concatenate query, key, and value, apply the short conv projection and split again
-            x = torch.cat([query, key, value], dim=1)
-            x = self.short_conv(x)
-            # Split query, key, and value
+            x = torch.cat([query, key, value], dim=1)  # [B, 3 * hidden_dim, *spatial_dims]
+
+            # CP communication - gather along first spatial dimension while splitting across channels/hidden dimension
+            if cp_group is not None and cp_group.size() > 1:
+                x = AllToAllSingleFunction.apply(x, cp_group, "split_to_full", True)
+
+            # Always pass cp_group to distributed convolutions
+            if hasattr(self.short_conv, "__class__") and "Distributed" in self.short_conv.__class__.__name__:
+                x = self.short_conv(x, cp_group)
+            else:
+                # Standard PyTorch convolution doesn't support cp_group
+                x = self.short_conv(x)
+
+            # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
+            if cp_group is not None and cp_group.size() > 1:
+                x = AllToAllSingleFunction.apply(x, cp_group, "full_to_split", True)
+
+            # Split query, key, and value along channels/hidden dimension
             query, key, value = x.split(query.shape[1], dim=1)
             # Avoid in-place ops on views returned by split
             query = query.contiguous()
@@ -250,8 +281,8 @@ class Hyena(torch.nn.Module):
             query, key = qk_norm.apply_qk_norm(query, key, dim=1)
 
         # First gate
-        # z = query * self.gate_nonlinear(key)
-        query.mul_(self.gate_nonlinear(key))
+        # z = query * self.gate_nonlinear(key) out-of-place to avoid view issues
+        query = query * self.gate_nonlinear(key)
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
@@ -262,12 +293,20 @@ class Hyena(torch.nn.Module):
                 query = self.pixelhyena_norm(query)
                 query = rearrange(query, "b ... c -> b c ...")
 
+        # CP communication - gather along first spatial dimension while splitting across channels/hidden dimension
+        if cp_group is not None and cp_group.size() > 1:
+            query = AllToAllSingleFunction.apply(query, cp_group, "split_to_full", True)
+
         # Apply global convolution
-        y = self.global_conv(query, is_bhl_input=True)
+        y = self.global_conv(query, is_bhl_input=True, cp_group=cp_group)
+
+        # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
+        if cp_group is not None and cp_group.size() > 1:
+            y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
         # Second gate
-        # y = self.gate_nonlinear(y) * value in-place
-        value.mul_(self.gate_nonlinear(y))
+        # y = self.gate_nonlinear(y) * value out-of-place to avoid view issues
+        value = value * self.gate_nonlinear(y)
 
         # Reshape back to [B, * spatial_dims, C]
         return rearrange(value, "b c ... -> b ... c")

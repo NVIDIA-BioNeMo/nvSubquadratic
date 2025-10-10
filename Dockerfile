@@ -10,7 +10,7 @@ ARG GITLAB_TOKEN
 FROM nvcr.io/nvidia/pytorch:${PYTORCH_VERSION}-py3
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /workspaces/nvSubquadratic-private
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -24,33 +24,26 @@ RUN mkdir -p /etc/sudoers.d \
   && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
   && chmod 0440 /etc/sudoers.d/$USERNAME
 
+# Change ownership of workspaces directory to ubuntu user
+RUN chown -R $USERNAME:$USERNAME /workspaces
+
 USER $USERNAME
 
-# Set environment variables
-ENV PYTHONPATH="/workspace:${PYTHONPATH}"
+# Set environment variables for development mode
+ENV PYTHONPATH="/workspaces/nvSubquadratic-private:${PYTHONPATH}"
 
-# Copy requirements first for better caching
-COPY pyproject.toml README.md requirements-dev.txt ./
+# Copy the entire project for development
+COPY --chown=$USERNAME:$USERNAME . .
 
-# Copy the package source
-COPY nvsubquadratic/ ./nvsubquadratic/
+# Install development dependencies first
+RUN pip install --no-cache-dir -r requirements-dev.txt
 
-# Install the package
-RUN pip install --no-cache-dir . && \
-  pip cache purge
+# Install the package in development mode (editable install)
+RUN pip install --no-cache-dir -e .
 
 # Install subquadratic_ops wheel file - pip will automatically select the correct architecture (x86_64 / arm64)
 # GITLAB_TOKEN is required for this installation
 RUN if [ -n "${GITLAB_TOKEN}" ]; then echo "Installing subquadratic-ops with token..." && pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple; else echo "Skipping subquadratic-ops installation because GITLAB_TOKEN is not available. Please set GITLAB_TOKEN environment variable."; fi
-
-# Install development dependencies
-RUN pip install --no-cache-dir -r requirements-dev.txt
-
-# Copy source code
-COPY . .
-
-# Install in development mode
-RUN pip install -e .
 
 # Expose Jupyter port
 EXPOSE 8888
