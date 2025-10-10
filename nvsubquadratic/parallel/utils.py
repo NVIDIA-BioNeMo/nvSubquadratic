@@ -46,8 +46,10 @@ def init_parallel_state(
     )
 
     # Set up environment variables
-    os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "0"
-    os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = "1"
+    if "TORCH_NCCL_BLOCKING_WAIT" not in os.environ:
+        os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "0"
+    if "TORCH_NCCL_ASYNC_ERROR_HANDLING" not in os.environ:
+        os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = "1"
 
     # Get local rank
     local_rank = int(os.getenv("LOCAL_RANK", 0))

@@ -34,6 +34,15 @@ class SelfAttention(torch.nn.Module):
 
     Implementation notes
     - Uses PyTorch scaled_dot_product_attention and prefers FlashAttention kernels when available.
+
+    Context Parallelism Limitations
+    - **WARNING**: This implementation is for **illustration and compatibility only**.
+    - It uses zigzag all-gather/split for CP, which causes significant memory issues at long context
+      lengths because the attention layer does not implement internal ring attention.
+    - **For production use with long contexts**, use PyTorch's standard context-parallel attention
+      blocks (e.g., as in torchtitan: https://docs.pytorch.org/tutorials/unstable/context_parallel.html).
+    - Future work: Migrate to PyTorch's standard CP attention API, which may also eliminate
+      the requirement for zigzag-style communication patterns.
     """
 
     def __init__(
