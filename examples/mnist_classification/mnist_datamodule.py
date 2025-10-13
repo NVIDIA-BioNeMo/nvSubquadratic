@@ -1,7 +1,6 @@
 # TODO: Add license header here
 
-
-"""MNIST datamodule."""
+"""MNIST datamodule with Context Parallelism support."""
 
 from typing import Literal
 
@@ -10,6 +9,8 @@ import torch
 from einops import rearrange
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
+
+from nvsubquadratic.datamodules import CPAwareDataMixin
 
 
 # # Global seed value used for worker initialization
@@ -43,8 +44,8 @@ from torchvision import datasets, transforms
 #     torch.cuda.manual_seed_all(seed)  # Set CUDA RNG seed for all devices
 
 
-class MNISTDataModule(pl.LightningDataModule):
-    """MNIST Lightning data module."""
+class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
+    """MNIST Lightning data module with Context Parallelism support."""
 
     def __init__(
         self,
@@ -55,6 +56,7 @@ class MNISTDataModule(pl.LightningDataModule):
         pin_memory: bool,
         use_deterministic_worker_init: bool,
         seed: int,
+        enable_cp: bool = False,
     ):
         """Initialize the MNISTDataModule.
 
@@ -66,6 +68,7 @@ class MNISTDataModule(pl.LightningDataModule):
             pin_memory: Whether to pin memory
             use_deterministic_worker_init: Whether to use deterministic worker initialization
             seed: Seed for the data
+            enable_cp: Whether to enable Context Parallelism data splitting
         """
         super().__init__()
 
@@ -75,6 +78,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.seed = seed
+        self.enable_cp = enable_cp
 
         # Create a generator with the given seed for reproducibility
         self.generator = torch.Generator().manual_seed(seed)
@@ -140,6 +144,7 @@ class MNISTDataModule(pl.LightningDataModule):
         Returns:
             DataLoader: DataLoader for the dataset.
         """
+        # No custom collate needed - CP splitting happens in transfer_batch_to_device
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -179,4 +184,19 @@ class MNISTDataModule(pl.LightningDataModule):
         else:
             raise ValueError(f"Unsupported data type: {self.data_type}")
         batch = x, y
+        return batch
+
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        """Transfer batch to device and apply CP splitting if enabled.
+
+        This is called by Lightning in the main process, after batch is on GPU,
+        so distributed operations (broadcast, split) work correctly.
+        """
+        # First transfer to device (standard Lightning behavior)
+        batch = super().transfer_batch_to_device(batch, device, dataloader_idx)
+
+        # Then apply CP splitting (from mixin)
+        if self.enable_cp:
+            batch = self._apply_cp_split_on_device(batch, device, seq_dim=1)
+
         return batch
