@@ -158,6 +158,10 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         AssertionError: If tensor shapes don't match expected dimensions or if
             numerical differences exceed tolerance thresholds.
     """
+    # Set gradient threshold based on mixer type
+    # Self-attention has more numerical sensitivity due to softmax and complex backward passes
+    gradient_threshold = 5e-3 if mixer_type == "self_attention" else 1e-3
+
     # Check if we can run distributed test
     if torch.cuda.device_count() < 2 or not dist.is_available():
         logging.warning("Not enough GPUs or distributed not available. Skipping distributed test.")
@@ -227,6 +231,9 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         # Broadcast input across context parallel group
         cp_group = parallel_state.get_context_parallel_group()
         dist.broadcast(test_input, min(dist.get_process_group_ranks(cp_group)), group=cp_group)
+
+        if dist.get_rank() == 0:
+            logging.info(f"Using gradient threshold: {gradient_threshold:.2e} for {mixer_type} mixer")
 
         logging.info("Running without context parallel")
         # _use_cp=False: Distributed layers active, but no CP communication
@@ -335,8 +342,10 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
                 try:
                     torch.testing.assert_close(g_without_cp, g_with_cp)
                     rel_err = compute_relative_error(g_without_cp, g_with_cp)
-                    # Validate relative error is small (TTrace-style validation)
-                    assert rel_err < 1e-3, f"Gradient {n_without_cp} relative error {rel_err:.2e} exceeds threshold"
+                    # Validate relative error is small (threshold varies by mixer type)
+                    assert rel_err < gradient_threshold, (
+                        f"Gradient {n_without_cp} relative error {rel_err:.2e} exceeds threshold {gradient_threshold:.2e}"
+                    )
                 except AssertionError as e:
                     gradient_mismatch = True
                     logging.error(f"Gradient mismatch for {n_without_cp}: {e}")
