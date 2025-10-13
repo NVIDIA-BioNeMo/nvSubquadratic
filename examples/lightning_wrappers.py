@@ -3,7 +3,7 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
-from typing import Literal
+from typing import Literal, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -180,9 +180,38 @@ class LightningWrapperBase(pl.LightningModule):
         self.should_track_grad_norm = cfg.train.track_grad_norm > 0
         self.grad_norm_interval = cfg.train.track_grad_norm
 
-    def forward(self, x):
-        """Forward pass of the network."""
-        return self.network(x)
+        # Context parallelism group (injected by strategy)
+        self.cp_group: Optional[torch.distributed.ProcessGroup] = None
+
+    def set_context_parallel_group(self, cp_group: torch.distributed.ProcessGroup) -> None:
+        """Set the context parallel group (called by strategy).
+
+        Args:
+            cp_group: Process group for context parallelism.
+        """
+        self.cp_group = cp_group
+
+    def forward(self, x, **kwargs):
+        """Forward pass of the network.
+
+        Args:
+            x: Input tensor.
+            **kwargs: Additional keyword arguments to pass to network.
+
+        Returns:
+            Output tensor from network.
+        """
+        # Check if network accepts cp_group parameter
+        import inspect
+
+        network_forward_sig = inspect.signature(self.network.forward)
+
+        if "cp_group" in network_forward_sig.parameters:
+            return self.network(x, cp_group=self.cp_group, **kwargs)
+        elif self.cp_group is not None:
+            raise ValueError("cp_group is not supported by the network.")
+        else:
+            return self.network(x, **kwargs)
 
     def configure_optimizers(self):
         """Configure the optimizer and scheduler for training."""

@@ -1,9 +1,12 @@
 # TODO: Add license header here
 
+"""Simple implementation of a ResNet for classification with Context Parallelism support."""
 
-"""Simple implementation of a ResNet for classification."""
+import inspect
+from typing import Optional
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
@@ -66,11 +69,12 @@ class ClassificationResNet(nn.Module):
         # Instantiate output projection
         self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)
 
-    def forward(self, x):
-        """Forward pass of the ClassificationResNet.
+    def forward(self, x: torch.Tensor, cp_group: Optional[dist.ProcessGroup] = None) -> torch.Tensor:
+        """Forward pass of the ClassificationResNet with optional Context Parallelism.
 
         Args:
             x: Input tensor of shape (batch_size, *spatial_dims, num_channels)
+            cp_group: Optional process group for Context Parallelism
 
         Returns:
             torch.Tensor: Output tensor of shape (batch_size, num_classes)
@@ -79,8 +83,18 @@ class ClassificationResNet(nn.Module):
         x = self.dropout_in(x)
         # Apply input projection
         x = self.in_proj(x)
-        # Apply residual blocks
-        x = self.blocks(x)
+
+        # Apply residual blocks, passing cp_group to those that support it
+        for block in self.blocks:
+            # Check if block accepts cp_group parameter
+            block_forward_sig = inspect.signature(block.forward)
+            if "cp_group" in block_forward_sig.parameters:
+                x = block(x, cp_group=cp_group)
+            elif cp_group is not None:
+                raise ValueError("cp_group is not supported by the block.")
+            else:
+                x = block(x)
+
         # Average over the spatial dimensions
         x = torch.reshape(x, (x.shape[0], -1, x.shape[-1]))
         x = x.mean(dim=1)
