@@ -13,7 +13,7 @@ import torch
 from pytorch_lightning.strategies import DDPStrategy
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from examples.distributed.backend import ParallelBackend, ParallelConfig, create_backend, set_global_backend
+from nvsubquadratic.distributed.backend import ParallelBackend, ParallelConfig, create_backend, set_global_backend
 
 
 logger = logging.getLogger(__name__)
