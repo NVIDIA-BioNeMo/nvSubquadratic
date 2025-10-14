@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import dataclasses
+import os
 
 import pytorch_lightning as pl
 import torch
@@ -41,6 +42,14 @@ def parse_args():
         type=str,
         required=True,
         help="Path to the configuration file, e.g., config/experiments/mnist/mnist_classification_cfg.py",
+    )
+
+    # Checkpoint path for resuming training
+    parser.add_argument(
+        "--ckpt_path",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from (e.g., lightning_logs/version_0/checkpoints/last.ckpt)",
     )
 
     # Add a catch-all for arbitrary config overrides
@@ -122,12 +131,18 @@ def main():
 
     # Train
     if config.train.do:
-        # TODO(@dwromero): Add support for training resume.
-        trainer.fit(model=model, datamodule=datamodule)
+        # Resume from checkpoint if provided
+        if args.ckpt_path:
+            print(f"Resuming training from checkpoint: {args.ckpt_path}")
+            trainer.fit(model=model, datamodule=datamodule, ckpt_path=args.ckpt_path)
+        else:
+            trainer.fit(model=model, datamodule=datamodule)
+
         # Load state dict from best performing model
-        model.load_state_dict(
-            torch.load(checkpoint_callback.best_model_path)["state_dict"],
-        )
+        if checkpoint_callback.best_model_path and os.path.exists(checkpoint_callback.best_model_path):
+            model.load_state_dict(
+                torch.load(checkpoint_callback.best_model_path)["state_dict"],
+            )
 
     # Validate and test before finishing
     trainer.validate(
@@ -172,7 +187,9 @@ def construct_trainer(
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
 
-    # Callback for model checkpointing:
+    # Callback for model checkpointing
+    # Note: Currently using standard Lightning checkpoints for reliability
+    # Megatron distributed checkpoints can be enabled later via use_distributed_checkpoint config
     checkpoint_callback = pl_callbacks.ModelCheckpoint(
         monitor=monitor,
         mode=cfg.scheduler.mode,  # Save on best validation accuracy
@@ -180,6 +197,7 @@ def construct_trainer(
         save_last=True,  # Keep track of the model at the last epoch
         verbose=True,
     )
+    print(f"Using ModelCheckpoint (monitor={monitor}, mode={cfg.scheduler.mode})")
 
     # Callback for learning rate monitoring
     lrmonitor_callback = pl_callbacks.LearningRateMonitor(log_weight_decay=True)
@@ -191,13 +209,33 @@ def construct_trainer(
     assert cfg.device == "cuda", "Only CUDA training is supported."
 
     device_count = torch.cuda.device_count()
-    if device_count > 1:  # Multi-GPU training
+    num_nodes = 1  # Multi-node training not verified.
+
+    # Configure distributed strategy
+    if cfg.distributed.enabled and cfg.distributed.context_parallel_size > 1:
+        # Use Context Parallel strategy
+        from nvsubquadratic.strategies import ContextParallelStrategy
+
+        strategy = ContextParallelStrategy(
+            backend_type=cfg.distributed.backend,
+            context_parallel_size=cfg.distributed.context_parallel_size,
+            tensor_parallel_size=cfg.distributed.tensor_parallel_size,
+            pipeline_parallel_size=cfg.distributed.pipeline_parallel_size,
+            use_distributed_checkpoint=cfg.distributed.use_distributed_checkpoint,
+            checkpoint_dir=cfg.distributed.checkpoint_dir,
+        )
+        sync_batchnorm = True
+        print(
+            f"Using Context Parallel strategy: "
+            f"backend={cfg.distributed.backend}, "
+            f"CP size={cfg.distributed.context_parallel_size}"
+        )
+    elif device_count > 1:  # Standard multi-GPU training
         strategy = "ddp"
         sync_batchnorm = True
     else:
         strategy = "auto"
         sync_batchnorm = False
-    num_nodes = 1  # Multi-node training not verified.
 
     # Merge default callbacks with any experiment-defined callbacks
     user_callbacks = [instantiate(cb_cfg) for cb_cfg in cfg.callbacks] if cfg.callbacks else []

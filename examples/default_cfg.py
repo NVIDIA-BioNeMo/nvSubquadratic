@@ -45,6 +45,47 @@ class WandbConfig:
 
 
 @dataclass
+class DistributedConfig:
+    """Distributed training configuration.
+
+    Supports multiple parallelism strategies:
+    - Context Parallelism (CP): Sequence splitting across devices
+    - Data Parallelism (DP): Gradient synchronization (auto-computed)
+
+    Currently supported backends:
+    - megatron: Megatron-Core (recommended for production)
+    - device_mesh: PyTorch DeviceMesh (Phase 2, not yet implemented)
+
+    Example:
+        # Enable CP with 2 devices
+        config.distributed.enabled = True
+        config.distributed.context_parallel_size = 2
+        # With 4 GPUs total: 2 DP replicas x 2 CP devices = 4 GPUs
+    """
+
+    enabled: bool = False
+    """Whether to enable distributed training."""
+
+    backend: Literal["megatron", "device_mesh"] = "megatron"
+    """Backend type: 'megatron' (Phase 1) or 'device_mesh' (Phase 2)."""
+
+    context_parallel_size: int = 1
+    """Number of devices for context/sequence parallelism."""
+
+    tensor_parallel_size: int = 1
+    """Number of devices for tensor parallelism (future feature)."""
+
+    pipeline_parallel_size: int = 1
+    """Number of stages for pipeline parallelism (Megatron only, future feature)."""
+
+    use_distributed_checkpoint: bool = False
+    """Whether to use distributed checkpointing for sharded save/load."""
+
+    checkpoint_dir: str = "./checkpoints"
+    """Directory for distributed checkpoints."""
+
+
+@dataclass
 class ExperimentConfig:
     """Default configuration for experiments with nvSubQuadratic."""
 
@@ -87,6 +128,7 @@ class ExperimentConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
+    distributed: DistributedConfig = field(default_factory=DistributedConfig)
 
     # Optional: additional Trainer callbacks defined per-experiment and appended during construction
     callbacks: list[LazyConfig] = field(default_factory=list)
