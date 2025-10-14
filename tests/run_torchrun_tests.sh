@@ -14,7 +14,7 @@ echo ""
 FAILED=0
 
 # Test 1: Standard checkpointing
-echo "Test 1/3: Standard checkpointing with CP..."
+echo "Test 1/4: Standard checkpointing with CP..."
 if ! torchrun --nproc_per_node=$NPROC tests/torchrun_standard_checkpointing_with_cp.py --context_parallel_size=$CP_SIZE; then
     echo "ERROR: Standard checkpointing test failed!"
     FAILED=1
@@ -22,7 +22,7 @@ fi
 sleep 1
 
 # Test 2: Sequence mixer CP
-echo "Test 2/3: Sequence mixer CP equivalency..."
+echo "Test 2/4: Sequence mixer CP equivalency..."
 if ! torchrun --nproc_per_node=$NPROC tests/torchrun_sequence_mixer_cp_test.py --context_parallel_size=$CP_SIZE; then
     echo "ERROR: Sequence mixer CP test failed!"
     FAILED=1
@@ -30,9 +30,17 @@ fi
 sleep 1
 
 # Test 3: MNIST CP (2D)
-echo "Test 3/3: MNIST CP integration..."
+echo "Test 3/4: MNIST CP integration..."
 if ! torchrun --nproc_per_node=$NPROC tests/torchrun_megatron_cp_mnist.py --context_parallel_size=$CP_SIZE; then
     echo "ERROR: MNIST CP test failed!"
+    FAILED=1
+fi
+sleep 1
+
+# Test 4: Full training with CP
+echo "Test 4/4: Full MNIST training with CP..."
+if ! python tests/torchrun_training_mnist_cp.py --nproc=$NPROC --context_parallel_size=$CP_SIZE --iterations=100 --timeout=120; then
+    echo "ERROR: Full training test failed!"
     FAILED=1
 fi
 
