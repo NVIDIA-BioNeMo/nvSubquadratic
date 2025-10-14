@@ -71,8 +71,8 @@ repos:
         stages: [pre-push]
         pass_filenames: false
       - id: torchrun-cp-tests
-        name: torchrun-cp-tests (1D, 2D, 3D)
-        entry: bash -c 'if [ $(python -c "import torch; print(torch.cuda.device_count())") -ge 2 ]; then echo "Running distributed CP tests for all dimensions..." && torchrun --nproc_per_node=2 tests/torchrun_sequence_mixer_cp_test.py --context_parallel_size=2 --dtype=float32; else echo "Skipping torchrun tests (requires 2+ GPUs)"; fi'
+        name: torchrun-cp-tests (all tests)
+        entry: bash -c 'if [ $(python -c "import torch; print(torch.cuda.device_count())") -ge 2 ]; then echo "Running all distributed CP tests..." && ./tests/run_torchrun_tests.sh; else echo "Skipping torchrun tests (requires 2+ GPUs)"; fi'
         language: system
         stages: [push]
         pass_filenames: false

@@ -351,7 +351,8 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
                     logging.error(f"Gradient mismatch for {n_without_cp}: {e}")
 
             if gradient_mismatch:
-                logging.warning("There were gradient mismatches!")
+                logging.error("There were gradient mismatches!")
+                return False
             else:
                 logging.info("All gradients matched successfully!")
 
