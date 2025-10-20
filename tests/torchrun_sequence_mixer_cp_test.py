@@ -190,10 +190,10 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
         sequence_mixer = sequence_mixer.to(dtype_map[dtype])
 
-        # Wrap with DDP
+        # Wrap with DDP using DP+CP group for gradient synchronization
         ddp_sequence_mixer = DDP(
             sequence_mixer,
-            process_group=parallel_state.get_data_context_parallel_group(with_context_parallel=True),
+            process_group=parallel_state.get_data_parallel_group(with_context_parallel=True),
             find_unused_parameters=True,
         )
 
