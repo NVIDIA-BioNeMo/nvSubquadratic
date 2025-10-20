@@ -193,7 +193,7 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         # Wrap with DDP
         ddp_sequence_mixer = DDP(
             sequence_mixer,
-            process_group=parallel_state.get_data_parallel_group(with_context_parallel=True),
+            process_group=parallel_state.get_data_context_parallel_group(with_context_parallel=True),
             find_unused_parameters=True,
         )
 
