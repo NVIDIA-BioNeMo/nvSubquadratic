@@ -57,6 +57,7 @@ class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
         use_deterministic_worker_init: bool,
         seed: int,
         enable_cp: bool = False,
+        cp_seq_dim: int = 1,
     ):
         """Initialize the MNISTDataModule.
 
@@ -69,6 +70,7 @@ class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
             use_deterministic_worker_init: Whether to use deterministic worker initialization
             seed: Seed for the data
             enable_cp: Whether to enable Context Parallelism data splitting
+            cp_seq_dim: Dimension to split along for CP
         """
         super().__init__()
 
@@ -79,7 +81,7 @@ class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
         self.pin_memory = pin_memory
         self.seed = seed
         self.enable_cp = enable_cp
-
+        self.cp_seq_dim = cp_seq_dim
         # Create a generator with the given seed for reproducibility
         self.generator = torch.Generator().manual_seed(seed)
 
@@ -144,16 +146,23 @@ class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
         Returns:
             DataLoader: DataLoader for the dataset.
         """
-        # No custom collate needed - CP splitting happens in transfer_batch_to_device
+        # Create distributed sampler for CP (from mixin)
+        # This ensures all CP ranks in the same DP group get the same data samples
+        sampler = self._create_distributed_sampler(dataset, shuffle, drop_last)
+        if sampler is not None:
+            # When using sampler, disable shuffle and drop_last in DataLoader
+            shuffle = False
+            drop_last = False
+
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=shuffle,
+            sampler=sampler,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=drop_last,
-            # worker_init_fn=self.worker_init_fn,  # No longer needed with pl.seed_everything(workers=True)
-            generator=self.generator,
+            generator=self.generator if sampler is None else None,
             persistent_workers=self.num_workers > 0,
         )
 
@@ -184,19 +193,4 @@ class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
         else:
             raise ValueError(f"Unsupported data type: {self.data_type}")
         batch = x, y
-        return batch
-
-    def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        """Transfer batch to device and apply CP splitting if enabled.
-
-        This is called by Lightning in the main process, after batch is on GPU,
-        so distributed operations (broadcast, split) work correctly.
-        """
-        # First transfer to device (standard Lightning behavior)
-        batch = super().transfer_batch_to_device(batch, device, dataloader_idx)
-
-        # Then apply CP splitting (from mixin)
-        if self.enable_cp:
-            batch = self._apply_cp_split_on_device(batch, device, seq_dim=1)
-
         return batch
