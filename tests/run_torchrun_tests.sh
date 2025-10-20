@@ -23,7 +23,7 @@ sleep 1
 
 # Test 2: Sequence mixer CP
 echo "Test 2/4: Sequence mixer CP equivalency..."
-if ! torchrun --nproc_per_node=$NPROC tests/torchrun_sequence_mixer_cp_test.py --context_parallel_size=$CP_SIZE; then
+if ! torchrun --nproc_per_node=$NPROC tests/torchrun_sequence_mixer_cp_equivalence.py --context_parallel_size=$CP_SIZE; then
     echo "ERROR: Sequence mixer CP test failed!"
     FAILED=1
 fi
