@@ -133,11 +133,11 @@ class ContextParallelStrategy(DDPStrategy):
         Returns:
             DDP-wrapped model configured for the correct process group.
         """
-        # Get the DP group from backend (accounts for CP)
+        # Get the DP+CP group from backend for gradient synchronization
         dp_group = None
         if self.backend is not None:
-            dp_group = self.backend.get_data_parallel_group()
-            logger.info("Wrapping model with DDP using CP-aware data parallel group")
+            dp_group = self.backend.get_data_context_parallel_group()
+            logger.info("Wrapping model with DDP using data+context parallel group for gradient sync")
         else:
             logger.info("Wrapping model with DDP using default process group")
 

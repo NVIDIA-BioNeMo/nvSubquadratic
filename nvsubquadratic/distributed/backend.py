@@ -77,12 +77,29 @@ class ParallelBackend(ABC):
 
     @abstractmethod
     def get_data_parallel_group(self) -> Optional[dist.ProcessGroup]:
-        """Get the data parallel process group.
+        """Get the data parallel process group (DP-only, excludes CP ranks).
 
-        This group is used for gradient synchronization (DDP/FSDP).
+        This group is used for data loading and sampling. When CP is enabled,
+        all CP ranks within the same DP group should receive the same data samples.
+        Use this for DistributedSampler's num_replicas and rank parameters.
+
+        For gradient synchronization (DDP/FSDP), use get_data_context_parallel_group() instead.
 
         Returns:
-            ProcessGroup for data parallelism, or None if DP is disabled.
+            ProcessGroup for data parallelism only, or None if DP is disabled.
+        """
+        pass
+
+    @abstractmethod
+    def get_data_context_parallel_group(self) -> Optional[dist.ProcessGroup]:
+        """Get the combined data+context parallel process group.
+
+        This is the flattened group containing both DP and CP ranks, used for
+        gradient synchronization in DDP/FSDP wrappers. All ranks within this
+        group will average gradients together.
+
+        Returns:
+            ProcessGroup for data+context parallelism (flattened DP and CP), or None if disabled.
         """
         pass
 
@@ -227,10 +244,24 @@ class MegatronBackend(ParallelBackend):
         return parallel_state.get_context_parallel_group()
 
     def get_data_parallel_group(self) -> Optional[dist.ProcessGroup]:
-        """Get DP group from Megatron parallel state.
+        """Get DP-only group from Megatron parallel state.
 
-        Note: Uses with_context_parallel=True to get the correct DP group
-        that accounts for CP sharding.
+        This returns the data parallel group excluding CP ranks. Use this for
+        DistributedSampler to ensure all CP ranks get the same data samples.
+
+        Note: Uses with_context_parallel=False (default) in Megatron's API.
+        """
+        from megatron.core import parallel_state
+
+        return parallel_state.get_data_parallel_group()
+
+    def get_data_context_parallel_group(self) -> Optional[dist.ProcessGroup]:
+        """Get combined DP+CP group from Megatron parallel state.
+
+        This returns the flattened data parallel group that includes context parallel
+        ranks. Use this for DDP/FSDP wrappers to average gradients across both DP and CP.
+
+        Note: Uses with_context_parallel=True in Megatron's API.
         """
         from megatron.core import parallel_state
 
@@ -342,6 +373,10 @@ class DeviceMeshBackend(ParallelBackend):
 
     def get_data_parallel_group(self) -> Optional[dist.ProcessGroup]:
         """Get DP group (not yet implemented)."""
+        raise NotImplementedError("DeviceMesh backend not yet implemented")
+
+    def get_data_context_parallel_group(self) -> Optional[dist.ProcessGroup]:
+        """Get combined DP+CP group (not yet implemented)."""
         raise NotImplementedError("DeviceMesh backend not yet implemented")
 
     def get_tensor_parallel_group(self) -> Optional[dist.ProcessGroup]:
