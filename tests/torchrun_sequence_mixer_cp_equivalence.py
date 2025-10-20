@@ -8,7 +8,7 @@ parallelism enabled. The tests verify both forward pass correctness and gradient
 computation across multiple GPUs.
 
 Example Usage:
-    torchrun --nproc_per_node=2 tests/test_sequence_mixer_cp_torchrun.py --context_parallel_size=2
+    torchrun --nproc_per_node=2 tests/torchrun_sequence_mixer_cp_equivalence.py --context_parallel_size=2
 """
 
 import argparse
@@ -18,9 +18,14 @@ import time
 
 import torch
 import torch.distributed as dist
-from megatron.core import parallel_state
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from nvsubquadratic.distributed.backend import (
+    MegatronBackend,
+    ParallelConfig,
+    get_global_backend,
+    set_global_backend,
+)
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
@@ -34,7 +39,6 @@ from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.self_attention import SelfAttention
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.parallel.utils import (
-    init_parallel_state,
     setup_rank0_logging,
     zigzag_gather_from_group_ranks,
     zigzag_split_across_group_ranks,
@@ -191,9 +195,10 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         sequence_mixer = sequence_mixer.to(dtype_map[dtype])
 
         # Wrap with DDP using DP+CP group for gradient synchronization
+        backend = get_global_backend()
         ddp_sequence_mixer = DDP(
             sequence_mixer,
-            process_group=parallel_state.get_data_parallel_group(with_context_parallel=True),
+            process_group=backend.get_data_context_parallel_group(),
             find_unused_parameters=True,
         )
 
@@ -229,7 +234,8 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         test_input = torch.randn(*input_shape, device=torch.cuda.current_device(), dtype=input_dtype)
 
         # Broadcast input across context parallel group
-        cp_group = parallel_state.get_context_parallel_group()
+        backend = get_global_backend()
+        cp_group = backend.get_context_parallel_group()
         dist.broadcast(test_input, min(dist.get_process_group_ranks(cp_group)), group=cp_group)
 
         if dist.get_rank() == 0:
@@ -271,10 +277,9 @@ def test_sequence_mixer_cp_equivalency(data_dim: int = 1, dtype: str = "float32"
         if dist.get_rank() == 0:
             try:
                 # With zigzag splitting, each rank gets a portion along the seq_dim
+                backend = get_global_backend()
                 expected_cp_shape = list(input_shape)
-                expected_cp_shape[seq_dim] = (
-                    expected_cp_shape[seq_dim] // parallel_state.get_context_parallel_world_size()
-                )
+                expected_cp_shape[seq_dim] = expected_cp_shape[seq_dim] // backend.get_context_parallel_world_size()
                 expected_cp_shape = tuple(expected_cp_shape)
                 assert output_with_cp.shape == expected_cp_shape, (
                     f"output_with_cp.shape: {output_with_cp.shape}, expected: {expected_cp_shape}"
@@ -412,8 +417,17 @@ def main() -> int:
     log_file = os.path.join(args.log_dir, f"rank_{rank}.log")
     setup_rank0_logging(log_file)
 
-    # Initialize parallel state
-    init_parallel_state(context_parallel_size=args.context_parallel_size)
+    # Initialize backend
+    config = ParallelConfig(
+        backend_type="megatron",
+        tensor_parallel_size=1,
+        pipeline_parallel_size=1,
+        context_parallel_size=args.context_parallel_size,
+    )
+    backend = MegatronBackend(config)
+    world_size = torch.cuda.device_count()
+    backend.initialize(world_size=world_size, rank=rank)
+    set_global_backend(backend)
 
     logging.info(f"Starting QKVSequenceMixer CP test with args: {args}")
 
@@ -451,8 +465,20 @@ def main() -> int:
         # Reset CUDA device
         torch.cuda.empty_cache()
 
+        # Clean up backend
+        backend = get_global_backend()
+        if backend and hasattr(backend, "destroy"):
+            backend.destroy()
+        set_global_backend(None)
+
         # Clean up any dangling context or process groups
-        parallel_state.destroy_model_parallel()
+        try:
+            from megatron.core import parallel_state
+
+            parallel_state.destroy_model_parallel()
+        except Exception:
+            pass
+
         if dist.is_initialized():
             dist.destroy_process_group()
 

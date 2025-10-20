@@ -7,7 +7,7 @@ This test validates that we can use Lightning's standard checkpointing
 for most use cases.
 
 Example Usage:
-    torchrun --nproc_per_node=2 tests/integration/test_standard_checkpoint_with_cp.py
+    torchrun --nproc_per_node=2 tests/torchrun_standard_checkpointing_with_cp.py
 """
 
 import argparse
@@ -18,15 +18,19 @@ import time
 
 import torch
 import torch.distributed as dist
-from megatron.core import parallel_state
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from nvsubquadratic.distributed.backend import (
+    MegatronBackend,
+    ParallelConfig,
+    get_global_backend,
+    set_global_backend,
+)
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.self_attention import SelfAttention
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
-from nvsubquadratic.parallel.utils import init_parallel_state
 
 
 logger = logging.getLogger(__name__)
@@ -64,9 +68,10 @@ def test_checkpoint_save_load_standard():
     """Test that standard Lightning checkpoints work with CP."""
     logger.info("Test: Standard Lightning Checkpoint with CP")
 
-    cp_group = parallel_state.get_context_parallel_group()
-    cp_rank = parallel_state.get_context_parallel_rank()
-    cp_size = parallel_state.get_context_parallel_world_size()
+    backend = get_global_backend()
+    cp_group = backend.get_context_parallel_group()
+    cp_rank = backend.get_context_parallel_rank()
+    cp_size = backend.get_context_parallel_world_size()
 
     logger.info(f"CP rank={cp_rank}/{cp_size}")
 
@@ -85,7 +90,7 @@ def test_checkpoint_save_load_standard():
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # Train for a few steps
-    for step in range(5):
+    for _ in range(5):
         batch_size = 2
         seq_len = 392  # For CP=2
         x = torch.randn(batch_size, seq_len, 100, device=torch.cuda.current_device())
@@ -172,12 +177,20 @@ def main():
     )
 
     try:
-        # Initialize distributed
-        local_rank = init_parallel_state(
-            tensor_model_parallel_size=1,
-            pipeline_model_parallel_size=1,
+        # Initialize backend
+        config = ParallelConfig(
+            backend_type="megatron",
+            tensor_parallel_size=1,
+            pipeline_parallel_size=1,
             context_parallel_size=args.context_parallel_size,
         )
+        backend = MegatronBackend(config)
+        world_size = torch.cuda.device_count()
+        rank = int(os.getenv("RANK", 0))
+        backend.initialize(world_size=world_size, rank=rank)
+        set_global_backend(backend)
+
+        local_rank = int(os.getenv("LOCAL_RANK", 0))
 
         logger.info(f"Initialized distributed: local_rank={local_rank}")
 
@@ -207,7 +220,21 @@ def main():
         # Cleanup
         logger.info("Cleaning up resources")
         torch.cuda.empty_cache()
-        parallel_state.destroy_model_parallel()
+
+        # Clean up backend
+        backend = get_global_backend()
+        if backend and hasattr(backend, "destroy"):
+            backend.destroy()
+        set_global_backend(None)
+
+        # Destroy parallel state (Megatron cleanup)
+        try:
+            from megatron.core import parallel_state
+
+            parallel_state.destroy_model_parallel()
+        except Exception:
+            pass
+
         if dist.is_initialized():
             dist.destroy_process_group()
         time.sleep(1)

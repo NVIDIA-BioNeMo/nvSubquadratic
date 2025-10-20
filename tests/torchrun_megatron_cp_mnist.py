@@ -20,8 +20,13 @@ import time
 
 import torch
 import torch.distributed as dist
-from megatron.core import parallel_state
 
+from nvsubquadratic.distributed.backend import (
+    MegatronBackend,
+    ParallelConfig,
+    get_global_backend,
+    set_global_backend,
+)
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.distributed_depthwise_conv_nd import DistributedDepthwiseConv2d
@@ -32,7 +37,6 @@ from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 from nvsubquadratic.parallel.utils import (
-    init_parallel_state,
     zigzag_gather_from_group_ranks,
     zigzag_split_across_group_ranks,
 )
@@ -42,11 +46,12 @@ logger = logging.getLogger(__name__)
 
 
 def test_data_splitting():
-    """Test that data is correctly split across CP ranks."""
-    # Get CP group
-    cp_group = parallel_state.get_context_parallel_group()
-    cp_rank = parallel_state.get_context_parallel_rank()
-    cp_size = parallel_state.get_context_parallel_world_size()
+    """Test that data is correctly split across CP ranks, broadcasted to all CP ranks, and gathered back to the original rank."""
+    # Get CP info from backend
+    backend = get_global_backend()
+    cp_group = backend.get_context_parallel_group()
+    cp_rank = backend.get_context_parallel_rank()
+    cp_size = backend.get_context_parallel_world_size()
 
     logger.info(f"Testing data splitting: CP rank={cp_rank}/{cp_size}")
 
@@ -81,12 +86,13 @@ def test_data_splitting():
     return True
 
 
-def test_network_forward_pass():
+def test_network_forward_pass_runs():
     """Test that network forward pass works with CP on 2D data."""
-    # Get CP group
-    cp_group = parallel_state.get_context_parallel_group()
-    cp_rank = parallel_state.get_context_parallel_rank()
-    cp_size = parallel_state.get_context_parallel_world_size()
+    # Get CP info from backend
+    backend = get_global_backend()
+    cp_group = backend.get_context_parallel_group()
+    cp_rank = backend.get_context_parallel_rank()
+    cp_size = backend.get_context_parallel_world_size()
 
     logger.info(f"Testing network forward pass: CP rank={cp_rank}/{cp_size}")
 
@@ -203,14 +209,23 @@ def main():
     )
 
     try:
-        # Initialize distributed
-        local_rank = init_parallel_state(
-            tensor_model_parallel_size=1,
-            pipeline_model_parallel_size=1,
+        # Initialize backend
+        config = ParallelConfig(
+            backend_type="megatron",
+            tensor_parallel_size=1,
+            pipeline_parallel_size=1,
             context_parallel_size=args.context_parallel_size,
         )
+        backend = MegatronBackend(config)
 
-        logger.info(f"Initialized distributed: local_rank={local_rank}")
+        # Initialize distributed (backend handles device setup and process group init)
+        world_size = torch.cuda.device_count()
+        rank = int(os.getenv("RANK", 0))
+
+        backend.initialize(world_size=world_size, rank=rank)
+        set_global_backend(backend)
+
+        logger.info(f"Backend initialized: rank={rank}, world_size={world_size}")
 
         # Run tests
         logger.info("=" * 80)
@@ -222,7 +237,7 @@ def main():
         logger.info("=" * 80)
         logger.info("Test 2: Network Forward/Backward Pass")
         logger.info("=" * 80)
-        test_network_forward_pass()
+        test_network_forward_pass_runs()
         dist.barrier()
 
         if dist.get_rank() == 0:
@@ -243,7 +258,21 @@ def main():
         # Cleanup
         logger.info("Cleaning up resources")
         torch.cuda.empty_cache()
-        parallel_state.destroy_model_parallel()
+
+        # Clean up backend
+        backend = get_global_backend()
+        if backend and hasattr(backend, "destroy"):
+            backend.destroy()
+        set_global_backend(None)
+
+        # Destroy parallel state (Megatron cleanup)
+        try:
+            from megatron.core import parallel_state
+
+            parallel_state.destroy_model_parallel()
+        except Exception:
+            pass
+
         if dist.is_initialized():
             dist.destroy_process_group()
         time.sleep(1)
