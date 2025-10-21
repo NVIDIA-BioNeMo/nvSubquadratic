@@ -106,7 +106,11 @@ class ExperimentConfig:
     #   })
     net: LazyConfig = PLACEHOLDER
 
-    lightning_wrapper_class: Literal[type("ClassificationWrapper"), type("RegressionWrapper")] = PLACEHOLDER
+    lightning_wrapper_class: Literal[
+        "examples.lightning_wrappers.ClassificationWrapper",
+        "examples.lightning_wrappers.RegressionWrapper",
+        "examples.lightning_wrappers.DiffusionWrapper",
+    ] = PLACEHOLDER
 
     # Base optimizer MUST be set in experiment config
     # This should be instantiated with a LazyConfig object, e.g.:

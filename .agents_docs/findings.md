@@ -1,8 +1,11 @@
 # Findings Log
-
-- 2025-10-22T19:26Z — Initialized log; no technical findings yet.
-- 2025-10-22T19:29Z — Verified dataset directory `~/project_dir/huggingface/imagenet/imagenet-1k` is present.
-- 2025-10-22T19:29Z — Diffusion experiment entry point not yet found in repository; need to identify correct script/config.
-- 2025-10-22T19:44Z — Created mamba environment `nvsq` with Python 3.11.14.
-- 2025-10-22T19:44Z — Installed project editable package and pyproject dependencies inside `nvsq`.
-- 2025-10-22T19:45Z — `subquadratic_ops` import fails in `nvsq`; dependency likely requires internal index credentials.
+- 2025-10-21T22:58:13Z — Workspace setup initiated; branch `agent/diffusion-transfer/20251021-225813` created for diffusion transfer assessment.
+- 2025-10-21T23:05:00Z — Reviewed top-level repo layout: package `nvsubquadratic` organizes ND mixer blocks (Hyena, self-attention, residual block, MLP), lazy instantiation helpers, FFT-based ops, and parallel utils; examples/ includes Lightning configs & data modules; tests cover imports, distributed conv kernels, and attention behaviors.
+- 2025-10-21T23:07:30Z — `examples/run.py` demonstrates experiment orchestration: dataclass configs + `LazyConfig` instantiate datasets/networks/lightning wrappers, enforcing CUDA usage and WandB logging with deterministic naming.
+- 2025-10-21T23:12:00Z — `../ccnn_v2` diffusion stack centers on `DiffusionResNet` (CKConv residual blocks with timestep conditioning) and `DiffusionWrapper` (Lightning module implementing DDPM schedule, training/validation, and sampling); experiment config `experiments/imagenet/simple_diffusion2.py` wires ImageNet datamodule, diffusion hyperparameters, and logging.
+- 2025-10-21T23:15:30Z — Draft transfer plan: introduce diffusion network + Lightning wrapper leveraging existing CKConv/mask modules, port ImageNet datamodule & config templates, align LazyConfig schemas, and add tests/validation mirroring ccnn_v2 smoke runs.
+- 2025-10-21T23:28:00Z — Ported ImageNet diffusion scaffolding: added deterministic HF datamodule (`examples/imagenet_diffusion/imagenet_datamodule.py`), CKConv diffusion network (`nvsubquadratic/networks/diffusion_resnet.py`), learned position encodings, and Lightning `DiffusionWrapper` mirroring DDPM schedule/sample flow.
+- 2025-10-21T23:30:00Z — Declared Hugging Face `datasets` dependency in `pyproject.toml` to support ImageNet datamodule without manual installs.
+- 2025-10-21T23:32:00Z — Import smoke test blocked: Python environment lacks `torch`; documented in summary and left validation as follow-up once dependencies are installed.
+- 2025-10-21T23:37:00Z — Provisioned conda environment `nvsq` (python=3.11) for nvSubquadratic; activate with `conda activate nvsq` prior to dependency installs.
+- 2025-10-21T23:45:00Z — Installed project dependencies inside `nvsq`: CUDA-enabled PyTorch stack plus `pip install -e .` pulling datasets, Lightning, HuggingFace hub, megatron-core, etc.; ready to rerun diffusion import checks.
