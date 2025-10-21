@@ -179,6 +179,15 @@ def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> Ex
                     value = True
                 elif value.lower() == "false":
                     value = False
+                # Handle tuples, lists, and other Python literals
+                elif value.startswith(("(", "[", "{")):
+                    try:
+                        import ast
+
+                        value = ast.literal_eval(value)
+                    except (ValueError, SyntaxError):
+                        # Keep as string if not a valid literal
+                        pass
                 # Otherwise keep as string
 
         # Apply the override

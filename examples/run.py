@@ -11,6 +11,7 @@ Usage:
 import argparse
 import dataclasses
 import os
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
@@ -50,6 +51,20 @@ def parse_args():
         type=str,
         default=None,
         help="Path to checkpoint to resume training from (e.g., lightning_logs/version_0/checkpoints/last.ckpt)",
+    )
+
+    # Gradient logging for testing (optional)
+    parser.add_argument(
+        "--log_gradients",
+        type=str,
+        default=None,
+        help="Directory to save gradient statistics for testing (default: disabled)",
+    )
+    parser.add_argument(
+        "--gradient_log_steps",
+        type=int,
+        default=1,
+        help="Log gradients every N steps (default: 1)",
     )
 
     # Add a catch-all for arbitrary config overrides
@@ -128,6 +143,18 @@ def main():
 
     # Create trainer
     trainer, checkpoint_callback = construct_trainer(config, wandb_logger)
+
+    # Add gradient logging callback if requested (for testing)
+    if args.log_gradients:
+        from nvsubquadratic.testing.callbacks import GradientLoggingCallback
+
+        gradient_callback = GradientLoggingCallback(
+            save_dir=Path(args.log_gradients),
+            log_every_n_steps=args.gradient_log_steps,
+            max_steps=args.gradient_log_steps,
+        )
+        trainer.callbacks.append(gradient_callback)
+        print(f"Gradient logging enabled: saving to {args.log_gradients} every {args.gradient_log_steps} steps")
 
     # Train
     if config.train.do:

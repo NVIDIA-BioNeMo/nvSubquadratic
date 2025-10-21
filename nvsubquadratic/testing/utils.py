@@ -2,6 +2,10 @@
 
 """Shared test utilities for distributed training validation."""
 
+import json
+from pathlib import Path
+from typing import Dict, Optional
+
 import torch
 
 
@@ -39,3 +43,34 @@ def compute_relative_error(tensor1: torch.Tensor, tensor2: torch.Tensor) -> floa
         return diff_norm.item()
 
     return (diff_norm / ref_norm).item()
+
+
+def load_gradient_stats(save_dir: Path, rank: int = 0, step: Optional[int] = None) -> Dict:
+    """Load gradient statistics from disk.
+
+    Args:
+        save_dir: Directory containing gradient files
+        rank: Rank to load gradients from (default: 0)
+        step: Optional step number
+
+    Returns:
+        Dictionary of gradient statistics per parameter
+
+    Raises:
+        FileNotFoundError: If no gradient files are found
+    """
+    save_dir = Path(save_dir)
+
+    # Build filename
+    if step is not None:
+        filename = f"gradients_rank{rank}_step{step}.json"
+    else:
+        filename = f"gradients_rank{rank}.json"
+
+    save_path = save_dir / filename
+
+    if not save_path.exists():
+        raise FileNotFoundError(f"Gradient file not found: {save_path}")
+
+    with open(save_path, "r") as f:
+        return json.load(f)
