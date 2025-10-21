@@ -32,7 +32,7 @@ from examples.lightning_wrappers import ClassificationWrapper
 from examples.mnist_classification.mnist_datamodule import MNISTDataModule
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.distributed_depthwise_conv_nd import DistributedDepthwiseConv1d
+from nvsubquadratic.modules.distributed_depthwise_conv_nd import DistributedDepthwiseConv2d
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
@@ -46,8 +46,8 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 PLACEHOLDER = None
 
 # Data configuration
-DATA_TYPE = "sequence"  # Use sequence for CP (splits along sequence dimension)
-DATA_DIM = 1  # 1D sequence
+DATA_TYPE = "image"  # Use 2D image for CP (splits along height dimension)
+DATA_DIM = 2  # 2D image
 
 # Model parameters (smaller for testing)
 BATCH_SIZE = 64
@@ -55,12 +55,12 @@ NUM_HIDDEN_CHANNELS = 128
 NUM_BLOCKS = 2
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "single"
+GRID_TYPE = "double"
 
 # Training parameters (shorter for testing)
 TRAINING_ITERATIONS = 1000  # Short test run
-WARMUP_ITERATIONS = 50
-NUM_WORKERS = max(1, os.cpu_count() // max(1, torch.cuda.device_count()))
+WARMUP_ITERATIONS = int(TRAINING_ITERATIONS * 0.05)
+NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
 GRAD_CLIP = 10.0
 
 # Optimizer parameters
@@ -127,8 +127,8 @@ def get_config() -> ExperimentConfig:
                         ),
                         grid_type=GRID_TYPE,
                     ),
-                    # IMPORTANT: Use DistributedDepthwiseConv1d for CP support
-                    short_conv_cfg=LazyConfig(DistributedDepthwiseConv1d)(
+                    # IMPORTANT: Use DistributedDepthwiseConv2d for CP support with 2D images
+                    short_conv_cfg=LazyConfig(DistributedDepthwiseConv2d)(
                         hidden_dim="3 * ${net.hidden_dim}",
                         kernel_size=3,
                         num_groups="3 * ${net.hidden_dim}",
