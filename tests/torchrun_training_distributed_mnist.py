@@ -68,7 +68,7 @@ def run_training_test(
         "--master_port=29522",  # Use different port to avoid conflicts
         "examples/run.py",
         "--config",
-        "examples/mnist_classification/experiments/mnist_classification_ccnn_cp_test.py",
+        "examples/mnist_classification/experiments/mnist_classification_ccnn_small_distributed_hyena_rope_qknorm.py",
         "distributed.enabled=True",
         f"distributed.context_parallel_size={cp_size}",
         "dataset.enable_cp=True",

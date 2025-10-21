@@ -39,7 +39,7 @@ sleep 1
 
 # Test 4: Full training with CP
 echo "Test 4/4: Full MNIST training with CP..."
-if ! python tests/torchrun_training_mnist_cp.py --nproc=$NPROC --context_parallel_size=$CP_SIZE --iterations=100 --timeout=120; then
+if ! python tests/torchrun_training_distributed_mnist.py --nproc=$NPROC --context_parallel_size=$CP_SIZE --iterations=100 --timeout=120; then
     echo "ERROR: Full training test failed!"
     FAILED=1
 fi
