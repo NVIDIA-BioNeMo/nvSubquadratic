@@ -39,6 +39,7 @@ def run_training(cp_size, save_dir, config, seed, batch_size):
     same samples in the exact same order!
     """
     port = 29500 if cp_size == 1 else 29501
+    test_experiment_dir = f"/tmp/test_cp{cp_size}_experiment"
 
     cmd = [
         "torchrun",
@@ -51,6 +52,8 @@ def run_training(cp_size, save_dir, config, seed, batch_size):
         str(save_dir),
         "--gradient_log_steps",
         "1",
+        "--experiment_dir",
+        test_experiment_dir,
         "distributed.enabled=True",
         f"distributed.context_parallel_size={cp_size}",
         "dataset.enable_cp=True",

@@ -67,6 +67,14 @@ def parse_args():
         help="Log gradients every N steps (default: 1)",
     )
 
+    # Experiment directory for organizing outputs
+    parser.add_argument(
+        "--experiment_dir",
+        type=str,
+        default=None,
+        help="Directory for checkpoints and logs (default: ./experiments/{run_name})",
+    )
+
     # Add a catch-all for arbitrary config overrides
     parser.add_argument(
         "overrides",
@@ -142,7 +150,7 @@ def main():
     rprint(tree)
 
     # Create trainer
-    trainer, checkpoint_callback = construct_trainer(config, wandb_logger)
+    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, experiment_dir=args.experiment_dir)
 
     # Add gradient logging callback if requested (for testing)
     if args.log_gradients:
@@ -185,12 +193,14 @@ def main():
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: WandbLogger,
+    experiment_dir: str | None = None,
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 
     Args:
         cfg (ExperimentConfig): The configuration.
         wandb_logger (pl.loggers.WandbLogger): The wandb logger.
+        experiment_dir (str): Optional experiment directory path.
 
     Returns:
         tuple[pl.Trainer, pl.Callback]: The constructed trainer and the checkpoint callback.
@@ -202,6 +212,15 @@ def construct_trainer(
     else:
         deterministic = False
         benchmark = True
+
+    # Set experiment directory for checkpoints and logs
+    # This keeps all experiment artifacts (checkpoints, logs, wandb) organized
+    if experiment_dir is None:
+        # Auto-create: ./experiments/{wandb_run_name}/
+        experiment_dir = f"./experiments/{wandb_logger.experiment.name}"
+
+    os.makedirs(experiment_dir, exist_ok=True)
+    print(f"Experiment directory: {experiment_dir}")
 
     # Callback to print model summary
     modelsummary_callback = pl_callbacks.ModelSummary(
@@ -218,13 +237,14 @@ def construct_trainer(
     # Note: Currently using standard Lightning checkpoints for reliability
     # Megatron distributed checkpoints can be enabled later via use_distributed_checkpoint config
     checkpoint_callback = pl_callbacks.ModelCheckpoint(
+        dirpath=experiment_dir,
         monitor=monitor,
         mode=cfg.scheduler.mode,  # Save on best validation accuracy
         save_top_k=1,
         save_last=True,  # Keep track of the model at the last epoch
         verbose=True,
     )
-    print(f"Using ModelCheckpoint (monitor={monitor}, mode={cfg.scheduler.mode})")
+    print(f"Using ModelCheckpoint (dirpath={experiment_dir}, monitor={monitor}, mode={cfg.scheduler.mode})")
 
     # Callback for learning rate monitoring
     lrmonitor_callback = pl_callbacks.LearningRateMonitor(log_weight_decay=True)
@@ -294,6 +314,8 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
+        # Default root directory (prevents checkpoint dirs in source code)
+        default_root_dir=experiment_dir,
     )
     return trainer, checkpoint_callback
 

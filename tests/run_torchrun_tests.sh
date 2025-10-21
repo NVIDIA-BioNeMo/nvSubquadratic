@@ -15,7 +15,8 @@ FAILED=0
 
 # Test 1: Standard checkpointing
 echo "Test 1/5: Standard checkpointing with CP..."
-if ! torchrun --nproc_per_node=$NPROC tests/torchrun_standard_checkpointing_with_cp.py --context_parallel_size=$CP_SIZE; then
+if ! torchrun --nproc_per_node=$NPROC tests/torchrun_standard_checkpointing_with_cp.py \
+    --context_parallel_size=$CP_SIZE; then
     echo "ERROR: Standard checkpointing test failed!"
     FAILED=1
 fi
@@ -41,6 +42,7 @@ sleep 1
 echo "Test 4/5: Full MNIST training with CP..."
 if ! torchrun --nproc_per_node=$NPROC examples/run.py \
     --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm_distributed.py \
+    --experiment_dir /tmp/test_experiment_4 \
     distributed.enabled=True \
     distributed.context_parallel_size=$CP_SIZE \
     dataset.enable_cp=True \
