@@ -4,7 +4,11 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
-from typing import Literal
+import math
+from typing import Literal, Optional
+
+import torch.nn.functional as F
+from torchvision.utils import make_grid
 
 import pytorch_lightning as pl
 import torch
@@ -676,3 +680,230 @@ class RegressionWrapper(LightningWrapperBase):
                     "global_step": self.global_step,
                 }
             )
+
+
+class DiffusionWrapper(LightningWrapperBase):
+    """Lightning module for DDPM-style training with CKConv backbones."""
+
+    def __init__(
+        self,
+        network: torch.nn.Module,
+        cfg: ExperimentConfig,
+        diffusion_cfg: Optional[dict] = None,
+        sample_cfg: Optional[dict] = None,
+    ) -> None:
+        super().__init__(network=network, cfg=cfg)
+
+        defaults = {
+            "num_train_timesteps": 1000,
+            "beta_start": 1e-4,
+            "beta_end": 0.02,
+            "beta_schedule": "linear",
+            "time_embed_dim": None,
+            "max_period": 10000.0,
+        }
+        self.diffusion_cfg = {**defaults, **(diffusion_cfg or {})}
+        self.num_train_timesteps = int(self.diffusion_cfg["num_train_timesteps"])
+
+        self._build_diffusion_schedule()
+
+        hidden_dim = getattr(network, "hidden_dim", None)
+        if hidden_dim is None:
+            raise AttributeError("DiffusionWrapper requires the network to expose a 'hidden_dim' attribute.")
+
+        timestep_dim = self.diffusion_cfg.get("time_embed_dim") or hidden_dim * 2
+        if timestep_dim % 2 != 0:
+            timestep_dim += 1
+        self.timestep_dim = timestep_dim
+        self.max_period = float(self.diffusion_cfg.get("max_period", 10000.0))
+
+        self.time_mlp = torch.nn.Sequential(
+            torch.nn.Linear(self.timestep_dim, hidden_dim * 2),
+            torch.nn.SiLU(),
+            torch.nn.Linear(hidden_dim * 2, hidden_dim),
+        )
+
+        self.loss_fn = torch.nn.MSELoss()
+        self.sample_cfg = {
+            "num_inference_steps": 50,
+            "num_samples": 4,
+            "log_samples": True,
+        }
+        if sample_cfg is not None:
+            self.sample_cfg.update(sample_cfg)
+
+        self.example_input_shape: Optional[torch.Size] = None
+
+    def _build_diffusion_schedule(self) -> None:
+        beta_schedule = self.diffusion_cfg.get("beta_schedule", "linear")
+        beta_start = float(self.diffusion_cfg["beta_start"])
+        beta_end = float(self.diffusion_cfg["beta_end"])
+
+        if beta_schedule != "linear":
+            raise NotImplementedError(f"Only the linear beta schedule is implemented. Got '{beta_schedule}'.")
+
+        betas = torch.linspace(beta_start, beta_end, self.num_train_timesteps, dtype=torch.float32)
+        alphas = 1.0 - betas
+        alphas_cumprod = torch.cumprod(alphas, dim=0)
+        alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=torch.float32), alphas_cumprod[:-1]], dim=0)
+
+        self.register_buffer("betas", betas)
+        self.register_buffer("alphas", alphas)
+        self.register_buffer("alphas_cumprod", alphas_cumprod)
+        self.register_buffer("alphas_cumprod_prev", alphas_cumprod_prev)
+        self.register_buffer("sqrt_alphas_cumprod", torch.sqrt(alphas_cumprod))
+        self.register_buffer("sqrt_one_minus_alphas_cumprod", torch.sqrt(torch.clamp(1.0 - alphas_cumprod, min=1e-12)))
+        self.register_buffer("sqrt_recip_alphas", torch.sqrt(1.0 / alphas))
+
+        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        posterior_variance = torch.clamp(posterior_variance, min=1e-12)
+        self.register_buffer("posterior_variance", posterior_variance)
+
+    @staticmethod
+    def _broadcast(coeff: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
+        shape = (coeff.shape[0],) + (1,) * (reference.ndim - 1)
+        return coeff.view(shape)
+
+    def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
+        device = timesteps.device
+        half_dim = self.timestep_dim // 2
+        exponent = torch.arange(half_dim, device=device, dtype=torch.float32)
+        exponent = -math.log(self.max_period) * exponent / max(half_dim - 1, 1)
+        freqs = torch.exp(exponent)
+        args = timesteps.float().view(-1, 1) * freqs.view(1, -1)
+        embedding = torch.cat([torch.sin(args), torch.cos(args)], dim=-1)
+        if embedding.shape[-1] < self.timestep_dim:
+            embedding = F.pad(embedding, (0, self.timestep_dim - embedding.shape[-1]))
+        return embedding
+
+    def _condition_from_timesteps(self, timesteps: torch.Tensor) -> torch.Tensor:
+        emb = self._timestep_embedding(timesteps)
+        return self.time_mlp(emb)
+
+    def training_step(self, batch, batch_idx):
+        images = batch["input"].to(self.device)
+        if self.example_input_shape is None:
+            self.example_input_shape = images.shape[1:]
+
+        batch_size = images.shape[0]
+        timesteps = torch.randint(
+            0,
+            self.num_train_timesteps,
+            (batch_size,),
+            device=images.device,
+            dtype=torch.long,
+        )
+        noise = torch.randn_like(images)
+
+        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)
+        sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[timesteps], images)
+        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise
+
+        condition = self._condition_from_timesteps(timesteps)
+        prediction = self.network({"input": noisy_images, "condition": condition})["prediction"]
+        loss = self.loss_fn(prediction, noise)
+
+        self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        images = batch["input"].to(self.device)
+        batch_size = images.shape[0]
+
+        timesteps = torch.randint(
+            0,
+            self.num_train_timesteps,
+            (batch_size,),
+            device=images.device,
+            dtype=torch.long,
+        )
+        noise = torch.randn_like(images)
+        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)
+        sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[timesteps], images)
+        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise
+
+        condition = self._condition_from_timesteps(timesteps)
+        prediction = self.network({"input": noisy_images, "condition": condition})["prediction"]
+        loss = self.loss_fn(prediction, noise)
+
+        self.log("val/loss", loss, prog_bar=True, sync_dist=self.distributed)
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        images = batch["input"].to(self.device)
+        batch_size = images.shape[0]
+        timesteps = torch.randint(
+            0,
+            self.num_train_timesteps,
+            (batch_size,),
+            device=images.device,
+            dtype=torch.long,
+        )
+        noise = torch.randn_like(images)
+        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)
+        sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[timesteps], images)
+        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise
+
+        condition = self._condition_from_timesteps(timesteps)
+        prediction = self.network({"input": noisy_images, "condition": condition})["prediction"]
+        loss = self.loss_fn(prediction, noise)
+
+        self.log("test/loss", loss, prog_bar=False, sync_dist=self.distributed)
+        return loss
+
+    @torch.no_grad()
+    def sample(self, num_samples: int, num_inference_steps: Optional[int] = None) -> torch.Tensor:
+        if self.example_input_shape is None:
+            raise RuntimeError("Cannot sample before observing at least one training batch.")
+
+        num_inference_steps = num_inference_steps or int(self.sample_cfg["num_inference_steps"])
+        device = self.betas.device
+        sample = torch.randn((num_samples, *self.example_input_shape), device=device)
+
+        timesteps = torch.linspace(
+            self.num_train_timesteps - 1,
+            0,
+            num_inference_steps,
+            device=device,
+            dtype=torch.long,
+        ).round().long()
+
+        for idx, timestep in enumerate(timesteps):
+            t = torch.full((num_samples,), int(timestep.item()), device=device, dtype=torch.long)
+            condition = self._condition_from_timesteps(t)
+
+            prediction = self.network({"input": sample, "condition": condition})["prediction"]
+
+            sqrt_recip_alpha_t = self._broadcast(self.sqrt_recip_alphas[t], sample)
+            sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[t], sample)
+            betas_t = self._broadcast(self.betas[t], sample)
+
+            model_mean = sqrt_recip_alpha_t * (sample - betas_t / sqrt_one_minus_alphas_cumprod_t * prediction)
+
+            if idx < len(timesteps) - 1:
+                posterior_var_t = self._broadcast(self.posterior_variance[t], sample)
+                noise = torch.randn_like(sample)
+                sample = model_mean + torch.sqrt(posterior_var_t) * noise
+            else:
+                sample = model_mean
+
+        return torch.clamp(sample, -1.0, 1.0)
+
+    def on_validation_epoch_end(self, outputs=None):
+        if not self.sample_cfg.get("log_samples", True):
+            return
+        if self.example_input_shape is None:
+            return
+        if self.logger is None or not hasattr(self.logger, "experiment"):
+            return
+
+        num_samples = int(self.sample_cfg.get("num_samples", 4))
+        samples = self.sample(num_samples=num_samples)
+        samples_bchw = torch.moveaxis(samples, -1, 1)
+        grid = make_grid(samples_bchw, nrow=max(1, int(math.sqrt(num_samples))), normalize=True, value_range=(-1.0, 1.0))
+        self.logger.experiment.log(
+            {
+                "val/samples": wandb.Image(grid.cpu()),
+                "global_step": self.global_step,
+            }
+        )

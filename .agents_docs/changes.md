@@ -1,33 +1,59 @@
-# Change Tickets
+# Changes
 
 ## Queued
-
-_None_
+- None
 
 ## Work in Progress
-
-#### [TICKET T20251022-1926-diffusion-smoketest]
-- created_at: 2025-10-22T19:26Z
-- updated_at: 2025-10-22T19:47Z
-- status: work_in_progress
+- None
+#### [T20251021-2259-diffusion-transfer]
+- created_at: 2025-10-21T22:58:13Z
+- updated_at: 2025-10-21T23:16:30Z
+- status: done
 - owner: codex-agent
-- summary: Provision env `nvsq` and execute diffusion experiment smoketest.
-- rationale: Validates that the diffusion pipeline is runnable with documented dependencies.
+- summary: Build repository knowledge base and define diffusion pipeline transfer plan.
+- rationale: Need clear understanding of `nvSubquadratic` before porting diffusion features from `../ccnn_v2`.
 - dependencies: none
-- validation_plan: Create `nvsq` environment via mamba from `pyproject.toml`; verify dataset availability; run diffusion smoketest command; capture outputs.
+- validation_plan: Document architecture insights in `.agents_docs`, outline transfer steps with required modules/tests.
 
 **Log**
-- 2025-10-22T19:26Z queued — Goal captured from user request; awaiting planning and execution.
-- 2025-10-22T19:27Z work_in_progress — Branch `agent/diffusion-smoketest/20251022-1925` created; beginning discovery and environment setup.
-- 2025-10-22T19:29Z work_in_progress — ImageNet dataset confirmed at `~/project_dir/huggingface`; diffusion entry point still unclear from repo layout.
-- 2025-10-22T19:44Z work_in_progress — Provisioned mamba env `nvsq` (Python 3.11) and installed project dependencies with `pip install -e .`.
-- 2025-10-22T19:45Z work_in_progress — `subquadratic_ops` import missing and no diffusion entry script found; smoketest blocked pending user guidance (next check-in once instructions arrive).
-- 2025-10-22T19:47Z work_in_progress — Committed documentation bootstrap and environment notes (`8bcf032`).
+- 2025-10-21T22:58:13Z queued — Captured goal to evaluate repo and plan diffusion transfer.
+- 2025-10-21T22:58:30Z work_in_progress — Created branch `agent/diffusion-transfer/20251021-225813` and initialized agent documentation.
+- 2025-10-21T23:05:00Z work_in_progress — Documented nvSubquadratic architecture and experiment tooling in `.agents_docs`.
+- 2025-10-21T23:12:00Z work_in_progress — Reviewed `../ccnn_v2` diffusion network and Lightning wrapper to inform transfer strategy.
+- 2025-10-21T23:16:30Z done — Captured transfer plan in `.agents_docs/findings.md`; ready for implementation tickets.
 
 ## Review / Test
-
-_None_
+- None
 
 ## Done
+#### [T20251021-2316-diffusion-imagenet-port]
+- created_at: 2025-10-21T23:16:30Z
+- updated_at: 2025-10-21T23:46:30Z
+- status: done
+- owner: codex-agent
+- summary: Port ImageNet diffusion pipeline (datamodule, network, Lightning wrapper, configs) from `../ccnn_v2`.
+- rationale: Enable nvSubquadratic to run the proven simple diffusion experiment while reusing shared HF cache.
+- dependencies: none
+- validation_plan: Ensure new modules import correctly, configs resolve via `examples/run.py`, and document HF cache usage.
 
-_None_
+**Log**
+- 2025-10-21T23:16:30Z queued — Captured implementation work items for ImageNet diffusion transfer.
+- 2025-10-21T23:17:00Z work_in_progress — Beginning code port of diffusion components into `nvsubquadratic`.
+- 2025-10-21T23:28:00Z work_in_progress — Added diffusion network, Lightning wrapper, ImageNet datamodule, and experiment config leveraging shared HF cache.
+- 2025-10-21T23:30:00Z work_in_progress — Updated `pyproject.toml` to include `datasets` dependency required by the ImageNet datamodule.
+- 2025-10-21T23:32:00Z review_test — Import smoke test blocked by missing `torch`; awaiting dependency install before rerun.
+- 2025-10-21T23:46:30Z done — Installed dependencies in `nvsq` and validated `get_config()` + instantiation via `conda run -n nvsq python -c "..."`.
+
+## Done
+#### [T20251021-2316-diffusion-imagenet-port]
+- created_at: 2025-10-21T23:16:30Z
+- updated_at: 2025-10-21T23:16:30Z
+- status: queued
+- owner: codex-agent
+- summary: Port ImageNet diffusion pipeline (datamodule, network, Lightning wrapper, configs) from `../ccnn_v2`.
+- rationale: Enable nvSubquadratic to run the proven simple diffusion experiment while reusing shared HF cache.
+- dependencies: none
+- validation_plan: Ensure new modules import correctly, configs resolve via `examples/run.py`, and document HF cache usage.
+
+**Log**
+- 2025-10-21T23:16:30Z queued — Captured implementation work items for ImageNet diffusion transfer.
