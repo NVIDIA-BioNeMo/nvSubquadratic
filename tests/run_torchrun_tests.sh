@@ -37,9 +37,16 @@ if ! torchrun --nproc_per_node=$NPROC tests/torchrun_megatron_cp_mnist.py --cont
 fi
 sleep 1
 
-# Test 4: Full training with CP
+# Test 4: Full training with CP (fast mode: 10 iterations, batch_size 32)
 echo "Test 4/4: Full MNIST training with CP..."
-if ! python tests/torchrun_training_distributed_mnist.py --nproc=$NPROC --context_parallel_size=$CP_SIZE --iterations=100 --timeout=120; then
+if ! torchrun --nproc_per_node=$NPROC examples/run.py \
+    --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm_distributed.py \
+    distributed.enabled=True \
+    distributed.context_parallel_size=$CP_SIZE \
+    dataset.enable_cp=True \
+    train.iterations=10 \
+    dataset.batch_size=32 \
+    scheduler.warmup_iterations=5; then
     echo "ERROR: Full training test failed!"
     FAILED=1
 fi

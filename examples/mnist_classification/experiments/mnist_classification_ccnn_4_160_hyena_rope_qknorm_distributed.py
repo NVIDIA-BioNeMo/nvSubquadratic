@@ -50,16 +50,18 @@ DATA_TYPE = "image"  # Use 2D image for CP (splits along height dimension)
 DATA_DIM = 2  # 2D image
 
 # Model parameters (smaller for testing)
-BATCH_SIZE = 64
-NUM_HIDDEN_CHANNELS = 128
-NUM_BLOCKS = 2
+BATCH_SIZE = 128
+NUM_HIDDEN_CHANNELS = 160
+NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "double"
 
 # Training parameters (shorter for testing)
-TRAINING_ITERATIONS = 1000  # Short test run
-WARMUP_ITERATIONS = int(TRAINING_ITERATIONS * 0.05)
+TRAINING_ITERATIONS = 100_000
+WARMUP_ITERATIONS = int(
+    TRAINING_ITERATIONS * 0.05
+)  # 5% of the training iterations -- initially 5 epochs from 200 epochs
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
 GRAD_CLIP = 10.0
 
@@ -182,7 +184,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # Wandb config
-    config.wandb = WandbConfig(job_group="mnist_classification_cp_test")
+    config.wandb = WandbConfig(job_group="mnist_classification_distributed")
 
     # Distributed config - can be overridden via command line
     config.distributed = DistributedConfig(
