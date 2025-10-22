@@ -14,6 +14,7 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
+from torchvision.transforms import InterpolationMode
 
 from examples.imagenet_diffusion import deterministic_utils
 
@@ -79,6 +80,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         pin_memory: bool,
         seed: int,
         image_size: int = 256,
+        final_image_size: Optional[int] = None,
         center_crop: bool = True,
         drop_labels: bool = True,
         use_deterministic_worker_init: bool = True,
@@ -99,6 +101,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_name = hf_dataset_name
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
+        self.final_image_size = final_image_size or image_size
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -139,12 +142,19 @@ class ImageNetDataModule(pl.LightningDataModule):
         resize_op = transforms.Resize(self.image_size + 32)
         crop_train = transforms.RandomCrop(self.image_size)
         crop_eval = transforms.CenterCrop(self.image_size) if self.center_crop else transforms.Resize(self.image_size)
+        downsample_ops: list = []
+        if self.final_image_size != self.image_size:
+            downsample_ops.append(
+                transforms.Resize(self.final_image_size, interpolation=InterpolationMode.BICUBIC)
+            )
         common_tail = [
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ]
-        train_transforms = transforms.Compose([resize_op, crop_train, transforms.RandomHorizontalFlip(), *common_tail])
-        eval_transforms = transforms.Compose([resize_op, crop_eval, *common_tail])
+        train_transforms = transforms.Compose(
+            [resize_op, crop_train, *downsample_ops, transforms.RandomHorizontalFlip(), *common_tail]
+        )
+        eval_transforms = transforms.Compose([resize_op, crop_eval, *downsample_ops, *common_tail])
         return ImageNetTransforms(train=train_transforms, eval=eval_transforms)
 
     def setup(self, stage: Optional[str] = None) -> None:
