@@ -19,7 +19,8 @@ class DiffusionHyperParams:
     """Container gathering the essential hyper-parameters for the experiment."""
 
     image_size: int = 256
-    batch_size: int = 64
+    downsample_size: int = 64
+    batch_size: int = 16
     hidden_dim: int = 256
     num_blocks: int = 12
     dropout_in: float = 0.0
@@ -62,6 +63,7 @@ def get_config() -> ExperimentConfig:
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         seed=config.seed,
         image_size=hyper.image_size,
+        final_image_size=hyper.downsample_size,
         drop_labels=True,
         use_deterministic_worker_init=True,
         hf_dataset_name="imagenet-1k",
@@ -122,7 +124,7 @@ def get_config() -> ExperimentConfig:
         positional_encoding_cfg=LazyConfig("nvsubquadratic.modules.position_encoding.PositionEmbeddingND")(
             embedding_dim=hyper.hidden_dim,
             data_dim=2,
-            max_dim_lengths=(hyper.image_size, hyper.image_size),
+            max_dim_lengths=(hyper.downsample_size, hyper.downsample_size),
         ),
         condition_proj_cfg=LazyConfig(torch.nn.Linear)(
             in_features=hyper.hidden_dim,
