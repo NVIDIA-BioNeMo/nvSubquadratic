@@ -10,12 +10,13 @@ from typing import Literal, Optional
 import torch.nn.functional as F
 from torchvision.utils import make_grid
 
+import copy
+
 import pytorch_lightning as pl
 import torch
 import torchmetrics
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
-from torch.optim.swa_utils import AveragedModel
 
 import wandb
 from experiments.default_cfg import PLACEHOLDER, ExperimentConfig, SchedulerConfig
@@ -742,12 +743,12 @@ class DiffusionWrapper(LightningWrapperBase):
         self.ema_decay = float(self.ema_cfg.get("decay", 0.999))
         self.ema_update_every = int(self.ema_cfg.get("update_every", 1))
         self.ema_warmup_steps = int(self.ema_cfg.get("warmup_steps", 0))
-        self._ema_model: Optional[AveragedModel] = None
+        self._ema_model: Optional[torch.nn.Module] = None
         if self.ema_enabled:
-            def _ema_avg_fn(averaged_param, current_param, num_averaged):
-                return self.ema_decay * averaged_param + (1.0 - self.ema_decay) * current_param
-
-            self._ema_model = AveragedModel(self.network, avg_fn=_ema_avg_fn, use_buffers=False)
+            self._ema_model = copy.deepcopy(self.network)
+            for p in self._ema_model.parameters():
+                p.detach_()
+                p.requires_grad_(False)
 
     def _build_diffusion_schedule(self) -> None:
         beta_schedule = self.diffusion_cfg.get("beta_schedule", "linear")
@@ -929,7 +930,14 @@ class DiffusionWrapper(LightningWrapperBase):
             and self.global_step >= self.ema_warmup_steps
             and (self.global_step % self.ema_update_every == 0)
         ):
-            self._ema_model.update_parameters(self.network)
+            with torch.no_grad():
+                decay = self.ema_decay
+                for ema_param, param in zip(self._ema_model.parameters(), self.network.parameters()):
+                    ema_param.mul_(decay).add_(param, alpha=1.0 - decay)
+                for ema_buffer, buffer in zip(self._ema_model.buffers(), self.network.buffers()):
+                    if ema_buffer.shape != buffer.shape:
+                        ema_buffer.resize_as_(buffer)
+                    ema_buffer.copy_(buffer)
 
     def on_validation_epoch_end(self, outputs=None):
         if not self.sample_cfg.get("log_samples", True):
