@@ -8,7 +8,7 @@ _None_
 
 #### [TICKET T20251022-1926-diffusion-smoketest]
 - created_at: 2025-10-22T19:26Z
-- updated_at: 2025-10-22T19:45Z
+- updated_at: 2025-10-22T19:47Z
 - status: work_in_progress
 - owner: codex-agent
 - summary: Provision env `nvsq` and execute diffusion experiment smoketest.
@@ -22,6 +22,7 @@ _None_
 - 2025-10-22T19:29Z work_in_progress — ImageNet dataset confirmed at `~/project_dir/huggingface`; diffusion entry point still unclear from repo layout.
 - 2025-10-22T19:44Z work_in_progress — Provisioned mamba env `nvsq` (Python 3.11) and installed project dependencies with `pip install -e .`.
 - 2025-10-22T19:45Z work_in_progress — `subquadratic_ops` import missing and no diffusion entry script found; smoketest blocked pending user guidance (next check-in once instructions arrive).
+- 2025-10-22T19:47Z work_in_progress — Committed documentation bootstrap and environment notes (`8bcf032`).
 
 ## Review / Test
 
