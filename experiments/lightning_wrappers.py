@@ -746,7 +746,7 @@ class DiffusionWrapper(LightningWrapperBase):
             def _ema_avg_fn(averaged_param, current_param, num_averaged):
                 return self.ema_decay * averaged_param + (1.0 - self.ema_decay) * current_param
 
-            self._ema_model = AveragedModel(self.network, avg_fn=_ema_avg_fn)
+            self._ema_model = AveragedModel(self.network, avg_fn=_ema_avg_fn, use_buffers=False)
 
     def _build_diffusion_schedule(self) -> None:
         beta_schedule = self.diffusion_cfg.get("beta_schedule", "linear")
