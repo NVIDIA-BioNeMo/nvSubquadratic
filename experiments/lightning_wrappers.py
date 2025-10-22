@@ -735,6 +735,7 @@ class DiffusionWrapper(LightningWrapperBase):
             self.sample_cfg.update(sample_cfg)
 
         self.example_input_shape: Optional[torch.Size] = None
+        self.skip_validation_loss = bool(self.sample_cfg.get("skip_validation_loss", False))
 
         self.ema_cfg = ema_cfg or {}
         self.ema_enabled = bool(self.ema_cfg.get("enabled", False))
@@ -821,6 +822,8 @@ class DiffusionWrapper(LightningWrapperBase):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if self.skip_validation_loss:
+            return None
         images = batch["input"].to(self.device)
         batch_size = images.shape[0]
 
@@ -844,6 +847,8 @@ class DiffusionWrapper(LightningWrapperBase):
         return loss
 
     def test_step(self, batch, batch_idx):
+        if self.skip_validation_loss:
+            return None
         images = batch["input"].to(self.device)
         batch_size = images.shape[0]
         timesteps = torch.randint(

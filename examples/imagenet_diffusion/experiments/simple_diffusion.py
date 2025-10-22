@@ -83,6 +83,7 @@ def get_config() -> ExperimentConfig:
             "num_inference_steps": hyper.inference_steps,
             "num_samples": hyper.sample_grid,
             "log_samples": True,
+            "skip_validation_loss": True,
         },
         ema_cfg={
             "enabled": True,
