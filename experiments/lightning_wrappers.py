@@ -15,6 +15,7 @@ import torch
 import torchmetrics
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
+from torch.optim.swa_utils import AveragedModel
 
 import wandb
 from experiments.default_cfg import PLACEHOLDER, ExperimentConfig, SchedulerConfig
@@ -691,6 +692,7 @@ class DiffusionWrapper(LightningWrapperBase):
         cfg: ExperimentConfig,
         diffusion_cfg: Optional[dict] = None,
         sample_cfg: Optional[dict] = None,
+        ema_cfg: Optional[dict] = None,
     ) -> None:
         super().__init__(network=network, cfg=cfg)
 
@@ -733,6 +735,18 @@ class DiffusionWrapper(LightningWrapperBase):
             self.sample_cfg.update(sample_cfg)
 
         self.example_input_shape: Optional[torch.Size] = None
+
+        self.ema_cfg = ema_cfg or {}
+        self.ema_enabled = bool(self.ema_cfg.get("enabled", False))
+        self.ema_decay = float(self.ema_cfg.get("decay", 0.999))
+        self.ema_update_every = int(self.ema_cfg.get("update_every", 1))
+        self.ema_warmup_steps = int(self.ema_cfg.get("warmup_steps", 0))
+        self._ema_model: Optional[AveragedModel] = None
+        if self.ema_enabled:
+            def _ema_avg_fn(averaged_param, current_param, num_averaged):
+                return self.ema_decay * averaged_param + (1.0 - self.ema_decay) * current_param
+
+            self._ema_model = AveragedModel(self.network, avg_fn=_ema_avg_fn)
 
     def _build_diffusion_schedule(self) -> None:
         beta_schedule = self.diffusion_cfg.get("beta_schedule", "linear")
@@ -868,11 +882,15 @@ class DiffusionWrapper(LightningWrapperBase):
             dtype=torch.long,
         ).round().long()
 
+        inference_model = self._ema_model if self.ema_enabled and self._ema_model is not None else self.network
+        was_training = inference_model.training
+        inference_model.eval()
+
         for idx, timestep in enumerate(timesteps):
             t = torch.full((num_samples,), int(timestep.item()), device=device, dtype=torch.long)
             condition = self._condition_from_timesteps(t)
 
-            prediction = self.network({"input": sample, "condition": condition})["prediction"]
+            prediction = inference_model({"input": sample, "condition": condition})["prediction"]
 
             sqrt_recip_alpha_t = self._broadcast(self.sqrt_recip_alphas[t], sample)
             sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[t], sample)
@@ -887,7 +905,26 @@ class DiffusionWrapper(LightningWrapperBase):
             else:
                 sample = model_mean
 
+        if was_training:
+            inference_model.train()
+
         return torch.clamp(sample, -1.0, 1.0)
+
+    def on_fit_start(self) -> None:
+        super().on_fit_start()
+        if self.ema_enabled and self._ema_model is not None:
+            self._ema_model.to(self.device)
+            self._ema_model.eval()
+
+    def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
+        super().on_train_batch_end(outputs, batch, batch_idx)
+        if (
+            self.ema_enabled
+            and self._ema_model is not None
+            and self.global_step >= self.ema_warmup_steps
+            and (self.global_step % self.ema_update_every == 0)
+        ):
+            self._ema_model.update_parameters(self.network)
 
     def on_validation_epoch_end(self, outputs=None):
         if not self.sample_cfg.get("log_samples", True):

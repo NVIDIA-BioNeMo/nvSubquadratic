@@ -82,6 +82,12 @@ def get_config() -> ExperimentConfig:
             "num_samples": hyper.sample_grid,
             "log_samples": True,
         },
+        ema_cfg={
+            "enabled": True,
+            "decay": 0.999,
+            "warmup_steps": 1000,
+            "update_every": 1,
+        },
     )
 
     config.net = LazyConfig("nvsubquadratic.networks.diffusion_resnet.DiffusionResNet")(
