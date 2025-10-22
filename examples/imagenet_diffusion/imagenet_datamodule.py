@@ -58,6 +58,9 @@ class _ImageNetDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         example = self.dataset[index]
         image = self.transforms_fn(example["image"].convert("RGB"))
+        # Convert to channels-last so diffusion network sees feature dimension last.
+        if image.ndim == 3:
+            image = image.permute(1, 2, 0).contiguous()
         output = {"input": image}
         if not self.drop_labels and "label" in example:
             output["label"] = torch.as_tensor(example["label"], dtype=torch.long)

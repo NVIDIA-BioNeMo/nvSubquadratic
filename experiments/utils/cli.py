@@ -109,10 +109,15 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     if module_path.endswith(".py"):
         module_path = module_path[:-3]  # Remove .py extension
 
-    # Import the module
-    spec = importlib.util.spec_from_file_location(module_path, config_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Import the module. Prefer a regular import so package-relative references
+    # (and future annotations) resolve naturally. Fall back to loading from the
+    # provided path if the module isn't importable (e.g., outside PYTHONPATH).
+    try:
+        module = importlib.import_module(module_path)
+    except ModuleNotFoundError:
+        spec = importlib.util.spec_from_file_location(module_path, config_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
 
     # Get the get_config function
     if not hasattr(module, "get_config"):
