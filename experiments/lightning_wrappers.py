@@ -264,9 +264,9 @@ class LightningWrapperBase(pl.LightningModule):
             return
 
         if isinstance(batch, dict):
-            inputs: Any = batch.get("input") or batch.get("image") or batch.get("images")
+            inputs: Any = next((batch[key] for key in ("input", "image", "images") if key in batch), None)
         elif isinstance(batch, (list, tuple)):
-            inputs = batch[0]
+            inputs = batch[0] if len(batch) > 0 else None
         else:
             inputs = batch
 
