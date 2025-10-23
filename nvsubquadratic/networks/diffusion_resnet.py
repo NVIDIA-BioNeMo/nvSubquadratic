@@ -31,6 +31,7 @@ class DiffusionBlock(nn.Module):
         self.norm1 = nn.LayerNorm(hidden_dim)
         for param in self.norm1.parameters():
             param._no_wd = True
+        # CKConvND implements the long-range Hyena-style convolutional kernel.
         self.conv = CKConvND(
             data_dim=data_dim,
             hidden_dim=hidden_dim,
@@ -45,6 +46,7 @@ class DiffusionBlock(nn.Module):
         for param in self.norm2.parameters():
             param._no_wd = True
         mlp_hidden_dim = int(hidden_dim * mlp_ratio)
+        # Standard MLP branch (SiLU -> linear) follows the convolutional residual.
         self.ff = nn.Sequential(
             nn.Linear(hidden_dim, mlp_hidden_dim),
             nn.SiLU(),
@@ -93,6 +95,7 @@ class DiffusionResNet(nn.Module):
         self.out_channels = out_channels
         self.data_dim = data_dim
 
+        # Initial linear lifts RGB (or channels-last) inputs into the model width.
         self.in_proj = nn.Linear(in_channels, hidden_dim)
         self.in_dropout = nn.Dropout(dropout_in)
 
@@ -104,6 +107,7 @@ class DiffusionResNet(nn.Module):
         )
         self.condition_proj = condition_proj if not isinstance(condition_proj, nn.Identity) else None
 
+        # Stack identical diffusion blocks, each mixing spatial and conditional information.
         self.blocks = nn.ModuleList(
             [
                 DiffusionBlock(
@@ -130,6 +134,7 @@ class DiffusionResNet(nn.Module):
         if self.condition_proj is not None:
             condition = self.condition_proj(condition)
         if condition.ndim == 2:
+            # Broadcast timestep embeddings along spatial dimensions for every pixel.
             condition = condition.view(condition.shape[0], *([1] * self.data_dim), condition.shape[-1])
         return condition.expand_as(x)
 

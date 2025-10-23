@@ -59,7 +59,7 @@ class _ImageNetDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         example = self.dataset[index]
         image = self.transforms_fn(example["image"].convert("RGB"))
-        # Convert to channels-last so diffusion network sees feature dimension last.
+        # Convert to channels-last so the diffusion backbone (which expects [..., C]) sees feature dim last.
         if image.ndim == 3:
             image = image.permute(1, 2, 0).contiguous()
         output = {"input": image}
@@ -101,6 +101,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_name = hf_dataset_name
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
+        # Final spatial size controls optional downsampling (defaults to original resolution).
         self.final_image_size = final_image_size or image_size
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -144,6 +145,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         crop_eval = transforms.CenterCrop(self.image_size) if self.center_crop else transforms.Resize(self.image_size)
         downsample_ops: list = []
         if self.final_image_size != self.image_size:
+            # Bicubic resize keeps ImageNet statistics reasonable when we train on smaller canvases.
             downsample_ops.append(
                 transforms.Resize(self.final_image_size, interpolation=InterpolationMode.BICUBIC)
             )
