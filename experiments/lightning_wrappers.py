@@ -5,7 +5,7 @@
 """Lightning wrappers for the Classification and Regression experiments."""
 
 import math
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import torch.nn.functional as F
 from torchvision.utils import make_grid
@@ -229,6 +229,79 @@ class LightningWrapperBase(pl.LightningModule):
             }
         # Return
         return optim_dict
+
+    def on_fit_start(self) -> None:
+        super().on_fit_start()
+        self._log_sanity_samples()
+
+    def _log_sanity_samples(self, max_samples: int = 8) -> None:
+        logger = getattr(self, "logger", None)
+        if logger is None or not hasattr(logger, "experiment"):
+            return
+        trainer = getattr(self, "trainer", None)
+        if trainer is None:
+            return
+        datamodule = getattr(trainer, "datamodule", None)
+        if datamodule is None:
+            return
+
+        loader = None
+        for loader_name in ("sanity_dataloader", "val_dataloader", "train_dataloader"):
+            if hasattr(datamodule, loader_name):
+                try:
+                    candidate = getattr(datamodule, loader_name)()
+                except TypeError:
+                    continue
+                if candidate is not None:
+                    loader = candidate
+                    break
+        if loader is None:
+            return
+
+        try:
+            batch = next(iter(loader))
+        except Exception:
+            return
+
+        if isinstance(batch, dict):
+            inputs: Any = batch.get("input") or batch.get("image") or batch.get("images")
+        elif isinstance(batch, (list, tuple)):
+            inputs = batch[0]
+        else:
+            inputs = batch
+
+        if inputs is None:
+            return
+
+        with torch.no_grad():
+            tensor = torch.as_tensor(inputs).detach().cpu()
+            if tensor.ndim == 4:
+                if tensor.shape[1] in (1, 3):
+                    pass
+                elif tensor.shape[-1] in (1, 3):
+                    tensor = torch.moveaxis(tensor, -1, 1)
+                else:
+                    return
+            elif tensor.ndim == 3:
+                tensor = tensor.unsqueeze(0)
+            else:
+                return
+
+            tensor = tensor[: max_samples]
+            if tensor.numel() == 0:
+                return
+
+            grid = make_grid(
+                tensor,
+                nrow=min(4, tensor.shape[0]),
+                normalize=True,
+                value_range=(-1.0, 1.0),
+            )
+
+        try:
+            logger.experiment.log({"sanity/samples": wandb.Image(grid), "global_step": self.global_step})
+        except Exception:
+            return
 
     def on_before_optimizer_step(self, optimizer):
         """Log the gradient norm before the optimizer step every `grad_norm_interval` steps."""
