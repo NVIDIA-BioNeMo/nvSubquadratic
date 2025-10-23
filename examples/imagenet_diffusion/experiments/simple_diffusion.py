@@ -19,6 +19,7 @@ class DiffusionHyperParams:
     """Container gathering the essential hyper-parameters for the experiment."""
 
     image_size: int = 256
+    # Train/evaluate on a smaller 64x64 canvas while keeping augmentation math in 256x256 space.
     downsample_size: int = 64
     batch_size: int = 16
     hidden_dim: int = 256
@@ -52,6 +53,7 @@ def get_config() -> ExperimentConfig:
     config.comment = "ImageNet diffusion w/ CKConv residual network"
 
     hf_token = os.environ.get("HF_TOKEN")
+    # Keep enough workers to overlap I/O without overwhelming interactive nodes.
     num_workers = max(4, (os.cpu_count() or 8) // 2)
 
     config.dataset = LazyConfig(
@@ -85,6 +87,7 @@ def get_config() -> ExperimentConfig:
             "log_samples": True,
             "skip_validation_loss": True,
         },
+        # EMA helps inference stability; decay and warmup mimic common diffusion defaults.
         ema_cfg={
             "enabled": True,
             "decay": 0.999,
@@ -122,6 +125,7 @@ def get_config() -> ExperimentConfig:
         dropout_in=hyper.dropout_in,
         block_dropout=hyper.dropout_block,
         mlp_ratio=hyper.mlp_ratio,
+        # Positional encoding spans the target canvas size so sampling matches training resolution.
         positional_encoding_cfg=LazyConfig("nvsubquadratic.modules.position_encoding.PositionEmbeddingND")(
             embedding_dim=hyper.hidden_dim,
             data_dim=2,
@@ -150,7 +154,7 @@ def get_config() -> ExperimentConfig:
 
     config.train = TrainConfig(
         batch_size=hyper.batch_size,
-        iterations=total_iterations,
+        iterations=total_iterations,  # Lightning stops after this many optimizer steps.
         grad_clip=hyper.grad_clip,
     )
 
