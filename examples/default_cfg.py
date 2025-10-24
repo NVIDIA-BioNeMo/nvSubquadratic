@@ -93,6 +93,8 @@ class ExperimentConfig:
     debug: bool = True
     deterministic: bool = False  # Need to be set to True for deterministic behavior
     seed: int = 0
+    validate: bool = True  # Whether to run validation
+    test: bool = True  # Whether to run testing
 
     # Dataset configuration that MUST be set in experiment config
     # This should be instantiated with a LazyConfig object, e.g.:

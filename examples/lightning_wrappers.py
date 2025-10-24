@@ -373,25 +373,27 @@ class ClassificationWrapper(LightningWrapperBase):
                 }
             )
         # Log best accuracy
-        train_acc = self.trainer.callback_metrics["train/acc_epoch"]
-        if train_acc > self.best_train_acc:
-            self.best_train_acc = train_acc.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_acc": self.best_train_acc,
-                    "global_step": self.global_step,
-                }
-            )
+        if "train/acc_epoch" in self.trainer.callback_metrics:
+            train_acc = self.trainer.callback_metrics["train/acc_epoch"]
+            if train_acc > self.best_train_acc:
+                self.best_train_acc = train_acc.item()
+                self.logger.experiment.log(
+                    {
+                        "train/best_acc": self.best_train_acc,
+                        "global_step": self.global_step,
+                    }
+                )
         # Log best training loss
-        train_loss = self.trainer.callback_metrics["train/loss_epoch"]
-        if train_loss < self.best_train_loss:
-            self.best_train_loss = train_loss.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_loss": self.best_train_loss,
-                    "global_step": self.global_step,
-                }
-            )
+        if "train/loss_epoch" in self.trainer.callback_metrics:
+            train_loss = self.trainer.callback_metrics["train/loss_epoch"]
+            if train_loss < self.best_train_loss:
+                self.best_train_loss = train_loss.item()
+                self.logger.experiment.log(
+                    {
+                        "train/best_loss": self.best_train_loss,
+                        "global_step": self.global_step,
+                    }
+                )
 
     def on_validation_epoch_end(self, validation_step_outputs=None):
         """Log best validation accuracy and loss and logits over the validation set."""

@@ -180,14 +180,16 @@ def main():
             )
 
     # Validate and test before finishing
-    trainer.validate(
-        model,
-        datamodule=datamodule,
-    )
-    trainer.test(
-        model,
-        datamodule=datamodule,
-    )
+    if config.validate:
+        trainer.validate(
+            model,
+            datamodule=datamodule,
+        )
+    if config.test:
+        trainer.test(
+            model,
+            datamodule=datamodule,
+        )
 
 
 def construct_trainer(
