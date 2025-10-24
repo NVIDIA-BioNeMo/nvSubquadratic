@@ -296,7 +296,6 @@ models/
 data/
 datasets/
 *.csv
-*.json
 *.parquet
 *.h5
 *.hdf5

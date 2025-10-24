@@ -1,0 +1,80 @@
+{
+	"name": "nvSubquadratic Development Container",
+	"runArgs": [
+		"--gpus=all",
+		"--shm-size=4g"
+	],
+	"build": {
+		"context": "${localWorkspaceFolder}",
+		"dockerfile": "${localWorkspaceFolder}/Dockerfile",
+		"args": {
+			"GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
+		}
+	},
+	"mounts": [
+		// Mount the local ~/.aws config to pass along AWS credentials for PBSS.
+		"source=${localEnv:HOME}/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
+		"source=${localEnv:HOME}/.ngc,target=/home/ubuntu/.ngc,type=bind,consistency=cached",
+		"source=${localEnv:HOME}/.cache,target=/home/ubuntu/.cache,type=bind,consistency=cached",
+		"source=${localEnv:HOME}/.ssh,target=/home/ubuntu/.ssh,readonly,type=bind,consistency=cached",
+		"source=${localEnv:HOME}/.netrc,target=/home/ubuntu/.netrc,readonly,type=bind,consistency=cached",
+		// Mount bash history file for persistence. Created if it doesn't exist in initializeCommand.sh
+		"source=${localEnv:HOME}/.bash_history_devcontainer,target=/home/ubuntu/.bash_history,type=bind,consistency=cached"
+	],
+	"containerEnv": {
+		"TMPDIR": "/tmp",
+		"NUMBA_CACHE_DIR": "/tmp/",
+		"GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
+	},
+	"postCreateCommand": "./.devcontainer/postCreateCommand.sh",
+	"initializeCommand": "./.devcontainer/initializeCommand.sh",
+	"remoteUser": "ubuntu",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"eamodio.gitlens",
+				"streetsidesoftware.code-spell-checker",
+				"ms-azuretools.vscode-docker",
+				"charliermarsh.ruff",
+				"njpwerner.autodocstring",
+				"ms-toolsai.jupyter",
+				"tamasfe.even-better-toml",
+				"ms-vscode.cmake-tools",
+				"ms-vscode.cpptools",
+				"ms-vscode.cpptools-extension-pack",
+				"GitHub.copilot",
+				"GitHub.copilot-chat",
+				"redhat.vscode-yaml",
+				"ms-vscode.vscode-json"
+			],
+			"settings": {
+				"python.defaultInterpreterPath": "/usr/bin/python",
+				"python.testing.pytestEnabled": true,
+				"python.analysis.typeCheckingMode": "standard",
+				"python.formatting.provider": "black",
+				"python.linting.enabled": true,
+				"python.linting.flake8Enabled": true,
+				"python.linting.mypyEnabled": true,
+				"python.testing.unittestEnabled": false,
+				"editor.formatOnSave": true,
+				"editor.codeActionsOnSave": {
+					"source.organizeImports": "explicit"
+				},
+				"[python]": {
+					"editor.tabSize": 4,
+					"editor.insertSpaces": true,
+					"editor.defaultFormatter": "ms-python.black-formatter"
+				},
+				"files.exclude": {
+					"**/__pycache__": true,
+					"**/*.pyc": true,
+					"**/.pytest_cache": true,
+					"**/.coverage": true,
+					"**/htmlcov": true
+				}
+			}
+		}
+	}
+}
