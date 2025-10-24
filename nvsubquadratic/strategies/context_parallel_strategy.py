@@ -81,9 +81,9 @@ class ContextParallelStrategy(DDPStrategy):
 
         logger.info(f"ContextParallelStrategy created with backend={backend_type}, CP size={context_parallel_size}")
 
-    def setup(self, trainer) -> None:
+    def setup_environment(self) -> None:
         """Initialize backend and setup distributed training."""
-        super().setup(trainer)
+        super().setup_environment()
 
         # Only initialize backend if CP is enabled
         if self.parallel_config.context_parallel_size > 1:
@@ -105,11 +105,6 @@ class ContextParallelStrategy(DDPStrategy):
             # Get CP group
             self.cp_group = self.backend.get_context_parallel_group()
 
-            # Inject CP group into Lightning module
-            if hasattr(trainer.lightning_module, "set_context_parallel_group"):
-                trainer.lightning_module.set_context_parallel_group(self.cp_group)
-                logger.info("Injected CP group into Lightning module")
-
             logger.info(
                 f"Context Parallel strategy initialized: "
                 f"CP size={self.backend.get_context_parallel_world_size()}, "
@@ -119,6 +114,14 @@ class ContextParallelStrategy(DDPStrategy):
             )
         else:
             logger.info("Context Parallelism disabled (CP size=1), using standard DDP")
+
+    def setup(self, trainer) -> None:
+        """Link the CP group to the Lightning module."""
+        super().setup(trainer)
+        # Inject CP group into Lightning module
+        if hasattr(trainer.lightning_module, "set_context_parallel_group"):
+            trainer.lightning_module.set_context_parallel_group(self.cp_group)
+            logger.info("Injected CP group into Lightning module")
 
     def _setup_model(self, model: torch.nn.Module) -> torch.nn.Module:
         """Setup model with DDP on correct process group.
@@ -140,7 +143,6 @@ class ContextParallelStrategy(DDPStrategy):
             logger.info("Wrapping model with DDP using data+context parallel group for gradient sync")
         else:
             logger.info("Wrapping model with DDP using default process group")
-
         return DDP(
             model,
             device_ids=[self.local_rank] if self.local_rank is not None else None,

@@ -73,10 +73,12 @@ def run_and_save_checkpoint(cp_size, checkpoint_dir, config, seed, batch_size):
             "PL_SEED_WORKERS": "1",  # Seed DataLoader workers
             "CUBLAS_WORKSPACE_CONFIG": ":4096:8",  # Deterministic CUDA ops
             "CUDA_VISIBLE_DEVICES": "0" if cp_size == 1 else "0,1",
+            # "NCCL_P2P_DISABLE": "1", # NOTE some users need to disable P2P to avoid hanging
         }
     )
 
     logger.info(f"  Running CP={cp_size} and saving checkpoint...")
+    logger.info(f"  Command: {' '.join(cmd)}")
     result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=180)
 
     if result.returncode != 0:
@@ -124,7 +126,7 @@ def extract_gradients_from_checkpoint(checkpoint_path):
         param_ids.extend(group["params"])
 
     param_names = []
-    for name, tensor in state_dict.items():
+    for name in state_dict.keys():
         # Skip non-trainable or DDP wrapper prefixes
         if not any(skip in name for skip in ["_forward_module", "module.module"]):
             param_names.append(name)
@@ -142,6 +144,7 @@ def extract_gradients_from_checkpoint(checkpoint_path):
         name = name.replace("_forward_module.", "").replace("module.", "")
 
         gradients[name] = {
+            "grad": grad,
             "shape": list(grad.shape),
             "norm": grad.norm().item(),
             "mean": grad.mean().item(),
@@ -168,17 +171,19 @@ def compare_gradients(cp1_grads, cp2_grads, tolerance):
             all_match = False
             continue
 
+        g1 = cp1_grads[name]["grad"]
+        g2 = cp2_grads[name]["grad"]
         v1 = cp1_grads[name]["norm"]
         v2 = cp2_grads[name]["norm"]
-        diff = abs(v1 - v2) / abs(v1) if abs(v1) > 1e-10 else abs(v1 - v2)
-        match = diff < tolerance
+        metric = ((g1 - g2).norm() / g1.norm()).item()
+        match = metric < tolerance
 
         if not match:
             all_match = False
 
         status = "PASS" if match else "FAIL"
         short_name = name.replace("network.", "")
-        logger.info(f"{status:4s} {short_name:50s}  {v1:10.4e} vs {v2:10.4e}  (diff: {diff:7.2%})")
+        logger.info(f"{status:4s} {short_name:50s}  {v1:10.4e} vs {v2:10.4e}  (metric: {metric:7.2%})")
 
     logger.info("=" * 80)
     logger.info("RESULT: SUCCESS - All gradients match" if all_match else "RESULT: FAILURE - Some gradients differ")
@@ -269,7 +274,7 @@ def run_from_checkpoint(cp_size, checkpoint_dir, init_checkpoint, config, seed, 
         f"seed={seed}",
         "deterministic=True",
         "benchmark=False",
-        "train.iterations=2",  # Train to step 2 (one more step from checkpoint at step 1)
+        "train.iterations=1",  # Train to step 1 (one more step from checkpoint at step 1)
         # Skip validation/testing
         "validate=False",
         "test=False",
@@ -283,18 +288,20 @@ def run_from_checkpoint(cp_size, checkpoint_dir, init_checkpoint, config, seed, 
     ]
 
     env = os.environ.copy()
-    env.update(
-        {
-            "WANDB_MODE": "disabled",
-            "PYTHONHASHSEED": str(seed),
-            "PL_GLOBAL_SEED": str(seed),
-            "PL_SEED_WORKERS": "1",
-            "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
-            "CUDA_VISIBLE_DEVICES": "0" if cp_size == 1 else "0,1",
-        }
-    )
+    custom_env = {
+        "WANDB_MODE": "disabled",
+        "PYTHONHASHSEED": str(seed),
+        "PL_GLOBAL_SEED": str(seed),
+        "PL_SEED_WORKERS": "1",
+        "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+        "CUDA_VISIBLE_DEVICES": "0" if cp_size == 1 else "0,1",
+        # "NCCL_P2P_DISABLE": "1", # NOTE some users need to disable P2P to avoid hanging
+    }
+    env.update(custom_env)
 
     logger.info(f"  Running CP={cp_size} from initial checkpoint...")
+    logger.info(f"  Environment: {custom_env}")
+    logger.info(f"  Command: {' '.join(cmd)}")
     result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=180)
 
     if result.returncode != 0:

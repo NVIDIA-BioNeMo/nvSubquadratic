@@ -44,8 +44,11 @@ from nvsubquadratic.datamodules import CPAwareDataMixin
 #     torch.cuda.manual_seed_all(seed)  # Set CUDA RNG seed for all devices
 
 
-class MNISTDataModule(pl.LightningDataModule, CPAwareDataMixin):
-    """MNIST Lightning data module with Context Parallelism support."""
+class MNISTDataModule(CPAwareDataMixin, pl.LightningDataModule):
+    """MNIST Lightning data module with Context Parallelism support.
+
+    NOTE: Make sure that CPAwareDataMixin is the first parent class.
+    """
 
     def __init__(
         self,
