@@ -30,6 +30,10 @@ nvSubquadratic provides a **high-level PyTorch interface** that depends on the *
 
 ## Installation
 
+### Package Manager
+
+This project uses **Poetry** for dependency management (required for nSpect security scanning).
+
 ### Dev Container (Recommended)
 
 ```bash
@@ -53,15 +57,21 @@ docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces nvsubquadratic:dev
 ### Local Installation
 
 ```bash
-# Install PyTorch with CUDA support
+# Install Poetry if not already installed
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install PyTorch with CUDA support first
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install package
-pip install -e .
+# Install all dependencies (production + development)
+poetry install
 
 # Install subquadratic-ops (requires GitLab token)
 export GITLAB_TOKEN="your_gitlab_token_here"
-pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple
+poetry run pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple
+
+# Activate the virtual environment
+poetry shell
 ```
 
 ## Development
@@ -69,9 +79,22 @@ pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GI
 Pre-commit hooks are automatically installed in the dev container. For other installation methods:
 
 ```bash
-pip install pre-commit
-pre-commit install
-pre-commit install --hook-type pre-push
+poetry run pre-commit install
+poetry run pre-commit install --hook-type pre-push
+```
+
+### Updating Dependencies for Security Scanning
+
+This project maintains a `Pipfile.lock` for nSpect security scanning compliance. When you update dependencies in `pyproject.toml`, regenerate the lock file:
+
+```bash
+# Install pipenv (if not already installed)
+pip install pipenv
+
+# Regenerate Pipfile.lock
+pipenv lock
+
+# Note: Continue using pip for actual installations (pip install -e .)
 ```
 
 ### Pre-commit Hooks

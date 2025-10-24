@@ -1,0 +1,27 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+torch = ">=2.0.0"
+einops = ">=0.6.0"
+numpy = ">=1.21.0"
+megatron-core = "*"
+pytorch-lightning = ">=2.0.0"
+omegaconf = ">=2.3.0"
+wandb = ">=0.15.0"
+rich = ">=13.0.0"
+
+[dev-packages]
+pytest = ">=6.0"
+pytest-cov = ">=2.0"
+ruff = ">=0.12.0"
+mdformat = ">=0.7.0"
+pre-commit = ">=4.0"
+detect-secrets = ">=1.5.0"
+jupyterlab = ">=4.0.0"
+
+[requires]
+python_version = "3.12"
+
