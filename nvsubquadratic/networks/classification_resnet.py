@@ -3,6 +3,7 @@
 """Simple implementation of a ResNet for classification with Context Parallelism support."""
 
 import inspect
+import logging
 from typing import Optional
 
 import torch
@@ -10,6 +11,11 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 
 class ClassificationResNet(nn.Module):
@@ -65,7 +71,7 @@ class ClassificationResNet(nn.Module):
         # Exclude self.out_norm from the parameter group with weight decay
         for param in self.out_norm.parameters():
             param._no_wd = True
-
+        self.warned_cp = False
         # Instantiate output projection
         self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)
 
@@ -79,6 +85,14 @@ class ClassificationResNet(nn.Module):
         Returns:
             torch.Tensor: Output tensor of shape (batch_size, num_classes)
         """
+        if cp_group is not None and cp_group.size() > 1 and not self.warned_cp:
+            logging.warning(
+                "CP>1 is not supported for classification networks with a loss that is not mean "
+                "aggregated over the CP spatial dimension. Per-token classification would work, "
+                "but this is not currently what this model does. This is the same constraint DDP "
+                "has for loss functions over the batch dimension."
+            )
+            self.warned_cp = True
         # Apply in_dropout to the input
         x = self.dropout_in(x)
         # Apply input projection
