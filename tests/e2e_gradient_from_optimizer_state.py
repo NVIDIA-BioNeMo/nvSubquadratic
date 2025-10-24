@@ -11,6 +11,17 @@ This implements the approach from the October 17, 2025 discussion:
 
 Usage:
     python tests/e2e_gradient_from_optimizer_state.py
+
+
+KNOWN ISSUES:
+- The classification loss will not work with CP=2 because there is a non-mean aggregation over the
+  CP spatial dimension. The loss needs to be mean aggregated over the CP spatial dimension for the
+  assumption we make that we can take the average of the gradients over CP ranks in our DDP object.
+- GroupNorm will not work with CP=2 the way we call it in the current network implementation
+  because it seems to somehow aggregate results over the CP spatial dimension.
+- If you address the two above issues by replacing the loss with mean squared activation or
+  something similar that has no non-mean aggregation over the CP spatial dimension, as well as
+  removing the GroupNorm, then the test will pass with max metrics around 5% and many at 0%.
 """
 
 import argparse
@@ -248,7 +259,7 @@ def create_initial_checkpoint(checkpoint_path, config, seed, batch_size):
         return False
 
 
-def run_from_checkpoint(cp_size, checkpoint_dir, init_checkpoint, config, seed, batch_size):
+def run_from_checkpoint(cp_size, checkpoint_dir, init_checkpoint, config, seed, batch_size, disable_p2p=False):
     """Run training from initial checkpoint for 1 more step.
 
     Initial checkpoint is at step 1, so we train to step 2.
@@ -274,7 +285,7 @@ def run_from_checkpoint(cp_size, checkpoint_dir, init_checkpoint, config, seed, 
         f"seed={seed}",
         "deterministic=True",
         "benchmark=False",
-        "train.iterations=1",  # Train to step 1 (one more step from checkpoint at step 1)
+        "train.iterations=2",  # Train to step 1 (one more step from checkpoint at step 1)
         # Skip validation/testing
         "validate=False",
         "test=False",
@@ -297,6 +308,8 @@ def run_from_checkpoint(cp_size, checkpoint_dir, init_checkpoint, config, seed, 
         "CUDA_VISIBLE_DEVICES": "0" if cp_size == 1 else "0,1",
         # "NCCL_P2P_DISABLE": "1", # NOTE some users need to disable P2P to avoid hanging
     }
+    if disable_p2p:
+        custom_env["NCCL_P2P_DISABLE"] = "1"
     env.update(custom_env)
 
     logger.info(f"  Running CP={cp_size} from initial checkpoint...")
@@ -323,6 +336,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--tolerance", type=float, default=0.01)  # 1% - should be very close
     parser.add_argument("--save_dir", type=str, default=None)
+    parser.add_argument("--disable-p2p", action="store_true", default=False)
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
 
@@ -355,7 +369,9 @@ def main():
         logger.info("\nSTEP 2: Run CP=2 from initial checkpoint")
         logger.info("-" * 80)
         cp2_dir = save_dir / "cp2"
-        if not run_from_checkpoint(2, cp2_dir, init_checkpoint, args.config, args.seed, args.batch_size):
+        if not run_from_checkpoint(
+            2, cp2_dir, init_checkpoint, args.config, args.seed, args.batch_size, args.disable_p2p
+        ):
             return 1
 
         logger.info("\nSTEP 3: Extract gradients from final checkpoints")
