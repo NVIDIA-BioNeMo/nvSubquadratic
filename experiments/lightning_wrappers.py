@@ -1,4 +1,3 @@
-# TODO: Add license header here
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
@@ -764,13 +763,15 @@ class DiffusionWrapper(LightningWrapperBase):
         self,
         network: torch.nn.Module,
         cfg: ExperimentConfig,
-        diffusion_cfg: Optional[dict] = None,
-        sample_cfg: Optional[dict] = None,
-        ema_cfg: Optional[dict] = None,
+        diffusion: Optional[dict[str, Any]] = None,
+        diffusion_sampling: Optional[dict[str, Any]] = None,
+        diffusion_ema: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(network=network, cfg=cfg)
 
-        defaults = {
+        # Merge user-provided diffusion hyperparameters with the baked-in defaults.
+        diffusion_overrides = diffusion or {}
+        diffusion_defaults = {
             "num_train_timesteps": 1000,
             "beta_start": 1e-4,
             "beta_end": 0.02,
@@ -778,7 +779,7 @@ class DiffusionWrapper(LightningWrapperBase):
             "time_embed_dim": None,
             "max_period": 10000.0,
         }
-        self.diffusion_cfg = {**defaults, **(diffusion_cfg or {})}
+        self.diffusion_cfg = {**diffusion_defaults, **diffusion_overrides}
         self.num_train_timesteps = int(self.diffusion_cfg["num_train_timesteps"])
 
         self._build_diffusion_schedule()
@@ -800,24 +801,34 @@ class DiffusionWrapper(LightningWrapperBase):
         )
 
         self.loss_fn = torch.nn.MSELoss()
-        self.sample_cfg = {
+
+        # Surface sampling behaviour knobs so experiments can tweak logging cadence.
+        sampling_overrides = diffusion_sampling or {}
+        sampling_defaults = {
             "num_inference_steps": 50,
             "num_samples": 4,
             "log_samples": True,
         }
-        if sample_cfg is not None:
-            self.sample_cfg.update(sample_cfg)
+        self.sampling_cfg = {**sampling_defaults, **sampling_overrides}
 
         self.example_input_shape: Optional[torch.Size] = None
-        self.skip_validation_loss = bool(self.sample_cfg.get("skip_validation_loss", False))
 
-        self.ema_cfg = ema_cfg or {}
+        # Keep exponential moving average options configurable from experiments.
+        ema_overrides = diffusion_ema or {}
+        ema_defaults = {
+            "enabled": False,
+            "decay": 0.999,
+            "update_every": 1,
+            "warmup_steps": 0,
+        }
+        self.ema_cfg = {**ema_defaults, **ema_overrides}
         self.ema_enabled = bool(self.ema_cfg.get("enabled", False))
         self.ema_decay = float(self.ema_cfg.get("decay", 0.999))
         self.ema_update_every = int(self.ema_cfg.get("update_every", 1))
         self.ema_warmup_steps = int(self.ema_cfg.get("warmup_steps", 0))
         self._ema_model: Optional[torch.nn.Module] = None
         if self.ema_enabled:
+            # Create an EMA shadow copy that never receives gradients.
             self._ema_model = copy.deepcopy(self.network)
             for p in self._ema_model.parameters():
                 p.detach_()
@@ -831,10 +842,10 @@ class DiffusionWrapper(LightningWrapperBase):
         if beta_schedule != "linear":
             raise NotImplementedError(f"Only the linear beta schedule is implemented. Got '{beta_schedule}'.")
 
-        betas = torch.linspace(beta_start, beta_end, self.num_train_timesteps, dtype=torch.float32)
-        alphas = 1.0 - betas
-        alphas_cumprod = torch.cumprod(alphas, dim=0)
-        alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=torch.float32), alphas_cumprod[:-1]], dim=0)
+        betas = torch.linspace(beta_start, beta_end, self.num_train_timesteps, dtype=torch.float32)  # (num_timesteps,)
+        alphas = 1.0 - betas  # (num_timesteps,)
+        alphas_cumprod = torch.cumprod(alphas, dim=0)  # (num_timesteps,)
+        alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=torch.float32), alphas_cumprod[:-1]], dim=0)  # (num_timesteps,)
 
         self.register_buffer("betas", betas)
         self.register_buffer("alphas", alphas)
@@ -844,14 +855,14 @@ class DiffusionWrapper(LightningWrapperBase):
         self.register_buffer("sqrt_one_minus_alphas_cumprod", torch.sqrt(torch.clamp(1.0 - alphas_cumprod, min=1e-12)))
         self.register_buffer("sqrt_recip_alphas", torch.sqrt(1.0 / alphas))
 
-        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_variance = torch.clamp(posterior_variance, min=1e-12)
+        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)  # (num_timesteps,)
+        posterior_variance = torch.clamp(posterior_variance, min=1e-12)  # Stabilize small values
         self.register_buffer("posterior_variance", posterior_variance)
 
     @staticmethod
     def _broadcast(coeff: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
-        shape = (coeff.shape[0],) + (1,) * (reference.ndim - 1)
-        return coeff.view(shape)
+        shape = (coeff.shape[0],) + (1,) * (reference.ndim - 1)  # (B, 1, ..., 1) matches spatial rank
+        return coeff.view(shape)  # Expand coeff along spatial dimensions
 
     def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
         device = timesteps.device
@@ -869,89 +880,71 @@ class DiffusionWrapper(LightningWrapperBase):
         emb = self._timestep_embedding(timesteps)
         return self.time_mlp(emb)
 
-    def training_step(self, batch, batch_idx):
-        images = batch["input"].to(self.device)
-        if self.example_input_shape is None:
-            self.example_input_shape = images.shape[1:]
+    def _predict_denoised_noise(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        result = self.network(inputs)
+        if "prediction" in result:
+            return result["prediction"]
+        if "logits" in result:
+            return result["logits"]
+        raise KeyError("Diffusion network must return either 'prediction' or 'logits'.")
 
-        batch_size = images.shape[0]
+    def training_step(self, batch, batch_idx):
+
+        # Labels ride along for parity with classification loaders; diffusion ignores them.
+        labels = batch.get("label")
+        if labels is not None:
+            labels = labels.to(self.device)  # (B,)
+
+        images = batch["input"].to(self.device)  # (B, H, W, C)
+        if self.example_input_shape is None:
+            self.example_input_shape = images.shape[1:]  # (H, W, C)
+
+        batch_size = images.shape[0]  # (B,)
+
+        # Sample diffusion timestep per example for noise injection.
         timesteps = torch.randint(
             0,
             self.num_train_timesteps,
             (batch_size,),
             device=images.device,
             dtype=torch.long,
-        )
-        noise = torch.randn_like(images)
+        )  # (B,)
 
-        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)
-        sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[timesteps], images)
-        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise
+        # Draw Gaussian noise to corrupt the clean image.
+        noise = torch.randn_like(images)  # (B, H, W, C)
 
-        condition = self._condition_from_timesteps(timesteps)
-        prediction = self.network({"input": noisy_images, "condition": condition})["prediction"]
-        loss = self.loss_fn(prediction, noise)
+        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)  # (B, 1, 1, 1)
+        sqrt_one_minus_alphas_cumprod_t = self._broadcast(
+            self.sqrt_one_minus_alphas_cumprod[timesteps],
+            images,
+        )  # (B, 1, 1, 1)
+
+        # Forward diffusion: x_t = sqrt(alpha_bar_t) * x_0 + sqrt(1 - alpha_bar_t) * epsilon.
+        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise  # (B, H, W, C)
+
+        condition = self._condition_from_timesteps(timesteps)  # (B, hidden_dim)
+
+        # Predict the original noise given noisy inputs and timestep conditioning.
+        prediction = self._predict_denoised_noise({"input": noisy_images, "condition": condition})  # (B, H, W, C)
+        loss = self.loss_fn(prediction, noise)  # ()
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if self.skip_validation_loss:
-            return None
-        images = batch["input"].to(self.device)
-        batch_size = images.shape[0]
-
-        timesteps = torch.randint(
-            0,
-            self.num_train_timesteps,
-            (batch_size,),
-            device=images.device,
-            dtype=torch.long,
-        )
-        noise = torch.randn_like(images)
-        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)
-        sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[timesteps], images)
-        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise
-
-        condition = self._condition_from_timesteps(timesteps)
-        prediction = self.network({"input": noisy_images, "condition": condition})["prediction"]
-        loss = self.loss_fn(prediction, noise)
-
-        self.log("val/loss", loss, prog_bar=True, sync_dist=self.distributed)
-        return loss
+        return None
 
     def test_step(self, batch, batch_idx):
-        if self.skip_validation_loss:
-            return None
-        images = batch["input"].to(self.device)
-        batch_size = images.shape[0]
-        timesteps = torch.randint(
-            0,
-            self.num_train_timesteps,
-            (batch_size,),
-            device=images.device,
-            dtype=torch.long,
-        )
-        noise = torch.randn_like(images)
-        sqrt_alphas_cumprod_t = self._broadcast(self.sqrt_alphas_cumprod[timesteps], images)
-        sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[timesteps], images)
-        noisy_images = sqrt_alphas_cumprod_t * images + sqrt_one_minus_alphas_cumprod_t * noise
-
-        condition = self._condition_from_timesteps(timesteps)
-        prediction = self.network({"input": noisy_images, "condition": condition})["prediction"]
-        loss = self.loss_fn(prediction, noise)
-
-        self.log("test/loss", loss, prog_bar=False, sync_dist=self.distributed)
-        return loss
+        return None
 
     @torch.no_grad()
     def sample(self, num_samples: int, num_inference_steps: Optional[int] = None) -> torch.Tensor:
         if self.example_input_shape is None:
             raise RuntimeError("Cannot sample before observing at least one training batch.")
 
-        num_inference_steps = num_inference_steps or int(self.sample_cfg["num_inference_steps"])
+        num_inference_steps = num_inference_steps or int(self.sampling_cfg["num_inference_steps"])
         device = self.betas.device
-        sample = torch.randn((num_samples, *self.example_input_shape), device=device)
+        sample = torch.randn((num_samples, *self.example_input_shape), device=device)  # (num_samples, H, W, C)
 
         timesteps = torch.linspace(
             self.num_train_timesteps - 1,
@@ -959,30 +952,39 @@ class DiffusionWrapper(LightningWrapperBase):
             num_inference_steps,
             device=device,
             dtype=torch.long,
-        ).round().long()
+        ).round().long()  # (num_inference_steps,)
 
         inference_model = self._ema_model if self.ema_enabled and self._ema_model is not None else self.network
         was_training = inference_model.training
         inference_model.eval()
 
+        # Reverse diffusion: walk noise->image by iterating timesteps backwards.
         for idx, timestep in enumerate(timesteps):
-            t = torch.full((num_samples,), int(timestep.item()), device=device, dtype=torch.long)
-            condition = self._condition_from_timesteps(t)
+            t = torch.full((num_samples,), int(timestep.item()), device=device, dtype=torch.long)  # (B,)
+            condition = self._condition_from_timesteps(t)  # (B, hidden_dim)
 
-            prediction = inference_model({"input": sample, "condition": condition})["prediction"]
+            # Run the denoiser (EMA or raw weights) to predict the noise residual.
+            prediction = self._predict_denoised_noise({"input": sample, "condition": condition})  # (B, H, W, C)
 
-            sqrt_recip_alpha_t = self._broadcast(self.sqrt_recip_alphas[t], sample)
-            sqrt_one_minus_alphas_cumprod_t = self._broadcast(self.sqrt_one_minus_alphas_cumprod[t], sample)
-            betas_t = self._broadcast(self.betas[t], sample)
+            sqrt_recip_alpha_t = self._broadcast(self.sqrt_recip_alphas[t], sample)  # (B, 1, 1, 1)
+            sqrt_one_minus_alphas_cumprod_t = self._broadcast(
+                self.sqrt_one_minus_alphas_cumprod[t],
+                sample,
+            )  # (B, 1, 1, 1)
+            betas_t = self._broadcast(self.betas[t], sample)  # (B, 1, 1, 1)
 
-            model_mean = sqrt_recip_alpha_t * (sample - betas_t / sqrt_one_minus_alphas_cumprod_t * prediction)
+            # Posterior mean of q(x_{t-1} | x_t, epsilon_theta(x_t, t)).
+            model_mean = sqrt_recip_alpha_t * (sample - betas_t / sqrt_one_minus_alphas_cumprod_t * prediction)  # (B, H, W, C)
 
             if idx < len(timesteps) - 1:
-                posterior_var_t = self._broadcast(self.posterior_variance[t], sample)
-                noise = torch.randn_like(sample)
-                sample = model_mean + torch.sqrt(posterior_var_t) * noise
+                posterior_var_t = self._broadcast(self.posterior_variance[t], sample)  # (B, 1, 1, 1)
+                noise = torch.randn_like(sample)  # (B, H, W, C)
+                
+                # Add Gaussian noise scaled by posterior variance to sample x_{t-1}.
+                sample = model_mean + torch.sqrt(posterior_var_t) * noise  # (B, H, W, C)
             else:
-                sample = model_mean
+                # Final step uses the mean without additional noise to land at x_0.
+                sample = model_mean  # (B, H, W, C)
 
         if was_training:
             inference_model.train()
@@ -1013,14 +1015,14 @@ class DiffusionWrapper(LightningWrapperBase):
                     ema_buffer.copy_(buffer)
 
     def on_validation_epoch_end(self, outputs=None):
-        if not self.sample_cfg.get("log_samples", True):
+        if not self.sampling_cfg.get("log_samples", True):
             return
         if self.example_input_shape is None:
             return
         if self.logger is None or not hasattr(self.logger, "experiment"):
             return
 
-        num_samples = int(self.sample_cfg.get("num_samples", 4))
+        num_samples = int(self.sampling_cfg.get("num_samples", 4))
         samples = self.sample(num_samples=num_samples)
         samples_bchw = torch.moveaxis(samples, -1, 1)
         grid = make_grid(samples_bchw, nrow=max(1, int(math.sqrt(num_samples))), normalize=True, value_range=(-1.0, 1.0))

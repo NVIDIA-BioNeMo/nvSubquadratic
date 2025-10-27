@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal, Optional
 
 from nvsubquadratic.lazy_config import LazyConfig
 
@@ -24,6 +24,13 @@ class TrainConfig:
     grad_clip: float = 0.0
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
+
+
+@dataclass
+class TrainerConfig:
+    """Lightning Trainer configuration overrides."""
+
+    val_check_interval: Optional[float] = None
 
 
 @dataclass
@@ -123,7 +130,7 @@ class ExperimentConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
 
     train: TrainConfig = field(default_factory=TrainConfig)
-
+    trainer: TrainerConfig = field(default_factory=TrainerConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
 
     resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)

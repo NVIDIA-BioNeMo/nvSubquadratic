@@ -17,6 +17,10 @@
 
 """Residual block implementation for ND signals, composed of a sequence mixer and an MLP."""
 
+from __future__ import annotations
+
+from typing import Optional
+
 import torch
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
@@ -120,3 +124,5 @@ class ResidualBlock(torch.nn.Module):
             x = self.dropout(x)
             x = x + residual
         return x
+
+
