@@ -165,11 +165,15 @@ class MNISTDataModule(pl.LightningDataModule):
         """Function to create the test dataloader."""
         return self._build_loader(self.test_dataset, shuffle=False, drop_last=False)
 
-    def on_before_batch_transfer(self, batch, dataloader_idx):
+    def on_before_batch_transfer(self, batch, dataloader_idx) -> dict[str, torch.Tensor]:
         """Function to rearrange the input.
 
         For image data_type, from [B, C, Y, X] to [B, Y, X, C].
         For sequence data_type, from [B, C, T] to [B, T, C].
+
+        Returns:
+            dict[str, torch.Tensor]: A dictionary containing the input, label and condition.
+                Keys: "input", "label" and "condition".
         """
         x, y = batch
         if self.data_type == "image":
@@ -178,5 +182,4 @@ class MNISTDataModule(pl.LightningDataModule):
             x = rearrange(x, "b c y x -> b (y x) c")
         else:
             raise ValueError(f"Unsupported data type: {self.data_type}")
-        batch = x, y
-        return batch
+        return {"input": x, "label": y, "condition": None}
