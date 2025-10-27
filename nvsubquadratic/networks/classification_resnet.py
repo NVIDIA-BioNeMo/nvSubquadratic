@@ -8,6 +8,7 @@ import torch
 
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
+
 class ClassificationResNet(ResidualNetwork):
     """Simple implementation of a ResNet for classification.
 
@@ -25,23 +26,42 @@ class ClassificationResNet(ResidualNetwork):
         norm_cfg (LazyConfig): Configuration for the normalization
         block_cfg (LazyConfig): Configuration for the residual block
         dropout_in_cfg (LazyConfig): Configuration for the dropout in layer (applied to the input)
+        condition_in_proj_cfg (LazyConfig | None): Configuration for the condition input projection or None if no condition is used.
+            If provided, the condition tensor is of shape [B, * spatial_dims_condition, hidden_dim].
+            If not provided, the condition tensor is None.
     """
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_and_condition: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass of the ClassificationResNet.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, *spatial_dims, self.in_channels)
+            input_and_condition: A dictionary containing the input and condition.
+                Keys: "input" and "condition".
+
+            - input: Input tensor of shape [B, * spatial_dims, hidden_dim].
+            - condition: Condition tensor of shape [B, * spatial_dims_condition, hidden_dim] or None.
 
         Returns:
-            torch.Tensor: Output tensor of shape (batch_size, self.out_channels)
+            Dict[str, torch.Tensor]:
+                - "logits": tensor of shape [B, out_channels].
         """
+        # Extract the input and condition from the dictionary
+        x, condition = input_and_condition["input"], input_and_condition["condition"]
+
         # Apply in_dropout to the input
         x = self.dropout_in(x)
         # Apply input projection
         x = self.in_proj(x)
-        # Apply residual blocks
-        x = self.blocks(x)
+
+        # Apply condition input projection if provided
+        if self.condition_in_proj is not None:
+            assert condition is not None, "Condition must be provided if condition input projection is provided"
+            condition = self.condition_in_proj(condition)
+
+        # Apply residual blocks (with or without condition)
+        for block in self.blocks:
+            x = block(x, condition)
+
         # Average over the spatial dimensions
         x = torch.reshape(x, (x.shape[0], -1, x.shape[-1]))
         x = x.mean(dim=1)
@@ -49,4 +69,4 @@ class ClassificationResNet(ResidualNetwork):
         x = self.out_norm(x)
         # Apply output projection
         x = self.out_proj(x)
-        return x
+        return {"logits": x}
