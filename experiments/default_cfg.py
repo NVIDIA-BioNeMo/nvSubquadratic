@@ -31,7 +31,7 @@ class SchedulerConfig:
     """Scheduler configuration."""
 
     name: str = PLACEHOLDER
-    warmup_iterations: int = 0
+    warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
 

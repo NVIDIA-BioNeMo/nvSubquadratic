@@ -44,7 +44,7 @@ def construct_optimizer(
         if pid in seen_param_ids:
             continue
         seen_param_ids.add(pid)
-        if getattr(param, "_no_wd", False):
+        if getattr(param, "_no_weight_decay", False):
             no_wd_params.append(param)
         else:
             wd_params.append(param)
@@ -105,8 +105,14 @@ def construct_scheduler(
 
     # Unpack values from scheduler_cfg
     scheduler_type = scheduler_cfg.name
-    warmup_iterations = scheduler_cfg.warmup_iterations
+    warmup_iterations_percentage = scheduler_cfg.warmup_iterations_percentage
     total_iterations = scheduler_cfg.total_iterations
+
+    # Interpret fractional warmup as a percentage of total iterations
+    assert warmup_iterations_percentage >= 0.0 and warmup_iterations_percentage < 1.0, (
+        f"scheduler_cfg.warmup_iterations_percentage must be in [0.0, 1.0). Got {warmup_iterations_percentage}"
+    )
+    warmup_iterations = int(total_iterations * warmup_iterations_percentage)
 
     # Create warm_up scheduler
     if warmup_iterations != 0:

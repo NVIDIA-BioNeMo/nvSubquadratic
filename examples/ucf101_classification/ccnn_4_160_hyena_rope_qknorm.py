@@ -7,9 +7,9 @@ import os
 
 import torch
 
+from experiments.datamodules.ucf101 import UCF101DataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import ClassificationWrapper
-from experiments.datamodules.ucf101 import UCF101DataModule
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -37,9 +37,7 @@ GRID_TYPE = "single"
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
-WARMUP_ITERATIONS = int(
-    TRAINING_ITERATIONS * 0.05
-)  # 5% of the training iterations -- initially 5 epochs from 200 epochs
+WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
 GRAD_CLIP = 10.0
 
@@ -161,14 +159,16 @@ def get_config() -> ExperimentConfig:
 
     # Modify the train config - only set what is different from the default
     config.train = TrainConfig(
-        batch_size=BATCH_SIZE,
+        batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
     )
 
     # Modify the scheduler config - only set what's different from default
     config.scheduler = SchedulerConfig(
-        name="cosine", warmup_iterations=WARMUP_ITERATIONS, total_iterations="${train.iterations}"
+        name="cosine",
+        warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
+        total_iterations="${train.iterations}",
     )
 
     # Add wandb group
