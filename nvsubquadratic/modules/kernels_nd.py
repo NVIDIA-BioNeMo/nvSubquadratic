@@ -69,14 +69,14 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         # TODO(@dwromero): We must make sure that the grid_cache is kept in float32.
         t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
         grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
-        self.register_buffer("grid_cache", grid_cache)
+        self.register_buffer("grid_cache", grid_cache, persistent=False)
 
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
         self.step_size = 1.0 / (L_cache - 1)
 
-        # Add ._no_wd flag to all parameters to avoid weight decay
+        # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the positional embeddings for a sequence of the given length.
@@ -307,14 +307,14 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         # Construct grid cache (cube) of size 2 * L_cache - 1.
         t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
         grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
-        self.register_buffer("grid_cache", grid_cache)
+        self.register_buffer("grid_cache", grid_cache, persistent=False)
 
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
         self.step_size = 1.0 / (L_cache - 1)
 
-        # Add ._no_wd flag to all parameters to avoid weight decay
+        # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the positional embeddings for a sequence of the given length.
@@ -462,10 +462,10 @@ class SIRENKernelND(torch.nn.Module):
         with torch.no_grad():
             self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))  # Modulation by expected kernel size.
 
-        # Add ._no_wd flag to all parameters to avoid weight decay (except for self.out_linear)
-        # Note that the positional embedding is already excluded from weight decay by the _no_wd flag.
+        # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear)
+        # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.
         for param in self.kernel_network.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
     def forward(self, seq_lens: tuple[int, ...]) -> torch.Tensor:
         """Computes the random Fourier kernel for a given grid of spatial dimensions.

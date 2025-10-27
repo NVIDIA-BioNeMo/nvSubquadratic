@@ -55,9 +55,9 @@ class ExponentialModulationND(torch.nn.Module):
         )
         self.weight = torch.nn.Parameter(torch.stack([_decay_linspace] * data_dim, dim=0))  # [data_dim, num_channels]
 
-        # Add ._no_wd flag to all parameters to avoid weight decay
+        # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
     def extra_repr(self):
         """Additional printing for the ExponentialModulationND class."""
@@ -154,9 +154,9 @@ class GaussianModulationND(torch.nn.Module):
             param = init_std
         self.std_param = torch.nn.Parameter(param)  # shape [data_dim, num_channels]
 
-        # Add ._no_wd flag to all parameters to avoid weight decay
+        # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for p in self.parameters():
-            p._no_wd = True
+            p._no_weight_decay = True
 
         # Use a forward pre-hook to clamp std_param to the limits without breaking the gradient flow.
         if self.parametrization == "direct":

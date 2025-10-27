@@ -70,7 +70,7 @@ class Hyena(torch.nn.Module):
         self.pixelhyena_norm = instantiate(pixelhyena_norm_cfg)
         # Exclude self.pixelhyena_norm from the parameter group with weight decay
         for param in self.pixelhyena_norm.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
         # QK Normalization
         self.apply_qk_norm = apply_qk_norm

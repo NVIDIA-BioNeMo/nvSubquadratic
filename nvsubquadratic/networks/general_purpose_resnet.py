@@ -66,7 +66,7 @@ class ResidualNetwork(nn.Module):
         self.out_norm = instantiate(norm_cfg)
         # Exclude self.out_norm from the parameter group with weight decay
         for param in self.out_norm.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
         # Instantiate output projection
         self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)

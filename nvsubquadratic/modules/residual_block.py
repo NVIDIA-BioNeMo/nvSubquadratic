@@ -37,11 +37,11 @@ class ResidualBlock(torch.nn.Module):
         self.input_norm = instantiate(norm_cfg)
         # Exclude self.input_norm from the parameter group with weight decay
         for param in self.input_norm.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
         self.mlp_norm = instantiate(norm_cfg)
         # Exclude self.mlp_norm from the parameter group with weight decay
         for param in self.mlp_norm.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
         # Instantiate dropout
         self.dropout = instantiate(dropout_cfg)
