@@ -7,23 +7,14 @@ import os
 
 import torch
 
-<<<<<<< HEAD
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import ClassificationWrapper
-=======
-from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from experiments.lightning_wrappers import ClassificationWrapper
-from experiments.datamodules.mnist import MNISTDataModule
->>>>>>> 8881472 (Added support for resuming and checkpointing.)
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.self_attention import SelfAttention
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
