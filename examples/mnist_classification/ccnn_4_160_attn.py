@@ -11,10 +11,10 @@ from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
-from nvsubquadratic.modules.self_attention import SelfAttention
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
@@ -76,27 +76,34 @@ def get_config() -> ExperimentConfig:
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
-                mixer_cfg=LazyConfig(SelfAttention)(
+                mixer_cfg=LazyConfig(Attention)(
                     hidden_dim="${net.hidden_dim}",
                     num_heads=8,
                     apply_qk_norm=True,
                     use_rope=True,
+                    is_causal=False,
                     rope_base=10000.0,
                     attn_dropout=DROPOUT_RATE,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
-            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
+            sequence_mixer_norm_cfg="${net.norm_cfg}",
+            # Condition mixer
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
+            # MLP
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
                 expansion_factor=1.0,
-                dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
+                dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
-            norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
+            mlp_norm_cfg="${net.norm_cfg}",
+            # Dropout
+            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
     )

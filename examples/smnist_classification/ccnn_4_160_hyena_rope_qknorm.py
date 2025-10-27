@@ -119,7 +119,11 @@ def get_config() -> ExperimentConfig:
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
-            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
+            sequence_mixer_norm_cfg="${net.norm_cfg}",
+            # Condition mixer
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
+            # MLP
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
@@ -128,7 +132,9 @@ def get_config() -> ExperimentConfig:
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
-            norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
+            mlp_norm_cfg="${net.norm_cfg}",
+            # Dropout
+            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
     )
