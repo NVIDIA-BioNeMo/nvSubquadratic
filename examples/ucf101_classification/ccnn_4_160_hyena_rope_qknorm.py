@@ -7,9 +7,15 @@ import os
 
 import torch
 
+<<<<<<< HEAD
 from experiments.datamodules.ucf101 import UCF101DataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import ClassificationWrapper
+=======
+from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.lightning_wrappers import ClassificationWrapper
+from experiments.datamodules.ucf101 import UCF101DataModule
+>>>>>>> 8881472 (Added support for resuming and checkpointing.)
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
