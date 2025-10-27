@@ -7,9 +7,9 @@ import os
 
 import torch
 
-from examples.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from examples.lightning_wrappers import ClassificationWrapper
-from examples.mnist_classification.mnist_datamodule import MNISTDataModule
+from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.lightning_wrappers import ClassificationWrapper
+from experiments.datamodules.mnist import MNISTDataModule
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -24,8 +24,8 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 PLACEHOLDER = None
 
-DATA_TYPE = "image"
-DATA_DIM = 2
+DATA_TYPE = "sequence"
+DATA_DIM = 1
 
 # Model parameters
 BATCH_SIZE = 128
@@ -107,7 +107,7 @@ def get_config() -> ExperimentConfig:
                         ),
                         grid_type=GRID_TYPE,
                     ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                    short_conv_cfg=LazyConfig(torch.nn.Conv1d)(
                         in_channels="3 * ${net.hidden_dim}",
                         out_channels="3 * ${net.hidden_dim}",
                         kernel_size=3,
@@ -161,6 +161,6 @@ def get_config() -> ExperimentConfig:
     )
 
     # Add wandb group
-    config.wandb = WandbConfig(job_group="mnist_classification")
+    config.wandb = WandbConfig(job_group="smnist_classification")
 
     return config

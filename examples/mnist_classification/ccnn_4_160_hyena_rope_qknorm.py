@@ -7,9 +7,9 @@ import os
 
 import torch
 
-from examples.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from examples.lightning_wrappers import ClassificationWrapper
-from examples.ucf101.ucf101_datamodule import UCF101DataModule
+from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.lightning_wrappers import ClassificationWrapper
+from experiments.datamodules.mnist import MNISTDataModule
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -24,16 +24,16 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 PLACEHOLDER = None
 
-DATA_TYPE = "video"
-DATA_DIM = 3
+DATA_TYPE = "image"
+DATA_DIM = 2
 
 # Model parameters
-BATCH_SIZE = 1
-NUM_HIDDEN_CHANNELS = 156  # Must be divisible by 6
+BATCH_SIZE = 128
+NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "single"
+GRID_TYPE = "double"
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
@@ -46,38 +46,27 @@ GRAD_CLIP = 10.0
 WEIGHT_DECAY = 0.01
 LEARNING_RATE = 0.001
 
-# Dataset parameters
-FRAME_SIZE = (128, 128)
-FRAMES_PER_CLIP = 16
-STEP_BETWEEN_CLIPS = 1
-VAL_SPLIT_FRACTION = 0.1
-
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for the UCF101 classification experiment.
+    """Get the configuration for the MNIST classification experiment.
 
     Returns:
-        ExperimentConfig: The configuration for the UCF101 classification experiment.
+        ExperimentConfig: The configuration for the MNIST classification experiment.
     """
     # Sratr with default config
     config = ExperimentConfig()
 
     # Add dataset config
-    # Update dataset with LazyConfig directly referencing the UCF101DataModule class
+    # Update dataset with LazyConfig directly referencing the MNISTDataModule class
     # and providing all parameters directly (no nested params dataclass)
-    config.dataset = LazyConfig(UCF101DataModule)(
-        data_dir=".data/ucf101",
-        split_fold=1,
+    config.dataset = LazyConfig(MNISTDataModule)(
+        data_dir=".data/mnist",
         data_type=DATA_TYPE,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=True,  # Flag to use deterministic worker initialization
         seed=config.seed,  # Pass the seed value instead of a Generator object
-        frames_per_clip=FRAMES_PER_CLIP,
-        step_between_clips=STEP_BETWEEN_CLIPS,
-        frame_size=FRAME_SIZE,
-        val_split_fraction=VAL_SPLIT_FRACTION,
     )
 
     # Add net config
@@ -118,7 +107,7 @@ def get_config() -> ExperimentConfig:
                         ),
                         grid_type=GRID_TYPE,
                     ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv3d)(
+                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels="3 * ${net.hidden_dim}",
                         out_channels="3 * ${net.hidden_dim}",
                         kernel_size=3,
@@ -172,6 +161,6 @@ def get_config() -> ExperimentConfig:
     )
 
     # Add wandb group
-    config.wandb = WandbConfig(job_group="ucf101_classification")
+    config.wandb = WandbConfig(job_group="mnist_classification")
 
     return config

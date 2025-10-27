@@ -1,7 +1,7 @@
 # TODO: Add license header here
+# Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-
-"""Lazy configuration class for instantiating objects."""
+"""Lazy configuration class for lazy object instantiation."""
 
 import ast
 import copy
@@ -9,8 +9,8 @@ import importlib
 import inspect
 from typing import Any, Callable, Dict, Type, Union
 
+import torch
 from omegaconf import DictConfig, OmegaConf
-
 
 PLACEHOLDER = None
 
@@ -26,7 +26,8 @@ class LazyConfig:
     """
 
     def __init__(self, target: Union[Type, Callable, str]):
-        """Initialize a LazyConfig object with a target class or function.
+        """
+        Initialize a LazyConfig object with a target class or function.
 
         Args:
             target: A class, callable, or string path to a class/function
@@ -34,7 +35,8 @@ class LazyConfig:
         self.target = target
 
     def __call__(self, **kwargs) -> Union[Dict[str, Any], DictConfig]:
-        """Create a configuration dictionary with __target__ and arguments.
+        """
+        Create a configuration dictionary with __target__ and arguments.
 
         Args:
             **kwargs: Arguments to pass to the target when instantiated
@@ -67,7 +69,8 @@ class LazyConfig:
 
 
 def _resolve_target(target_str: str) -> Callable:
-    """Resolve a string reference to a class or function.
+    """
+    Resolve a string reference to a class or function.
 
     Args:
         target_str: String reference to a class or function
@@ -81,8 +84,16 @@ def _resolve_target(target_str: str) -> Callable:
     return target
 
 
+def _is_module_class(obj: Any) -> bool:
+    """Return True if obj is a class and a subclass of torch.nn.Module."""
+    try:
+        return inspect.isclass(obj) and issubclass(obj, torch.nn.Module)
+    except Exception:
+        return False
+
+
 def _to_dict_with_target(config: DictConfig) -> Dict[str, Any]:
-    """Convert an OmegaConf DictConfig to a dictionary while preserving __target__."""
+    """Convert an OmegaConf DictConfig to a dictionary while preserving __target__"""
     if not isinstance(config, DictConfig):
         return config
 
@@ -94,7 +105,8 @@ def _to_dict_with_target(config: DictConfig) -> Dict[str, Any]:
 
 
 def _contains_placeholder(obj: Any) -> bool:
-    """Check if a dictionary, list, or value contains any PLACEHOLDER values.
+    """
+    Check if a dictionary, list, or value contains any PLACEHOLDER values.
 
     Args:
         obj: The object to check
@@ -190,11 +202,20 @@ def _eval_arith_in_obj(obj: Any) -> Any:
     return obj
 
 
-def instantiate(config: Union[Dict[str, Any], DictConfig, "LazyConfig"], **kwargs) -> Any:
-    """Instantiate an object from a configuration dictionary.
+def instantiate(
+    config: Union[Dict[str, Any], DictConfig, "LazyConfig"],
+    *,
+    recursive_instantiate: bool = False,
+    **kwargs,
+) -> Any:
+    """
+    Instantiate an object from a configuration dictionary.
 
     Args:
         config: A dictionary, DictConfig, or LazyConfig object with target and arguments
+        recursive_instantiate: Whether to instantiate the config recursively.
+            If True, the config will be instantiated recursively.
+            If False, the config will be returned as is.
         **kwargs: Additional kwargs to override those in config
 
     Returns:
@@ -238,8 +259,18 @@ def instantiate(config: Union[Dict[str, Any], DictConfig, "LazyConfig"], **kwarg
     processed_args = {}
     for key, value in args.items():
         if isinstance(value, LazyConfig):
-            # Handle nested LazyConfig objects
-            processed_args[key] = instantiate(value)
+            # Nested LazyConfig objects
+            if recursive_instantiate:
+                processed_args[key] = instantiate(value, recursive_instantiate=recursive_instantiate)
+            else:
+                # Decide whether to defer or instantiate based on target type
+                target = value.target if not isinstance(value.target, str) else _resolve_target(value.target)
+                if not _is_module_class(target):
+                    # For non-module callables (e.g., init factories), instantiate now
+                    processed_args[key] = instantiate(value, recursive_instantiate=recursive_instantiate)
+                else:
+                    # Pass through as config (DictConfig) without constructing the module
+                    processed_args[key] = value()
         elif (isinstance(value, dict) or isinstance(value, DictConfig)) and "__target__" in value:
             # If the nested config contains placeholders, don't instantiate it yet
             if _contains_placeholder(value):
@@ -249,25 +280,56 @@ def instantiate(config: Union[Dict[str, Any], DictConfig, "LazyConfig"], **kwarg
                 else:
                     processed_args[key] = value
             else:
-                # If no placeholders, instantiate it
-                processed_args[key] = instantiate(value)
+                # If no placeholders, instantiate based on target type and recursion flag
+                target = _resolve_target(value.get("__target__"))
+                if recursive_instantiate or not _is_module_class(target):
+                    processed_args[key] = instantiate(value, recursive_instantiate=recursive_instantiate)
+                else:
+                    # Leave as config (DictConfig), do not instantiate into a module
+                    if not isinstance(value, DictConfig):
+                        processed_args[key] = OmegaConf.create(value, flags={"allow_objects": True})
+                    else:
+                        processed_args[key] = value
         elif isinstance(value, dict) or isinstance(value, DictConfig):
             # For nested dicts without __target__, maintain dot notation access but don't instantiate
             # if they contain placeholders
             if _contains_placeholder(value):
                 processed_args[key] = OmegaConf.create(value, flags={"allow_objects": True})
             else:
-                processed_args[key] = instantiate(value)
+                if recursive_instantiate:
+                    processed_args[key] = instantiate(value, recursive_instantiate=recursive_instantiate)
+                else:
+                    # Keep as config container for later resolution/instantiation
+                    if not isinstance(value, DictConfig):
+                        processed_args[key] = OmegaConf.create(value, flags={"allow_objects": True})
+                    else:
+                        processed_args[key] = value
         elif isinstance(value, list):
             # Handle lists of configs
-            processed_args[key] = [
-                (
-                    instantiate(item)
-                    if isinstance(item, (dict, DictConfig, LazyConfig)) and not _contains_placeholder(item)
-                    else item
-                )
-                for item in value
-            ]
+            if recursive_instantiate:
+                # Instantiate the list recursively if requested
+                processed_args[key] = [
+                    (
+                        instantiate(item, recursive_instantiate=recursive_instantiate)
+                        if isinstance(item, (dict, DictConfig, LazyConfig)) and not _contains_placeholder(item)
+                        else item
+                    )
+                    for item in value
+                ]
+            else:
+                # Keep list items as configs where applicable
+                new_list = []
+                for item in value:
+                    if isinstance(item, LazyConfig):
+                        new_list.append(item())
+                    elif (isinstance(item, dict) or isinstance(item, DictConfig)) and "__target__" in item:
+                        if not isinstance(item, DictConfig):
+                            new_list.append(OmegaConf.create(item, flags={"allow_objects": True}))
+                        else:
+                            new_list.append(item)
+                    else:
+                        new_list.append(item)
+                processed_args[key] = new_list
         else:
             processed_args[key] = value
 
@@ -291,7 +353,8 @@ def instantiate(config: Union[Dict[str, Any], DictConfig, "LazyConfig"], **kwarg
 
 
 def to_config(obj: Any) -> Dict[str, Any]:
-    """Convert an instantiated object to a LazyConfig-compatible dictionary.
+    """
+    Convert an instantiated object to a LazyConfig-compatible dictionary.
 
     Args:
         obj: The object to convert
@@ -333,7 +396,8 @@ def to_config(obj: Any) -> Dict[str, Any]:
 
 
 def save_config(config: Dict[str, Any], filename: str) -> None:
-    """Save a configuration to a file.
+    """
+    Save a configuration to a file.
 
     Args:
         config: Configuration dictionary
@@ -346,7 +410,8 @@ def save_config(config: Dict[str, Any], filename: str) -> None:
 
 
 def load_config(filename: str) -> Dict[str, Any]:
-    """Load a configuration from a file.
+    """
+    Load a configuration from a file.
 
     Args:
         filename: File to load from

@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
 import wandb
-from examples.default_cfg import PLACEHOLDER, ExperimentConfig, SchedulerConfig
+from experiments.default_cfg import PLACEHOLDER, ExperimentConfig, SchedulerConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules import schedulers
 
