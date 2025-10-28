@@ -768,20 +768,16 @@ class DiffusionWrapper(LightningWrapperBase):
 
         if not isinstance(cfg, DiffusionExperimentConfig):
             raise TypeError("DiffusionWrapper requires cfg to be a DiffusionExperimentConfig instance.")
-        if cfg.diffusion is None:
+        diffusion_cfg = cfg.diffusion
+        if diffusion_cfg is None:
             raise ValueError("DiffusionWrapper requires cfg.diffusion to be provided.")
 
-        self.diffusion_cfg = cfg.diffusion
-        self.schedule_cfg = self.diffusion_cfg.schedule
-        self.sampling_cfg = self.diffusion_cfg.sampling
-        self.ema_cfg = self.diffusion_cfg.ema
-
-        self.num_train_timesteps = int(self.schedule_cfg.num_train_timesteps)
-        self.beta_schedule = self.schedule_cfg.beta_schedule
+        self.num_train_timesteps = int(diffusion_cfg.num_train_timesteps)
+        self.beta_schedule = diffusion_cfg.beta_schedule
         if self.beta_schedule != "linear":
             raise NotImplementedError(f"Only the linear beta schedule is implemented. Got '{self.beta_schedule}'.")
-        self.beta_start = float(self.schedule_cfg.beta_start)
-        self.beta_end = float(self.schedule_cfg.beta_end)
+        self.beta_start = float(diffusion_cfg.beta_start)
+        self.beta_end = float(diffusion_cfg.beta_end)
 
         self._build_diffusion_schedule()
 
@@ -789,12 +785,12 @@ class DiffusionWrapper(LightningWrapperBase):
         if hidden_dim is None:
             raise AttributeError("DiffusionWrapper requires the network to expose a 'hidden_dim' attribute.")
 
-        schedule_time_embed = self.schedule_cfg.time_embed_dim
+        schedule_time_embed = diffusion_cfg.time_embed_dim
         timestep_dim = int(schedule_time_embed) if schedule_time_embed is not None else hidden_dim * 2
         if timestep_dim % 2 != 0:
             timestep_dim += 1
         self.timestep_dim = timestep_dim
-        self.max_period = float(self.schedule_cfg.max_period)
+        self.max_period = float(diffusion_cfg.max_period)
 
         self.time_mlp = torch.nn.Sequential(
             torch.nn.Linear(self.timestep_dim, hidden_dim * 2),
@@ -805,14 +801,14 @@ class DiffusionWrapper(LightningWrapperBase):
         self.loss_fn = torch.nn.MSELoss()
 
         self.example_input_shape: Optional[torch.Size] = None
-        self.default_inference_steps = int(self.sampling_cfg.num_inference_steps)
-        self.log_samples = bool(self.sampling_cfg.log_samples)
-        self.num_generated_samples = int(self.sampling_cfg.num_samples)
+        self.default_inference_steps = int(diffusion_cfg.num_inference_steps)
+        self.log_samples = bool(diffusion_cfg.log_samples)
+        self.num_generated_samples = int(diffusion_cfg.num_samples)
 
-        self.ema_enabled = bool(self.ema_cfg.enabled)
-        self.ema_decay = float(self.ema_cfg.decay)
-        self.ema_update_every = int(self.ema_cfg.update_every)
-        self.ema_warmup_steps = int(self.ema_cfg.warmup_steps)
+        self.ema_enabled = bool(diffusion_cfg.ema_enabled)
+        self.ema_decay = float(diffusion_cfg.ema_decay)
+        self.ema_update_every = int(diffusion_cfg.ema_update_every)
+        self.ema_warmup_steps = int(diffusion_cfg.ema_warmup_steps)
         self._ema_model: Optional[torch.nn.Module] = None
         if self.ema_enabled:
             # Create an EMA shadow copy that never receives gradients.

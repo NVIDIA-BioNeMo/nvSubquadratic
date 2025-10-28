@@ -81,8 +81,8 @@ class ResumeFromCheckpointConfig:
 
 
 @dataclass
-class DiffusionScheduleConfig:
-    """Noise schedule configuration."""
+class DiffusionConfig:
+    """Diffusion configuration for schedule, sampling, and EMA."""
 
     num_train_timesteps: int = 1_000
     beta_start: float = 1e-4
@@ -91,33 +91,14 @@ class DiffusionScheduleConfig:
     time_embed_dim: Optional[int] = None
     max_period: float = 10_000.0
 
-
-@dataclass
-class DiffusionSamplingConfig:
-    """Sampling loop configuration."""
-
     num_inference_steps: int = 50
     num_samples: int = 4
     log_samples: bool = True
 
-
-@dataclass
-class DiffusionEMAConfig:
-    """Exponential moving average configuration."""
-
-    enabled: bool = False
-    decay: float = 0.999
-    update_every: int = 1
-    warmup_steps: int = 0
-
-
-@dataclass
-class DiffusionConfig:
-    """Grouped configuration for diffusion wrappers."""
-
-    schedule: DiffusionScheduleConfig = field(default_factory=DiffusionScheduleConfig)
-    sampling: DiffusionSamplingConfig = field(default_factory=DiffusionSamplingConfig)
-    ema: DiffusionEMAConfig = field(default_factory=DiffusionEMAConfig)
+    ema_enabled: bool = False
+    ema_decay: float = 0.999
+    ema_update_every: int = 1
+    ema_warmup_steps: int = 0
 
 
 @dataclass

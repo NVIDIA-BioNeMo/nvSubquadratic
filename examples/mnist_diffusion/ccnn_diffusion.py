@@ -7,16 +7,7 @@ import os
 import torch
 
 from experiments.datamodules.mnist import MNISTDataModule
-from experiments.default_cfg import (
-    DiffusionConfig,
-    DiffusionEMAConfig,
-    DiffusionExperimentConfig,
-    DiffusionSamplingConfig,
-    DiffusionScheduleConfig,
-    SchedulerConfig,
-    TrainConfig,
-    WandbConfig,
-)
+from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import DiffusionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
@@ -193,25 +184,19 @@ def get_config() -> DiffusionExperimentConfig:
     )
 
     config.diffusion = DiffusionConfig(
-        schedule=DiffusionScheduleConfig(
-            num_train_timesteps=NUM_TRAIN_TIMESTEPS,
-            beta_start=BETA_START,
-            beta_end=BETA_END,
-            beta_schedule=BETA_SCHEDULE,
-            time_embed_dim=TIME_EMBED_DIM,
-            max_period=MAX_PERIOD,
-        ),
-        sampling=DiffusionSamplingConfig(
-            num_inference_steps=NUM_INFERENCE_STEPS,
-            num_samples=NUM_SAMPLES,
-            log_samples=LOG_SAMPLES,
-        ),
-        ema=DiffusionEMAConfig(
-            enabled=EMA_ENABLED,
-            decay=EMA_DECAY,
-            update_every=EMA_UPDATE_EVERY,
-            warmup_steps=EMA_WARMUP_STEPS,
-        ),
+        num_train_timesteps=NUM_TRAIN_TIMESTEPS,
+        beta_start=BETA_START,
+        beta_end=BETA_END,
+        beta_schedule=BETA_SCHEDULE,
+        time_embed_dim=TIME_EMBED_DIM,
+        max_period=MAX_PERIOD,
+        num_inference_steps=NUM_INFERENCE_STEPS,
+        num_samples=NUM_SAMPLES,
+        log_samples=LOG_SAMPLES,
+        ema_enabled=EMA_ENABLED,
+        ema_decay=EMA_DECAY,
+        ema_update_every=EMA_UPDATE_EVERY,
+        ema_warmup_steps=EMA_WARMUP_STEPS,
     )
 
     config.wandb = WandbConfig(job_group="mnist-diffusion")
