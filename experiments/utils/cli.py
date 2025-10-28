@@ -53,9 +53,12 @@ def get_deterministic_run_name(config_path: str, overrides: List[str] = None, us
     else:
         timestamp = ""
     # Always append the effective username to avoid collisions across users
-    username = getpass.getuser().upper()
-    # Usernames are always name.lastname. Let's extract the first letter of both the name and the lastname.
-    username = username.split(".")[0][0] + username.split(".")[1][0]
+    raw_username = getpass.getuser().upper()
+    parts = [p for p in raw_username.split(".") if p]
+    if len(parts) >= 2:
+        username = parts[0][0] + parts[1][0]
+    else:
+        username = raw_username[:2] if raw_username else "??"
 
     # Add override hash if overrides are provided
     if overrides and len(overrides) > 0:
@@ -246,7 +249,7 @@ def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> Ex
         return data_class(**kwargs)
 
     # Attempt to create new dataclass instance from the resolved config
-    new_config = dict_to_dataclass(resolved_conf, ExperimentConfig)
+    new_config = dict_to_dataclass(resolved_conf, type(config))
     return new_config
 
 

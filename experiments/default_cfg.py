@@ -64,24 +64,60 @@ class AutoResumeConfig:
     """
 
     enabled: bool = False
-    # Which artifact alias to resume from when found
     alias: Literal["best", "latest"] = "latest"
-    # Run name
     run_name: str | None = None
 
 
 @dataclass
 class ResumeFromCheckpointConfig:
-    """Configuration to specify wether to start training from a previously saved checkpoint."""
+    """Configuration to specify whether to start training from a previously saved checkpoint."""
 
-    load: bool = False  # Whether to load the checkpoint
-    alias: Literal["best", "latest"] = "latest"  # Either best or latest
-    strict: bool = True  # Whether to raise an error if the checkpoint does not exactly match the model architecture
-    partial_load: bool = False  # When strict is False, copy overlapping tensor slices from checkpoint into model
-    run_path: str = (
-        ""  # entity/project/run_id | When set, download checkpoint from this W&B run path (entity/project/run_id)
-    )
-    output_dir: str = ".artifacts/{run_id}/{alias}"  # Optional output directory to store downloaded artifacts; defaults to .artifacts/{run_id}/{alias}
+    load: bool = False
+    alias: Literal["best", "latest"] = "latest"
+    strict: bool = True
+    partial_load: bool = False
+    run_path: str = ""
+    output_dir: str = ".artifacts/{run_id}/{alias}"
+
+
+@dataclass
+class DiffusionScheduleConfig:
+    """Noise schedule configuration."""
+
+    num_train_timesteps: int = 1_000
+    beta_start: float = 1e-4
+    beta_end: float = 0.02
+    beta_schedule: str = "linear"
+    time_embed_dim: Optional[int] = None
+    max_period: float = 10_000.0
+
+
+@dataclass
+class DiffusionSamplingConfig:
+    """Sampling loop configuration."""
+
+    num_inference_steps: int = 50
+    num_samples: int = 4
+    log_samples: bool = True
+
+
+@dataclass
+class DiffusionEMAConfig:
+    """Exponential moving average configuration."""
+
+    enabled: bool = False
+    decay: float = 0.999
+    update_every: int = 1
+    warmup_steps: int = 0
+
+
+@dataclass
+class DiffusionConfig:
+    """Grouped configuration for diffusion wrappers."""
+
+    schedule: DiffusionScheduleConfig = field(default_factory=DiffusionScheduleConfig)
+    sampling: DiffusionSamplingConfig = field(default_factory=DiffusionSamplingConfig)
+    ema: DiffusionEMAConfig = field(default_factory=DiffusionEMAConfig)
 
 
 @dataclass
@@ -90,82 +126,27 @@ class ExperimentConfig:
 
     device: str = "cuda"
     debug: bool = True
-    deterministic: bool = False  # Need to be set to True for deterministic behavior
+    deterministic: bool = False
     seed: int = 0
     comment: str = ""
 
-    # Dataset configuration that MUST be set in experiment config
-    # This should be instantiated with a LazyConfig object, e.g.:
-    #   config.dataset = LazyConfig("datamodules.mnist.MNISTDataModule", {
-    #       "data_dir": "/data",
-    #       "batch_size": 32,
-    #       "permuted": False
-    #   })
-    dataset: LazyConfig = PLACEHOLDER  # Must be resolved in the experiment config.
-
-    # Network configuration that MUST be set in experiment config
-    # This should be instantiated with a LazyConfig object, e.g.:
-    #   config.net = LazyConfig(ResNet)(
-    #       in_channels=1,
-    #       out_channels=10,
-    #       num_blocks=4,
-    #       ...
-    #   })
+    dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
-
-    lightning_wrapper_class: Literal[
-        "examples.lightning_wrappers.ClassificationWrapper",
-        "examples.lightning_wrappers.RegressionWrapper",
-        "examples.lightning_wrappers.DiffusionWrapper",
-    ] = PLACEHOLDER
-
-    # Base optimizer MUST be set in experiment config
-    # This should be instantiated with a LazyConfig object, e.g.:
-    #   config.optimizer = LazyConfig(torch.optim.Adam)(
-    #       lr=0.01,
-    #       weight_decay=1e-6,
-    #   )
+    lightning_wrapper_class: LazyConfig = PLACEHOLDER
     optimizer: LazyConfig = PLACEHOLDER
 
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-
     train: TrainConfig = field(default_factory=TrainConfig)
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
 
     resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
-
-    # Auto-resume behavior based on W&B run name
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
-
-    # Optional: additional Trainer callbacks defined per-experiment and appended during construction
     callbacks: list[LazyConfig] = field(default_factory=list)
 
 
 @dataclass
 class DiffusionExperimentConfig(ExperimentConfig):
-    """Specialized experiment config for diffusion runs."""
+    """Experiment configuration for diffusion runs."""
 
-    # Diffusion specific experiment parameters.
-    diffusion: DiffusionConfig = fieldl(default_factory=DiffusionConfig)
-
-
-@dataclass
-class DiffusionConfig:
-    """Diffusion noise schedule hyper-parameters."""
-
-    num_train_timesteps: int = 1000
-    beta_start: float = 1e-4
-    beta_end: float = 0.02
-    beta_schedule: str = 'linear'
-    time_embed_dim: int = PLACEHOLDER
-    max_period: float = PLACEHOLDER
-
-    num_inference_steps: int = PLACEHOLDER
-    num_samples: int = PLACEHOLDER
-    log_samples: bool = PLACEHOLDER
-
-    ema_enabled: bool = True
-    ema_decay: float = PLACEHOLDER
-    ema_update_every: int = PLACEHOLDER
-    ema_warmup_steps: int = PLACEHOLDER
+    diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)
