@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 from nvsubquadratic.lazy_config import LazyConfig
 
@@ -140,3 +140,32 @@ class ExperimentConfig:
 
     # Optional: additional Trainer callbacks defined per-experiment and appended during construction
     callbacks: list[LazyConfig] = field(default_factory=list)
+
+
+@dataclass
+class DiffusionExperimentConfig(ExperimentConfig):
+    """Specialized experiment config for diffusion runs."""
+
+    # Diffusion specific experiment parameters.
+    diffusion: DiffusionConfig = fieldl(default_factory=DiffusionConfig)
+
+
+@dataclass
+class DiffusionConfig:
+    """Diffusion noise schedule hyper-parameters."""
+
+    num_train_timesteps: int = 1000
+    beta_start: float = 1e-4
+    beta_end: float = 0.02
+    beta_schedule: str = 'linear'
+    time_embed_dim: int = PLACEHOLDER
+    max_period: float = PLACEHOLDER
+
+    num_inference_steps: int = PLACEHOLDER
+    num_samples: int = PLACEHOLDER
+    log_samples: bool = PLACEHOLDER
+
+    ema_enabled: bool = True
+    ema_decay: float = PLACEHOLDER
+    ema_update_every: int = PLACEHOLDER
+    ema_warmup_steps: int = PLACEHOLDER
