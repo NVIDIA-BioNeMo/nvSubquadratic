@@ -67,11 +67,24 @@ class QKVConditionMixer(torch.nn.Module):
 
         Args:
             x: Input tensor of shape [B, * spatial_dims, hidden_dim].
-            condition: Condition tensor of shape [B, * spatial_dims_condition, hidden_dim].
+            condition: Condition tensor of shape [B, * spatial_dims_condition, hidden_dim] or [B, hidden_dim].
 
         Returns:
             Output tensor of shape [B, * spatial_dims, hidden_dim].
         """
+        if x.ndim < 3:
+            raise ValueError(f"x must have at least one spatial dimension; got shape {x.shape}.")
+
+        # Support global conditioning ([B, hidden_dim]) as well as spatial conditioning
+        if condition.ndim == 2:
+            # Unsqueeze the conditioning vector to create a single spatial dim.
+            condition = condition.unsqueeze(1)
+        elif condition.ndim != x.ndim:
+            raise ValueError(
+                f"Condition must have either 2 dimensions (global) or match x's spatial rank. "
+                f"Got condition.ndim={condition.ndim}, expected {x.ndim}."
+            )
+
         # Q projection from the current stream
         q = self.q_proj(x)
         # KV projection from the condition signal

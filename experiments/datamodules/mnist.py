@@ -55,6 +55,7 @@ class MNISTDataModule(pl.LightningDataModule):
         pin_memory: bool,
         use_deterministic_worker_init: bool,
         seed: int,
+        task: Literal["classification", "generation"],
     ):
         """Initialize the MNISTDataModule.
 
@@ -66,6 +67,7 @@ class MNISTDataModule(pl.LightningDataModule):
             pin_memory: Whether to pin memory
             use_deterministic_worker_init: Whether to use deterministic worker initialization
             seed: Seed for the data
+            output_channels: Optional override for the output channels exposed by the datamodule.
         """
         super().__init__()
 
@@ -84,7 +86,12 @@ class MNISTDataModule(pl.LightningDataModule):
 
         # Determine sizes of dataset
         self.input_channels = 1
-        self.output_channels = 10
+        
+        # Determine the output channels for the network based on task type
+        if task == 'classification':
+            self.output_channels = 10
+        elif task == 'generation':
+            self.output_channels = 1
 
         # Assert that data_type is in the allowed options
         assert data_type in ["sequence", "image"], f"data_type must be 'sequence' or 'image', got {data_type}"

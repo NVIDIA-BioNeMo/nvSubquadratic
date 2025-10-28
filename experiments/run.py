@@ -229,7 +229,7 @@ def main():
             print("[resume] Weight loading completed.")
 
     # Create trainer
-    trainer, checkpoint_callback = construct_trainer(config, wandb_logger)
+    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name)
 
     # Validate that the checkpoint has been correctly loaded before training (for no autoresume)
     if autoresume_ckpt_path is None and config.resume_from_checkpoint.load:

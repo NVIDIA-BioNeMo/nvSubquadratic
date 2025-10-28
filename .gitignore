@@ -344,7 +344,4 @@ uv.lock
 # Run logs
 lightning_logs/
 wandb/
-
-AGENTS.md
-.agents_docs/
-outputs/
+runs/
