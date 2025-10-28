@@ -52,6 +52,10 @@ WEIGHT_DECAY = 0.01
 LEARNING_RATE = 1e-3
 
 # Diffusion parameters
+NUM_TRAIN_TIMESTEPS = 1_000
+BETA_START = 1e-4
+BETA_END = 0.02
+BETA_SCHEDULE = "linear"
 TIME_EMBED_DIM = HIDDEN_DIM
 MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
@@ -80,6 +84,7 @@ def get_config() -> DiffusionExperimentConfig:
         batch_size=BATCH_SIZE,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
+        use_deterministic_worker_init=config.deterministic,
         seed=config.seed,
     )
 
@@ -187,17 +192,26 @@ def get_config() -> DiffusionExperimentConfig:
         total_iterations="${train.iterations}",
     )
 
-    # Compose diffusion config with explicit schedule, sampling, and EMA parameters.
     config.diffusion = DiffusionConfig(
-        time_embed_dim=TIME_EMBED_DIM,
-        max_period=MAX_PERIOD,
-        num_inference_steps=NUM_INFERENCE_STEPS,
-        num_samples=NUM_SAMPLES,
-        log_samples=LOG_SAMPLES,
-        ema_enabled=EMA_ENABLED,
-        ema_decay=EMA_DECAY,
-        ema_update_every=EMA_UPDATE_EVERY,
-        ema_warmup_steps=EMA_WARMUP_STEPS,
+        schedule=DiffusionScheduleConfig(
+            num_train_timesteps=NUM_TRAIN_TIMESTEPS,
+            beta_start=BETA_START,
+            beta_end=BETA_END,
+            beta_schedule=BETA_SCHEDULE,
+            time_embed_dim=TIME_EMBED_DIM,
+            max_period=MAX_PERIOD,
+        ),
+        sampling=DiffusionSamplingConfig(
+            num_inference_steps=NUM_INFERENCE_STEPS,
+            num_samples=NUM_SAMPLES,
+            log_samples=LOG_SAMPLES,
+        ),
+        ema=DiffusionEMAConfig(
+            enabled=EMA_ENABLED,
+            decay=EMA_DECAY,
+            update_every=EMA_UPDATE_EVERY,
+            warmup_steps=EMA_WARMUP_STEPS,
+        ),
     )
 
     config.wandb = WandbConfig(job_group="mnist-diffusion")

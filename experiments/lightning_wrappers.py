@@ -766,16 +766,22 @@ class DiffusionWrapper(LightningWrapperBase):
     ) -> None:
         super().__init__(network=network, cfg=cfg)
 
-        # Promote diffusion config to instance attributes and validate required fields.
         if not isinstance(cfg, DiffusionExperimentConfig):
             raise TypeError("DiffusionWrapper requires cfg to be a DiffusionExperimentConfig instance.")
+        if cfg.diffusion is None:
+            raise ValueError("DiffusionWrapper requires cfg.diffusion to be provided.")
 
-        # Read out relevant diffusion schedule parameters
-        self.num_train_timesteps = int(cfg.diffusion.num_train_timesteps)
-        assert cfg.diffusion.beta_schedule = 'linear'
-        self.beta_schedule = cfg.diffusion.beta_schedule
-        self.beta_start = cfg.diffusion.beta_start
-        self.beta_end = cfg.diffusion.beta_end
+        self.diffusion_cfg = cfg.diffusion
+        self.schedule_cfg = self.diffusion_cfg.schedule
+        self.sampling_cfg = self.diffusion_cfg.sampling
+        self.ema_cfg = self.diffusion_cfg.ema
+
+        self.num_train_timesteps = int(self.schedule_cfg.num_train_timesteps)
+        self.beta_schedule = self.schedule_cfg.beta_schedule
+        if self.beta_schedule != "linear":
+            raise NotImplementedError(f"Only the linear beta schedule is implemented. Got '{self.beta_schedule}'.")
+        self.beta_start = float(self.schedule_cfg.beta_start)
+        self.beta_end = float(self.schedule_cfg.beta_end)
 
         self._build_diffusion_schedule()
 
@@ -783,11 +789,12 @@ class DiffusionWrapper(LightningWrapperBase):
         if hidden_dim is None:
             raise AttributeError("DiffusionWrapper requires the network to expose a 'hidden_dim' attribute.")
 
-        timestep_dim = int(cfg.diffusion.time_embed_dim)
+        schedule_time_embed = self.schedule_cfg.time_embed_dim
+        timestep_dim = int(schedule_time_embed) if schedule_time_embed is not None else hidden_dim * 2
         if timestep_dim % 2 != 0:
             timestep_dim += 1
         self.timestep_dim = timestep_dim
-        self.max_period = float(cfg.diffusion.max_period)
+        self.max_period = float(self.schedule_cfg.max_period)
 
         self.time_mlp = torch.nn.Sequential(
             torch.nn.Linear(self.timestep_dim, hidden_dim * 2),
@@ -795,19 +802,17 @@ class DiffusionWrapper(LightningWrapperBase):
             torch.nn.Linear(hidden_dim * 2, hidden_dim),
         )
 
-        # Keep track of the loss function and an example input.
         self.loss_fn = torch.nn.MSELoss()
 
-        # For logging
         self.example_input_shape: Optional[torch.Size] = None
-        self.log_samples = cfg.diffusion.log_samples
-        self.num_generated_samples = cfg.diffusion.num_samples
+        self.default_inference_steps = int(self.sampling_cfg.num_inference_steps)
+        self.log_samples = bool(self.sampling_cfg.log_samples)
+        self.num_generated_samples = int(self.sampling_cfg.num_samples)
 
-        # If we're using an EMA model for generation, keep track of its config here.
-        self.ema_enabled = bool(cfg.diffusion.ema_enabled)
-        self.ema_decay = float(cfg.diffusion.ema_decay)
-        self.ema_update_every = int(cfg.diffusion.ema_update_every)
-        self.ema_warmup_steps = int(cfg.diffusion.ema_warmup_steps)
+        self.ema_enabled = bool(self.ema_cfg.enabled)
+        self.ema_decay = float(self.ema_cfg.decay)
+        self.ema_update_every = int(self.ema_cfg.update_every)
+        self.ema_warmup_steps = int(self.ema_cfg.warmup_steps)
         self._ema_model: Optional[torch.nn.Module] = None
         if self.ema_enabled:
             # Create an EMA shadow copy that never receives gradients.
@@ -817,16 +822,7 @@ class DiffusionWrapper(LightningWrapperBase):
                 p.requires_grad_(False)
 
     def _build_diffusion_schedule(self) -> None:
-        # Mirror standard DDPM linear diffusion schedule.
-        beta_schedule = self.beta_schedule
-        beta_start = float(self.beta_start)
-        beta_end = float(self.beta_end)
-
-        # Only linear is supported for now.
-        if beta_schedule != "linear":
-            raise NotImplementedError(f"Only the linear beta schedule is implemented. Got '{beta_schedule}'.")
-
-        betas = torch.linspace(beta_start, beta_end, self.num_train_timesteps, dtype=torch.float32)  # (num_timesteps,)
+        betas = torch.linspace(self.beta_start, self.beta_end, self.num_train_timesteps, dtype=torch.float32)  # (num_timesteps,)
         alphas = 1.0 - betas  # (num_timesteps,)
         alphas_cumprod = torch.cumprod(alphas, dim=0)  # (num_timesteps,)
         alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=torch.float32), alphas_cumprod[:-1]], dim=0)  # (num_timesteps,)
@@ -860,6 +856,14 @@ class DiffusionWrapper(LightningWrapperBase):
         if embedding.shape[-1] < self.timestep_dim:
             embedding = F.pad(embedding, (0, self.timestep_dim - embedding.shape[-1]))
         return embedding
+
+    @staticmethod
+    def _extract_prediction(outputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        if "prediction" in outputs:
+            return outputs["prediction"]
+        if "logits" in outputs:
+            return outputs["logits"]
+        raise KeyError("Diffusion network must return either 'prediction' or 'logits'.")
 
     def _condition_from_timesteps(self, timesteps: torch.Tensor) -> torch.Tensor:
         emb = self._timestep_embedding(timesteps)
@@ -898,7 +902,7 @@ class DiffusionWrapper(LightningWrapperBase):
         condition = self._condition_from_timesteps(timesteps)  # (B, hidden_dim)
 
         # Predict the original noise given noisy inputs and timestep conditioning.
-        prediction = self.network({"input": noisy_images, "condition": condition})['logits']  # (B, H, W, C)
+        prediction = self._extract_prediction(self.network({"input": noisy_images, "condition": condition}))  # (B, H, W, C)
         loss = self.loss_fn(prediction, noise)
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
@@ -917,7 +921,7 @@ class DiffusionWrapper(LightningWrapperBase):
         if self.example_input_shape is None:
             raise RuntimeError("Cannot sample before observing at least one training batch.")
 
-        num_inference_steps = num_inference_steps or int(self.sampling_cfg.num_inference_steps)
+        num_inference_steps = num_inference_steps or self.default_inference_steps
         device = self.betas.device
         sample = torch.randn((num_samples, *self.example_input_shape), device=device)  # (num_samples, H, W, C)
 
@@ -939,7 +943,7 @@ class DiffusionWrapper(LightningWrapperBase):
             condition = self._condition_from_timesteps(t)  # (B, hidden_dim)
 
             # Run the denoiser (EMA or raw weights) to predict the noise residual.
-            prediction = self.network({"input": sample, "condition": condition})['logits']  # (B, H, W, C)
+            prediction = self._extract_prediction(inference_model({"input": sample, "condition": condition}))  # (B, H, W, C)
 
             sqrt_recip_alpha_t = self._broadcast(self.sqrt_recip_alphas[t], sample)  # (B, 1, 1, 1)
             sqrt_one_minus_alphas_cumprod_t = self._broadcast(
