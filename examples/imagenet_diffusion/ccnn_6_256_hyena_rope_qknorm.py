@@ -9,10 +9,7 @@ import torch
 from experiments.datamodules.imagenet import ImageNetDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
-    DiffusionEMAConfig,
     DiffusionExperimentConfig,
-    DiffusionSamplingConfig,
-    DiffusionScheduleConfig,
     SchedulerConfig,
     TrainConfig,
     WandbConfig,
@@ -28,6 +25,7 @@ from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
@@ -37,8 +35,9 @@ DATA_DIM = 2
 
 # Model parameters
 BATCH_SIZE = 16
+NUM_WORKERS = 16
 HIDDEN_DIM = 256
-NUM_BLOCKS = 12
+NUM_BLOCKS = 6
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "double"
@@ -65,8 +64,10 @@ EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
 EMA_UPDATE_EVERY = 1
 
+# Imagenet dataset details (on SNELLIUS)
+IMAGENET_PATH = '/home/dknigge/project_dir/huggingface/imagenet'
 IMAGE_SIZE = 256
-FINAL_IMAGE_SIZE = 32
+FINAL_IMAGE_SIZE = 64
 
 
 def get_config() -> DiffusionExperimentConfig:
@@ -79,15 +80,11 @@ def get_config() -> DiffusionExperimentConfig:
     hf_token = os.environ.get("HF_TOKEN")
 
     cpu_count = os.cpu_count() or 8
-    if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-        num_workers = max(4, cpu_count // torch.cuda.device_count())
-    else:
-        num_workers = max(4, cpu_count // 2)
 
     config.dataset = LazyConfig(ImageNetDataModule)(
-        data_dir="/media/davidknigge/hard-disk2/huggingface/imagenet",
+        data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
-        num_workers=num_workers,
+        num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         seed=config.seed,
         image_size=IMAGE_SIZE,
@@ -159,10 +156,13 @@ def get_config() -> DiffusionExperimentConfig:
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             condition_mixer_cfg=LazyConfig(QKVConditionMixer)(
                 hidden_dim="${net.hidden_dim}",
-                mixer_cfg=LazyConfig(torch.nn.MultiheadAttention)(
-                    embed_dim="${net.hidden_dim}",
-                    num_heads=4,
-                    batch_first=True,
+                mixer_cfg=LazyConfig(Attention)(
+                    hidden_dim="${net.hidden_dim}",
+                    num_heads=8,
+                    apply_qk_norm=True,
+                    use_rope=False, # Since the conditioning is global, we don't apply RoPe.
+                    is_causal=False,
+                    attn_dropout=DROPOUT_RATE,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
@@ -201,6 +201,7 @@ def get_config() -> DiffusionExperimentConfig:
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
+        mode='min',
     )
 
     # Compose diffusion config with explicit schedule, sampling, and EMA parameters.

@@ -10,6 +10,7 @@ from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import DiffusionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.condition_mixer import QKVConditionMixer
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -38,7 +39,7 @@ GRID_TYPE = "double"
 # Training parameters
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
-NUM_WORKERS = 0
+NUM_WORKERS = 16
 GRAD_CLIP = 10.0
 WEIGHT_DECAY = 0.01
 LEARNING_RATE = 1e-3
@@ -51,8 +52,10 @@ BETA_SCHEDULE = "linear"
 TIME_EMBED_DIM = HIDDEN_DIM
 MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
-NUM_SAMPLES = 4
+NUM_SAMPLES = 16
 LOG_SAMPLES = True
+
+# Track EMA model
 EMA_ENABLED = True
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
@@ -73,6 +76,7 @@ def get_config() -> DiffusionExperimentConfig:
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=config.deterministic,
         seed=config.seed,
+        task='generation'
     )
 
     # Add net config. Tried mirroring the classification experiments here for now.
@@ -137,10 +141,13 @@ def get_config() -> DiffusionExperimentConfig:
             # Conditioning mixer, this is where the time conditioning gets infused.
             condition_mixer_cfg=LazyConfig(QKVConditionMixer)(
                 hidden_dim="${net.hidden_dim}",
-                mixer_cfg=LazyConfig(torch.nn.MultiheadAttention)(
-                    embed_dim="${net.hidden_dim}",
-                    num_heads=1,
-                    batch_first=True,
+                mixer_cfg=LazyConfig(Attention)(
+                    hidden_dim="${net.hidden_dim}",
+                    num_heads=8,
+                    apply_qk_norm=True,
+                    use_rope=False, # Since the conditioning is global, we don't apply RoPe.
+                    is_causal=False,
+                    attn_dropout=DROPOUT_RATE,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
@@ -180,6 +187,7 @@ def get_config() -> DiffusionExperimentConfig:
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
+        mode='min',
     )
 
     # Diffusion-specific hyperparameters.

@@ -41,6 +41,7 @@ class SchedulerConfig:
     warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
+    monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
 
 
 @dataclass
@@ -94,6 +95,7 @@ class DiffusionConfig:
     num_inference_steps: int = 50
     num_samples: int = 4
     log_samples: bool = True
+    ddim_eta: float = 0.0
 
     ema_enabled: bool = False
     ema_decay: float = 0.999
@@ -129,5 +131,7 @@ class ExperimentConfig:
 @dataclass
 class DiffusionExperimentConfig(ExperimentConfig):
     """Experiment configuration for diffusion runs."""
+    # Override debug mode.
+    debug: bool = False
 
     diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)

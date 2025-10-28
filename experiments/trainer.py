@@ -2,6 +2,8 @@
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
+from pathlib import Path
+
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
@@ -15,6 +17,7 @@ from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,
+    run_name: str,
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 
@@ -39,8 +42,13 @@ def construct_trainer(
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
 
+    # Derive checkpoint directory based on run name.
+    checkpoint_dir = Path("runs") / run_name / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
     # Callback for model checkpointing:
     checkpoint_callback = pl_callbacks.ModelCheckpoint(
+        dirpath=str(checkpoint_dir),
         monitor=monitor,
         mode=cfg.scheduler.mode,  # Save on best validation accuracy
         save_top_k=1,
