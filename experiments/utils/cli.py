@@ -8,11 +8,12 @@ import datetime
 import importlib.util
 import re
 from pathlib import Path
+import getpass
 from typing import Any, List
 
 from rich.tree import Tree
 
-from examples.default_cfg import ExperimentConfig
+from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 
 
@@ -30,13 +31,14 @@ _SHORT_NAME_ALIASES = {
 }
 
 
-def get_deterministic_run_name(config_path: str, overrides: List[str] | None = None) -> str:
-    """Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
+def get_deterministic_run_name(config_path: str, overrides: List[str] = None, use_timestamp: bool = True) -> str:
+    """
+    Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
 
     Args:
         config_path: Path to the configuration file
         overrides: List of overrides in the format "key=value"
-
+        use_timestamp: Whether to include the timestamp in the run name
     Returns:
         A deterministic run name in the format: {config_name}_{timestamp}_{override_hash}
     """
@@ -46,12 +48,22 @@ def get_deterministic_run_name(config_path: str, overrides: List[str] | None = N
     config_name = config_path.replace("experiments/", "").replace(".py", "").replace("/", "_")
 
     # Get current timestamp in format: YYYY-MM-DD-HH-MM-SS
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    if use_timestamp:
+        timestamp = "_" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    else:
+        timestamp = ""
+    # Always append the effective username to avoid collisions across users
+    username = getpass.getuser().upper()
+    # Usernames are always name.lastname. Let's extract the first letter of both the name and the lastname.
+    username = username.split(".")[0][0] + username.split(".")[1][0]
 
     # Add override hash if overrides are provided
     if overrides and len(overrides) > 0:
         # Filter out debug-related overrides
         filtered_overrides = [override for override in overrides if not override.startswith("debug")]
+
+        # Filter out wandb-related overrides
+        filtered_overrides = [override for override in filtered_overrides if not override.startswith("wandb.")]
 
         # If we still have overrides after filtering
         if filtered_overrides:
@@ -70,10 +82,12 @@ def get_deterministic_run_name(config_path: str, overrides: List[str] | None = N
             filtered_overrides.sort()
             # Create a string representation of the overrides
             override_str = "_".join(filtered_overrides).replace("=", "_")
-            return f"{config_name}_{override_str}_{timestamp}"
+            return (
+                f"{username.upper()}_{config_name}_{override_str}{timestamp}"  # Final _{timestamp} is handled before.
+            )
 
     # Default return without overrides or if all overrides were filtered out
-    return f"{config_name}_{timestamp}"
+    return f"{username.upper()}_{config_name}{timestamp}"  # Final _{timestamp} is handled before in the function call
 
 
 def load_config_from_file(config_path: str) -> ExperimentConfig:

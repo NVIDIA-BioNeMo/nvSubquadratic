@@ -1,5 +1,6 @@
 # TODO: Add license header here
 
+# Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
 """Default configuration for experiments with nvSubQuadratic."""
 
@@ -30,7 +31,7 @@ class SchedulerConfig:
     """Scheduler configuration."""
 
     name: str = PLACEHOLDER
-    warmup_iterations: int = 0
+    warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
 
@@ -45,6 +46,38 @@ class WandbConfig:
 
 
 @dataclass
+class AutoResumeConfig:
+    """Auto-resume configuration via Weights & Biases run name.
+
+    If enabled, the launcher will:
+    - compute a stable run name (no timestamp; optionally includes username),
+    - look up an existing W&B run with that exact name under the configured entity/project,
+    - assert there is at most one such run,
+    - download the checkpoint artifact for `alias` and resume Trainer from it.
+    """
+
+    enabled: bool = False
+    # Which artifact alias to resume from when found
+    alias: Literal["best", "latest"] = "latest"
+    # Run name
+    run_name: str | None = None
+
+
+@dataclass
+class ResumeFromCheckpointConfig:
+    """Configuration to specify wether to start training from a previously saved checkpoint."""
+
+    load: bool = False  # Whether to load the checkpoint
+    alias: Literal["best", "latest"] = "latest"  # Either best or latest
+    strict: bool = True  # Whether to raise an error if the checkpoint does not exactly match the model architecture
+    partial_load: bool = False  # When strict is False, copy overlapping tensor slices from checkpoint into model
+    run_path: str = (
+        ""  # entity/project/run_id | When set, download checkpoint from this W&B run path (entity/project/run_id)
+    )
+    output_dir: str = ".artifacts/{run_id}/{alias}"  # Optional output directory to store downloaded artifacts; defaults to .artifacts/{run_id}/{alias}
+
+
+@dataclass
 class ExperimentConfig:
     """Default configuration for experiments with nvSubQuadratic."""
 
@@ -52,6 +85,7 @@ class ExperimentConfig:
     debug: bool = True
     deterministic: bool = False  # Need to be set to True for deterministic behavior
     seed: int = 0
+    comment: str = ""
 
     # Dataset configuration that MUST be set in experiment config
     # This should be instantiated with a LazyConfig object, e.g.:
@@ -72,9 +106,7 @@ class ExperimentConfig:
     #   })
     net: LazyConfig = PLACEHOLDER
 
-    lightning_wrapper_class: Literal[
-        "examples.lightning_wrappers.ClassificationWrapper", "examples.lightning_wrappers.RegressionWrapper"
-    ] = PLACEHOLDER
+    lightning_wrapper_class: Literal[type("ClassificationWrapper"), type("RegressionWrapper")] = PLACEHOLDER
 
     # Base optimizer MUST be set in experiment config
     # This should be instantiated with a LazyConfig object, e.g.:
@@ -85,8 +117,15 @@ class ExperimentConfig:
     optimizer: LazyConfig = PLACEHOLDER
 
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+
     train: TrainConfig = field(default_factory=TrainConfig)
+
     wandb: WandbConfig = field(default_factory=WandbConfig)
+
+    resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
+
+    # Auto-resume behavior based on W&B run name
+    autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
 
     # Optional: additional Trainer callbacks defined per-experiment and appended during construction
     callbacks: list[LazyConfig] = field(default_factory=list)
