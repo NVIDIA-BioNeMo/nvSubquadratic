@@ -14,7 +14,7 @@ from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.condition_mixer import QKVConditionMixer
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
@@ -38,6 +38,7 @@ GRID_TYPE = "double"
 # Training parameters
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
+NUM_WORKERS = 0
 GRAD_CLIP = 10.0
 WEIGHT_DECAY = 0.01
 LEARNING_RATE = 1e-3
@@ -63,22 +64,18 @@ def get_config() -> DiffusionExperimentConfig:
 
     config = DiffusionExperimentConfig()
 
-    cpu_count = os.cpu_count() or 4
-    if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-        num_workers = max(1, cpu_count // torch.cuda.device_count())
-    else:
-        num_workers = max(1, cpu_count // 2)
-
+    # Add dataset config.
     config.dataset = LazyConfig(MNISTDataModule)(
         data_dir=".data/mnist",
         data_type=DATA_TYPE,
         batch_size=BATCH_SIZE,
-        num_workers=num_workers,
+        num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=config.deterministic,
         seed=config.seed,
     )
 
+    # Add net config. Tried mirroring the classification experiments here for now.
     config.net = LazyConfig(ResidualNetwork)(
         in_channels=PLACEHOLDER,
         out_channels=PLACEHOLDER,
@@ -94,24 +91,24 @@ def get_config() -> DiffusionExperimentConfig:
                     global_conv_cfg=LazyConfig(CKConvND)(
                         data_dim=DATA_DIM,
                         hidden_dim="${net.hidden_dim}",
-                        kernel_cfg=LazyConfig(RandomFourierKernelND)(
-                            data_dim=DATA_DIM,
+                        kernel_cfg=LazyConfig(SIRENKernelND)(
+                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                             out_dim="${net.hidden_dim}",
-                            mlp_hidden_dim=64,
-                            num_layers=2,
+                            mlp_hidden_dim=32,
+                            num_layers=3,
                             embedding_dim=32,
-                            omega_0=50.0,
-                            L_cache=16,
+                            omega_0=100.0,
+                            L_cache=32,
                             use_bias=True,
-                            nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+                            hidden_omega_0=1.0,
                         ),
                         mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim=DATA_DIM,
+                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                             num_channels="${net.hidden_dim}",
-                            min_std=0.02,
-                            max_std=1.0,
+                            min_std=0.025,
+                            max_std=1.25,
                             init_std_low=0.05,
-                            init_std_high=0.8,
+                            init_std_high=1.0,
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
@@ -137,6 +134,7 @@ def get_config() -> DiffusionExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
+            # Conditioning mixer, this is where the time conditioning gets infused.
             condition_mixer_cfg=LazyConfig(QKVConditionMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(torch.nn.MultiheadAttention)(
@@ -148,6 +146,7 @@ def get_config() -> DiffusionExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             condition_mixer_norm_cfg="${net.norm_cfg}",
+            # MLP config
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
@@ -183,6 +182,7 @@ def get_config() -> DiffusionExperimentConfig:
         total_iterations="${train.iterations}",
     )
 
+    # Diffusion-specific hyperparameters.
     config.diffusion = DiffusionConfig(
         num_train_timesteps=NUM_TRAIN_TIMESTEPS,
         beta_start=BETA_START,
@@ -199,6 +199,7 @@ def get_config() -> DiffusionExperimentConfig:
         ema_warmup_steps=EMA_WARMUP_STEPS,
     )
 
-    config.wandb = WandbConfig(job_group="mnist-diffusion")
+    # Wandb job group
+    config.wandb = WandbConfig(job_group="mnist_diffusion")
 
     return config
