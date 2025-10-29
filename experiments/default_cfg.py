@@ -89,6 +89,7 @@ class DiffusionConfig:
     beta_start: float = 1e-4
     beta_end: float = 0.02
     beta_schedule: str = "linear"
+    prediction_type: str = "epsilon"
     time_embed_dim: Optional[int] = None
     max_period: float = 10_000.0
 
