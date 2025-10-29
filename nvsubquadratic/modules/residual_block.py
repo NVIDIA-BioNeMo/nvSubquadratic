@@ -126,3 +126,83 @@ class ResidualBlock(torch.nn.Module):
         return x
 
 
+class AdaLNZeroResidualBlock(torch.nn.Module):
+    """Residual block with inline AdaLN-Zero modulation for mixer and MLP branches."""
+
+    def __init__(
+        self,
+        sequence_mixer_cfg: LazyConfig,
+        sequence_mixer_norm_cfg: LazyConfig,
+        mlp_cfg: LazyConfig,
+        mlp_norm_cfg: LazyConfig,
+        condition_norm_cfg: LazyConfig,
+        dropout_cfg: LazyConfig,
+        hidden_dim: int,
+    ):
+        """Initialize the AdaLNZeroResidualBlock."""
+        super().__init__()
+
+        # Mixer branch handles spatial/temporal interactions on the residual stream.
+        self.sequence_mixer = instantiate(sequence_mixer_cfg)
+        self.sequence_norm = instantiate(sequence_mixer_norm_cfg)
+        for param in self.sequence_norm.parameters():
+            param._no_weight_decay = True
+
+        # MLP branch refines each position independently.
+        self.mlp = instantiate(mlp_cfg)
+        self.mlp_norm = instantiate(mlp_norm_cfg)
+        for param in self.mlp_norm.parameters():
+            param._no_weight_decay = True
+
+        # Optional pre-normalization for the conditioning vector.
+        self.condition_norm = instantiate(condition_norm_cfg)
+        for param in self.condition_norm.parameters():
+            param._no_weight_decay = True
+
+        # Shared dropout applied after each residual branch.
+        self.dropout = instantiate(dropout_cfg)
+
+        # Single zero-initialised projection (DiT style) producing shift/scale/gate for both branches.
+        self.condition_proj = torch.nn.Sequential(
+            torch.nn.SiLU(), torch.nn.Linear(hidden_dim, hidden_dim * 6)
+        )
+        torch.nn.init.zeros_(self.condition_proj[1].weight)
+        torch.nn.init.zeros_(self.condition_proj[1].bias)
+
+    def forward(self, x: torch.Tensor, condition: Optional[torch.Tensor]) -> torch.Tensor:
+        if condition is None:
+            raise ValueError("AdaLNZeroResidualBlock requires a conditioning tensor.")
+
+        # Collapse any spatial conditioning down to a single latent vector per item.
+        cond = condition  # (B, *spatial?, hidden_dim)
+        if cond.ndim >= 3:
+            cond = cond.mean(dim=tuple(range(1, cond.ndim - 1)))  # (B, hidden_dim)
+        cond = self.condition_norm(cond)  # (B, hidden_dim)
+
+        # Map the conditioning vector to shift/scale/gate triplets for both branches.
+        cond_mapped = self.condition_proj(cond)  # (B, 6 * hidden_dim)
+        shift_seq, scale_seq, gate_seq, shift_mlp, scale_mlp, gate_mlp = cond_mapped.chunk(6, dim=-1)  # each (B, hidden_dim)
+
+        def expand(param: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+            """Broadcast a [B, hidden_dim] vector across ref's spatial axes."""
+            while param.ndim < ref.ndim:
+                param = param.unsqueeze(1)  # add singleton dims for broadcasting
+            return param.expand(*ref.shape[:-1], param.shape[-1])  # match ref spatial layout
+
+        # Modulate the sequence mixer with AdaLN-Zero and add its residual output.
+        seq_norm = self.sequence_norm(x)  # (B, *spatial_dims, hidden_dim)
+        seq_mod = seq_norm * (1.0 + expand(scale_seq, seq_norm)) + expand(shift_seq, seq_norm)  # (B, *spatial_dims, hidden_dim)
+        seq_out = self.sequence_mixer(seq_mod)  # (B, *spatial_dims, hidden_dim)
+        seq_out = self.dropout(seq_out)  # (B, *spatial_dims, hidden_dim)
+        seq_out = seq_out * expand(gate_seq, seq_out)  # (B, *spatial_dims, hidden_dim)
+        x = x + seq_out  # (B, *spatial_dims, hidden_dim)
+
+        # Apply the same AdaLN-Zero recipe to the MLP branch.
+        mlp_norm = self.mlp_norm(x)  # (B, *spatial_dims, hidden_dim)
+        mlp_mod = mlp_norm * (1.0 + expand(scale_mlp, mlp_norm)) + expand(shift_mlp, mlp_norm)  # (B, *spatial_dims, hidden_dim)
+        mlp_out = self.mlp(mlp_mod)  # (B, *spatial_dims, hidden_dim)
+        mlp_out = self.dropout(mlp_out)  # (B, *spatial_dims, hidden_dim)
+        mlp_out = mlp_out * expand(gate_mlp, mlp_out)  # (B, *spatial_dims, hidden_dim)
+        x = x + mlp_out  # (B, *spatial_dims, hidden_dim)
+
+        return x

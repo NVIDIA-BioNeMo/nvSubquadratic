@@ -10,15 +10,13 @@ from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import DiffusionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.condition_mixer import QKVConditionMixer
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
@@ -88,7 +86,7 @@ def get_config() -> DiffusionExperimentConfig:
         in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-        block_cfg=LazyConfig(ResidualBlock)(
+        block_cfg=LazyConfig(AdaLNZeroResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(Hyena)(
@@ -138,22 +136,6 @@ def get_config() -> DiffusionExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
-            # Conditioning mixer, this is where the time conditioning gets infused.
-            condition_mixer_cfg=LazyConfig(QKVConditionMixer)(
-                hidden_dim="${net.hidden_dim}",
-                mixer_cfg=LazyConfig(Attention)(
-                    hidden_dim="${net.hidden_dim}",
-                    num_heads=8,
-                    apply_qk_norm=True,
-                    use_rope=False, # Since the conditioning is global, we don't apply RoPe.
-                    is_causal=False,
-                    attn_dropout=DROPOUT_RATE,
-                ),
-                init_method_in=small_init,
-                init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
-            ),
-            condition_mixer_norm_cfg="${net.norm_cfg}",
-            # MLP config
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
@@ -163,7 +145,9 @@ def get_config() -> DiffusionExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             mlp_norm_cfg="${net.norm_cfg}",
+            condition_norm_cfg="${net.norm_cfg}",
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
+            hidden_dim="${net.hidden_dim}",
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
         condition_in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
