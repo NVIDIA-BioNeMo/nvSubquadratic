@@ -28,6 +28,7 @@ class Hyena(torch.nn.Module):
         apply_qk_norm: bool,
         use_rope: bool,
         rope_base: float = 10000.0,
+        output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
     ):
         """Initialize the Hyena-style global convolutional mixer.
 
@@ -39,6 +40,7 @@ class Hyena(torch.nn.Module):
             apply_qk_norm: bool - Whether to apply normalization to the query and key.
             use_rope: bool - Whether to use RoPE.
             rope_base: float - The base of the RoPE (default: 10000.0).
+            output_norm_cfg: LazyConfig - LazyConfig for the output normalization layer. Use torch.nn.Identity for no normalization.
 
         Raises:
             AssertionError: If the short conv is not an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity.
@@ -70,6 +72,12 @@ class Hyena(torch.nn.Module):
         self.pixelhyena_norm = instantiate(pixelhyena_norm_cfg)
         # Exclude self.pixelhyena_norm from the parameter group with weight decay
         for param in self.pixelhyena_norm.parameters():
+            param._no_weight_decay = True
+
+        # Output normalization (use torch.nn.Identity for no normalization)
+        self.output_norm = instantiate(output_norm_cfg)
+        # Exclude self.output_norm from the parameter group with weight decay
+        for param in self.output_norm.parameters():
             param._no_weight_decay = True
 
         # QK Normalization
@@ -281,8 +289,8 @@ class Hyena(torch.nn.Module):
             query, key = qk_norm.apply_qk_norm(query, key, dim=1)
 
         # First gate
-        # z = query * self.gate_nonlinear(key) out-of-place to avoid view issues
-        query = query * self.gate_nonlinear(key)
+        # query = query * key -- out of place for now.
+        query = query * key
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
@@ -304,9 +312,17 @@ class Hyena(torch.nn.Module):
         if cp_group is not None and cp_group.size() > 1:
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
-        # Second gate
-        # y = self.gate_nonlinear(y) * value out-of-place to avoid view issues
-        value = value * self.gate_nonlinear(y)
+        # Second gate -- out of place for now.
+        value = self.gate_nonlinear(value) * y
+
+        # Optional output normalization (following design of Mamba)
+        if not isinstance(self.output_norm, torch.nn.Identity):
+            if isinstance(self.output_norm, torch.nn.GroupNorm):
+                value = self.output_norm(value)
+            else:  # torch.nn.LayerNorm / torch.nn.RMSNorm expect last-dim
+                value = rearrange(value, "b c ... -> b ... c")
+                value = self.output_norm(value)
+                value = rearrange(value, "b ... c -> b c ...")
 
         # Reshape back to [B, * spatial_dims, C]
         return rearrange(value, "b c ... -> b ... c")
