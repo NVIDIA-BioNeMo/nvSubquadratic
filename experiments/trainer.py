@@ -100,23 +100,27 @@ def construct_trainer(
         *user_callbacks,
     ]
 
-    # create trainer
-    trainer = pl.Trainer(
-        max_steps=cfg.train.iterations,
-        logger=wandb_logger,
-        gradient_clip_val=cfg.train.grad_clip,
-        accumulate_grad_batches=cfg.train.accumulate_grad_steps,
+    trainer_kwargs: dict[str, object] = {
+        "max_steps": cfg.train.iterations,
+        "logger": wandb_logger,
+        "gradient_clip_val": cfg.train.grad_clip,
+        "accumulate_grad_batches": cfg.train.accumulate_grad_steps,
         # Callbacks
-        callbacks=callbacks_list,
+        "callbacks": callbacks_list,
         # Multi-GPU
-        num_nodes=num_nodes,
-        devices=list(range(device_count)),  # [0, ..., device_count-1]
-        strategy=strategy,
-        sync_batchnorm=sync_batchnorm,
+        "num_nodes": num_nodes,
+        "devices": list(range(device_count)),  # [0, ..., device_count-1]
+        "strategy": strategy,
+        "sync_batchnorm": sync_batchnorm,
         # Precision
-        precision=cfg.train.precision,
+        "precision": cfg.train.precision,
         # Determinism
-        deterministic=deterministic,
-        benchmark=benchmark,
-    )
+        "deterministic": deterministic,
+        "benchmark": benchmark,
+        "val_check_interval": cfg.trainer.val_check_interval,
+        "limit_val_batches": cfg.trainer.limit_val_batches,
+    }
+
+    # create trainer
+    trainer = pl.Trainer(**trainer_kwargs)
     return trainer, checkpoint_callback

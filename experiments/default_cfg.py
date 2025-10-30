@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
 
@@ -30,7 +30,11 @@ class TrainConfig:
 class TrainerConfig:
     """Lightning Trainer configuration overrides."""
 
-    val_check_interval: Optional[float] = None
+    # Check once every epoch by default.
+    val_check_interval: float = 1.0
+
+    # Run through all validation batches every epoch by default.
+    limit_val_batches: Union[int, float] = 1.0
 
 
 @dataclass
@@ -94,7 +98,7 @@ class DiffusionConfig:
     max_period: float = 10_000.0
 
     num_inference_steps: int = 50
-    num_samples: int = 4
+    num_samples: int = 25
     log_samples: bool = True
     ddim_eta: float = 0.0
 

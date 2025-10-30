@@ -50,8 +50,6 @@ BETA_SCHEDULE = "linear"
 TIME_EMBED_DIM = HIDDEN_DIM
 MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
-NUM_SAMPLES = 16
-LOG_SAMPLES = True
 
 # Track EMA model
 EMA_ENABLED = True
@@ -183,8 +181,6 @@ def get_config() -> DiffusionExperimentConfig:
         time_embed_dim=TIME_EMBED_DIM,
         max_period=MAX_PERIOD,
         num_inference_steps=NUM_INFERENCE_STEPS,
-        num_samples=NUM_SAMPLES,
-        log_samples=LOG_SAMPLES,
         ema_enabled=EMA_ENABLED,
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,

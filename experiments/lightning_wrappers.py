@@ -1027,12 +1027,14 @@ class DiffusionWrapper(LightningWrapperBase):
 
         num_samples = int(self.num_generated_samples)
         samples = self.sample(num_samples=num_samples)
+
+        # Unnormalize the obtained samples.
+        samples = self.trainer.datamodule.unnormalize(samples)
+
         samples_bchw = self._channels_last_to_first(samples)
         grid = make_grid(
-            samples_bchw,
-            nrow=max(1, int(math.sqrt(num_samples))),
-            normalize=True,
-            value_range=(-1.0, 1.0),
+            samples_bchw.detach().cpu(),
+            nrow=max(1, int(math.sqrt(num_samples)))
         )
         self.logger.experiment.log(
             {

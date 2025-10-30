@@ -108,16 +108,17 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.input_channels = 3
         self.output_channels = 3
 
-        self.train_dataset: Optional[_ImageNetDataset] = None
-        self.val_dataset: Optional[_ImageNetDataset] = None
-
-
-    def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
             self.final_image_size,
             (DEFAULT_IMAGENET_MEAN, DEFAULT_IMAGENET_STD),
         )
+        self.normalization_mean = tuple(float(m) for m in mean)
+        self.normalization_std = tuple(float(s) for s in std)
 
+        self.train_dataset: Optional[_ImageNetDataset] = None
+        self.val_dataset: Optional[_ImageNetDataset] = None
+
+    def _build_transform(self, *, train: bool) -> transforms.Compose:
         ops: list[transforms.Compose | transforms.RandomCrop | transforms.CenterCrop | transforms.Resize | transforms.RandomHorizontalFlip | transforms.ToTensor] = [
             transforms.Resize(self.image_size + 32),
         ]
@@ -146,7 +147,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops.extend(
             [
                 transforms.ToTensor(),
-                transforms.Normalize(mean=mean, std=std),
+                transforms.Normalize(mean=self.normalization_mean, std=self.normalization_std),
             ]
         )
 
@@ -223,7 +224,7 @@ class ImageNetDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=drop_last,
-                        persistent_workers=self.num_workers > 0,
+            persistent_workers=self.num_workers > 0,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -243,6 +244,33 @@ class ImageNetDataModule(pl.LightningDataModule):
             raise RuntimeError("test_dataloader called before setup('test')")
 
         return self._build_loader(self.val_dataset, shuffle=False, drop_last=False)
+
+    def unnormalize(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Revert the normalization applied in the dataset pipeline."""
+        mean = torch.as_tensor(self.normalization_mean, dtype=tensor.dtype, device=tensor.device)
+        std = torch.as_tensor(self.normalization_std, dtype=tensor.dtype, device=tensor.device)
+        channels = mean.numel()
+
+        if tensor.ndim == 4:
+            if tensor.shape[1] == channels:
+                reshape = (1, channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        elif tensor.ndim == 3:
+            if tensor.shape[0] == channels:
+                reshape = (channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        else:
+            raise ValueError("Tensor ndim must be 3 or 4 for unnormalization.")
+
+        mean = mean.view(reshape)
+        std = std.view(reshape)
+        return torch.clamp(tensor * std + mean, 0.0, 1.0)
 
     def on_before_batch_transfer(
         self,

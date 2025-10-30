@@ -81,6 +81,9 @@ class MNISTDataModule(pl.LightningDataModule):
         # Create a generator with the given seed for reproducibility
         self.generator = torch.Generator().manual_seed(seed)
 
+        self.normalization_mean = (0.1307,)
+        self.normalization_std = (0.3081,)
+
         # Handle worker initialization. Use deterministic worker initialization if specified.
         # self.worker_init_fn = deterministic_worker_init_fn if use_deterministic_worker_init else None
 
@@ -101,7 +104,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self.transform = transforms.Compose(
             [
                 transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,)),
+                transforms.Normalize(self.normalization_mean, self.normalization_std),
             ]
         )
 
@@ -190,3 +193,32 @@ class MNISTDataModule(pl.LightningDataModule):
         else:
             raise ValueError(f"Unsupported data type: {self.data_type}")
         return {"input": x, "label": y, "condition": None}
+
+    def unnormalize(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Revert the normalization applied by the datamodule."""
+        mean = torch.as_tensor(self.normalization_mean, dtype=tensor.dtype, device=tensor.device)
+        std = torch.as_tensor(self.normalization_std, dtype=tensor.dtype, device=tensor.device)
+        channels = mean.numel()
+
+        if tensor.ndim == 4:
+            if tensor.shape[1] == channels:
+                reshape = (1, channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        elif tensor.ndim == 3:
+            if tensor.shape[0] == channels:
+                reshape = (channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        elif tensor.ndim == 2 and channels == 1:
+            reshape = (1, 1)
+        else:
+            raise ValueError("Tensor ndim must be 2, 3 or 4 for unnormalization.")
+
+        mean = mean.view(reshape)
+        std = std.view(reshape)
+        return torch.clamp(tensor * std + mean, 0.0, 1.0)
