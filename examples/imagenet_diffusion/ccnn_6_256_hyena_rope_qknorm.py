@@ -87,7 +87,7 @@ def get_config() -> DiffusionExperimentConfig:
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
         center_crop=True,
-        drop_labels=True,
+        drop_labels=False,
         hf_dataset_name="imagenet-1k",
         hf_dataset_config=None,
         hf_auth_token=hf_token,
@@ -202,6 +202,10 @@ def get_config() -> DiffusionExperimentConfig:
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,
         ema_warmup_steps=EMA_WARMUP_STEPS,
+        num_classes=1_000,
+        use_classifier_free_guidance=True,
+        guidance_scale=3.5,
+        condition_dropout_prob=0.1,
     )
 
     config.wandb = WandbConfig(job_group="imagenet-diffusion")

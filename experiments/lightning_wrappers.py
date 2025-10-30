@@ -826,6 +826,45 @@ class DiffusionWrapper(LightningWrapperBase):
         self.num_generated_samples = int(diffusion_cfg.num_samples)
         self.ddim_eta = float(diffusion_cfg.ddim_eta)
 
+        # Classifier-free guidance (CFG) specific settings ---------------------------------------------------------
+        # We make the behaviour completely configurable so the same wrapper can serve
+        # both unconditional and class-conditional runs without branching out to a
+        # dedicated LightningModule. The goal is to keep the training loop readable
+        # while still exposing the knobs that practitioners expect.
+        self.class_conditioning = diffusion_cfg.num_classes is not None
+        # Guidance is only meaningful when we have a class embedding to steer the
+        # model. If the user forgets to specify a class count we fall back to the
+        # unconditional path and later raise a helpful error when guidance is used.
+        self.cfg_enabled = bool(diffusion_cfg.use_classifier_free_guidance) and self.class_conditioning
+        self.guidance_scale = float(diffusion_cfg.guidance_scale)
+        # During training we optionally drop the conditioning signal at random so the
+        # network learns an unconditional branch that we can later reuse at inference.
+        self.condition_dropout_prob = float(diffusion_cfg.condition_dropout_prob) if self.class_conditioning else 0.0
+        self.num_classes: Optional[int] = int(diffusion_cfg.num_classes) if diffusion_cfg.num_classes is not None else None
+
+        if diffusion_cfg.use_classifier_free_guidance and not self.class_conditioning:
+            raise ValueError(
+                "Classifier-free guidance requires 'diffusion.num_classes' to be set so labels can be embedded."
+            )
+
+        if self.class_conditioning:
+            if self.num_classes is None or self.num_classes <= 0:
+                raise ValueError("diffusion.num_classes must be a positive integer when enabling class conditioning.")
+            # We dedicate one additional embedding slot to represent the unconditional
+            # branch. Using a learnable parameter keeps the code flexible (e.g. if we
+            # later decide to fine-tune the unconditional vector instead of keeping it
+            # at zero).
+            self.null_label_index = self.num_classes
+            self.label_embed = torch.nn.Embedding(self.num_classes + 1, hidden_dim)
+            torch.nn.init.normal_(self.label_embed.weight, mean=0.0, std=0.02)
+            with torch.no_grad():
+                # Starting from an explicit zero vector gives the unconditional branch a
+                # deterministic meaning: it simply relies on the time embedding.
+                self.label_embed.weight[self.null_label_index].zero_()
+        else:
+            self.null_label_index = None
+            self.label_embed = None
+
         # Exponential moving average (EMA) tracking mirrors the previous implementation; we only
         # modernise the diffusion math, not the stabilisation tricks that already work well.
         self.ema_enabled = bool(diffusion_cfg.ema_enabled)
@@ -884,10 +923,67 @@ class DiffusionWrapper(LightningWrapperBase):
             embedding = F.pad(embedding, (0, self.timestep_dim - embedding.shape[-1]))
         return embedding
 
-    def _condition_from_timesteps(self, timesteps: torch.Tensor) -> torch.Tensor:
-        # Feed the sinusoidal embedding through the learnable MLP so the denoiser can ingest it.
-        emb = self._timestep_embedding(timesteps)
-        return self.time_mlp(emb)
+    def _condition_from_timesteps(
+        self,
+        timesteps: torch.Tensor,
+        *,
+        labels: Optional[torch.Tensor] = None,
+        unconditional: bool = False,
+        dropout_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Return the conditioning vector for a batch of timesteps (and optional class labels).
+
+        Args:
+            timesteps: Diffusion timestep indices sampled for each element in the batch.
+            labels: Optional class labels associated with the batch. Required when class conditioning
+                is enabled because each label switches us to a different guidance direction.
+            unconditional: When ``True`` we force the method to emit the unconditional embedding by
+                routing all samples to the extra "null" slot in ``self.label_embed``.
+            dropout_mask: Boolean mask selecting which labels should be dropped for classifier-free
+                guidance training. Elements set to ``True`` fall back to the unconditional embedding.
+        """
+        # Step 1: obtain the base time embedding as usual.
+        time_emb = self.time_mlp(self._timestep_embedding(timesteps))
+
+        # Without class conditioning the timestep embedding is the entire conditioning signal.
+        if self.label_embed is None:
+            return time_emb
+
+        # If we do expect labels, make sure the caller provided them.
+        if labels is None:
+            if unconditional:
+                # During sampling we sometimes request unconditional guidance without providing the
+                # original labels, so we create a tensor filled with the null label index on demand.
+                labels_to_embed = torch.full_like(timesteps, self.null_label_index, dtype=torch.long)
+            else:
+                raise ValueError(
+                    "Class conditioning requested but no labels were provided. "
+                    "Ensure the datamodule keeps labels (drop_labels=False) and the caller forwards them."
+                )
+        else:
+            labels_to_embed = labels.to(timesteps.device, dtype=torch.long).view(-1)
+
+        # Clone to avoid in-place edits that would leak outwards.
+        labels_to_embed = labels_to_embed.clone()
+
+        if unconditional:
+            labels_to_embed.fill_(self.null_label_index)
+
+        if dropout_mask is not None:
+            if dropout_mask.shape != labels_to_embed.shape:
+                raise ValueError("dropout_mask must match the shape of the labels tensor.")
+            labels_to_embed[dropout_mask] = self.null_label_index
+
+        if (labels_to_embed < 0).any():
+            raise ValueError("Encountered negative labels while class conditioning; check datamodule configuration.")
+        if (labels_to_embed > self.null_label_index).any():
+            raise ValueError("Label index out of range for classifier-free guidance.")
+
+        label_emb = self.label_embed(labels_to_embed)
+        # We simply add the two embeddings together so the backbone receives a single
+        # conditioning vector. This mirrors the standard DDPM/DiT approach and keeps the
+        # interface consistent with the time-only case.
+        return time_emb + label_emb
 
     def _shared_step(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         # Inputs arrive in channels-last format from the datamodule; we keep that convention for the
@@ -914,9 +1010,30 @@ class DiffusionWrapper(LightningWrapperBase):
         noisy_images_bchw = self.scheduler.add_noise(images_bchw, noise_bchw, timesteps)
         noisy_images = self._channels_first_to_last(noisy_images_bchw)
 
-        # Time-conditional forward pass through the backbone.
-        condition = self._condition_from_timesteps(timesteps)
-        
+        if self.class_conditioning:
+            # Retrieve labels if the datamodule provided them. For class-conditioned runs the labels are
+            # essential; otherwise we quietly fall back to the unconditional path.
+            if "label" not in batch:
+                raise RuntimeError(
+                    "Class conditioning requires datamodule batches to include 'label'. "
+                    "Set drop_labels=False on the datamodule to keep them."
+                )
+            labels = batch["label"].to(self.device, non_blocking=True).long().view(-1)
+
+            # Bernoulli mask indicating which samples should use the unconditional branch so the model
+            # learns to ignore class information part of the time. This is the core of classifier-free guidance.
+            dropout_mask = None
+            if self.condition_dropout_prob > 0.0:
+                dropout_mask = torch.rand(batch_size, device=self.device) < self.condition_dropout_prob
+            condition = self._condition_from_timesteps(
+                timesteps,
+                labels=labels,
+                dropout_mask=dropout_mask,
+            )
+        else:
+            # Purely time-conditioned diffusion behaves exactly as before.
+            condition = self._condition_from_timesteps(timesteps)
+
         # The denoiser returns all of its outputs in a dict; training only needs the raw logits tensor.
         prediction = self.network({"input": noisy_images, "condition": condition})["logits"]
 
@@ -944,13 +1061,40 @@ class DiffusionWrapper(LightningWrapperBase):
         pass
 
     @torch.no_grad()
-    def sample(self, num_samples: int, num_inference_steps: Optional[int] = None) -> torch.Tensor:
+    def sample(
+        self,
+        num_samples: int,
+        num_inference_steps: Optional[int] = None,
+        labels: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         if self.example_input_shape is None:
             raise RuntimeError("Cannot sample before observing at least one training batch.")
 
         num_inference_steps = num_inference_steps or self.default_inference_steps
         device = self.device
         height, width, channels = self.example_input_shape
+
+        # When class conditioning is active we need a label for each generated sample. If the caller did not
+        # specify one we default to a simple deterministic pattern (cycling through classes) so logged grids
+        # stay easy to interpret.
+        labels_tensor: Optional[torch.Tensor]
+        if self.class_conditioning:
+            if labels is None:
+                # Deterministic fallback: repeat [0, 1, 2, ...] across the requested batch.
+                base = torch.arange(num_samples, device=device) % self.num_classes  # type: ignore[arg-type]
+                labels_tensor = base.long()
+            else:
+                labels_tensor = torch.as_tensor(labels, device=device, dtype=torch.long).view(-1)
+                if labels_tensor.numel() == 1 and num_samples > 1:
+                    labels_tensor = labels_tensor.expand(num_samples)
+                if labels_tensor.shape[0] != num_samples:
+                    raise ValueError("labels must either be a scalar or have the same length as num_samples.")
+            if (labels_tensor < 0).any():
+                raise ValueError("labels must contain non-negative class indices.")
+        else:
+            if labels is not None:
+                raise ValueError("labels were provided but the model was configured without class conditioning.")
+            labels_tensor = None
 
         # Start from pure Gaussian noise in channels-first format because that's what the scheduler expects.
         sample_bchw = torch.randn((num_samples, channels, height, width), device=device)
@@ -967,14 +1111,33 @@ class DiffusionWrapper(LightningWrapperBase):
         for timestep in self.scheduler.timesteps:
             # Broadcast the scalar timestep to a batch so we can embed it and feed the denoiser.
             t_batch = torch.full((num_samples,), timestep.item(), device=device, dtype=torch.long)
-            condition = self._condition_from_timesteps(t_batch)
 
             # Convert the working sample back to channels-last before asking the network for a prediction.
             model_input = self._channels_first_to_last(sample_bchw)
-            
-            # As during training, we only consume the logits prediction emitted by the denoiser.
-            outputs = inference_model({"input": model_input, "condition": condition})["logits"]
-            model_output_bchw = self._channels_last_to_first(outputs)
+
+            if self.cfg_enabled:
+                # Run the denoiser twice: once on the unconditional branch and once with the actual labels.
+                cond_uncond = self._condition_from_timesteps(
+                    t_batch,
+                    labels=labels_tensor,
+                    unconditional=True,
+                )
+                cond_cond = self._condition_from_timesteps(
+                    t_batch,
+                    labels=labels_tensor,
+                )
+                outputs_uncond = inference_model({"input": model_input, "condition": cond_uncond})["logits"]
+                outputs_cond = inference_model({"input": model_input, "condition": cond_cond})["logits"]
+                pred_uncond = self._channels_last_to_first(outputs_uncond)
+                pred_cond = self._channels_last_to_first(outputs_cond)
+                # Linear interpolation between unconditional and conditional predictions as described in
+                # Ho & Salimans (2022). guidance_scale=1 leaves the result unchanged, larger values push
+                # generations closer to the conditional manifold.
+                model_output_bchw = pred_uncond + self.guidance_scale * (pred_cond - pred_uncond)
+            else:
+                condition = self._condition_from_timesteps(t_batch, labels=labels_tensor)
+                outputs = inference_model({"input": model_input, "condition": condition})["logits"]
+                model_output_bchw = self._channels_last_to_first(outputs)
 
             # One DDIM step brings us closer to the clean sample; eta tunes deterministic vs. stochastic paths.
             scheduler_output = self.scheduler.step(
@@ -1026,15 +1189,37 @@ class DiffusionWrapper(LightningWrapperBase):
             return
 
         num_samples = int(self.num_generated_samples)
-        samples = self.sample(num_samples=num_samples)
 
-        # Unnormalize the obtained samples.
-        samples = self.trainer.datamodule.unnormalize(samples)
+        # For class-conditioned models we cycle over the first few classes so each validation grid
+        # showcases a diverse set of categories. Guidance scale determines whether the conditional
+        # branch is actually used during sampling.
+        labels_for_sampling = None
+        if self.class_conditioning:
+            labels_for_sampling = torch.arange(num_samples, device=self.device) % self.num_classes  # type: ignore[arg-type]
+
+        samples = self.sample(num_samples=num_samples, labels=labels_for_sampling)
+        value_range = (-1.0, 1.0)
+        normalize_grid = True
+
+        datamodule = getattr(self.trainer, "datamodule", None)
+        if datamodule is not None:
+            unnormalize_fn = getattr(datamodule, "unnormalize", None)
+            if callable(unnormalize_fn):
+                try:
+                    samples = unnormalize_fn(samples)
+                except (TypeError, ValueError):
+                    pass
+                else:
+                    samples = torch.clamp(samples, 0.0, 1.0)
+                    normalize_grid = False
+                    value_range = (0.0, 1.0)
 
         samples_bchw = self._channels_last_to_first(samples)
         grid = make_grid(
             samples_bchw.detach().cpu(),
-            nrow=max(1, int(math.sqrt(num_samples)))
+            nrow=max(1, int(math.sqrt(num_samples))),
+            normalize=normalize_grid,
+            value_range=value_range,
         )
         self.logger.experiment.log(
             {

@@ -22,6 +22,10 @@ IMAGENET_MEAN_STD_BY_SIZE = {
         [0.48450482, 0.45589244, 0.40366766],
         [0.25668961, 0.24765739, 0.26173702],
     ),
+    64: (
+        [0.48453078, 0.45592377, 0.40370297],
+        [0.26425716, 0.25516447, 0.26875198],
+    ),
 }
 
 DEFAULT_IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -107,6 +111,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_auth_token = hf_auth_token
         self.input_channels = 3
         self.output_channels = 3
+        self.num_classes = 1_000  # ImageNet-1k has exactly one thousand semantic classes.
 
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
             self.final_image_size,

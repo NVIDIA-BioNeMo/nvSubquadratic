@@ -95,6 +95,7 @@ class MNISTDataModule(pl.LightningDataModule):
             self.output_channels = 10
         elif task == 'generation':
             self.output_channels = 1
+        self.num_classes = 10  # MNIST provides ten digit classes (0-9).
 
         # Assert that data_type is in the allowed options
         assert data_type in ["sequence", "image"], f"data_type must be 'sequence' or 'image', got {data_type}"

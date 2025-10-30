@@ -185,6 +185,10 @@ def get_config() -> DiffusionExperimentConfig:
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,
         ema_warmup_steps=EMA_WARMUP_STEPS,
+        num_classes=10,
+        use_classifier_free_guidance=True,
+        guidance_scale=3.0,
+        condition_dropout_prob=0.1,
     )
 
     # Wandb job group
