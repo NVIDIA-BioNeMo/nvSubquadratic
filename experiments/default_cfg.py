@@ -107,9 +107,7 @@ class DiffusionConfig:
     ema_update_every: int = 1
     ema_warmup_steps: int = 0
 
-    # Classifier-free guidance settings. These default to the PyTorch Lightning
-    # behaviour of conditioning purely on the timestep (no labels) unless the
-    # caller explicitly enables class conditioning.
+    # Classifier-free guidance settings, disabled by default.
     use_classifier_free_guidance: bool = False
     guidance_scale: float = 1.0
     condition_dropout_prob: float = 0.0

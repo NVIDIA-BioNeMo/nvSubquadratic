@@ -32,10 +32,10 @@ PLACEHOLDER = None
 DATA_DIM = 2
 
 # Model parameters
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 NUM_WORKERS = 16
-HIDDEN_DIM = 256
-NUM_BLOCKS = 6
+HIDDEN_DIM = 512
+NUM_BLOCKS = 8
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "double"
@@ -61,6 +61,11 @@ EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
 EMA_UPDATE_EVERY = 1
 
+# CFG parameters
+CFG_ENABLED = True
+GUIDANCE_SCALE = 3.5
+CONDITION_DROPOUT_PROB = 0.1
+
 # Imagenet dataset details (on SNELLIUS)
 IMAGENET_PATH = '/home/dknigge/project_dir/huggingface/imagenet'
 IMAGE_SIZE = 256
@@ -75,8 +80,6 @@ def get_config() -> DiffusionExperimentConfig:
     config.seed = 42
 
     hf_token = os.environ.get("HF_TOKEN")
-
-    cpu_count = os.cpu_count() or 8
 
     config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
@@ -202,10 +205,10 @@ def get_config() -> DiffusionExperimentConfig:
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,
         ema_warmup_steps=EMA_WARMUP_STEPS,
-        num_classes=1_000,
-        use_classifier_free_guidance=True,
-        guidance_scale=3.5,
-        condition_dropout_prob=0.1,
+        num_classes=1_000,  # TODO: should be able to glean this from datamodule.
+        use_classifier_free_guidance=CFG_ENABLED,
+        guidance_scale=GUIDANCE_SCALE,
+        condition_dropout_prob=CONDITION_DROPOUT_PROB,
     )
 
     config.wandb = WandbConfig(job_group="imagenet-diffusion")
