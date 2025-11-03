@@ -49,7 +49,7 @@ class WandbConfig:
     """Wandb configuration."""
 
     project: str = "nvsubquadratic"
-    entity: str = "dromeroguzma"
+    entity: str = "dafidofff"
     job_group: str = ""
 
 

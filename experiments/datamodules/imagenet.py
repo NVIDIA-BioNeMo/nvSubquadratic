@@ -91,6 +91,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         hf_dataset_name: str = "imagenet-1k",
         hf_dataset_config: Optional[str] = None,
         hf_auth_token: Optional[str] = None,
+        num_classes: int = 1000,
     ) -> None:
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
@@ -106,7 +107,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.input_channels = 3
-        self.output_channels = 3
+        self.num_classes = num_classes
+        self.output_channels = self.input_channels if drop_labels else num_classes
 
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
