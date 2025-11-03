@@ -49,7 +49,7 @@ class WandbConfig:
     """Wandb configuration."""
 
     project: str = "nvsubquadratic"
-    entity: str = "dafidofff"
+    entity: str = "dromeroguzma"
     job_group: str = ""
 
 
@@ -136,4 +136,3 @@ class DiffusionExperimentConfig(ExperimentConfig):
     debug: bool = False
 
     diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)
-
