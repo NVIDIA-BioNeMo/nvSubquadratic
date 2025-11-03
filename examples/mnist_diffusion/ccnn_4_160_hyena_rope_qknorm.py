@@ -27,7 +27,7 @@ DATA_TYPE = "image"
 DATA_DIM = 2
 
 # Model parameters
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 HIDDEN_DIM = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
