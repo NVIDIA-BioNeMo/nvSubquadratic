@@ -124,6 +124,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.val_dataset: Optional[_ImageNetDataset] = None
 
     def _build_transform(self, *, train: bool) -> transforms.Compose:
+        """ Build the imagenet transform pipeline as mentioned in Appx. Training Settings of SiD2 paper:
+        """
         ops: list[transforms.Compose | transforms.RandomCrop | transforms.CenterCrop | transforms.Resize | transforms.RandomHorizontalFlip | transforms.ToTensor] = [
             transforms.Resize(self.image_size + 32),
         ]
