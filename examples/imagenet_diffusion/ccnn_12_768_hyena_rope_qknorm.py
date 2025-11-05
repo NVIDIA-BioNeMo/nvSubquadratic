@@ -32,10 +32,10 @@ PLACEHOLDER = None
 DATA_DIM = 2
 
 # Model parameters
-BATCH_SIZE = 16
+BATCH_SIZE = 14
 NUM_WORKERS = 16
-HIDDEN_DIM = 512
-NUM_BLOCKS = 6
+HIDDEN_DIM = 768
+NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "double"
@@ -51,7 +51,7 @@ LEARNING_RATE = 2e-4
 NUM_TRAIN_TIMESTEPS = 1_000
 BETA_START = 1e-4
 BETA_END = 2e-2
-BETA_SCHEDULE = "linear"
+BETA_SCHEDULE = "cosine_interpolated"
 TIME_EMBED_DIM = HIDDEN_DIM
 MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
@@ -192,12 +192,14 @@ def get_config() -> DiffusionExperimentConfig:
         mode='min',
     )
 
-    # Compose diffusion config with explicit schedule, sampling, and EMA parameters.
     config.diffusion = DiffusionConfig(
         num_train_timesteps=NUM_TRAIN_TIMESTEPS,
         beta_start=BETA_START,
         beta_end=BETA_END,
         beta_schedule=BETA_SCHEDULE,
+        cosine_schedule_image_resolution=FINAL_IMAGE_SIZE,
+        cosine_schedule_noise_res_high=FINAL_IMAGE_SIZE,
+        cosine_schedule_noise_res_low=max(32, FINAL_IMAGE_SIZE // 2),
         time_embed_dim=TIME_EMBED_DIM,
         max_period=MAX_PERIOD,
         num_inference_steps=NUM_INFERENCE_STEPS,
@@ -209,6 +211,8 @@ def get_config() -> DiffusionExperimentConfig:
         use_classifier_free_guidance=CFG_ENABLED,
         guidance_scale=GUIDANCE_SCALE,
         condition_dropout_prob=CONDITION_DROPOUT_PROB,
+        use_sigmoid_loss_weighting=True,
+        sigmoid_loss_bias=-3.0,
     )
 
     config.wandb = WandbConfig(job_group="imagenet-diffusion")

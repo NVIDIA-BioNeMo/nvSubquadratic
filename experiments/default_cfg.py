@@ -93,25 +93,33 @@ class DiffusionConfig:
     beta_start: float = 1e-4
     beta_end: float = 0.02
     beta_schedule: str = "linear"
+    cosine_schedule_logsnr_min: float = -10.0
+    cosine_schedule_logsnr_max: float = 10.0
+    cosine_schedule_image_resolution: int = 64
+    cosine_schedule_noise_res_low: int = 32
+    cosine_schedule_noise_res_high: int = 64
     prediction_type: str = "epsilon"
     time_embed_dim: Optional[int] = None
     max_period: float = 10_000.0
 
-    num_inference_steps: int = 50
+    num_inference_steps: int = 150
     num_samples: int = 25
     log_samples: bool = True
     ddim_eta: float = 0.0
+
+    use_sigmoid_loss_weighting: bool = True
+    sigmoid_loss_bias: float = 0.0
 
     ema_enabled: bool = False
     ema_decay: float = 0.999
     ema_update_every: int = 1
     ema_warmup_steps: int = 0
 
-    # Classifier-free guidance settings, disabled by default.
-    use_classifier_free_guidance: bool = False
-    guidance_scale: float = 1.0
-    condition_dropout_prob: float = 0.0
-    num_classes: Optional[int] = None
+    # Classifier-free guidance settings, enabled by default.
+    use_classifier_free_guidance: bool = True
+    guidance_scale: float = 3.5
+    condition_dropout_prob: float = 0.1
+    num_classes: Optional[int] = 1000
 
 
 @dataclass

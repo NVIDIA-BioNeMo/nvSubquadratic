@@ -11,6 +11,7 @@ from torchvision.utils import make_grid
 
 import copy
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torchmetrics
@@ -19,7 +20,13 @@ from pytorch_lightning.utilities import grad_norm
 
 import wandb
 from diffusers import DDIMScheduler
-from experiments.default_cfg import DiffusionExperimentConfig, PLACEHOLDER, ExperimentConfig, SchedulerConfig
+from experiments.default_cfg import (
+    DiffusionConfig,
+    DiffusionExperimentConfig,
+    PLACEHOLDER,
+    ExperimentConfig,
+    SchedulerConfig,
+)
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules import schedulers
 
@@ -784,16 +791,30 @@ class DiffusionWrapper(LightningWrapperBase):
         assert diffusion_cfg.prediction_type in ['epsilon', 'sample', 'v_prediction']
         self.prediction_type = diffusion_cfg.prediction_type
 
+        trained_betas = None
+        beta_schedule = self.beta_schedule
+        if self.beta_schedule == "cosine_interpolated":
+            trained_betas = self._build_cosine_interpolated_betas(
+                num_steps=self.num_train_timesteps,
+                logsnr_min=diffusion_cfg.cosine_schedule_logsnr_min,
+                logsnr_max=diffusion_cfg.cosine_schedule_logsnr_max,
+                image_resolution=diffusion_cfg.cosine_schedule_image_resolution,
+                noise_res_low=diffusion_cfg.cosine_schedule_noise_res_low,
+                noise_res_high=diffusion_cfg.cosine_schedule_noise_res_high,
+            )
+            beta_schedule = "linear"  # unused when trained_betas is provided
+
         # Instantiate the diffusers scheduler, delegating all diffusion math (alphas, betas, posteriors, etc.)
         # to a single well-tested implementation rather than maintaining our own copy here.
         self.scheduler = DDIMScheduler(
             num_train_timesteps=self.num_train_timesteps,
             beta_start=self.beta_start,
             beta_end=self.beta_end,
-            beta_schedule=self.beta_schedule,
+            beta_schedule=beta_schedule,
             prediction_type=self.prediction_type,
             clip_sample=False,
             set_alpha_to_one=False,
+            trained_betas=trained_betas,
         )
 
         hidden_dim = getattr(network, "hidden_dim", None)
@@ -825,6 +846,8 @@ class DiffusionWrapper(LightningWrapperBase):
         self.log_samples = bool(diffusion_cfg.log_samples)
         self.num_generated_samples = int(diffusion_cfg.num_samples)
         self.ddim_eta = float(diffusion_cfg.ddim_eta)
+        self.use_sigmoid_loss_weighting = bool(diffusion_cfg.use_sigmoid_loss_weighting)
+        self.sigmoid_loss_bias = float(diffusion_cfg.sigmoid_loss_bias)
 
         # Classifier-free guidance (CFG) specific settings ---------------------------------------------------------
         # We make the behaviour completely configurable so the same wrapper can serve
@@ -908,6 +931,83 @@ class DiffusionWrapper(LightningWrapperBase):
         else:  # pragma: no cover - guarded by configuration validation
             raise ValueError(f"Unsupported prediction type: {prediction_type}")
         return target
+
+    def _sigmoid_weighted_mse(
+        self,
+        prediction: torch.Tensor,
+        target: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply SiD2-style sigmoid loss weighting based on the per-sample log SNR."""
+        if not hasattr(self.scheduler, "alphas_cumprod"):
+            raise AttributeError("Current scheduler does not expose 'alphas_cumprod' required for log-SNR weighting.")
+
+        alphas_cumprod = self.scheduler.alphas_cumprod.to(device=prediction.device, dtype=prediction.dtype)
+        alphas = alphas_cumprod[timesteps]
+        eps = torch.finfo(alphas.dtype).eps
+        alphas = alphas.clamp(min=eps, max=1.0 - eps)
+        log_snr = torch.log(alphas / (1.0 - alphas))
+
+        weights = torch.sigmoid(log_snr - self.sigmoid_loss_bias).to(dtype=prediction.dtype)
+        squared_error = (prediction - target) ** 2
+        view_shape = (weights.shape[0],) + (1,) * (squared_error.ndim - 1)
+        weighted_error = weights.view(view_shape) * squared_error
+        return weighted_error.mean()
+
+    @staticmethod
+    def _cosine_interpolated_logsnr(
+        t: torch.Tensor,
+        *,
+        logsnr_min: float,
+        logsnr_max: float,
+        image_resolution: int,
+        noise_res_low: int,
+        noise_res_high: int,
+    ) -> torch.Tensor:
+        """Return the cosine-interpolated log-SNR schedule from SiD2 Appendix B."""
+        if noise_res_high <= 0 or noise_res_low <= 0:
+            raise ValueError("Noise resolutions for cosine schedule must be positive.")
+
+        log_change_high = math.log(float(image_resolution)) - math.log(float(noise_res_high))
+        log_change_low = math.log(float(image_resolution)) - math.log(float(noise_res_low))
+        b = math.atan(math.exp(-0.5 * logsnr_max))
+        a = math.atan(math.exp(-0.5 * logsnr_min)) - b
+        logsnr_cosine = -2.0 * torch.log(torch.tan(a * t + b))
+        logsnr_high = logsnr_cosine + log_change_high
+        logsnr_low = logsnr_cosine + log_change_low
+        return (1.0 - t) * logsnr_high + t * logsnr_low
+
+    def _build_cosine_interpolated_betas(
+        self,
+        *,
+        num_steps: int,
+        logsnr_min: float,
+        logsnr_max: float,
+        image_resolution: int,
+        noise_res_low: int,
+        noise_res_high: int,
+    ) -> np.ndarray:
+        """Generate a beta schedule that matches the cosine-interpolated log-SNR used in SiD2."""
+        if num_steps <= 0:
+            raise ValueError("Number of diffusion steps must be positive.")
+
+        device = torch.device("cpu")
+        t = torch.linspace(0.0, 1.0, steps=num_steps, dtype=torch.float64, device=device)
+        logsnr = self._cosine_interpolated_logsnr(
+            t,
+            logsnr_min=logsnr_min,
+            logsnr_max=logsnr_max,
+            image_resolution=image_resolution,
+            noise_res_low=noise_res_low,
+            noise_res_high=noise_res_high,
+        )
+        alphas_cumprod = torch.sigmoid(logsnr)
+        alphas_cumprod = torch.clamp(alphas_cumprod, min=1e-7, max=1.0)
+        alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=alphas_cumprod.dtype, device=device), alphas_cumprod[:-1]])
+        alphas = alphas_cumprod / alphas_cumprod_prev
+        betas = 1.0 - alphas
+        betas = torch.clamp(betas, min=1e-8, max=0.999)
+        return betas.cpu().numpy().astype(np.float32)
 
     def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
         # Standard sinusoidal embedding with configurable dimensionality, identical to the previous
@@ -1042,7 +1142,12 @@ class DiffusionWrapper(LightningWrapperBase):
 
         # Compute the appropriate training target and return the MSE loss.
         target = self._compute_training_target(images_bchw, noise_bchw, timesteps)
-        loss = self.loss_fn(prediction_bchw, target)
+
+        # Optionally use the sigmoid-weighted loss from SiD2 instead of plain MSE.
+        if self.use_sigmoid_loss_weighting:
+            loss = self._sigmoid_weighted_mse(prediction_bchw, target, timesteps)
+        else:
+            loss = self.loss_fn(prediction_bchw, target)
 
         return loss
 
