@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import os
 import dataclasses
 
 import pytorch_lightning as pl
@@ -95,6 +96,8 @@ def main():
     
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
+    if config.do_torch_compile:
+        model = torch.compile(model, mode=config.torch_compile_mode)
 
     # Initialize wandb logger
     if config.debug:
@@ -245,10 +248,14 @@ def main():
     if config.train.do:
         # Fit with full-state resume if autoresume provided a checkpoint, otherwise it will act as if no autoresume_ckpt_path passed in (it's None).
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=autoresume_ckpt_path)
-        # Load state dict from best performing model
-        model.load_state_dict(
-            torch.load(checkpoint_callback.best_model_path)["state_dict"],
-        )
+        # Load state dict from best performing model when available
+        best_ckpt_path = getattr(checkpoint_callback, "best_model_path", None)
+        if best_ckpt_path:
+            best_ckpt_path = str(best_ckpt_path)
+        if best_ckpt_path and os.path.isfile(best_ckpt_path):
+            model.load_state_dict(torch.load(best_ckpt_path)["state_dict"])
+        else:
+            print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 
     # Validate and test before finishing
     trainer.validate(

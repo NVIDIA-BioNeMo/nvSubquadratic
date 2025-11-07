@@ -17,12 +17,12 @@ from nvsubquadratic.networks.huggingface_diffusers import DiffusersUVitWrapper, 
 PLACEHOLDER = None
 
 # Dataset ----------------------------------------------------------------------
-BATCH_SIZE = 8
+BATCH_SIZE = 32
 MAX_WORKERS = 8
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
-IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", ".data/imagenet")
+IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
 HF_DATASET_CONFIG = None
 

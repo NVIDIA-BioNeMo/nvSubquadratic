@@ -15,6 +15,17 @@ import torch.nn.functional as F
 from diffusers.models import DiTTransformer2DModel
 from diffusers.models.unets.uvit_2d import UVit2DModel
 
+
+class _SharedTimestepState:
+    __slots__ = ("latest",)
+
+    def __init__(self) -> None:
+        self.latest: torch.Tensor | None = None
+
+    def __deepcopy__(self, memo) -> "_SharedTimestepState":
+        memo[id(self)] = self
+        return self
+
 @dataclass
 class HuggingFaceDiTConfig:
     """Configuration for DiT backbones."""
@@ -83,8 +94,16 @@ class DiffusersDiTWrapper(nn.Module):
         self.transformer = self._build_transformer(self.hf_config)
         self.hidden_dim = self.transformer.config.attention_head_dim * self.transformer.config.num_attention_heads
 
-        self._latest_timesteps: torch.LongTensor | None = None
+        self._timestep_state = _SharedTimestepState()
         self._registered_wrapper_ref: weakref.ReferenceType | None = None
+
+    def _get_latest_timesteps(self) -> torch.Tensor | None:
+        return self._timestep_state.latest
+
+    def _set_latest_timesteps(self, value: torch.Tensor | None) -> None:
+        self._timestep_state.latest = value
+
+    _latest_timesteps = property(_get_latest_timesteps, _set_latest_timesteps)
 
     def _build_transformer(self, cfg: HuggingFaceDiTConfig) -> nn.Module:
         if DiTTransformer2DModel is None:
@@ -193,7 +212,15 @@ class DiffusersUVitWrapper(nn.Module):
         self.hidden_dim = getattr(self.transformer.config, "block_out_channels", self.hf_config.in_channels)
 
         self._registered_wrapper_ref: weakref.ReferenceType | None = None
-        self._latest_timesteps: torch.LongTensor | None = None
+        self._timestep_state = _SharedTimestepState()
+
+    def _get_latest_timesteps(self) -> torch.Tensor | None:
+        return self._timestep_state.latest
+
+    def _set_latest_timesteps(self, value: torch.Tensor | None) -> None:
+        self._timestep_state.latest = value
+
+    _latest_timesteps = property(_get_latest_timesteps, _set_latest_timesteps)
 
     def _build_uvit(self, cfg: HuggingFaceUVitConfig) -> UVit2DModel:
         kwargs = {

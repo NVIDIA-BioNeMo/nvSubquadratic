@@ -114,6 +114,9 @@ class ExperimentConfig:
     seed: int = 0
     comment: str = ""
 
+    do_torch_compile: bool = False
+    torch_compile_mode: Literal["default", "max-autotune", "reduce-overhead", "max-speed"] = "default"
+
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
     lightning_wrapper_class: LazyConfig = PLACEHOLDER

@@ -25,19 +25,19 @@ PLACEHOLDER = None
 DATA_DIM = 2
 
 # Dataset ----------------------------------------------------------------------
-BATCH_SIZE = 1
-MAX_WORKERS = 32
-IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", ".data/imagenet")
+BATCH_SIZE = 32
+MAX_WORKERS = 16
+IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
 HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
-FINAL_IMAGE_SIZE = 224
+FINAL_IMAGE_SIZE = 64
 
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
 
 # Model ------------------------------------------------------------------------
-NUM_HIDDEN_CHANNELS = 64
-NUM_BLOCKS = 6
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "double"
@@ -56,7 +56,8 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
-
+    config.do_torch_compile = True
+    config.torch_compile_mode = "default" # Options: "default", "max-autotune", "reduce-overhead"
     hf_token = os.environ.get("HF_TOKEN")
 
     config.dataset = LazyConfig(ImageNetDataModule)(
