@@ -86,6 +86,8 @@ class ExperimentConfig:
     deterministic: bool = False  # Need to be set to True for deterministic behavior
     seed: int = 0
     comment: str = ""
+    enable_checkpointing: bool = True # False to disable during development
+    enable_progress_bar: bool = True  # False to disable during development
 
     # Dataset configuration that MUST be set in experiment config
     # This should be instantiated with a LazyConfig object, e.g.:

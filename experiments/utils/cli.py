@@ -55,7 +55,11 @@ def get_deterministic_run_name(config_path: str, overrides: List[str] = None, us
     # Always append the effective username to avoid collisions across users
     username = getpass.getuser().upper()
     # Usernames are always name.lastname. Let's extract the first letter of both the name and the lastname.
-    username = username.split(".")[0][0] + username.split(".")[1][0]
+    try:
+        username = username.split(".")[0][0] + username.split(".")[1][0]
+    except Exception:
+        # If the username does not follow the expected format, use it as is.
+        pass
 
     # Add override hash if overrides are provided
     if overrides and len(overrides) > 0:

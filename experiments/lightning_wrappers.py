@@ -528,3 +528,169 @@ class RegressionWrapper(LightningWrapperBase):
                     "global_step": self.global_step,
                 }
             )
+
+
+class L2RelativeError(torchmetrics.Metric):
+    """Computes L2 relative error: ||pred - target|| / ||target||.
+
+    This metric is commonly used in PDE tasks.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_state("sum_relative_error", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor):
+        """Update metric state with predictions and targets.
+
+        Args:
+            preds: Predictions of shape [B, ...]
+            target: Targets of shape [B, ...]
+        """
+        # Flatten spatial dimensions: [B, ...] -> [B, N]
+        batch_size = preds.shape[0]
+        preds_flat = preds.reshape(batch_size, -1)
+        target_flat = target.reshape(batch_size, -1)
+
+        # Compute L2 norms along spatial dimension
+        diff_norm = torch.linalg.norm(preds_flat - target_flat, dim=1)  # [B]
+        target_norm = torch.linalg.norm(target_flat, dim=1)  # [B]
+
+        # Compute relative error
+        relative_error = diff_norm / (target_norm + 1e-10)
+
+        self.sum_relative_error += relative_error.sum()
+        self.total += batch_size
+
+    def compute(self):
+        """Compute the mean L2 relative error."""
+        return self.sum_relative_error / self.total
+
+
+class PDERegressionWrapper(RegressionWrapper):
+    """Lightning wrapper for PDE regression tasks with autoregressive rollout.
+
+    Training uses 1-step prediction and MSE loss. 
+    Validation/test use N-step autoregressive rollout and compute L2 relative error.
+    """
+
+    def __init__(
+        self,
+        network: torch.nn.Module,
+        cfg: ExperimentConfig,
+        prev_steps: int,
+        rollout_steps: int,
+        metric: Literal["MAE", "MSE"] = "MSE",
+    ):
+        """Initialize the PDERegressionWrapper.
+
+        Args:
+            network: Network to wrap.
+            cfg: Configuration.
+            metric: Metric to use for loss (only used for training). Default is 'MSE'.
+        """
+        super().__init__(network=network, cfg=cfg, metric=metric)
+        
+        self.prev_steps = prev_steps
+        self.rollout_steps = rollout_steps
+
+        # L2 relative error metrics for val/test
+        self.val_l2_error = L2RelativeError()
+        self.test_l2_error = L2RelativeError()
+
+    @torch.inference_mode()
+    def autoregressive_rollout(self, initial_input, num_steps):
+        """
+        Perform autoregressive rollout prediction.
+        It is done in inference mode to avoid tracking gradients.
+
+        Args:
+            initial_input: Initial input of shape [B, prev_steps, H, W, C]
+            num_steps: Number of steps to roll out
+
+        Returns:
+            Predictions of shape [B, num_steps, H, W, C]
+        """            
+        b, t, h, w, c = initial_input.shape
+        predictions = torch.empty((b, num_steps, h, w, c), device=initial_input.device)  # [B, num_steps, H, W, C]
+        
+        current_input = initial_input  # [B, prev_steps, H, W, C]
+
+        for step_id in range(num_steps):
+            # Flatten time into channels for model input
+            b, t, h, w, c = current_input.shape
+            model_input = current_input.permute(0, 2, 3, 1, 4).reshape(b, h, w, t * c)  # [B, H, W, prev_steps*C]
+
+            # Predict next step
+            pred = self(model_input).unsqueeze(1)  # [B, 1, H, W, C]
+            predictions[:, step_id:step_id+1] = pred  # Store prediction
+
+            # Update input: drop oldest timestep, append new prediction
+            current_input = torch.cat([current_input[:, 1:], pred], dim=1)  # [B, prev_steps, H, W, C]
+
+        return predictions
+
+    def training_step(self, batch, batch_idx):
+        """Training uses 1-step prediction with MSE loss.
+
+        Args:
+            batch: Tensor of shape [B, prev_steps + 1, H, W, C]
+        """        
+        b, t, h, w, c = batch.shape
+        
+        # Split: first prev_steps for input, next 1 for target
+        x = batch[:, :-1]           # [B, prev_steps, H, W, C]
+        target = batch[:, -1]       # [B, H, W, C]
+
+        # Flatten time into channels for model input
+        x = x.permute(0, 2, 3, 1, 4).reshape(b, h, w, t * c)  # [B, H, W, prev_steps*C]
+
+        # Predict next timestep
+        prediction = self(x)
+
+        loss = self.loss_metric(prediction, target)
+        self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
+        
+        return {"loss": loss}
+
+    def eval_step(self, batch, batch_idx, *, stage: Literal["val", "test"]):
+        """Evaluation uses N-step autoregressive rollout and L2 relative error.
+
+        Args:
+            batch: Tensor of shape [B, prev_steps + rollout_steps, H, W, C]
+        """
+        # Split: first prev_steps for input, remaining for ground truth
+        initial_input = batch[:, :self.prev_steps]  # [B, prev_steps, H, W, C]
+        ground_truth = batch[:, self.prev_steps:]   # [B, rollout_steps, H, W, C]
+        
+        # Perform autoregressive rollout
+        predictions = self.autoregressive_rollout(initial_input, self.rollout_steps)
+
+        # Compute L2 relative error
+        self.val_l2_error(predictions, ground_truth)
+
+        # Log L2 error
+        self.log("val/loss", self.val_l2_error, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
+        
+        return {}
+    
+    def validation_step(self, batch, batch_idx):
+        """Validation step."""
+        return self.eval_step(batch, batch_idx, stage="val")
+
+    def test_step(self, batch, batch_idx):
+        """Test step."""
+        return self.eval_step(batch, batch_idx, stage="test")
+
+    def on_validation_epoch_end(self, validation_step_outputs=None):
+        """Log best validation loss."""
+        val_loss = self.trainer.callback_metrics["val/loss"]
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss.item()
+            self.logger.experiment.log(
+                {
+                    "val/best_loss": self.best_val_loss,
+                    "global_step": self.global_step,
+                }
+            )

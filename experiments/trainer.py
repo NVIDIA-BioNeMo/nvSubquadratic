@@ -110,5 +110,9 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
+        # Checkpointing
+        enable_checkpointing=cfg.enable_checkpointing,
+        # Progress bar
+        enable_progress_bar=cfg.enable_progress_bar,
     )
     return trainer, checkpoint_callback
