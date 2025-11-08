@@ -36,8 +36,11 @@ from __future__ import annotations
 
 __all__ = [
     "circular_fftconv1d_bhl",
+    "circular_fftconv1d_bhl_w_reshape",
     "circular_fftconv2d_bhl",
+    "circular_fftconv2d_bhl_w_reshape",
     "circular_fftconv3d_bhl",
+    "circular_fftconv3d_bhl_w_reshape",
 ]
 
 import math
@@ -567,6 +570,81 @@ def circular_fftconv3d_bhl(
         y.add_(rearrange(shortcut, "h -> 1 h 1 1 1") * x)
 
     return y
+
+
+def circular_fftconv1d_bhl_w_reshape(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    use_phase_shift: bool = True,
+) -> torch.Tensor:
+    """1D circular FFT conv wrapper for BLH layout (batch, length, hidden).
+
+    This reshapes BLH -> BHL, calls ``circular_fftconv1d_bhl``, and reshapes back.
+
+    Args:
+        x (Tensor): ``[B, L, H]``, dtype float32.
+        kernel (Tensor): ``[1|B, K, H]``, dtype float32.
+        shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
+        use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
+
+    Returns:
+        Tensor: ``[B, L, H]``
+    """
+    x_bhl = rearrange(x, "b l h -> b h l")
+    kernel_bhl = rearrange(kernel, "b k h -> b h k")
+    y_bhl = circular_fftconv1d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
+    return rearrange(y_bhl, "b h l -> b l h")
+
+
+def circular_fftconv2d_bhl_w_reshape(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    use_phase_shift: bool = True,
+) -> torch.Tensor:
+    """2D circular FFT conv wrapper for BLH layout (batch, height, width, hidden).
+
+    This reshapes BLH -> BHL, calls ``circular_fftconv2d_bhl``, and reshapes back.
+
+    Args:
+        x (Tensor): ``[B, X, Y, H]``, dtype float32.
+        kernel (Tensor): ``[1|B, Kx, Ky, H]``, dtype float32.
+        shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
+        use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
+
+    Returns:
+        Tensor: ``[B, X, Y, H]``
+    """
+    x_bhl = rearrange(x, "b x y h -> b h x y")
+    kernel_bhl = rearrange(kernel, "b kx ky h -> b h kx ky")
+    y_bhl = circular_fftconv2d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
+    return rearrange(y_bhl, "b h x y -> b x y h")
+
+
+def circular_fftconv3d_bhl_w_reshape(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    use_phase_shift: bool = True,
+) -> torch.Tensor:
+    """3D circular FFT conv wrapper for BLH layout (batch, depth, height, width, hidden).
+
+    This reshapes BLH -> BHL, calls ``circular_fftconv3d_bhl``, and reshapes back.
+
+    Args:
+        x (Tensor): ``[B, X, Y, Z, H]``, dtype float32.
+        kernel (Tensor): ``[1|B, Kx, Ky, Kz, H]``, dtype float32.
+        shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
+        use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
+
+    Returns:
+        Tensor: ``[B, X, Y, Z, H]``
+    """
+    x_bhl = rearrange(x, "b x y z h -> b h x y z")
+    kernel_bhl = rearrange(kernel, "b kx ky kz h -> b h kx ky kz")
+    y_bhl = circular_fftconv3d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
+    return rearrange(y_bhl, "b h x y z -> b x y z h")
 
 
 if __name__ == "__main__":
