@@ -33,7 +33,8 @@ NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
+GRID_TYPE = "single"
+FFT_PADDING = "circular"
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
@@ -104,6 +105,7 @@ def get_config() -> ExperimentConfig:
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels="3 * ${net.hidden_dim}",
@@ -116,7 +118,7 @@ def get_config() -> ExperimentConfig:
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels="${net.hidden_dim}"),
                     apply_qk_norm=True,
-                    use_rope=True,
+                    use_rope=False,
                     rope_base=10000.0,
                 ),
                 init_method_in=small_init,
