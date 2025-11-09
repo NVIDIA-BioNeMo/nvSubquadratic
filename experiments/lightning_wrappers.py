@@ -15,6 +15,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torchmetrics
+from torchmetrics.image.fid import FrechetInceptionDistance
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
@@ -849,6 +850,20 @@ class DiffusionWrapper(LightningWrapperBase):
         self.use_sigmoid_loss_weighting = bool(diffusion_cfg.use_sigmoid_loss_weighting)
         self.sigmoid_loss_bias = float(diffusion_cfg.sigmoid_loss_bias)
 
+        # Optional online FID evaluation.
+        self.fid_max_batches = max(int(getattr(diffusion_cfg, "fid_num_batches", 0) or 0), 0)
+        self.fid_enabled = bool(getattr(diffusion_cfg, "fid_enabled", False)) and self.fid_max_batches > 0
+        fid_steps_cfg = getattr(diffusion_cfg, "fid_num_inference_steps", None)
+        self.fid_num_inference_steps = (
+            int(fid_steps_cfg) if fid_steps_cfg is not None else self.default_inference_steps
+        )
+        self.fid_metric: Optional[FrechetInceptionDistance] = None
+        self._fid_batches_seen = 0
+        if self.fid_enabled:
+            self.fid_metric = FrechetInceptionDistance(feature=2048, normalize=True)
+        else:
+            self.fid_enabled = False
+
         # Classifier-free guidance (CFG) specific settings ---------------------------------------------------------
         # We make the behaviour completely configurable so the same wrapper can serve
         # both unconditional and class-conditional runs without branching out to a
@@ -1023,6 +1038,18 @@ class DiffusionWrapper(LightningWrapperBase):
             embedding = F.pad(embedding, (0, self.timestep_dim - embedding.shape[-1]))
         return embedding
 
+    def _noiselevel_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
+        """Embed diffusion steps via their log-SNR rather than raw indices."""
+        alphas_cumprod = getattr(self.scheduler, "alphas_cumprod", None)
+        if alphas_cumprod is None:
+            raise RuntimeError("Scheduler does not have precomputed alphas_cumprod for noise-level embedding.")
+        alphas_cumprod = alphas_cumprod.to(timesteps.device)
+        indices = timesteps.to(torch.long)
+        indices = torch.clamp(indices, min=0, max=alphas_cumprod.shape[0] - 1)
+        alpha = alphas_cumprod[indices].clamp_(1e-7, 1.0 - 1e-7)
+        logsnr = torch.log(alpha) - torch.log1p(-alpha)
+        return self.time_mlp(self._timestep_embedding(logsnr))
+
     def _condition_from_timesteps(
         self,
         timesteps: torch.Tensor,
@@ -1043,7 +1070,7 @@ class DiffusionWrapper(LightningWrapperBase):
                 guidance training. Elements set to ``True`` fall back to the unconditional embedding.
         """
         # Step 1: obtain the base time embedding as usual.
-        time_emb = self.time_mlp(self._timestep_embedding(timesteps))
+        time_emb = self._noiselevel_embedding(timesteps)
 
         # Without class conditioning the timestep embedding is the entire conditioning signal.
         if self.label_embed is None:
@@ -1085,7 +1112,12 @@ class DiffusionWrapper(LightningWrapperBase):
         # interface consistent with the time-only case.
         return time_emb + label_emb
 
-    def _shared_step(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def _shared_step(
+        self,
+        batch: dict[str, torch.Tensor],
+        *,
+        return_clean_images: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, Optional[torch.Tensor]]]:
         # Inputs arrive in channels-last format from the datamodule; we keep that convention for the
         # network but convert to channels-first whenever diffusers expects it.
         images = batch["input"].to(self.device)
@@ -1110,6 +1142,7 @@ class DiffusionWrapper(LightningWrapperBase):
         noisy_images_bchw = self.scheduler.add_noise(images_bchw, noise_bchw, timesteps)
         noisy_images = self._channels_first_to_last(noisy_images_bchw)
 
+        labels_tensor: Optional[torch.Tensor] = None
         if self.class_conditioning:
             # Retrieve labels if the datamodule provided them. For class-conditioned runs the labels are
             # essential; otherwise we quietly fall back to the unconditional path.
@@ -1118,7 +1151,7 @@ class DiffusionWrapper(LightningWrapperBase):
                     "Class conditioning requires datamodule batches to include 'label'. "
                     "Set drop_labels=False on the datamodule to keep them."
                 )
-            labels = batch["label"].to(self.device, non_blocking=True).long().view(-1)
+            labels_tensor = batch["label"].to(self.device, non_blocking=True).long().view(-1)
 
             # Bernoulli mask indicating which samples should use the unconditional branch so the model
             # learns to ignore class information part of the time. This is the core of classifier-free guidance.
@@ -1127,7 +1160,7 @@ class DiffusionWrapper(LightningWrapperBase):
                 dropout_mask = torch.rand(batch_size, device=self.device) < self.condition_dropout_prob
             condition = self._condition_from_timesteps(
                 timesteps,
-                labels=labels,
+                labels=labels_tensor,
                 dropout_mask=dropout_mask,
             )
         else:
@@ -1149,6 +1182,13 @@ class DiffusionWrapper(LightningWrapperBase):
         else:
             loss = self.loss_fn(prediction_bchw, target)
 
+        if return_clean_images:
+            aux = {
+                "clean_images_bchw": images_bchw.detach(),
+                "labels": labels_tensor.detach() if labels_tensor is not None else None,
+            }
+            return loss, aux
+
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -1156,10 +1196,60 @@ class DiffusionWrapper(LightningWrapperBase):
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         return loss
 
+    def on_validation_epoch_start(self) -> None:
+        super().on_validation_epoch_start()
+        if self.fid_metric is not None:
+            self.fid_metric.reset()
+            self._fid_batches_seen = 0
+
     def validation_step(self, batch, batch_idx):
-        loss = self._shared_step(batch)
+        collect_images = self._should_collect_fid()
+        shared = self._shared_step(batch, return_clean_images=collect_images)
+        if collect_images:
+            assert isinstance(shared, tuple)
+            loss, aux = shared
+            self._update_fid_metrics(aux["clean_images_bchw"], aux["labels"])
+        else:
+            assert isinstance(shared, torch.Tensor)
+            loss = shared
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         return loss
+
+    def _should_collect_fid(self) -> bool:
+        return self.fid_metric is not None and self._fid_batches_seen < self.fid_max_batches
+
+    def _prepare_images_for_fid(self, images_bchw: torch.Tensor) -> torch.Tensor:
+        images = images_bchw.detach()
+        if images.dtype != torch.float32:
+            images = images.float()
+        images = torch.clamp((images + 1.0) / 2.0, 0.0, 1.0)
+        if images.shape[1] == 1:
+            images = images.repeat(1, 3, 1, 1)
+        return images
+
+    def _update_fid_metrics(self, clean_images_bchw: torch.Tensor, labels: Optional[torch.Tensor]) -> None:
+        if not self._should_collect_fid() or self.example_input_shape is None:
+            return
+        assert self.fid_metric is not None
+        fid_metric = self.fid_metric.to(self.device)
+
+        real = self._prepare_images_for_fid(clean_images_bchw)
+        fid_metric.update(real, real=True)
+
+        with torch.no_grad():
+            sample_kwargs = {}
+            if self.class_conditioning and labels is not None:
+                sample_kwargs["labels"] = labels.to(self.device)
+            generated = self.sample(
+                num_samples=real.shape[0],
+                num_inference_steps=self.fid_num_inference_steps,
+                **sample_kwargs,
+            )
+            generated_bchw = self._channels_last_to_first(generated)
+            fake = self._prepare_images_for_fid(generated_bchw)
+            fid_metric.update(fake, real=False)
+
+        self._fid_batches_seen += 1
 
     def test_step(self, batch, batch_idx):
         # Generation experiments do not have a dedicated test metric.
@@ -1286,6 +1376,20 @@ class DiffusionWrapper(LightningWrapperBase):
                 self._ema_has_been_updated = True
 
     def on_validation_epoch_end(self, outputs=None):
+        if self.fid_metric is not None and self._fid_batches_seen > 0:
+            fid_value = self.fid_metric.compute()
+            self.log("metrics/fid", fid_value, prog_bar=False, sync_dist=self.distributed)
+            if self.logger is not None and hasattr(self.logger, "experiment"):
+                try:
+                    self.logger.experiment.log(
+                        {
+                            "metrics/fid": float(fid_value.item()),
+                            "global_step": self.global_step,
+                        }
+                    )
+                except Exception:
+                    pass
+
         if not self.log_samples:
             return
         if self.example_input_shape is None:

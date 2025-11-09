@@ -113,12 +113,9 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.output_channels = 3
         self.num_classes = 1_000  # ImageNet-1k has exactly one thousand semantic classes.
 
-        mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
-            self.final_image_size,
-            (DEFAULT_IMAGENET_MEAN, DEFAULT_IMAGENET_STD),
-        )
-        self.normalization_mean = tuple(float(m) for m in mean)
-        self.normalization_std = tuple(float(s) for s in std)
+        # Diffusion experiments consume inputs scaled to [-1, 1].
+        self.normalization_mean = (0.5, 0.5, 0.5)
+        self.normalization_std = (0.5, 0.5, 0.5)
 
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
@@ -154,6 +151,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops.extend(
             [
                 transforms.ToTensor(),
+                transforms.Lambda(self._uniform_dequantize),
                 transforms.Normalize(mean=self.normalization_mean, std=self.normalization_std),
             ]
         )
@@ -295,3 +293,9 @@ class ImageNetDataModule(pl.LightningDataModule):
             "label": labels,
             "condition": None,
         }
+
+    @staticmethod
+    def _uniform_dequantize(tensor: torch.Tensor) -> torch.Tensor:
+        """Add uniform noise in [0, 1/256) after quantised pixels and keep the result in [0, 1]."""
+        noise = torch.rand_like(tensor)
+        return (tensor * 255.0 + noise) / 256.0

@@ -33,6 +33,7 @@ DATA_DIM = 2
 
 # Model parameters
 BATCH_SIZE = 14
+ACCUMULATE_GRAD_STEPS = 10
 NUM_WORKERS = 16
 HIDDEN_DIM = 768
 NUM_BLOCKS = 12
@@ -45,7 +46,7 @@ TRAINING_ITERATIONS = 800_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.02
 GRAD_CLIP = 1.0
 WEIGHT_DECAY = 1e-3
-LEARNING_RATE = 2e-4
+LEARNING_RATE = 1e-4
 
 # Diffusion parameters
 NUM_TRAIN_TIMESTEPS = 1_000
@@ -57,8 +58,8 @@ MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
 
 EMA_ENABLED = True
-EMA_DECAY = 0.999
-EMA_WARMUP_STEPS = 1_000
+EMA_DECAY = 0.99995
+EMA_WARMUP_STEPS = 5_000
 EMA_UPDATE_EVERY = 1
 
 # CFG parameters
@@ -183,6 +184,7 @@ def get_config() -> DiffusionExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
+        accumulate_grad_steps=ACCUMULATE_GRAD_STEPS,
     )
 
     config.scheduler = SchedulerConfig(
@@ -213,6 +215,9 @@ def get_config() -> DiffusionExperimentConfig:
         condition_dropout_prob=CONDITION_DROPOUT_PROB,
         use_sigmoid_loss_weighting=True,
         sigmoid_loss_bias=-3.0,
+        fid_enabled=True,
+        fid_num_batches=8,
+        fid_num_inference_steps=NUM_INFERENCE_STEPS,
     )
 
     config.wandb = WandbConfig(job_group="imagenet-diffusion")

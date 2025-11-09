@@ -77,12 +77,10 @@ class MNISTDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.seed = seed
+        self.task = task
 
         # Create a generator with the given seed for reproducibility
         self.generator = torch.Generator().manual_seed(seed)
-
-        self.normalization_mean = (0.1307,)
-        self.normalization_std = (0.3081,)
 
         # Handle worker initialization. Use deterministic worker initialization if specified.
         # self.worker_init_fn = deterministic_worker_init_fn if use_deterministic_worker_init else None
@@ -101,18 +99,37 @@ class MNISTDataModule(pl.LightningDataModule):
         assert data_type in ["sequence", "image"], f"data_type must be 'sequence' or 'image', got {data_type}"
         self.data_type = data_type
 
-        # Create transform
-        self.transform = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize(self.normalization_mean, self.normalization_std),
-            ]
-        )
+        if task == "generation":
+            self.normalization_mean = (0.5,)
+            self.normalization_std = (0.5,)
+            self.transform = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Lambda(self._uniform_dequantize),
+                    transforms.Normalize(self.normalization_mean, self.normalization_std),
+                ]
+            )
+        else:
+            # Classification keeps the dataset statistics for compatibility with existing checkpoints.
+            self.normalization_mean = (0.1307,)
+            self.normalization_std = (0.3081,)
+            self.transform = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(self.normalization_mean, self.normalization_std),
+                ]
+            )
 
         # Placeholders for datasets
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+
+    @staticmethod
+    def _uniform_dequantize(tensor: torch.Tensor) -> torch.Tensor:
+        """Add uniform dequantization noise and keep the tensor in [0, 1]."""
+        noise = torch.rand_like(tensor)
+        return (tensor * 255.0 + noise) / 256.0
 
     def prepare_data(self):
         """Function to prepare the data."""

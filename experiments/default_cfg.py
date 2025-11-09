@@ -92,13 +92,13 @@ class DiffusionConfig:
     num_train_timesteps: int = 1_000
     beta_start: float = 1e-4
     beta_end: float = 0.02
-    beta_schedule: str = "linear"
+    beta_schedule: str = "squaredcos_cap_v2"
     cosine_schedule_logsnr_min: float = -10.0
     cosine_schedule_logsnr_max: float = 10.0
     cosine_schedule_image_resolution: int = 64
     cosine_schedule_noise_res_low: int = 32
     cosine_schedule_noise_res_high: int = 64
-    prediction_type: str = "epsilon"
+    prediction_type: str = "v_prediction"  # one of "epsilon", "v_prediction", "sample"
     time_embed_dim: Optional[int] = None
     max_period: float = 10_000.0
 
@@ -120,6 +120,11 @@ class DiffusionConfig:
     guidance_scale: float = 3.5
     condition_dropout_prob: float = 0.1
     num_classes: Optional[int] = 1000
+
+    # Online evaluation knobs.
+    fid_enabled: bool = False
+    fid_num_batches: int = 0
+    fid_num_inference_steps: Optional[int] = None
 
 
 @dataclass

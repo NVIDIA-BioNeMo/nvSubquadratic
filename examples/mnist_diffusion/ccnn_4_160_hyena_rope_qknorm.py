@@ -189,6 +189,9 @@ def get_config() -> DiffusionExperimentConfig:
         use_classifier_free_guidance=True,
         guidance_scale=3.0,
         condition_dropout_prob=0.1,
+        fid_enabled=True,
+        fid_num_batches=2,
+        fid_num_inference_steps=NUM_INFERENCE_STEPS,
     )
 
     # Wandb job group
