@@ -25,7 +25,7 @@ PLACEHOLDER = None
 DATA_DIM = 2
 
 # Dataset ----------------------------------------------------------------------
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 MAX_WORKERS = 16
 IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
@@ -41,6 +41,7 @@ NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
+FFT_PADDING = "circular"
 NUM_CLASSES = 1_000
 
 # Optimisation -----------------------------------------------------------------
@@ -112,6 +113,7 @@ def get_config() -> ExperimentConfig:
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels="3 * ${net.hidden_dim}",
