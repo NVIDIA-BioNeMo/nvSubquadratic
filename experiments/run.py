@@ -89,6 +89,10 @@ def main():
 
     # Construct model
     network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
+    
+    # Compile the model
+    network = torch.compile(network)
+    
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
 
