@@ -30,12 +30,13 @@ NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
-NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
+MAX_WORKERS = 16
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 GRAD_CLIP = 10.0
 
 WEIGHT_DECAY = 0.01
@@ -62,6 +63,7 @@ def get_config() -> ExperimentConfig:
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=True,  # Flag to use deterministic worker initialization
         seed=config.seed,  # Pass the seed value instead of a Generator object
+        task="classification",
     )
 
     # Add net config

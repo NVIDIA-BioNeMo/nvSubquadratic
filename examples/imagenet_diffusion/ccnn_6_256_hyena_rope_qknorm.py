@@ -28,31 +28,43 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
 PLACEHOLDER = None
-
+WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
-# Model parameters
-BATCH_SIZE = 16
-NUM_WORKERS = 16
-HIDDEN_DIM = 256
+# Dataset 
+BATCH_SIZE = 64
+MAX_WORKERS = 16
+IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
+HF_DATASET_NAME = "imagenet-1k"
+HF_DATASET_CONFIG = None
+IMAGE_SIZE = 256
+FINAL_IMAGE_SIZE = 64
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
+
+# Model 
+NUM_HIDDEN_CHANNELS = 256
 NUM_BLOCKS = 6
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
+GRID_TYPE = "single"
+FFT_PADDING = "circular"
+NUM_CLASSES = 1_0000
 
-# Training parameters
+# Optimisation 
 TRAINING_ITERATIONS = 800_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.02
-GRAD_CLIP = 1.0
 WEIGHT_DECAY = 1e-3
 LEARNING_RATE = 2e-4
+GRAD_CLIP = 1.0
 
 # Diffusion parameters
 NUM_TRAIN_TIMESTEPS = 1_000
+CLASSIFIER_FREE_GUIDANCE = True
 BETA_START = 1e-4
 BETA_END = 2e-2
 BETA_SCHEDULE = "linear"
-TIME_EMBED_DIM = HIDDEN_DIM
+TIME_EMBED_DIM = NUM_HIDDEN_CHANNELS
 MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
 NUM_SAMPLES = 8
@@ -62,11 +74,6 @@ EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
 EMA_UPDATE_EVERY = 1
 
-# Imagenet dataset details (on SNELLIUS)
-IMAGENET_PATH = '/home/dknigge/project_dir/huggingface/imagenet'
-IMAGE_SIZE = 256
-FINAL_IMAGE_SIZE = 64
-
 
 def get_config() -> DiffusionExperimentConfig:
     """Return the ImageNet diffusion configuration."""
@@ -74,10 +81,8 @@ def get_config() -> DiffusionExperimentConfig:
     config = DiffusionExperimentConfig()
     config.debug = False
     config.seed = 42
-
     hf_token = os.environ.get("HF_TOKEN")
-
-    cpu_count = os.cpu_count() or 8
+    config.classifier_free_guidance = CLASSIFIER_FREE_GUIDANCE
 
     config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
@@ -88,17 +93,19 @@ def get_config() -> DiffusionExperimentConfig:
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
         center_crop=True,
-        drop_labels=True,
+        num_classes=NUM_CLASSES,
+        drop_labels=False,
         hf_dataset_name="imagenet-1k",
         hf_dataset_config=None,
         hf_auth_token=hf_token,
+        task='generation'
     )
 
     config.net = LazyConfig(ResidualNetwork)(
         in_channels=PLACEHOLDER,
         out_channels=PLACEHOLDER,
         num_blocks=NUM_BLOCKS,
-        hidden_dim=HIDDEN_DIM,
+        hidden_dim=NUM_HIDDEN_CHANNELS,
         in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
@@ -130,6 +137,7 @@ def get_config() -> DiffusionExperimentConfig:
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels="3 * ${net.hidden_dim}",
@@ -207,6 +215,9 @@ def get_config() -> DiffusionExperimentConfig:
         ema_warmup_steps=EMA_WARMUP_STEPS,
     )
 
-    config.wandb = WandbConfig(job_group="imagenet-diffusion")
+    config.wandb = WandbConfig(
+        job_group="imagenet-diffusion",
+        entity=WANDB_ENTITY,
+    )
 
     return config

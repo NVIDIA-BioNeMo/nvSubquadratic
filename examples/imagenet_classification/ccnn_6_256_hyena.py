@@ -21,22 +21,21 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 
 PLACEHOLDER = None
-
+WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
-# Dataset ----------------------------------------------------------------------
+# Dataset 
 BATCH_SIZE = 64
 MAX_WORKERS = 16
-IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
+IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
 HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
-PRECISION = "bf16-mixed"  # Options: "32-true", "16-mixed", "bf16-mixed"
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
 
-NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
-
-# Model ------------------------------------------------------------------------
+# Model 
 NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
@@ -45,7 +44,7 @@ GRID_TYPE = "single"
 FFT_PADDING = "circular"
 NUM_CLASSES = 1_000
 
-# Optimisation -----------------------------------------------------------------
+# Optimisation 
 TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 LEARNING_RATE = 3e-4
@@ -58,12 +57,10 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
-    config.do_torch_compile = False
-    config.torch_compile_mode = "default" # Options: "default", "max-autotune", "reduce-overhead"
     hf_token = os.environ.get("HF_TOKEN")
 
     config.dataset = LazyConfig(ImageNetDataModule)(
-        data_dir=IMAGENET_CACHE_DIR,
+        data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
@@ -71,11 +68,12 @@ def get_config() -> ExperimentConfig:
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
         center_crop=True,
+        num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
         hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
-        num_classes=NUM_CLASSES,
+        task='classification',
     )
 
     config.net = LazyConfig(ClassificationResNet)(
@@ -175,6 +173,9 @@ def get_config() -> ExperimentConfig:
         mode="max",
     )
 
-    config.wandb = WandbConfig(job_group="imagenet_classification")
+    config.wandb = WandbConfig(
+        job_group="imagenet_classification",
+        entity=WANDB_ENTITY,
+    )
 
     return config

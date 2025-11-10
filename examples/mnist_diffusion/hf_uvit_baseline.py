@@ -18,8 +18,9 @@ from nvsubquadratic.networks.huggingface_diffusers import DiffusersUVitWrapper, 
 
 
 PLACEHOLDER = None
+WANDB_ENTITY = "dafidofff"
 
-# Dataset ----------------------------------------------------------------------
+# Dataset 
 BATCH_SIZE = 16
 NUM_WORKERS = 16
 
@@ -40,14 +41,14 @@ UVIT_MICRO_COND_EMBED_DIM = None
 UVIT_CODEBOOK_SIZE = None
 UVIT_VOCAB_SIZE = None
 
-# Optimisation -----------------------------------------------------------------
+# Optimisation 
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 0.01
 GRAD_CLIP = 1.0
 
-# Diffusion --------------------------------------------------------------------
+# Diffusion 
 NUM_TRAIN_TIMESTEPS = 1_000
 NUM_INFERENCE_STEPS = 50
 NUM_SAMPLES = 16
@@ -116,6 +117,9 @@ def get_config() -> DiffusionExperimentConfig:
         log_samples=LOG_SAMPLES,
     )
 
-    config.wandb = WandbConfig(job_group="mnist_diffusion_hf_uvit_baseline")
+    config.wandb = WandbConfig(
+        job_group="mnist_diffusion_hf_uvit_baseline",
+        entity=WANDB_ENTITY,
+    )
 
     return config

@@ -118,7 +118,9 @@ class ImageNetDataModule(pl.LightningDataModule):
             self.output_channels = 1000
         elif task == 'generation':
             self.output_channels = 1
-        self.num_classes = 1_000  # ImageNet-1k has exactly one thousand semantic classes.
+        else:
+            raise ValueError(f"Unsupported task: {task}")
+        self.num_classes = num_classes  # ImageNet-1k has exactly one thousand semantic classes.
 
         # Diffusion experiments consume inputs scaled to [-1, 1].
         self.normalization_mean = (0.5, 0.5, 0.5)

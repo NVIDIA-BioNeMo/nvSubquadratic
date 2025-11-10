@@ -7,7 +7,13 @@ import os
 import torch
 
 from experiments.datamodules.mnist import MNISTDataModule
-from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.default_cfg import (
+    DiffusionConfig,
+    DiffusionExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    WandbConfig,
+)
 from experiments.lightning_wrappers import DiffusionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
@@ -22,27 +28,34 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
 PLACEHOLDER = None
-
+WANDB_ENTITY = "dafidofff"
 DATA_TYPE = "image"
 DATA_DIM = 2
 
-# Model parameters
+# Dataset
 BATCH_SIZE = 128
+MAX_WORKERS = 16
+MNIST_PATH = ".data/mnist"
+PRECISION = "bf16-mixed"
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
+
+# Model 
 HIDDEN_DIM = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
+GRID_TYPE = "single"
+FFT_PADDING = "circular"
+NUM_CLASSES = 10
 
-# Training parameters
+# Optimisation 
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
-NUM_WORKERS = 16
 GRAD_CLIP = 10.0
 WEIGHT_DECAY = 0.01
 LEARNING_RATE = 1e-3
 
-# Diffusion parameters
+# Diffusion parameters ---------------------------------------------------------------
 NUM_TRAIN_TIMESTEPS = 1_000
 BETA_START = 1e-4
 BETA_END = 0.02
@@ -52,32 +65,35 @@ MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
 NUM_SAMPLES = 16
 LOG_SAMPLES = True
-
-# Track EMA model
 EMA_ENABLED = True
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
 EMA_UPDATE_EVERY = 1
+FID_ENABLED = True
+FID_NUM_BATCHES = 2
+FID_NUM_INFERENCE_STEPS = NUM_INFERENCE_STEPS
+GUIDANCE_SCALE = 3.0
+CONDITION_DROPOUT_PROB = 0.1
 
 
 def get_config() -> DiffusionExperimentConfig:
     """Return the MNIST diffusion configuration."""
 
     config = DiffusionExperimentConfig()
+    config.debug = False
+    config.seed = 42
 
-    # Add dataset config.
     config.dataset = LazyConfig(MNISTDataModule)(
-        data_dir=".data/mnist",
+        data_dir=MNIST_PATH,
         data_type=DATA_TYPE,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=config.deterministic,
         seed=config.seed,
-        task='generation'
+        task="generation",
     )
 
-    # Add net config. Tried mirroring the classification experiments here for now.
     config.net = LazyConfig(ResidualNetwork)(
         in_channels=PLACEHOLDER,
         out_channels=PLACEHOLDER,
@@ -114,6 +130,7 @@ def get_config() -> DiffusionExperimentConfig:
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels="3 * ${net.hidden_dim}",
@@ -165,16 +182,16 @@ def get_config() -> DiffusionExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
-        precision="bf16-mixed",
+        precision=PRECISION,
+    )
 
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
-        mode='min',
+        mode="min",
     )
 
-    # Diffusion-specific hyperparameters.
     config.diffusion = DiffusionConfig(
         num_train_timesteps=NUM_TRAIN_TIMESTEPS,
         beta_start=BETA_START,
@@ -189,16 +206,18 @@ def get_config() -> DiffusionExperimentConfig:
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,
         ema_warmup_steps=EMA_WARMUP_STEPS,
-        num_classes=10,
+        num_classes=NUM_CLASSES,
         use_classifier_free_guidance=True,
-        guidance_scale=3.0,
-        condition_dropout_prob=0.1,
-        fid_enabled=True,
-        fid_num_batches=2,
-        fid_num_inference_steps=NUM_INFERENCE_STEPS,
+        guidance_scale=GUIDANCE_SCALE,
+        condition_dropout_prob=CONDITION_DROPOUT_PROB,
+        fid_enabled=FID_ENABLED,
+        fid_num_batches=FID_NUM_BATCHES,
+        fid_num_inference_steps=FID_NUM_INFERENCE_STEPS,
     )
 
-    # Wandb job group
-    config.wandb = WandbConfig(job_group="mnist_diffusion")
+    config.wandb = WandbConfig(
+        job_group="mnist-diffusion",
+        entity=WANDB_ENTITY,
+    )
 
     return config

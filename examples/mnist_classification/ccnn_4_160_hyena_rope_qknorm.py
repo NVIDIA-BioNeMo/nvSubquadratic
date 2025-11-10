@@ -27,8 +27,13 @@ PLACEHOLDER = None
 DATA_TYPE = "image"
 DATA_DIM = 2
 
-# Model parameters
+# Dataset 
 BATCH_SIZE = 128
+MAX_WORKERS = 16
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
+
+# Model parameters
 NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
@@ -66,6 +71,7 @@ def get_config() -> ExperimentConfig:
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=True,  # Flag to use deterministic worker initialization
         seed=config.seed,  # Pass the seed value instead of a Generator object
+        task="classification",
     )
 
     # Add net config

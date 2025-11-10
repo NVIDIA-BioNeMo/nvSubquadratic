@@ -143,8 +143,13 @@ class DiffusersDiTWrapper(nn.Module):
         if not hasattr(wrapper, "_hf_timestep_callbacks"):
             original_condition = wrapper._condition_from_timesteps
 
-            def patched_condition(self_wrapper, timesteps: torch.LongTensor) -> torch.Tensor:
-                conditioned = original_condition(timesteps)
+            def patched_condition(
+                self_wrapper,
+                timesteps: torch.LongTensor,
+                *args,
+                **kwargs,
+            ) -> torch.Tensor:
+                conditioned = original_condition(timesteps, *args, **kwargs)
                 for callback in getattr(self_wrapper, "_hf_timestep_callbacks", []):
                     callback(timesteps)
                 return conditioned
@@ -185,7 +190,7 @@ class DiffusersDiTWrapper(nn.Module):
         return {"logits": prediction}
 
     def extra_repr(self) -> str:  # pragma: no cover - debugging helper
-        trimmed = {k: v for k, v in asdict(self.hf_config).items() if v is not None}
+        trimmed = {k: v for k, v in self.hf_config.items() if v is not None}
         return f"transformer={self.transformer.__class__.__name__}, config={trimmed}"
 
 
@@ -254,8 +259,13 @@ class DiffusersUVitWrapper(nn.Module):
         if not hasattr(wrapper, "_hf_timestep_callbacks"):
             original_condition = wrapper._condition_from_timesteps
 
-            def patched_condition(self_wrapper, timesteps: torch.LongTensor) -> torch.Tensor:
-                conditioned = original_condition(timesteps)
+            def patched_condition(
+                self_wrapper,
+                timesteps: torch.LongTensor,
+                *args,
+                **kwargs,
+            ) -> torch.Tensor:
+                conditioned = original_condition(timesteps, *args, **kwargs)
                 for callback in getattr(self_wrapper, "_hf_timestep_callbacks", []):
                     callback(timesteps)
                 return conditioned
