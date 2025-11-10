@@ -15,6 +15,7 @@ import dataclasses
 
 import pytorch_lightning as pl
 import torch
+torch._dynamo.config.cache_size_limit = 32
 from pytorch_lightning import callbacks as pl_callbacks
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
@@ -96,8 +97,6 @@ def main():
     
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
-    if config.do_torch_compile:
-        model = torch.compile(model, mode=config.torch_compile_mode)
 
     # Initialize wandb logger
     if config.debug:

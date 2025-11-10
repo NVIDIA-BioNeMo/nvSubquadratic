@@ -25,13 +25,14 @@ PLACEHOLDER = None
 DATA_DIM = 2
 
 # Dataset ----------------------------------------------------------------------
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 MAX_WORKERS = 16
 IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
 HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
+PRECISION = "bf16-mixed"  # Options: "32-true", "16-mixed", "bf16-mixed"
 
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
 
@@ -164,6 +165,7 @@ def get_config() -> ExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
+        precision=PRECISION,
     )
 
     config.scheduler = SchedulerConfig(
