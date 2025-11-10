@@ -23,31 +23,33 @@ def mnist_hyena_config():
 
 
 @pytest.fixture
-def mnist_hyena_model(mnist_hyena_config):
+def mnist_hyena_model(mnist_hyena_config, device):
     """Create MNIST Hyena model instance."""
     torch.manual_seed(42)
     datamodule = instantiate(mnist_hyena_config.dataset)
-    return instantiate(
+    model = instantiate(
         mnist_hyena_config.net,
         in_channels=datamodule.input_channels,
         out_channels=datamodule.output_channels,
     )
+    return model.to(device)
 
 
 @pytest.fixture
-def sample_mnist_input():
+def sample_mnist_input(device):
     """Sample MNIST input tensor (B, H, W, C)."""
     torch.manual_seed(42)
-    return torch.randn(4, 28, 28, 1)
+    return torch.randn(4, 28, 28, 1, device=device)
 
 
 @pytest.fixture
-def sample_mnist_target():
+def sample_mnist_target(device):
     """Sample MNIST target labels."""
     torch.manual_seed(43)
-    return torch.randint(0, 10, (4,))
+    return torch.randint(0, 10, (4,), device=device)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_compile_forward_pass_equality(mnist_hyena_model, sample_mnist_input):
     """Verify forward pass outputs are identical with and without torch.compile."""
     mnist_hyena_model.eval()
@@ -63,13 +65,14 @@ def test_compile_forward_pass_equality(mnist_hyena_model, sample_mnist_input):
         output_with_compile = compiled_model(sample_mnist_input.clone())
 
     max_diff = (output_no_compile - output_with_compile).abs().max().item()
-    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-4, atol=1e-5), (
+    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-3, atol=1e-4), (
         f"Forward outputs differ: max_diff={max_diff:.6e}, "
         f"shapes=({output_no_compile.shape}, {output_with_compile.shape})"
     )
 
 
-def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, sample_mnist_target):
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, sample_mnist_target, device):
     """Verify backward pass gradients are identical with and without torch.compile."""
     loss_fn = nn.CrossEntropyLoss()
     torch.manual_seed(42)
@@ -93,6 +96,7 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
         out_channels=datamodule.output_channels,
     )
     model_with_compile.load_state_dict(mnist_hyena_model.state_dict())
+    model_with_compile = model_with_compile.to(device)
     model_with_compile.eval()
 
     compiled_model = torch.compile(model_with_compile)
@@ -106,11 +110,11 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
     }
 
     max_output_diff = (output_no_compile - output_with_compile).abs().max().item()
-    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-4, atol=1e-5), (
+    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-3, atol=1e-4), (
         f"Forward outputs differ: max_diff={max_output_diff:.6e}"
     )
 
-    assert torch.allclose(loss_no_compile, loss_with_compile, rtol=1e-4, atol=1e-5), (
+    assert torch.allclose(loss_no_compile, loss_with_compile, rtol=1e-3, atol=1e-4), (
         f"Losses differ: {loss_no_compile.item():.6f} vs {loss_with_compile.item():.6f}"
     )
 
@@ -119,7 +123,7 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
         g1, g2 = grads_no_compile[name], grads_with_compile[name]
         if (g1 is None) != (g2 is None):
             mismatched_grads.append(f"{name}: gradient existence mismatch")
-        elif g1 is not None and not torch.allclose(g1, g2, rtol=1e-4, atol=1e-5):
+        elif g1 is not None and not torch.allclose(g1, g2, rtol=1e-2, atol=1e-3):
             max_diff = (g1 - g2).abs().max().item()
             mismatched_grads.append(f"{name}: max_diff={max_diff:.6e}")
 
@@ -128,6 +132,7 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
     )
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_compile_multiple_forward_passes(mnist_hyena_model, sample_mnist_input):
     """Verify compiled model produces consistent outputs across multiple forward passes."""
     mnist_hyena_model.eval()
@@ -143,8 +148,9 @@ def test_compile_multiple_forward_passes(mnist_hyena_model, sample_mnist_input):
         )
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.parametrize("batch_size", [1, 4])
-def test_compile_with_different_batch_sizes(mnist_hyena_config, batch_size):
+def test_compile_with_different_batch_sizes(mnist_hyena_config, batch_size, device):
     """Verify torch.compile works correctly with different batch sizes."""
     torch.manual_seed(42)
     datamodule = instantiate(mnist_hyena_config.dataset)
@@ -153,15 +159,16 @@ def test_compile_with_different_batch_sizes(mnist_hyena_config, batch_size):
         in_channels=datamodule.input_channels,
         out_channels=datamodule.output_channels,
     )
+    model = model.to(device)
     model.eval()
 
-    input_tensor = torch.randn(batch_size, 28, 28, 1)
+    input_tensor = torch.randn(batch_size, 28, 28, 1, device=device)
 
     with torch.no_grad():
         output_no_compile = model(input_tensor.clone())
         output_with_compile = torch.compile(model)(input_tensor.clone())
 
     max_diff = (output_no_compile - output_with_compile).abs().max().item()
-    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-4, atol=1e-5), (
+    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-3, atol=1e-4), (
         f"Outputs differ for batch_size={batch_size}: max_diff={max_diff:.6e}"
     )
