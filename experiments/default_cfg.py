@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
 
@@ -30,7 +30,11 @@ class TrainConfig:
 class TrainerConfig:
     """Lightning Trainer configuration overrides."""
 
-    val_check_interval: Optional[float] = None
+    # Check once every epoch by default.
+    val_check_interval: float = 1.0
+
+    # Run through all validation batches every epoch by default.
+    limit_val_batches: Union[int, float] = 1.0
 
 
 @dataclass
@@ -49,7 +53,8 @@ class WandbConfig:
     """Wandb configuration."""
 
     project: str = "nvsubquadratic"
-    entity: str = "dafidofff"
+    entity: str = "dromeroguzma"
+
     job_group: str = ""
 
 
@@ -88,20 +93,39 @@ class DiffusionConfig:
     num_train_timesteps: int = 1_000
     beta_start: float = 1e-4
     beta_end: float = 0.02
-    beta_schedule: str = "linear"
-    prediction_type: str = "epsilon"
+    beta_schedule: str = "squaredcos_cap_v2"
+    cosine_schedule_logsnr_min: float = -10.0
+    cosine_schedule_logsnr_max: float = 10.0
+    cosine_schedule_image_resolution: int = 64
+    cosine_schedule_noise_res_low: int = 32
+    cosine_schedule_noise_res_high: int = 64
+    prediction_type: str = "v_prediction"  # one of "epsilon", "v_prediction", "sample"
     time_embed_dim: Optional[int] = None
     max_period: float = 10_000.0
 
-    num_inference_steps: int = 50
-    num_samples: int = 4
+    num_inference_steps: int = 150
+    num_samples: int = 25
     log_samples: bool = True
     ddim_eta: float = 0.0
+
+    use_sigmoid_loss_weighting: bool = True
+    sigmoid_loss_bias: float = 0.0
 
     ema_enabled: bool = False
     ema_decay: float = 0.999
     ema_update_every: int = 1
     ema_warmup_steps: int = 0
+
+    # Classifier-free guidance settings, enabled by default.
+    use_classifier_free_guidance: bool = True
+    guidance_scale: float = 3.5
+    condition_dropout_prob: float = 0.1
+    num_classes: Optional[int] = 1000
+
+    # Online evaluation knobs.
+    fid_enabled: bool = False
+    fid_num_batches: int = 0
+    fid_num_inference_steps: Optional[int] = None
 
 
 @dataclass
@@ -113,9 +137,6 @@ class ExperimentConfig:
     deterministic: bool = False
     seed: int = 0
     comment: str = ""
-
-    do_torch_compile: bool = False
-    torch_compile_mode: Literal["default", "max-autotune", "reduce-overhead", "max-speed"] = "default"
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER

@@ -22,6 +22,10 @@ IMAGENET_MEAN_STD_BY_SIZE = {
         [0.48450482, 0.45589244, 0.40366766],
         [0.25668961, 0.24765739, 0.26173702],
     ),
+    64: (
+        [0.48453078, 0.45592377, 0.40370297],
+        [0.26425716, 0.25516447, 0.26875198],
+    ),
 }
 
 DEFAULT_IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -92,6 +96,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         hf_dataset_config: Optional[str] = None,
         hf_auth_token: Optional[str] = None,
         num_classes: int = 1000,
+        task: Literal["classification", "generation"],
     ) -> None:
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
@@ -106,9 +111,18 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_name = hf_dataset_name
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
+        self.task = task
+        
         self.input_channels = 3
-        self.num_classes = num_classes
-        self.output_channels = self.input_channels if drop_labels else num_classes
+        if task == 'classification':
+            self.output_channels = 1000
+        elif task == 'generation':
+            self.output_channels = 1
+        self.num_classes = 1_000  # ImageNet-1k has exactly one thousand semantic classes.
+
+        # Diffusion experiments consume inputs scaled to [-1, 1].
+        self.normalization_mean = (0.5, 0.5, 0.5)
+        self.normalization_std = (0.5, 0.5, 0.5)
 
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
@@ -119,6 +133,9 @@ class ImageNetDataModule(pl.LightningDataModule):
             self.final_image_size,
             (DEFAULT_IMAGENET_MEAN, DEFAULT_IMAGENET_STD),
         )
+        if self.task == "classification":
+          mean = self.normalization_mean
+          std = self.normalization_std
 
         ops: list[transforms.Compose | transforms.RandomCrop | transforms.CenterCrop | transforms.Resize | transforms.RandomHorizontalFlip | transforms.ToTensor] = [
             transforms.Resize(self.image_size + 32),
@@ -148,6 +165,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops.extend(
             [
                 transforms.ToTensor(),
+                transforms.Lambda(self._uniform_dequantize),
                 transforms.Normalize(mean=mean, std=std),
             ]
         )
@@ -225,7 +243,7 @@ class ImageNetDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=drop_last,
-                        persistent_workers=self.num_workers > 0,
+            persistent_workers=self.num_workers > 0,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -246,6 +264,33 @@ class ImageNetDataModule(pl.LightningDataModule):
 
         return self._build_loader(self.val_dataset, shuffle=False, drop_last=False)
 
+    def unnormalize(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Revert the normalization applied in the dataset pipeline."""
+        mean = torch.as_tensor(self.normalization_mean, dtype=tensor.dtype, device=tensor.device)
+        std = torch.as_tensor(self.normalization_std, dtype=tensor.dtype, device=tensor.device)
+        channels = mean.numel()
+
+        if tensor.ndim == 4:
+            if tensor.shape[1] == channels:
+                reshape = (1, channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        elif tensor.ndim == 3:
+            if tensor.shape[0] == channels:
+                reshape = (channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        else:
+            raise ValueError("Tensor ndim must be 3 or 4 for unnormalization.")
+
+        mean = mean.view(reshape)
+        std = std.view(reshape)
+        return torch.clamp(tensor * std + mean, 0.0, 1.0)
+
     def on_before_batch_transfer(
         self,
         batch: Tuple[torch.Tensor, torch.Tensor],
@@ -262,3 +307,9 @@ class ImageNetDataModule(pl.LightningDataModule):
             "label": labels,
             "condition": None,
         }
+
+    @staticmethod
+    def _uniform_dequantize(tensor: torch.Tensor) -> torch.Tensor:
+        """Add uniform noise in [0, 1/256) after quantised pixels and keep the result in [0, 1]."""
+        noise = torch.rand_like(tensor)
+        return (tensor * 255.0 + noise) / 256.0

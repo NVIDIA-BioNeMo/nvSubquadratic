@@ -77,6 +77,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.seed = seed
+        self.task = task
 
         # Create a generator with the given seed for reproducibility
         self.generator = torch.Generator().manual_seed(seed)
@@ -92,23 +93,43 @@ class MNISTDataModule(pl.LightningDataModule):
             self.output_channels = 10
         elif task == 'generation':
             self.output_channels = 1
+        self.num_classes = 10  # MNIST provides ten digit classes (0-9).
 
         # Assert that data_type is in the allowed options
         assert data_type in ["sequence", "image"], f"data_type must be 'sequence' or 'image', got {data_type}"
         self.data_type = data_type
 
-        # Create transform
-        self.transform = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,)),
-            ]
-        )
+        if task == "generation":
+            self.normalization_mean = (0.5,)
+            self.normalization_std = (0.5,)
+            self.transform = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Lambda(self._uniform_dequantize),
+                    transforms.Normalize(self.normalization_mean, self.normalization_std),
+                ]
+            )
+        else:
+            # Classification keeps the dataset statistics for compatibility with existing checkpoints.
+            self.normalization_mean = (0.1307,)
+            self.normalization_std = (0.3081,)
+            self.transform = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(self.normalization_mean, self.normalization_std),
+                ]
+            )
 
         # Placeholders for datasets
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+
+    @staticmethod
+    def _uniform_dequantize(tensor: torch.Tensor) -> torch.Tensor:
+        """Add uniform dequantization noise and keep the tensor in [0, 1]."""
+        noise = torch.rand_like(tensor)
+        return (tensor * 255.0 + noise) / 256.0
 
     def prepare_data(self):
         """Function to prepare the data."""
@@ -190,3 +211,32 @@ class MNISTDataModule(pl.LightningDataModule):
         else:
             raise ValueError(f"Unsupported data type: {self.data_type}")
         return {"input": x, "label": y, "condition": None}
+
+    def unnormalize(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Revert the normalization applied by the datamodule."""
+        mean = torch.as_tensor(self.normalization_mean, dtype=tensor.dtype, device=tensor.device)
+        std = torch.as_tensor(self.normalization_std, dtype=tensor.dtype, device=tensor.device)
+        channels = mean.numel()
+
+        if tensor.ndim == 4:
+            if tensor.shape[1] == channels:
+                reshape = (1, channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        elif tensor.ndim == 3:
+            if tensor.shape[0] == channels:
+                reshape = (channels, 1, 1)
+            elif tensor.shape[-1] == channels:
+                reshape = (1, 1, channels)
+            else:
+                raise ValueError("Unsupported tensor shape for unnormalization.")
+        elif tensor.ndim == 2 and channels == 1:
+            reshape = (1, 1)
+        else:
+            raise ValueError("Tensor ndim must be 2, 3 or 4 for unnormalization.")
+
+        mean = mean.view(reshape)
+        std = std.view(reshape)
+        return torch.clamp(tensor * std + mean, 0.0, 1.0)

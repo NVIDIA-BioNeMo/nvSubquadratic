@@ -118,5 +118,7 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
+        val_check_interval=cfg.trainer.val_check_interval,
+        limit_val_batches=cfg.trainer.limit_val_batches,
     )
     return trainer, checkpoint_callback
