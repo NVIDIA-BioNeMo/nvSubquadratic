@@ -185,6 +185,7 @@ def get_config() -> DiffusionExperimentConfig:
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
         accumulate_grad_steps=ACCUMULATE_GRAD_STEPS,
+        precision="bf16-mixed",
     )
 
     config.scheduler = SchedulerConfig(

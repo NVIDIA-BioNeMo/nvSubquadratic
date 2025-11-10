@@ -163,6 +163,7 @@ def get_config() -> DiffusionExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
+        precision="bf16-mixed",
     )
 
     config.scheduler = SchedulerConfig(

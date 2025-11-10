@@ -1028,12 +1028,19 @@ class DiffusionWrapper(LightningWrapperBase):
         # Standard sinusoidal embedding with configurable dimensionality, identical to the previous
         # implementation so we preserve conditioning behaviour.
         device = timesteps.device
+        if timesteps.dtype in (torch.int8, torch.int16, torch.int32, torch.int64):
+            working = timesteps.to(torch.float32)
+            embed_dtype = torch.float32
+        else:
+            working = timesteps
+            embed_dtype = timesteps.dtype
+
         half_dim = self.timestep_dim // 2
         exponent = torch.arange(half_dim, device=device, dtype=torch.float32)
         exponent = -math.log(self.max_period) * exponent / max(half_dim - 1, 1)
-        freqs = torch.exp(exponent)
-        args = timesteps.float().view(-1, 1) * freqs.view(1, -1)
-        embedding = torch.cat([torch.sin(args), torch.cos(args)], dim=-1)
+        freqs = torch.exp(exponent).to(working.dtype)
+        args = working.view(-1, 1) * freqs.view(1, -1)
+        embedding = torch.cat([torch.sin(args), torch.cos(args)], dim=-1).to(embed_dtype)
         if embedding.shape[-1] < self.timestep_dim:
             embedding = F.pad(embedding, (0, self.timestep_dim - embedding.shape[-1]))
         return embedding
@@ -1048,6 +1055,8 @@ class DiffusionWrapper(LightningWrapperBase):
         indices = torch.clamp(indices, min=0, max=alphas_cumprod.shape[0] - 1)
         alpha = alphas_cumprod[indices].clamp_(1e-7, 1.0 - 1e-7)
         logsnr = torch.log(alpha) - torch.log1p(-alpha)
+        target_dtype = self.time_mlp[0].weight.dtype if hasattr(self.time_mlp[0], "weight") else logsnr.dtype
+        logsnr = logsnr.to(dtype=target_dtype)
         return self.time_mlp(self._timestep_embedding(logsnr))
 
     def _condition_from_timesteps(
