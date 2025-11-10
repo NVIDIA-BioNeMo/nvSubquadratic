@@ -73,7 +73,44 @@ class CKConvND(torch.nn.Module):
 
         # Define the grid type
         self.grid_type = grid_type
-
+        
+    @torch.compiler.disable()
+    def apply_convolution(self, x: torch.Tensor, shortcut: torch.Tensor, conv_kernel: torch.Tensor, is_bhl_input: bool = False):
+        """
+        Apply convolution using the provided kernel and shortcut.
+        Uses a separate function to allow disabling torch.compile for this part.
+        
+        Args:
+            x (torch.Tensor): Input tensor.
+            shortcut (torch.Tensor): Shortcut parameter.
+            conv_kernel (torch.Tensor): Convolution kernel.
+            is_bhl_input (bool): Whether the input is in BHL format.
+            
+        Returns:
+            torch.Tensor: Output tensor after applying convolution.
+        """
+        if is_bhl_input:
+            # Apply kernel
+            conv_kernel = rearrange(
+                conv_kernel, "b ... c -> b c ..."
+            )  # Reshape kernel to [B, C, * spatial_dims] (Kernels are always in BLH format)
+            x_dtype = x.dtype
+            x = self.fftconv_fn_bhl_input(
+                x.to(torch.float32),
+                conv_kernel.to(torch.float32),
+                shortcut.to(torch.float32),
+            )
+            return x.to(x_dtype)
+        else:
+            # Apply kernel
+            x_dtype = x.dtype
+            x = self.fftconv_fn(
+                x.to(torch.float32),
+                conv_kernel.to(torch.float32),
+                shortcut.to(torch.float32),
+            )
+            return x.to(x_dtype)
+            
     def forward(
         self, x: torch.Tensor, is_bhl_input: bool = False, cp_group: torch.distributed.ProcessGroup = None
     ) -> torch.Tensor:
@@ -132,24 +169,7 @@ class CKConvND(torch.nn.Module):
         else:
             shortcut = self.shortcut
 
-        if is_bhl_input:
-            # Apply kernel
-            conv_kernel = rearrange(
-                conv_kernel, "b ... c -> b c ..."
-            )  # Reshape kernel to [B, C, * spatial_dims] (Kernels are always in BLH format)
-            x_dtype = x.dtype
-            x = self.fftconv_fn_bhl_input(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
-            return x.to(x_dtype)
-        else:
-            # Apply kernel
-            x_dtype = x.dtype
-            x = self.fftconv_fn(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
-            return x.to(x_dtype)
+        # Apply convolution
+        out = self.apply_convolution(x, shortcut, conv_kernel, is_bhl_input=is_bhl_input)
+        
+        return out
