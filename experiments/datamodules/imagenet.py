@@ -95,6 +95,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         hf_dataset_name: str = "imagenet-1k",
         hf_dataset_config: Optional[str] = None,
         hf_auth_token: Optional[str] = None,
+        num_classes: int = 1000,
+        task: Literal["classification", "generation"],
     ) -> None:
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
@@ -109,8 +111,13 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_name = hf_dataset_name
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
+        self.task = task
+        
         self.input_channels = 3
-        self.output_channels = 3
+        if task == 'classification':
+            self.output_channels = 1000
+        elif task == 'generation':
+            self.output_channels = 1
         self.num_classes = 1_000  # ImageNet-1k has exactly one thousand semantic classes.
 
         # Diffusion experiments consume inputs scaled to [-1, 1].
@@ -120,9 +127,16 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
 
+
     def _build_transform(self, *, train: bool) -> transforms.Compose:
-        """ Build the imagenet transform pipeline as mentioned in Appx. Training Settings of SiD2 paper:
-        """
+        mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
+            self.final_image_size,
+            (DEFAULT_IMAGENET_MEAN, DEFAULT_IMAGENET_STD),
+        )
+        if self.task == "classification":
+          mean = self.normalization_mean
+          std = self.normalization_std
+
         ops: list[transforms.Compose | transforms.RandomCrop | transforms.CenterCrop | transforms.Resize | transforms.RandomHorizontalFlip | transforms.ToTensor] = [
             transforms.Resize(self.image_size + 32),
         ]
@@ -152,7 +166,7 @@ class ImageNetDataModule(pl.LightningDataModule):
             [
                 transforms.ToTensor(),
                 transforms.Lambda(self._uniform_dequantize),
-                transforms.Normalize(mean=self.normalization_mean, std=self.normalization_std),
+                transforms.Normalize(mean=mean, std=std),
             ]
         )
 

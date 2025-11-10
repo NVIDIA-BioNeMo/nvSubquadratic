@@ -1,20 +1,18 @@
 # TODO: Add license header here
 
-
-"""Config file for MNIST classification."""
+"""Config file for ImageNet classification using the shared ResNet backbone."""
 
 import os
-
 import torch
 
-from experiments.datamodules.mnist import MNISTDataModule
+from experiments.datamodules.imagenet import ImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
@@ -24,51 +22,62 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 PLACEHOLDER = None
 
-DATA_TYPE = "image"
 DATA_DIM = 2
 
-# Model parameters
-BATCH_SIZE = 128
-NUM_HIDDEN_CHANNELS = 160
-NUM_BLOCKS = 4
+# Dataset ----------------------------------------------------------------------
+BATCH_SIZE = 64
+MAX_WORKERS = 16
+IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
+HF_DATASET_NAME = "imagenet-1k"
+HF_DATASET_CONFIG = None
+IMAGE_SIZE = 256
+FINAL_IMAGE_SIZE = 64
+PRECISION = "bf16-mixed"  # Options: "32-true", "16-mixed", "bf16-mixed"
+
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
+
+# Model ------------------------------------------------------------------------
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
 FFT_PADDING = "circular"
+NUM_CLASSES = 1_000
 
-# TRAINING parameters
-TRAINING_ITERATIONS = 100_000
+# Optimisation -----------------------------------------------------------------
+TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
-NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
-GRAD_CLIP = 10.0
-
-WEIGHT_DECAY = 0.01
-LEARNING_RATE = 0.001
+LEARNING_RATE = 3e-4
+WEIGHT_DECAY = 0.05
+GRAD_CLIP = 1.0
 
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for the MNIST classification experiment.
-
-    Returns:
-        ExperimentConfig: The configuration for the MNIST classification experiment.
-    """
-    # Sratr with default config
+    """Return the ImageNet classification configuration."""
     config = ExperimentConfig()
+    config.debug = False
+    config.seed = 42
+    config.do_torch_compile = False
+    config.torch_compile_mode = "default" # Options: "default", "max-autotune", "reduce-overhead"
+    hf_token = os.environ.get("HF_TOKEN")
 
-    # Add dataset config
-    # Update dataset with LazyConfig directly referencing the MNISTDataModule class
-    # and providing all parameters directly (no nested params dataclass)
-    config.dataset = LazyConfig(MNISTDataModule)(
-        data_dir=".data/mnist",
-        data_type=DATA_TYPE,
+    config.dataset = LazyConfig(ImageNetDataModule)(
+        data_dir=IMAGENET_CACHE_DIR,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
-        use_deterministic_worker_init=True,  # Flag to use deterministic worker initialization
-        seed=config.seed,  # Pass the seed value instead of a Generator object
+        seed=config.seed,
+        image_size=IMAGE_SIZE,
+        final_image_size=FINAL_IMAGE_SIZE,
+        center_crop=True,
+        drop_labels=False,
+        hf_dataset_name=HF_DATASET_NAME,
+        hf_dataset_config=HF_DATASET_CONFIG,
+        hf_auth_token=hf_token,
+        num_classes=NUM_CLASSES,
     )
 
-    # Add net config
     config.net = LazyConfig(ClassificationResNet)(
         in_channels=PLACEHOLDER,
         out_channels=PLACEHOLDER,
@@ -84,24 +93,24 @@ def get_config() -> ExperimentConfig:
                     global_conv_cfg=LazyConfig(CKConvND)(
                         data_dim=DATA_DIM,
                         hidden_dim="${net.hidden_dim}",
-                        kernel_cfg=LazyConfig(SIRENKernelND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                        kernel_cfg=LazyConfig(RandomFourierKernelND)(
+                            data_dim=DATA_DIM,
                             out_dim="${net.hidden_dim}",
-                            mlp_hidden_dim=32,
+                            mlp_hidden_dim=64,
                             num_layers=3,
-                            embedding_dim=32,
+                            embedding_dim=64,
                             omega_0=100.0,
                             L_cache=32,
                             use_bias=True,
-                            hidden_omega_0=1.0,
+                            nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
                         ),
                         mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                            data_dim=DATA_DIM,
                             num_channels="${net.hidden_dim}",
-                            min_std=0.025,
-                            max_std=1.25,
+                            min_std=0.02,
+                            max_std=1.5,
                             init_std_low=0.05,
-                            init_std_high=1.0,
+                            init_std_high=1.2,
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
@@ -116,59 +125,56 @@ def get_config() -> ExperimentConfig:
                         bias=False,
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-                    pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels="${net.hidden_dim}"),
+                    pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(
+                        num_groups=1,
+                        num_channels="${net.hidden_dim}",
+                    ),
                     apply_qk_norm=True,
-                    use_rope=False,
+                    use_rope=True,
                     rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
-            # Condition mixer
-            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
-            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
-            # MLP
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
-                expansion_factor=1.0,
-                dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
+                expansion_factor=2.0,
+                dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             mlp_norm_cfg="${net.norm_cfg}",
-            # Dropout
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
     )
 
-    # Add lightning wrapper config
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)()
 
-    # Add optimizer config
     config.optimizer = LazyConfig(torch.optim.AdamW)(
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
     )
 
-    # Modify the train config - only set what is different from the default
     config.train = TrainConfig(
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
+        precision=PRECISION,
     )
 
-    # Modify the scheduler config - only set what's different from default
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
+        mode="max",
     )
 
-    # Add wandb group
-    config.wandb = WandbConfig(job_group="mnist_classification")
+    config.wandb = WandbConfig(job_group="imagenet_classification")
 
     return config

@@ -54,6 +54,7 @@ class WandbConfig:
 
     project: str = "nvsubquadratic"
     entity: str = "dromeroguzma"
+
     job_group: str = ""
 
 
