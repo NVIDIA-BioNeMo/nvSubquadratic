@@ -25,7 +25,7 @@ PLACEHOLDER = None
 DATA_DIM = 2
 
 # Dataset ----------------------------------------------------------------------
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 MAX_WORKERS = 16
 IMAGENET_CACHE_DIR = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
@@ -40,7 +40,7 @@ NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
+GRID_TYPE = "single"
 NUM_CLASSES = 1_000
 
 # Optimisation -----------------------------------------------------------------
@@ -56,7 +56,7 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
-    config.do_torch_compile = True
+    config.do_torch_compile = False
     config.torch_compile_mode = "default" # Options: "default", "max-autotune", "reduce-overhead"
     hf_token = os.environ.get("HF_TOKEN")
 
