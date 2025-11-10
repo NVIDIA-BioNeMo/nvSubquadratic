@@ -81,6 +81,9 @@ def main():
 
     # Set float32 matmul precision
     torch.set_float32_matmul_precision("high")
+    
+    # Increase cache size limit, otherwise compilation fails for some reason
+    torch._dynamo.config.cache_size_limit = 64
 
     # Construct data_module, prepare and setup
     datamodule = instantiate(config.dataset)
