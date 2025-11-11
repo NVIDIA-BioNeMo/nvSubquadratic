@@ -14,7 +14,7 @@ from experiments.default_cfg import (
     TrainConfig,
     WandbConfig,
 )
-from experiments.lightning_wrappers import DiffusionWrapper
+from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -38,6 +38,7 @@ MAX_WORKERS = 16
 MNIST_PATH = ".data/mnist"
 PRECISION = "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
+IMAGE_SIZE = 28
 
 # Model 
 HIDDEN_DIM = 160
@@ -65,6 +66,13 @@ MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
 NUM_SAMPLES = 16
 LOG_SAMPLES = True
+COSINE_SCHEDULE_LOGSNR_MIN = -10.0
+COSINE_SCHEDULE_LOGSNR_MAX = 10.0
+COSINE_SCHEDULE_IMAGE_RESOLUTION = IMAGE_SIZE
+COSINE_SCHEDULE_NOISE_RES_HIGH = IMAGE_SIZE
+COSINE_SCHEDULE_NOISE_RES_LOW = max(16, IMAGE_SIZE // 2)
+PREDICTION_TYPE = "v_prediction"
+DDIM_ETA = 0.0
 EMA_ENABLED = True
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
@@ -74,6 +82,9 @@ FID_NUM_BATCHES = 2
 FID_NUM_INFERENCE_STEPS = NUM_INFERENCE_STEPS
 GUIDANCE_SCALE = 3.0
 CONDITION_DROPOUT_PROB = 0.1
+CFG_ENABLED = True
+USE_SIGMOID_LOSS_WEIGHTING = True
+SIGMOID_LOSS_BIAS = 0.0
 
 
 def get_config() -> DiffusionExperimentConfig:
@@ -197,17 +208,26 @@ def get_config() -> DiffusionExperimentConfig:
         beta_start=BETA_START,
         beta_end=BETA_END,
         beta_schedule=BETA_SCHEDULE,
+        cosine_schedule_logsnr_min=COSINE_SCHEDULE_LOGSNR_MIN,
+        cosine_schedule_logsnr_max=COSINE_SCHEDULE_LOGSNR_MAX,
+        cosine_schedule_image_resolution=COSINE_SCHEDULE_IMAGE_RESOLUTION,
+        cosine_schedule_noise_res_high=COSINE_SCHEDULE_NOISE_RES_HIGH,
+        cosine_schedule_noise_res_low=COSINE_SCHEDULE_NOISE_RES_LOW,
+        prediction_type=PREDICTION_TYPE,
         time_embed_dim=TIME_EMBED_DIM,
         max_period=MAX_PERIOD,
         num_inference_steps=NUM_INFERENCE_STEPS,
         num_samples=NUM_SAMPLES,
         log_samples=LOG_SAMPLES,
+        ddim_eta=DDIM_ETA,
         ema_enabled=EMA_ENABLED,
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,
         ema_warmup_steps=EMA_WARMUP_STEPS,
         num_classes=NUM_CLASSES,
-        use_classifier_free_guidance=True,
+        use_sigmoid_loss_weighting=USE_SIGMOID_LOSS_WEIGHTING,
+        sigmoid_loss_bias=SIGMOID_LOSS_BIAS,
+        use_classifier_free_guidance=CFG_ENABLED,
         guidance_scale=GUIDANCE_SCALE,
         condition_dropout_prob=CONDITION_DROPOUT_PROB,
         fid_enabled=FID_ENABLED,

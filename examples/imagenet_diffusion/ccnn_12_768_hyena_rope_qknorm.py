@@ -69,6 +69,10 @@ MAX_PERIOD = 10_000.0
 NUM_INFERENCE_STEPS = 50
 NUM_SAMPLES = 8
 LOG_SAMPLES = True
+COSINE_SCHEDULE_LOGSNR_MIN = -10.0
+COSINE_SCHEDULE_LOGSNR_MAX = 10.0
+PREDICTION_TYPE = "v_prediction"
+DDIM_ETA = 0.0
 EMA_ENABLED = True
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
@@ -76,6 +80,11 @@ EMA_UPDATE_EVERY = 1
 CFG_ENABLED = True
 GUIDANCE_SCALE = 3.5
 CONDITION_DROPOUT_PROB = 0.1
+USE_SIGMOID_LOSS_WEIGHTING = True
+SIGMOID_LOSS_BIAS = -3.0
+FID_ENABLED = True
+FID_NUM_BATCHES = 8
+FID_NUM_INFERENCE_STEPS = NUM_INFERENCE_STEPS
 
 
 def get_config() -> DiffusionExperimentConfig:
@@ -207,25 +216,31 @@ def get_config() -> DiffusionExperimentConfig:
         beta_start=BETA_START,
         beta_end=BETA_END,
         beta_schedule=BETA_SCHEDULE,
+        cosine_schedule_logsnr_min=COSINE_SCHEDULE_LOGSNR_MIN,
+        cosine_schedule_logsnr_max=COSINE_SCHEDULE_LOGSNR_MAX,
         cosine_schedule_image_resolution=FINAL_IMAGE_SIZE,
         cosine_schedule_noise_res_high=FINAL_IMAGE_SIZE,
         cosine_schedule_noise_res_low=max(32, FINAL_IMAGE_SIZE // 2),
+        prediction_type=PREDICTION_TYPE,
         time_embed_dim=TIME_EMBED_DIM,
         max_period=MAX_PERIOD,
         num_inference_steps=NUM_INFERENCE_STEPS,
+        num_samples=NUM_SAMPLES,
+        log_samples=LOG_SAMPLES,
+        ddim_eta=DDIM_ETA,
         ema_enabled=EMA_ENABLED,
         ema_decay=EMA_DECAY,
         ema_update_every=EMA_UPDATE_EVERY,
         ema_warmup_steps=EMA_WARMUP_STEPS,
-        num_classes=1_000,
+        use_sigmoid_loss_weighting=USE_SIGMOID_LOSS_WEIGHTING,
+        sigmoid_loss_bias=SIGMOID_LOSS_BIAS,
+        num_classes=NUM_CLASSES,
         use_classifier_free_guidance=CFG_ENABLED,
         guidance_scale=GUIDANCE_SCALE,
         condition_dropout_prob=CONDITION_DROPOUT_PROB,
-        use_sigmoid_loss_weighting=True,
-        sigmoid_loss_bias=-3.0,
-        fid_enabled=True,
-        fid_num_batches=8,
-        fid_num_inference_steps=NUM_INFERENCE_STEPS,
+        fid_enabled=FID_ENABLED,
+        fid_num_batches=FID_NUM_BATCHES,
+        fid_num_inference_steps=FID_NUM_INFERENCE_STEPS,
     )
 
     config.wandb = WandbConfig(

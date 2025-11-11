@@ -2,32 +2,19 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
-import math
-from typing import Any, Literal, Optional
-
-import torch.nn.functional as F
-from torchvision.utils import make_grid
-
-import copy
-
-import numpy as np
-import pytorch_lightning as pl
+import wandb
 import torch
-import torchmetrics
-from torchmetrics.image.fid import FrechetInceptionDistance
+import pytorch_lightning as pl
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-import wandb
-from diffusers import DDIMScheduler
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules import schedulers
 from experiments.default_cfg import (
-    DiffusionExperimentConfig,
     PLACEHOLDER,
     ExperimentConfig,
     SchedulerConfig,
 )
-from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules import schedulers
 
 
 def construct_optimizer(
