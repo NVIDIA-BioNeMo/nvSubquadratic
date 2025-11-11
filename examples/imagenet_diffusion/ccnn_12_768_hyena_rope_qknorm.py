@@ -14,7 +14,7 @@ from experiments.default_cfg import (
     TrainConfig,
     WandbConfig,
 )
-from experiments.lightning_wrappers import DiffusionWrapper
+from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
