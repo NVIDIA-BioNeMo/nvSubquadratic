@@ -16,10 +16,7 @@
 # David W. Romero, 2025-09-09
 
 """Residual block implementation for ND signals, composed of a sequence mixer and an MLP."""
-
-from __future__ import annotations
-
-from typing import Optional
+from typing import Union
 
 import torch
 
@@ -169,7 +166,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         torch.nn.init.zeros_(self.condition_proj[1].weight)
         torch.nn.init.zeros_(self.condition_proj[1].bias)
 
-    def forward(self, x: torch.Tensor, condition: Optional[torch.Tensor]) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, condition: Union[torch.Tensor | None]) -> torch.Tensor:
         if condition is None:
             raise ValueError("AdaLNZeroResidualBlock requires a conditioning tensor.")
 

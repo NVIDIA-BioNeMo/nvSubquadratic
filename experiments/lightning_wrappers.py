@@ -22,7 +22,6 @@ from pytorch_lightning.utilities import grad_norm
 import wandb
 from diffusers import DDIMScheduler
 from experiments.default_cfg import (
-    DiffusionConfig,
     DiffusionExperimentConfig,
     PLACEHOLDER,
     ExperimentConfig,
@@ -238,79 +237,6 @@ class LightningWrapperBase(pl.LightningModule):
         # Return
         return optim_dict
 
-    def on_fit_start(self) -> None:
-        super().on_fit_start()
-        self._log_sanity_samples()
-
-    def _log_sanity_samples(self, max_samples: int = 8) -> None:
-        logger = getattr(self, "logger", None)
-        if logger is None or not hasattr(logger, "experiment"):
-            return
-        trainer = getattr(self, "trainer", None)
-        if trainer is None:
-            return
-        datamodule = getattr(trainer, "datamodule", None)
-        if datamodule is None:
-            return
-
-        loader = None
-        for loader_name in ("sanity_dataloader", "val_dataloader", "train_dataloader"):
-            if hasattr(datamodule, loader_name):
-                try:
-                    candidate = getattr(datamodule, loader_name)()
-                except TypeError:
-                    continue
-                if candidate is not None:
-                    loader = candidate
-                    break
-        if loader is None:
-            return
-
-        try:
-            batch = next(iter(loader))
-        except Exception:
-            return
-
-        if isinstance(batch, dict):
-            inputs: Any = next((batch[key] for key in ("input", "image", "images") if key in batch), None)
-        elif isinstance(batch, (list, tuple)):
-            inputs = batch[0] if len(batch) > 0 else None
-        else:
-            inputs = batch
-
-        if inputs is None:
-            return
-
-        with torch.no_grad():
-            tensor = torch.as_tensor(inputs).detach().cpu()
-            if tensor.ndim == 4:
-                if tensor.shape[1] in (1, 3):
-                    pass
-                elif tensor.shape[-1] in (1, 3):
-                    tensor = torch.moveaxis(tensor, -1, 1)
-                else:
-                    return
-            elif tensor.ndim == 3:
-                tensor = tensor.unsqueeze(0)
-            else:
-                return
-
-            tensor = tensor[: max_samples]
-            if tensor.numel() == 0:
-                return
-
-            grid = make_grid(
-                tensor,
-                nrow=min(4, tensor.shape[0]),
-                normalize=True,
-                value_range=(-1.0, 1.0),
-            )
-
-        try:
-            logger.experiment.log({"sanity/samples": wandb.Image(grid), "global_step": self.global_step})
-        except Exception:
-            return
-
     def on_before_optimizer_step(self, optimizer):
         """Log the gradient norm before the optimizer step every `grad_norm_interval` steps."""
         if self.should_track_grad_norm and self.global_step % self.grad_norm_interval == 0:
@@ -318,6 +244,8 @@ class LightningWrapperBase(pl.LightningModule):
 
     def on_fit_start(self):
         """Log the model architecture to Weights & Biases once training starts."""
+        super().on_fit_start()
+
         if self.logger is not None:
             model_repr = str(self.network)
             # Log as HTML wrapped in <pre> to preserve formatting in the UI.
@@ -327,9 +255,11 @@ class LightningWrapperBase(pl.LightningModule):
                     "global_step": self.global_step,
                 }
             )
+
             # Also send to raw logs (stdout captured by W&B) and W&B terminal log
             self.print(f"Model architecture:\n{model_repr}")
             wandb.termlog(f"Model architecture:\n{model_repr}")
+
             # # Optionally watch the model to track gradients/parameters.
             # if hasattr(self.logger, "watch"):
             #     self.logger.watch(self.network, log="gradients", log_freq=100)

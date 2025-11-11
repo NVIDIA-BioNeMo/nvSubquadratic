@@ -5,7 +5,7 @@ from __future__ import annotations
 import types
 import weakref
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Callable, Iterable
 
 import torch

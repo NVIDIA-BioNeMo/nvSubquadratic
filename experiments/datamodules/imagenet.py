@@ -1,12 +1,5 @@
-# TODO: Add license header here
-
-
-"""ImageNet datamodule aligned with the MNIST loader semantics."""
-
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Literal
 
 import pytorch_lightning as pl
 import torch
@@ -135,21 +128,22 @@ class ImageNetDataModule(pl.LightningDataModule):
             self.final_image_size,
             (DEFAULT_IMAGENET_MEAN, DEFAULT_IMAGENET_STD),
         )
-        if self.task == "classification":
+
+        # For generation tasks, we always use the diffusion normalization.
+        # mapping images to [-1, 1].
+        if self.task == "generation":
           mean = self.normalization_mean
           std = self.normalization_std
 
-        ops: list[transforms.Compose | transforms.RandomCrop | transforms.CenterCrop | transforms.Resize | transforms.RandomHorizontalFlip | transforms.ToTensor] = [
-            transforms.Resize(self.image_size + 32),
-        ]
+        # Since ImageNet images has varying sizes, we first resize the shorter edge to image_size + 32.
+        ops: list[transforms.Transform] = [transforms.Resize(self.image_size + 32)]
 
+        # During training we use random crop, during eval either center crop or resize.
         if train:
             ops.append(transforms.RandomCrop(self.image_size))
-
         else:
             if self.center_crop:
                 ops.append(transforms.CenterCrop(self.image_size))
-
             else:
                 ops.append(transforms.Resize(self.image_size))
 
@@ -164,17 +158,14 @@ class ImageNetDataModule(pl.LightningDataModule):
                 )
             )
 
-        ops.extend(
-            [
-                transforms.ToTensor(),
-                transforms.Lambda(self._uniform_dequantize),
-                transforms.Normalize(mean=mean, std=std),
-            ]
-        )
-
+        # Final preprocessing auggmentation. Only dequantization for generation tasks.
+        ops.append(transforms.ToTensor())
+        if self.task == "generation":
+            ops.append(transforms.Lambda(self._uniform_dequantize))
+        ops.append(transforms.Normalize(mean=mean, std=std))
         return transforms.Compose(ops)
 
-    def prepare_data(self) -> None:  # pragma: no cover
+    def prepare_data(self) -> None:
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,

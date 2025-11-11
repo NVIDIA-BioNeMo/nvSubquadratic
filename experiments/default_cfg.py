@@ -87,6 +87,31 @@ class ResumeFromCheckpointConfig:
 
 
 @dataclass
+class ExperimentConfig:
+    """Default configuration for experiments with nvSubQuadratic."""
+
+    device: str = "cuda"
+    debug: bool = True
+    deterministic: bool = False
+    seed: int = 0
+    comment: str = ""
+
+    dataset: LazyConfig = PLACEHOLDER
+    net: LazyConfig = PLACEHOLDER
+    lightning_wrapper_class: LazyConfig = PLACEHOLDER
+    optimizer: LazyConfig = PLACEHOLDER
+
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    train: TrainConfig = field(default_factory=TrainConfig)
+    trainer: TrainerConfig = field(default_factory=TrainerConfig)
+    wandb: WandbConfig = field(default_factory=WandbConfig)
+
+    resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
+    autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
+    callbacks: list[LazyConfig] = field(default_factory=list)
+
+
+@dataclass
 class DiffusionConfig:
     """Diffusion configuration for schedule, sampling, and EMA."""
 
@@ -126,31 +151,6 @@ class DiffusionConfig:
     fid_enabled: bool = False
     fid_num_batches: int = 0
     fid_num_inference_steps: Optional[int] = None
-
-
-@dataclass
-class ExperimentConfig:
-    """Default configuration for experiments with nvSubQuadratic."""
-
-    device: str = "cuda"
-    debug: bool = True
-    deterministic: bool = False
-    seed: int = 0
-    comment: str = ""
-
-    dataset: LazyConfig = PLACEHOLDER
-    net: LazyConfig = PLACEHOLDER
-    lightning_wrapper_class: LazyConfig = PLACEHOLDER
-    optimizer: LazyConfig = PLACEHOLDER
-
-    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    train: TrainConfig = field(default_factory=TrainConfig)
-    trainer: TrainerConfig = field(default_factory=TrainerConfig)
-    wandb: WandbConfig = field(default_factory=WandbConfig)
-
-    resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
-    autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
-    callbacks: list[LazyConfig] = field(default_factory=list)
 
 
 @dataclass

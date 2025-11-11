@@ -274,14 +274,12 @@ def main() -> None:
     device = _ensure_cuda()
 
     results: List[dict] = []
-    param_cache: dict[tuple[str, str], int] = {}
     repeat = max(1, args.repeat)
 
     for dtype_name in args.dtypes:
         dtype = _dtype_from_string(dtype_name)
         for spec in MODEL_SPECS:
             for res in RESOLUTIONS:
-                cache_key = (spec.name, str(res))
                 spec_results = benchmark_spec(
                     base_cfg=base_cfg,
                     spec=spec,
