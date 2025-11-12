@@ -15,6 +15,10 @@ from experiments.utils.cli import apply_config_overrides
 from nvsubquadratic.lazy_config import instantiate
 
 
+_ALLCLOSE_RTOL = 1e-4
+_ALLCLOSE_ATOL = 1e-5
+
+
 @pytest.fixture
 def mnist_hyena_config():
     """Load and resolve MNIST Hyena configuration."""
@@ -65,7 +69,7 @@ def test_compile_forward_pass_equality(mnist_hyena_model, sample_mnist_input):
         output_with_compile = compiled_model(sample_mnist_input.clone())
 
     max_diff = (output_no_compile - output_with_compile).abs().max().item()
-    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-3, atol=1e-4), (
+    assert torch.allclose(output_no_compile, output_with_compile, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL), (
         f"Forward outputs differ: max_diff={max_diff:.6e}, "
         f"shapes=({output_no_compile.shape}, {output_with_compile.shape})"
     )
@@ -110,11 +114,11 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
     }
 
     max_output_diff = (output_no_compile - output_with_compile).abs().max().item()
-    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-3, atol=1e-4), (
+    assert torch.allclose(output_no_compile, output_with_compile, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL), (
         f"Forward outputs differ: max_diff={max_output_diff:.6e}"
     )
 
-    assert torch.allclose(loss_no_compile, loss_with_compile, rtol=1e-3, atol=1e-4), (
+    assert torch.allclose(loss_no_compile, loss_with_compile, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL), (
         f"Losses differ: {loss_no_compile.item():.6f} vs {loss_with_compile.item():.6f}"
     )
 
@@ -123,7 +127,7 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
         g1, g2 = grads_no_compile[name], grads_with_compile[name]
         if (g1 is None) != (g2 is None):
             mismatched_grads.append(f"{name}: gradient existence mismatch")
-        elif g1 is not None and not torch.allclose(g1, g2, rtol=1e-2, atol=1e-3):
+        elif g1 is not None and not torch.allclose(g1, g2, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL):
             max_diff = (g1 - g2).abs().max().item()
             mismatched_grads.append(f"{name}: max_diff={max_diff:.6e}")
 
@@ -143,7 +147,7 @@ def test_compile_multiple_forward_passes(mnist_hyena_model, sample_mnist_input):
 
     for i, output in enumerate(outputs[1:], 1):
         max_diff = (outputs[0] - output).abs().max().item()
-        assert torch.allclose(outputs[0], output, rtol=1e-7, atol=1e-8), (
+        assert torch.allclose(outputs[0], output, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL), (
             f"Output mismatch at iteration {i}: max_diff={max_diff:.6e}"
         )
 
@@ -169,6 +173,6 @@ def test_compile_with_different_batch_sizes(mnist_hyena_config, batch_size, devi
         output_with_compile = torch.compile(model)(input_tensor.clone())
 
     max_diff = (output_no_compile - output_with_compile).abs().max().item()
-    assert torch.allclose(output_no_compile, output_with_compile, rtol=1e-3, atol=1e-4), (
+    assert torch.allclose(output_no_compile, output_with_compile, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL), (
         f"Outputs differ for batch_size={batch_size}: max_diff={max_diff:.6e}"
     )
