@@ -86,6 +86,7 @@ class ExperimentConfig:
     deterministic: bool = False  # Need to be set to True for deterministic behavior
     seed: int = 0
     comment: str = ""
+    compile: bool = False  # Whether to compile the model with torch.compile
 
     # Dataset configuration that MUST be set in experiment config
     # This should be instantiated with a LazyConfig object, e.g.:

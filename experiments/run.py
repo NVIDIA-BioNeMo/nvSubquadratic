@@ -89,9 +89,9 @@ def main():
 
     # Construct model
     network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
-    
+
     # Compile the model if specified
-    if getattr(config, 'compile_model', False):
+    if config.compile:
         print("Compiling model with torch.compile...")
         network = torch.compile(network)
     
