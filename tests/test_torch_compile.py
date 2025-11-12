@@ -66,6 +66,9 @@ def test_compile_forward_pass_equality(mnist_hyena_model, sample_mnist_input):
     torch.manual_seed(42)
 
     with torch.no_grad():
+        # warmup
+        _ = compiled_model(sample_mnist_input.clone())
+
         output_with_compile = compiled_model(sample_mnist_input.clone())
 
     max_diff = (output_no_compile - output_with_compile).abs().max().item()
@@ -76,12 +79,14 @@ def test_compile_forward_pass_equality(mnist_hyena_model, sample_mnist_input):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, sample_mnist_target, device):
+def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, sample_mnist_target):
     """Verify backward pass gradients are identical with and without torch.compile."""
     loss_fn = nn.CrossEntropyLoss()
-    torch.manual_seed(42)
-
     mnist_hyena_model.eval()
+
+    # Eager mode backward pass
+    torch.manual_seed(42)
+    mnist_hyena_model.zero_grad()
     output_no_compile = mnist_hyena_model(sample_mnist_input.clone())
     loss_no_compile = loss_fn(output_no_compile, sample_mnist_target.clone())
     loss_no_compile.backward()
@@ -91,26 +96,26 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
         for name, param in mnist_hyena_model.named_parameters()
     }
 
+    # Compiled mode backward pass
     torch.manual_seed(42)
-    config = apply_config_overrides(get_config(), [])
-    datamodule = instantiate(config.dataset)
-    model_with_compile = instantiate(
-        config.net,
-        in_channels=datamodule.input_channels,
-        out_channels=datamodule.output_channels,
-    )
-    model_with_compile.load_state_dict(mnist_hyena_model.state_dict())
-    model_with_compile = model_with_compile.to(device)
-    model_with_compile.eval()
+    mnist_hyena_model.zero_grad()
+    compiled_model = torch.compile(mnist_hyena_model)
 
-    compiled_model = torch.compile(model_with_compile)
+    # warmup with backward pass
+    warmup_output = compiled_model(sample_mnist_input.clone())
+    warmup_loss = loss_fn(warmup_output, sample_mnist_target.clone())
+    warmup_loss.backward()
+
+    # actual measurement
+    torch.manual_seed(42)
+    mnist_hyena_model.zero_grad()
     output_with_compile = compiled_model(sample_mnist_input.clone())
     loss_with_compile = loss_fn(output_with_compile, sample_mnist_target.clone())
     loss_with_compile.backward()
 
     grads_with_compile = {
         name: param.grad.clone() if param.grad is not None else None
-        for name, param in model_with_compile.named_parameters()
+        for name, param in mnist_hyena_model.named_parameters()
     }
 
     max_output_diff = (output_no_compile - output_with_compile).abs().max().item()
@@ -142,6 +147,9 @@ def test_compile_multiple_forward_passes(mnist_hyena_model, sample_mnist_input):
     mnist_hyena_model.eval()
     compiled_model = torch.compile(mnist_hyena_model)
 
+    # warmup
+    _ = compiled_model(sample_mnist_input.clone())
+
     with torch.no_grad():
         outputs = [compiled_model(sample_mnist_input.clone()) for _ in range(3)]
 
@@ -170,7 +178,14 @@ def test_compile_with_different_batch_sizes(mnist_hyena_config, batch_size, devi
 
     with torch.no_grad():
         output_no_compile = model(input_tensor.clone())
-        output_with_compile = torch.compile(model)(input_tensor.clone())
+
+    compiled_model = torch.compile(model)
+
+    with torch.no_grad():
+        # warmup
+        _ = compiled_model(input_tensor.clone())
+
+        output_with_compile = compiled_model(input_tensor.clone())
 
     max_diff = (output_no_compile - output_with_compile).abs().max().item()
     assert torch.allclose(output_no_compile, output_with_compile, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL), (
