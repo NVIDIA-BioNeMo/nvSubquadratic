@@ -3,6 +3,7 @@
 """Config file for ImageNet classification using the shared ResNet backbone."""
 
 import os
+
 import torch
 
 from experiments.datamodules.imagenet import ImageNetDataModule
@@ -24,7 +25,7 @@ PLACEHOLDER = None
 WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
-# Dataset 
+# Dataset
 BATCH_SIZE = 64
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
@@ -33,9 +34,9 @@ HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
-NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
-# Model 
+# Model
 NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
@@ -44,7 +45,7 @@ GRID_TYPE = "single"
 FFT_PADDING = "circular"
 NUM_CLASSES = 1_000
 
-# Optimisation 
+# Optimisation
 TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 LEARNING_RATE = 3e-4
@@ -73,7 +74,7 @@ def get_config() -> ExperimentConfig:
         hf_dataset_name=HF_DATASET_NAME,
         hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
-        task='classification',
+        task="classification",
     )
 
     config.net = LazyConfig(ClassificationResNet)(
