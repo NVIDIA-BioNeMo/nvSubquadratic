@@ -26,7 +26,7 @@ WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
 # Dataset
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
@@ -41,8 +41,8 @@ NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
-FFT_PADDING = "zeros"
+GRID_TYPE = "single"
+FFT_PADDING = "custom"
 NUM_CLASSES = 1_000
 
 # Optimisation
