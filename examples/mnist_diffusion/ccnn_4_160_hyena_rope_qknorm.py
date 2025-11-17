@@ -40,7 +40,7 @@ PRECISION = "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
 IMAGE_SIZE = 28
 
-# Model 
+# Model
 HIDDEN_DIM = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
@@ -49,7 +49,7 @@ GRID_TYPE = "single"
 FFT_PADDING = "circular"
 NUM_CLASSES = 10
 
-# Optimisation 
+# Optimisation
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 GRAD_CLIP = 10.0
@@ -89,7 +89,6 @@ SIGMOID_LOSS_BIAS = 0.0
 
 def get_config() -> DiffusionExperimentConfig:
     """Return the MNIST diffusion configuration."""
-
     config = DiffusionExperimentConfig()
     config.debug = False
     config.seed = 42

@@ -87,11 +87,11 @@ class MNISTDataModule(pl.LightningDataModule):
 
         # Determine sizes of dataset
         self.input_channels = 1
-        
+
         # Determine the output channels for the network based on task type
-        if task == 'classification':
+        if task == "classification":
             self.output_channels = 10
-        elif task == 'generation':
+        elif task == "generation":
             self.output_channels = 1
         self.num_classes = 10  # MNIST provides ten digit classes (0-9).
 

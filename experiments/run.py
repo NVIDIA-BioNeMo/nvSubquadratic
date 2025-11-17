@@ -10,18 +10,17 @@ Usage:
 """
 
 import argparse
-import os
 import dataclasses
+import os
 
 import pytorch_lightning as pl
 import torch
-torch._dynamo.config.cache_size_limit = 32
-from pytorch_lightning import callbacks as pl_callbacks
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
 from rich.tree import Tree
 
 import wandb
+from experiments.trainer import construct_trainer
 from experiments.utils.checkpointing import (
     download_checkpoint,
     load_checkpoint_state_dict,
@@ -37,11 +36,19 @@ from experiments.utils.cli import (
     verify_no_interpolator_overwrites,
 )
 from nvsubquadratic.lazy_config import instantiate
-from experiments.trainer import construct_trainer
+
+torch._dynamo.config.cache_size_limit = 32
 
 
-def parse_args():
-    """Parse command line arguments."""
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments for the experiment.
+
+    Sets up and parses arguments for the configuration file path and any command-line overrides.
+
+    Returns:
+        argparse.Namespace: An object containing the parsed command-line arguments. Includes 'config' for the
+                            configuration file path and 'overrides' for any specified configuration overrides.
+    """
     parser = argparse.ArgumentParser(description="MNIST Classification Training")
 
     # Config file path
@@ -62,8 +69,19 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    """Main function to run the MNIST classification experiment."""
+def main() -> None:
+    """Main function to run the experiment.
+
+    This function orchestrates the entire experiment lifecycle, including:
+    1.  Parsing command-line arguments.
+    2.  Loading and overriding configuration from files and command line.
+    3.  Setting up the environment, including seeding for reproducibility and configuring torch settings.
+    4.  Instantiating the data module, network model, and the Lightning wrapper.
+    5.  Setting up the Weights & Biases logger, with support for auto-resuming runs.
+    6.  Handling checkpoint loading for resuming training or fine-tuning.
+    7.  Constructing the PyTorch Lightning trainer with appropriate callbacks.
+    8.  Executing the training, validation, and testing phases of the experiment.
+    """
     # Parse command line arguments
     args = parse_args()
 
@@ -91,10 +109,10 @@ def main():
 
     # Construct model
     network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
-    
+
     # Compile the model
     network = torch.compile(network)
-    
+
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
 

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Tuple, Literal
+from typing import Literal, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -105,11 +105,11 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.task = task
-        
+
         self.input_channels = 3
-        if task == 'classification':
+        if task == "classification":
             self.output_channels = 1000
-        elif task == 'generation':
+        elif task == "generation":
             self.output_channels = 1
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -122,7 +122,6 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
 
-
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
             self.final_image_size,
@@ -132,8 +131,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         # For generation tasks, we always use the diffusion normalization.
         # mapping images to [-1, 1].
         if self.task == "generation":
-          mean = self.normalization_mean
-          std = self.normalization_std
+            mean = self.normalization_mean
+            std = self.normalization_std
 
         # Since ImageNet images has varying sizes, we first resize the shorter edge to image_size + 32.
         ops: list[transforms.Transform] = [transforms.Resize(self.image_size + 32)]

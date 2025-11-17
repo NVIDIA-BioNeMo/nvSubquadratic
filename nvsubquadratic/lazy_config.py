@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, Type, Union
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+
 PLACEHOLDER = None
 
 
@@ -26,8 +27,7 @@ class LazyConfig:
     """
 
     def __init__(self, target: Union[Type, Callable, str]):
-        """
-        Initialize a LazyConfig object with a target class or function.
+        """Initialize a LazyConfig object with a target class or function.
 
         Args:
             target: A class, callable, or string path to a class/function
@@ -35,8 +35,7 @@ class LazyConfig:
         self.target = target
 
     def __call__(self, **kwargs) -> Union[Dict[str, Any], DictConfig]:
-        """
-        Create a configuration dictionary with __target__ and arguments.
+        """Create a configuration dictionary with __target__ and arguments.
 
         Args:
             **kwargs: Arguments to pass to the target when instantiated
@@ -69,8 +68,7 @@ class LazyConfig:
 
 
 def _resolve_target(target_str: str) -> Callable:
-    """
-    Resolve a string reference to a class or function.
+    """Resolve a string reference to a class or function.
 
     Args:
         target_str: String reference to a class or function
@@ -105,8 +103,7 @@ def _to_dict_with_target(config: DictConfig) -> Dict[str, Any]:
 
 
 def _contains_placeholder(obj: Any) -> bool:
-    """
-    Check if a dictionary, list, or value contains any PLACEHOLDER values.
+    """Check if a dictionary, list, or value contains any PLACEHOLDER values.
 
     Args:
         obj: The object to check
@@ -208,8 +205,7 @@ def instantiate(
     recursive_instantiate: bool = False,
     **kwargs,
 ) -> Any:
-    """
-    Instantiate an object from a configuration dictionary.
+    """Instantiate an object from a configuration dictionary.
 
     Args:
         config: A dictionary, DictConfig, or LazyConfig object with target and arguments
@@ -353,8 +349,7 @@ def instantiate(
 
 
 def to_config(obj: Any) -> Dict[str, Any]:
-    """
-    Convert an instantiated object to a LazyConfig-compatible dictionary.
+    """Convert an instantiated object to a LazyConfig-compatible dictionary.
 
     Args:
         obj: The object to convert
@@ -396,8 +391,7 @@ def to_config(obj: Any) -> Dict[str, Any]:
 
 
 def save_config(config: Dict[str, Any], filename: str) -> None:
-    """
-    Save a configuration to a file.
+    """Save a configuration to a file.
 
     Args:
         config: Configuration dictionary
@@ -410,8 +404,7 @@ def save_config(config: Dict[str, Any], filename: str) -> None:
 
 
 def load_config(filename: str) -> Dict[str, Any]:
-    """
-    Load a configuration from a file.
+    """Load a configuration from a file.
 
     Args:
         filename: File to load from

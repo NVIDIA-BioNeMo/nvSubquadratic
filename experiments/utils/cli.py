@@ -5,10 +5,10 @@
 
 import dataclasses
 import datetime
+import getpass
 import importlib.util
 import re
 from pathlib import Path
-import getpass
 from typing import Any, List
 
 from rich.tree import Tree
@@ -32,8 +32,7 @@ _SHORT_NAME_ALIASES = {
 
 
 def get_deterministic_run_name(config_path: str, overrides: List[str] = None, use_timestamp: bool = True) -> str:
-    """
-    Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
+    """Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
 
     Args:
         config_path: Path to the configuration file

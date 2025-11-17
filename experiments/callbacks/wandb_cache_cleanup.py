@@ -36,6 +36,7 @@ class WandbCacheCleanupCallback(pl.callbacks.Callback):
         background: bool = True,
         timeout: Optional[int] = None,
     ) -> None:
+        """Initializes the WandbCacheCleanupCallback"""
         super().__init__()
         self.max_cache_size = str(max_cache_size)
         self.every_n_epochs = max(1, int(every_n_epochs))
@@ -82,10 +83,12 @@ class WandbCacheCleanupCallback(pl.callbacks.Callback):
             self._background_thread.start()
 
     def on_fit_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:  # type: ignore[name-defined]
+        """Runs cleanup at the start of fitting."""
         if self.run_on_fit_start and self._should_run(trainer):
             self._run_cleanup()
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:  # type: ignore[name-defined]
+        """Runs cleanup at the end of each training epoch."""
         if not self._should_run(trainer):
             return
         epoch_idx = int(getattr(trainer, "current_epoch", 0)) + 1

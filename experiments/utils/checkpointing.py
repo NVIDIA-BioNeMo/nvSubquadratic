@@ -49,8 +49,7 @@ def _select_artifact_with_alias(artifacts, alias: Literal["best", "latest"]):
 
 
 def download_checkpoint(run_path: str, alias: Literal["best", "latest"] = "best") -> str:
-    """
-    Download the checkpoint files from the Weights & Biases artifact marked with a given alias (default: "best").
+    """Download the checkpoint files from the Weights & Biases artifact marked with a given alias (default: "best").
 
     Args:
         run_path: The W&B run path in the form "entity/project/run_id".
@@ -95,8 +94,7 @@ def download_checkpoint(run_path: str, alias: Literal["best", "latest"] = "best"
 
 
 def load_checkpoint_state_dict(ckpt_path: str) -> dict:
-    """
-    Load a .ckpt file and return a flat state_dict-like mapping.
+    """Load a .ckpt file and return a flat state_dict-like mapping.
 
     Supports both Lightning checkpoints (with a 'state_dict' key) and plain
     torch.save(state_dict) style checkpoints.
@@ -133,7 +131,6 @@ def load_state_dict_partially(model: torch.nn.Module, state_dict: Dict[str, torc
     - This function does in-place copies on the model's tensors; it does not replace the state_dict mapping.
     - It supports both parameters and buffers.
     """
-
     model_state = model.state_dict()
 
     # Report missing and unexpected keys (summary)

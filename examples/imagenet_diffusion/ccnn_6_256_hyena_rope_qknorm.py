@@ -31,7 +31,7 @@ PLACEHOLDER = None
 WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
-# Dataset 
+# Dataset
 BATCH_SIZE = 64
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
@@ -40,9 +40,9 @@ HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
-NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
-# Model 
+# Model
 NUM_HIDDEN_CHANNELS = 256
 NUM_BLOCKS = 6
 DROPOUT_IN_RATE = 0.0
@@ -51,7 +51,7 @@ GRID_TYPE = "single"
 FFT_PADDING = "circular"
 NUM_CLASSES = 1_000
 
-# Optimisation 
+# Optimisation
 TRAINING_ITERATIONS = 800_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.02
 WEIGHT_DECAY = 1e-3
@@ -89,7 +89,6 @@ FID_NUM_INFERENCE_STEPS = NUM_INFERENCE_STEPS
 
 def get_config() -> DiffusionExperimentConfig:
     """Return the ImageNet diffusion configuration."""
-
     config = DiffusionExperimentConfig()
     config.debug = False
     config.seed = 42
@@ -110,7 +109,7 @@ def get_config() -> DiffusionExperimentConfig:
         hf_dataset_name="imagenet-1k",
         hf_dataset_config=None,
         hf_auth_token=hf_token,
-        task='generation'
+        task="generation",
     )
 
     config.net = LazyConfig(ResidualNetwork)(
@@ -207,7 +206,7 @@ def get_config() -> DiffusionExperimentConfig:
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
-        mode='min',
+        mode="min",
     )
 
     # Compose diffusion config with explicit schedule, sampling, and EMA parameters.

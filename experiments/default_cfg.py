@@ -156,6 +156,7 @@ class DiffusionConfig:
 @dataclass
 class DiffusionExperimentConfig(ExperimentConfig):
     """Experiment configuration for diffusion runs."""
+
     # Override debug mode.
     debug: bool = False
 

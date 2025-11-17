@@ -1,14 +1,15 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
 """Lightning wrappers for the Classification and Regression experiments."""
+
 from typing import Literal
 
-import wandb
 import torch
 import torchmetrics
 
-from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
+import wandb
 from experiments.default_cfg import ExperimentConfig
+from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
 
 class RegressionWrapper(LightningWrapperBase):

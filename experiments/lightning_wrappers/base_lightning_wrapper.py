@@ -2,19 +2,19 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
-import wandb
-import torch
 import pytorch_lightning as pl
+import torch
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules import schedulers
+import wandb
 from experiments.default_cfg import (
     PLACEHOLDER,
     ExperimentConfig,
     SchedulerConfig,
 )
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules import schedulers
 
 
 def construct_optimizer(

@@ -46,9 +46,7 @@ class PositionEmbeddingND(nn.Module):
         batch_size = x.shape[0]
         spatial_dims = x.shape[1:-1]
         if any(Ld > Md for Ld, Md in zip(spatial_dims, self.max_dim_lengths)):
-            raise ValueError(
-                f"Input spatial dims {tuple(spatial_dims)} exceed max_dim_lengths {self.max_dim_lengths}"
-            )
+            raise ValueError(f"Input spatial dims {tuple(spatial_dims)} exceed max_dim_lengths {self.max_dim_lengths}")
 
         axis_embs = []
         for axis, embedding in enumerate(self.data_embeddings.values()):

@@ -16,6 +16,7 @@
 # David W. Romero, 2025-09-09
 
 """Residual block implementation for ND signals, composed of a sequence mixer and an MLP."""
+
 from typing import Union
 
 import torch
@@ -160,9 +161,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         self.dropout = instantiate(dropout_cfg)
 
         # Single zero-initialised projection (DiT style) producing shift/scale/gate for both branches.
-        self.condition_proj = torch.nn.Sequential(
-            torch.nn.SiLU(), torch.nn.Linear(hidden_dim, hidden_dim * 6)
-        )
+        self.condition_proj = torch.nn.Sequential(torch.nn.SiLU(), torch.nn.Linear(hidden_dim, hidden_dim * 6))
         torch.nn.init.zeros_(self.condition_proj[1].weight)
         torch.nn.init.zeros_(self.condition_proj[1].bias)
 
@@ -178,7 +177,9 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
 
         # Map the conditioning vector to shift/scale/gate triplets for both branches.
         cond_mapped = self.condition_proj(cond)  # (B, 6 * hidden_dim)
-        shift_seq, scale_seq, gate_seq, shift_mlp, scale_mlp, gate_mlp = cond_mapped.chunk(6, dim=-1)  # each (B, hidden_dim)
+        shift_seq, scale_seq, gate_seq, shift_mlp, scale_mlp, gate_mlp = cond_mapped.chunk(
+            6, dim=-1
+        )  # each (B, hidden_dim)
 
         def expand(param: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
             """Broadcast a [B, hidden_dim] vector across ref's spatial axes."""
@@ -188,7 +189,9 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
 
         # Modulate the sequence mixer with AdaLN-Zero and add its residual output.
         seq_norm = self.sequence_norm(x)  # (B, *spatial_dims, hidden_dim)
-        seq_mod = seq_norm * (1.0 + expand(scale_seq, seq_norm)) + expand(shift_seq, seq_norm)  # (B, *spatial_dims, hidden_dim)
+        seq_mod = seq_norm * (1.0 + expand(scale_seq, seq_norm)) + expand(
+            shift_seq, seq_norm
+        )  # (B, *spatial_dims, hidden_dim)
         seq_out = self.sequence_mixer(seq_mod)  # (B, *spatial_dims, hidden_dim)
         seq_out = self.dropout(seq_out)  # (B, *spatial_dims, hidden_dim)
         seq_out = seq_out * expand(gate_seq, seq_out)  # (B, *spatial_dims, hidden_dim)
@@ -196,7 +199,9 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
 
         # Apply the same AdaLN-Zero recipe to the MLP branch.
         mlp_norm = self.mlp_norm(x)  # (B, *spatial_dims, hidden_dim)
-        mlp_mod = mlp_norm * (1.0 + expand(scale_mlp, mlp_norm)) + expand(shift_mlp, mlp_norm)  # (B, *spatial_dims, hidden_dim)
+        mlp_mod = mlp_norm * (1.0 + expand(scale_mlp, mlp_norm)) + expand(
+            shift_mlp, mlp_norm
+        )  # (B, *spatial_dims, hidden_dim)
         mlp_out = self.mlp(mlp_mod)  # (B, *spatial_dims, hidden_dim)
         mlp_out = self.dropout(mlp_out)  # (B, *spatial_dims, hidden_dim)
         mlp_out = mlp_out * expand(gate_mlp, mlp_out)  # (B, *spatial_dims, hidden_dim)
