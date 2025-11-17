@@ -26,6 +26,12 @@ from nvsubquadratic.ops.fftconv import (
     fftconv3d_bhl,
     fftconv3d_bhl_w_reshape,
 )
+from nvsubquadratic.ops.fftconv_custom import (
+    fftconv2d_bhl as fftconv2d_bhl_custom,
+)
+from nvsubquadratic.ops.fftconv_custom import (
+    fftconv2d_bhl_w_reshape as fftconv2d_bhl_custom_w_reshape,
+)
 
 
 class CKConvND(torch.nn.Module):
@@ -53,14 +59,18 @@ class CKConvND(torch.nn.Module):
                 (wrap-around) convolution implemented via frequency-domain phase ramps.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
-        assert fft_padding in ["zero", "circular"], (
-            f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
+        assert fft_padding in ["zero", "circular", "custom"], (
+            f"Invalid FFT padding: {fft_padding}. Must be 'zero', 'circular', or 'custom'."
         )
         if fft_padding == "circular":
             # Circular (periodic) convolution only makes sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
             assert grid_type == "single", (
                 "fft_padding='circular' requires grid_type='single' (kernel size equals input size)."
+            )
+        elif fft_padding == "custom":
+            assert grid_type == "single", (
+                "fft_padding='custom' requires grid_type='single' so the custom CUDA kernel matches the input size."
             )
 
         super().__init__()
@@ -90,6 +100,9 @@ class CKConvND(torch.nn.Module):
                 self.fftconv_fn_bhl_input = circular_fftconv3d_bhl
             else:
                 raise ValueError(f"Unsupported number of spatial dimensions: {data_dim}")
+        elif fft_padding == "custom" and data_dim == 2:
+            self.fftconv_fn = fftconv2d_bhl_custom_w_reshape
+            self.fftconv_fn_bhl_input = fftconv2d_bhl_custom
         else:  # "zero"
             if data_dim == 1:
                 self.fftconv_fn = fftconv1d_bhl_w_reshape
@@ -105,19 +118,21 @@ class CKConvND(torch.nn.Module):
 
         # Define the grid type
         self.grid_type = grid_type
-        
+
     @torch.compiler.disable()
-    def apply_convolution(self, x: torch.Tensor, shortcut: torch.Tensor, conv_kernel: torch.Tensor, is_bhl_input: bool = False):
-        """
-        Apply convolution using the provided kernel and shortcut.
+    def apply_convolution(
+        self, x: torch.Tensor, shortcut: torch.Tensor, conv_kernel: torch.Tensor, is_bhl_input: bool = False
+    ):
+        """Apply convolution using the provided kernel and shortcut.
+
         Uses a separate function to allow disabling torch.compile for this part.
-        
+
         Args:
             x (torch.Tensor): Input tensor.
             shortcut (torch.Tensor): Shortcut parameter.
             conv_kernel (torch.Tensor): Convolution kernel.
             is_bhl_input (bool): Whether the input is in BHL format.
-            
+
         Returns:
             torch.Tensor: Output tensor after applying convolution.
         """
@@ -142,7 +157,7 @@ class CKConvND(torch.nn.Module):
                 shortcut.to(torch.float32),
             )
             return x.to(x_dtype)
-            
+
     def forward(
         self, x: torch.Tensor, is_bhl_input: bool = False, cp_group: torch.distributed.ProcessGroup = None
     ) -> torch.Tensor:
@@ -203,5 +218,5 @@ class CKConvND(torch.nn.Module):
 
         # Apply convolution
         out = self.apply_convolution(x, shortcut, conv_kernel, is_bhl_input=is_bhl_input)
-        
+
         return out

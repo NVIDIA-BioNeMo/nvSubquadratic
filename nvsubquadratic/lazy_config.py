@@ -91,7 +91,7 @@ def _is_module_class(obj: Any) -> bool:
 
 
 def _to_dict_with_target(config: DictConfig) -> Dict[str, Any]:
-    """Convert an OmegaConf DictConfig to a dictionary while preserving __target__"""
+    """Convert an OmegaConf DictConfig to a dictionary while preserving __target__."""
     if not isinstance(config, DictConfig):
         return config
 

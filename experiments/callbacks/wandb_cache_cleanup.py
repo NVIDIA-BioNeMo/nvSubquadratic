@@ -36,7 +36,7 @@ class WandbCacheCleanupCallback(pl.callbacks.Callback):
         background: bool = True,
         timeout: Optional[int] = None,
     ) -> None:
-        """Initializes the WandbCacheCleanupCallback"""
+        """Initializes the WandbCacheCleanupCallback."""
         super().__init__()
         self.max_cache_size = str(max_cache_size)
         self.every_n_epochs = max(1, int(every_n_epochs))

@@ -8,6 +8,7 @@ import copy
 import json
 import time
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Callable, Iterable, List
 
 import torch
@@ -187,7 +188,7 @@ def benchmark_spec(
     results.append(
         _run_mode(
             mode="inference",
-            build_fn=lambda: _inference_fn(wrapper, image_size, dtype),
+            build_fn=partial(_inference_fn, wrapper, image_size, dtype),
             spec=spec,
             image_size=image_size,
             device=device,
@@ -199,7 +200,7 @@ def benchmark_spec(
     results.append(
         _run_mode(
             mode="training",
-            build_fn=lambda: _training_fn(wrapper, image_size, dtype),
+            build_fn=partial(_training_fn, wrapper, image_size, dtype),
             spec=spec,
             image_size=image_size,
             device=device,

@@ -15,6 +15,7 @@ class PositionEmbeddingND(nn.Module):
     """Learned positional encoding for 1D/2D/3D ... inputs."""
 
     def __init__(self, embedding_dim: int, data_dim: int, max_dim_lengths: Sequence[int]):
+        """Configure positional embeddings for a fixed set of spatial dimensions."""
         super().__init__()
         assert data_dim >= 1, "data_dim must be >= 1"
         assert len(max_dim_lengths) == data_dim, "max_dim_lengths must have length data_dim"
@@ -36,6 +37,7 @@ class PositionEmbeddingND(nn.Module):
                 param._no_wd = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the concatenated per-axis embeddings for the input grid."""
         if x.ndim != self.data_dim + 2:
             raise ValueError(
                 f"PositionEmbeddingND expects input of shape [B, *{self.data_dim} dims, C]; got {tuple(x.shape)}"

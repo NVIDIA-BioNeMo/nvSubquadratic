@@ -20,13 +20,17 @@ from __future__ import annotations
 import types
 import weakref
 from dataclasses import asdict, dataclass, is_dataclass
-from typing import Callable, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from diffusers.models import DiTTransformer2DModel
 from diffusers.models.unets.uvit_2d import UVit2DModel
+
+
+if TYPE_CHECKING:
+    from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 
 
 class _SharedTimestepState:
@@ -98,6 +102,7 @@ class DiffusersDiTWrapper(nn.Module):
         in_channels: int | None = None,
         out_channels: int | None = None,
     ) -> None:
+        """Instantiate the wrapped DiT model with optional channel overrides."""
         super().__init__()
         self.hf_config = hf_config
         if in_channels is not None:
@@ -149,6 +154,7 @@ class DiffusersDiTWrapper(nn.Module):
         return DiTTransformer2DModel(**kwargs)
 
     def hf_register_diffusion_wrapper(self, wrapper: "DiffusionWrapper") -> None:
+        """Attach a diffusion wrapper so timestep hooks can be updated."""
         if self._registered_wrapper_ref is not None and self._registered_wrapper_ref() is wrapper:
             return
 
@@ -177,6 +183,7 @@ class DiffusersDiTWrapper(nn.Module):
         wrapper._hf_timestep_callbacks.append(_update_timesteps)
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Forward pass that mirrors the diffusers DiT interface."""
         if self._latest_timesteps is None:
             raise RuntimeError(
                 "DiffusersDiTWrapper.forward() was called before timesteps were populated. "
@@ -204,6 +211,7 @@ class DiffusersDiTWrapper(nn.Module):
         return {"logits": prediction}
 
     def extra_repr(self) -> str:  # pragma: no cover - debugging helper
+        """Return a compact repr of the underlying transformer and config."""
         if hasattr(self.hf_config, "items"):
             items = self.hf_config.items()
         elif is_dataclass(self.hf_config):
@@ -223,6 +231,7 @@ class DiffusersUVitWrapper(nn.Module):
         in_channels: int | None = None,
         out_channels: int | None = None,
     ) -> None:
+        """Instantiate the wrapped UVit model with optional channel overrides."""
         super().__init__()
         if UVit2DModel is None:
             raise ImportError("diffusers>=0.35 with UVit2DModel support is required for DiffusersUVitWrapper")
@@ -270,7 +279,8 @@ class DiffusersUVitWrapper(nn.Module):
             kwargs["vocab_size"] = cfg.vocab_size
         return UVit2DModel(**kwargs)
 
-    def hf_register_diffusion_wrapper(self, wrapper) -> None:
+    def hf_register_diffusion_wrapper(self, wrapper: "DiffusionWrapper") -> None:
+        """Attach a diffusion wrapper so timestep callbacks receive updates."""
         if self._registered_wrapper_ref is not None and self._registered_wrapper_ref() is wrapper:
             return
 

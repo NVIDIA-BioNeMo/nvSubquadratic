@@ -324,8 +324,9 @@ class DiffusionWrapper(LightningWrapperBase):
 
     def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
         """Create sinusoidal timestep embeddings.
-            Standard sinusoidal embedding with configurable dimensionality, identical to the previous
-            implementation so we preserve conditioning behaviour.
+
+        Standard sinusoidal embedding with configurable dimensionality, identical to the previous
+        implementation so we preserve conditioning behaviour.
 
         Args:
             timesteps: a 1-D Tensor of N indices, one per batch element.
@@ -516,17 +517,20 @@ class DiffusionWrapper(LightningWrapperBase):
         return loss
 
     def training_step(self, batch, batch_idx):
+        """Run one training step and log the loss."""
         loss = self._shared_step(batch)
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         return loss
 
     def on_validation_epoch_start(self) -> None:
+        """Reset FID metrics at the start of validation."""
         super().on_validation_epoch_start()
         if self.fid_metric is not None:
             self.fid_metric.reset()
             self._fid_batches_seen = 0
 
     def validation_step(self, batch, batch_idx):
+        """Compute validation loss and optionally accumulate FID statistics."""
         collect_images = self._should_collect_fid()
         shared = self._shared_step(batch, return_clean_images=collect_images)
         if collect_images:
@@ -589,6 +593,7 @@ class DiffusionWrapper(LightningWrapperBase):
         self._fid_batches_seen += 1
 
     def test_step(self, batch, batch_idx):
+        """Lightning test loop placeholder (no dedicated metric)."""
         # Generation experiments do not have a dedicated test metric.
         pass
 
@@ -599,6 +604,7 @@ class DiffusionWrapper(LightningWrapperBase):
         num_inference_steps: Optional[int] = None,
         labels: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        """Generate samples using the current diffusion model (EMA if available)."""
         if self.example_input_shape is None:
             raise RuntimeError("Cannot sample before observing at least one training batch.")
 
@@ -631,7 +637,7 @@ class DiffusionWrapper(LightningWrapperBase):
         # Start from pure Gaussian noise in channels-first format because that's what the scheduler expects.
         sample_bchw = torch.randn((num_samples, channels, height, width), device=device)
 
-        # Prepare the scheduler timesteps on the current device – this mirrors the standard diffusers pipeline.
+        # Prepare the scheduler timesteps on the current device - this mirrors the standard diffusers pipeline.
         self.scheduler.set_timesteps(num_inference_steps, device=device)
 
         use_ema = self.ema_enabled and self._ema_model is not None and self._ema_has_been_updated
@@ -688,12 +694,14 @@ class DiffusionWrapper(LightningWrapperBase):
         return torch.clamp(sample_hwc, -1.0, 1.0)
 
     def on_fit_start(self) -> None:
+        """Move EMA weights to device before training begins."""
         super().on_fit_start()
         if self.ema_enabled and self._ema_model is not None:
             self._ema_model.to(self.device)
             self._ema_model.eval()
 
     def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
+        """Update EMA parameters at the configured interval."""
         super().on_train_batch_end(outputs, batch, batch_idx)
 
         if (
@@ -713,6 +721,7 @@ class DiffusionWrapper(LightningWrapperBase):
                 self._ema_has_been_updated = True
 
     def on_validation_epoch_end(self, outputs=None):
+        """Compute and log validation summary metrics and sample grids."""
         if self.fid_metric is not None and self._fid_batches_seen > 0:
             fid_value = self.fid_metric.compute()
             self.log("metrics/fid", fid_value, prog_bar=False, sync_dist=self.distributed)

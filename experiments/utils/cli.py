@@ -9,7 +9,7 @@ import getpass
 import importlib.util
 import re
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from rich.tree import Tree
 
@@ -31,7 +31,9 @@ _SHORT_NAME_ALIASES = {
 }
 
 
-def get_deterministic_run_name(config_path: str, overrides: List[str] = None, use_timestamp: bool = True) -> str:
+def get_deterministic_run_name(
+    config_path: str, overrides: list[str] | None = None, use_timestamp: bool = True
+) -> str:
     """Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
 
     Args:
@@ -123,7 +125,7 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     return module.get_config()
 
 
-def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> ExperimentConfig:
+def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> ExperimentConfig:
     """Apply command-line overrides to a configuration.
 
     Args:
@@ -246,7 +248,7 @@ def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> Ex
     return new_config
 
 
-def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: List[str]) -> None:
+def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: list[str]) -> None:
     """Prevent overriding fields that are defined as OmegaConf interpolations (e.g., "${...}").
 
     Args:

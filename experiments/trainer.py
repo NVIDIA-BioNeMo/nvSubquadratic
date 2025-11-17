@@ -24,6 +24,7 @@ def construct_trainer(
     Args:
         cfg (ExperimentConfig): The configuration.
         wandb_logger (pl.loggers.WandbLogger): The wandb logger.
+        run_name: Unique run identifier used for checkpoint locations.
 
     Returns:
         tuple[pl.Trainer, pl.Callback]: The constructed trainer and the checkpoint callback.

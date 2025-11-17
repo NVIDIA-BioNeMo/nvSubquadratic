@@ -166,6 +166,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         torch.nn.init.zeros_(self.condition_proj[1].bias)
 
     def forward(self, x: torch.Tensor, condition: Union[torch.Tensor | None]) -> torch.Tensor:
+        """Apply AdaLN-Zero residual mixing conditioned on the provided tensor."""
         if condition is None:
             raise ValueError("AdaLNZeroResidualBlock requires a conditioning tensor.")
 

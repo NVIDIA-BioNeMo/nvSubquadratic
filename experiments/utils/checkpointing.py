@@ -278,6 +278,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         remove_local_after_upload: bool = False,
         keep_last_k_versions: int = 2,
     ):
+        """Configure selective checkpoint uploads to W&B."""
         super().__init__()
         self.upload_best = upload_best
         self.upload_last = upload_last
@@ -384,7 +385,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
                     break
 
             # If protected set already exceeds keep budget, keep all protected and skip deletion
-            keep_ids = set(getattr(a, "id", a) for a in to_keep) | alias_protected
+            keep_ids = {getattr(a, "id", a) for a in to_keep} | alias_protected
             if len(keep_ids) < self.keep_last_k_versions:
                 # Fill remaining keep slots with newest others
                 for a in versions:
@@ -429,6 +430,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             print(f"[checkpoint/prune][error] {type(e).__name__}: {e}")
 
     def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        """Upload selected checkpoints at the end of validation if appropriate."""
         # Only upload during actual training runs to avoid alias churn during post-training validate
         if getattr(trainer, "sanity_checking", False):
             return

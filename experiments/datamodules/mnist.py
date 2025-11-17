@@ -62,12 +62,12 @@ class MNISTDataModule(pl.LightningDataModule):
         Args:
             data_dir: Directory to save the data
             batch_size: Batch size
-            data_type: Type of data. Can be "sequence" or "image".
+            data_type: Type of data. Can be 'sequence' or 'image'.
             num_workers: Number of workers
             pin_memory: Whether to pin memory
             use_deterministic_worker_init: Whether to use deterministic worker initialization
             seed: Seed for the data
-            output_channels: Optional override for the output channels exposed by the datamodule.
+            task: Which task to run, either 'classification' or 'generation'.
         """
         super().__init__()
 
