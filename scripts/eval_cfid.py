@@ -17,7 +17,7 @@ from experiments.utils.cli import (
     verify_no_interpolator_overwrites,
 )
 from nvsubquadratic.lazy_config import instantiate
-from nvsubquadratic.metrics import compute_folder_fid
+from nvsubquadratic.metrics.cleanfid import compute_folder_fid
 
 
 def _parse_args() -> argparse.Namespace:

@@ -41,4 +41,3 @@ def compute_folder_fid(
         dataset_split=dataset_split,
     )
     return float(score)
-

@@ -19,14 +19,12 @@ from __future__ import annotations
 
 import types
 import weakref
-
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Callable, Iterable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from diffusers.models import DiTTransformer2DModel
 from diffusers.models.unets.uvit_2d import UVit2DModel
 
@@ -40,6 +38,7 @@ class _SharedTimestepState:
     def __deepcopy__(self, memo) -> "_SharedTimestepState":
         memo[id(self)] = self
         return self
+
 
 @dataclass
 class HuggingFaceDiTConfig:
@@ -205,7 +204,13 @@ class DiffusersDiTWrapper(nn.Module):
         return {"logits": prediction}
 
     def extra_repr(self) -> str:  # pragma: no cover - debugging helper
-        trimmed = {k: v for k, v in self.hf_config.items() if v is not None}
+        if hasattr(self.hf_config, "items"):
+            items = self.hf_config.items()
+        elif is_dataclass(self.hf_config):
+            items = asdict(self.hf_config).items()
+        else:
+            items = vars(self.hf_config).items()
+        trimmed = {k: v for k, v in items if v is not None}
         return f"transformer={self.transformer.__class__.__name__}, config={trimmed}"
 
 
@@ -318,7 +323,11 @@ class DiffusersUVitWrapper(nn.Module):
             enc_dim = getattr(config, "encoder_hidden_size", self.hidden_dim)
             encoder_hidden_states = torch.zeros(batch_size, 1, enc_dim, device=device, dtype=dtype)
 
-        cond_dim = getattr(config, "cond_embed_dim", pooled_text_emb.shape[-1] if isinstance(pooled_text_emb, torch.Tensor) else self.hidden_dim)
+        cond_dim = getattr(
+            config,
+            "cond_embed_dim",
+            pooled_text_emb.shape[-1] if isinstance(pooled_text_emb, torch.Tensor) else self.hidden_dim,
+        )
         if pooled_text_emb is None:
             pooled_text_emb = torch.zeros(batch_size, cond_dim, device=device, dtype=dtype)
         else:
@@ -332,7 +341,9 @@ class DiffusersUVitWrapper(nn.Module):
 
         if micro_conds is None:
             if self._latest_timesteps is None:
-                raise RuntimeError("UVit wrapper requires timestep information; ensure hf_register_diffusion_wrapper was invoked")
+                raise RuntimeError(
+                    "UVit wrapper requires timestep information; ensure hf_register_diffusion_wrapper was invoked"
+                )
             timesteps = self._latest_timesteps.to(device=device, dtype=torch.float32)
             micro_encode_dim = getattr(config, "micro_cond_encode_dim", 1) or 1
             micro_embed_dim = getattr(config, "micro_cond_embed_dim", micro_encode_dim)
@@ -378,26 +389,3 @@ class DiffusersUVitWrapper(nn.Module):
         return tokens
 
 
-from experiments.lightning_wrappers import DiffusionWrapper as _LightningDiffusionWrapper
-
-
-
-def _patch_lightning_wrapper() -> None:
-    if _LightningDiffusionWrapper is None:
-        return
-    if getattr(_LightningDiffusionWrapper, "_hf_registration_patched", False):
-        return
-
-    original_init = _LightningDiffusionWrapper.__init__
-
-    def _wrapped_init(self, network, cfg):
-        original_init(self, network=network, cfg=cfg)
-        register_fn = getattr(network, "hf_register_diffusion_wrapper", None)
-        if callable(register_fn):
-            register_fn(self)
-
-    _LightningDiffusionWrapper.__init__ = _wrapped_init
-    _LightningDiffusionWrapper._hf_registration_patched = True
-
-
-_patch_lightning_wrapper()

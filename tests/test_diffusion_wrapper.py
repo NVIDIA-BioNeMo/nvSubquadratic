@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import torch
-import pytest
 import numpy as np
+import pytest
+import torch
 
 from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig
 from experiments.lightning_wrappers import DiffusionWrapper

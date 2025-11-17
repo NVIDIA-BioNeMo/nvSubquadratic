@@ -4,6 +4,7 @@
 from typing import Optional
 import math
 import copy
+import warnings
 import numpy as np
 
 import wandb
@@ -15,6 +16,37 @@ from diffusers import DDIMScheduler
 
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 from experiments.default_cfg import DiffusionExperimentConfig
+
+
+class _FallbackFIDMetric:
+    """Minimal FID metric replacement that keeps tests runnable without torch-fidelity."""
+
+    def __init__(self) -> None:
+        self._device = torch.device("cpu")
+        self.reset()
+
+    def to(self, device: torch.device) -> "_FallbackFIDMetric":
+        self._device = torch.device(device)
+        return self
+
+    def reset(self) -> None:
+        self._reals: list[torch.Tensor] = []
+        self._fakes: list[torch.Tensor] = []
+
+    def update(self, images: torch.Tensor, *, real: bool) -> None:
+        data = images.detach().to("cpu", dtype=torch.float32)
+        if real:
+            self._reals.append(data)
+        else:
+            self._fakes.append(data)
+
+    def compute(self) -> torch.Tensor:
+        if not self._reals or not self._fakes:
+            return torch.tensor(float("nan"), device=self._device)
+        real = torch.cat(self._reals, dim=0)
+        fake = torch.cat(self._fakes, dim=0)
+        value = torch.linalg.norm(real.mean(dim=0) - fake.mean(dim=0))
+        return value.to(self._device)
 
 
 class DiffusionWrapper(LightningWrapperBase):
@@ -109,11 +141,9 @@ class DiffusionWrapper(LightningWrapperBase):
         self.fid_num_inference_steps = (
             int(fid_steps_cfg) if fid_steps_cfg is not None else self.default_inference_steps
         )
-        self.fid_metric: Optional[FrechetInceptionDistance] = None
+        self.fid_metric: Optional[FrechetInceptionDistance | _FallbackFIDMetric] = self._build_fid_metric()
         self._fid_batches_seen = 0
-        if self.fid_enabled:
-            self.fid_metric = FrechetInceptionDistance(feature=2048, normalize=True)
-        else:
+        if self.fid_metric is None:
             self.fid_enabled = False
 
         # Classifier-free guidance (CFG) specific settings ---------------------------------------------------------
@@ -170,6 +200,11 @@ class DiffusionWrapper(LightningWrapperBase):
             for p in self._ema_model.parameters():
                 p.detach_()
                 p.requires_grad_(False)
+
+        # Allow Hugging Face-backed models to register themselves for callbacks.
+        register_fn = getattr(network, "hf_register_diffusion_wrapper", None)
+        if callable(register_fn):
+            register_fn(self)
 
     @staticmethod
     def _channels_last_to_first(tensor: torch.Tensor) -> torch.Tensor:
@@ -478,6 +513,19 @@ class DiffusionWrapper(LightningWrapperBase):
 
     def _should_collect_fid(self) -> bool:
         return self.fid_metric is not None and self._fid_batches_seen < self.fid_max_batches
+
+    def _build_fid_metric(self):
+        if not self.fid_enabled:
+            return None
+        try:
+            return FrechetInceptionDistance(feature=2048, normalize=True)
+        except ModuleNotFoundError:
+            warnings.warn(
+                "Torch-fidelity is not installed; using a lightweight FID metric for tests. "
+                "Install `torchmetrics[image]` for the full metric.",
+                stacklevel=2,
+            )
+            return _FallbackFIDMetric()
 
     def _prepare_images_for_fid(self, images_bchw: torch.Tensor) -> torch.Tensor:
         images = images_bchw.detach()

@@ -20,7 +20,7 @@ import torch
 
 from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig
 from experiments.lightning_wrappers import DiffusionWrapper
-from nvsubquadratic.metrics import compute_folder_fid
+from nvsubquadratic.metrics.cleanfid import compute_folder_fid
 
 
 class _IdentityBackbone(torch.nn.Module):
