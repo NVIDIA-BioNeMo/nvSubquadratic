@@ -53,7 +53,9 @@ class CKConvND(torch.nn.Module):
                 (wrap-around) convolution implemented via frequency-domain phase ramps.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
-        assert fft_padding in ["zero", "circular"], f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
+        assert fft_padding in ["zero", "circular"], (
+            f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
+        )
         if fft_padding == "circular":
             # Circular (periodic) convolution only makes sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
