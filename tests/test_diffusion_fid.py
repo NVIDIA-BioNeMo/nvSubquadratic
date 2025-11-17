@@ -19,7 +19,7 @@ import pytest
 import torch
 
 from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig
-from experiments.lightning_wrappers import DiffusionWrapper
+from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 from nvsubquadratic.metrics.cleanfid import compute_folder_fid
 
 

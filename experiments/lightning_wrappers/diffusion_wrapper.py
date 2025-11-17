@@ -58,9 +58,9 @@ class DiffusionWrapper(LightningWrapperBase):
         network: torch.nn.Module,
         cfg: DiffusionExperimentConfig,
     ) -> None:
-        """ Initialize the DiffusionWrapper.
+        """Initialize the DiffusionWrapper.
 
-        args: 
+        Args:
             network: The neural network to be used as the denoiser model.
             cfg: The diffusion experiment configuration.
         """
@@ -327,7 +327,7 @@ class DiffusionWrapper(LightningWrapperBase):
             Standard sinusoidal embedding with configurable dimensionality, identical to the previous
             implementation so we preserve conditioning behaviour.
 
-        Args:  
+        Args:
             timesteps: a 1-D Tensor of N indices, one per batch element.
         """
         device = timesteps.device
@@ -431,16 +431,17 @@ class DiffusionWrapper(LightningWrapperBase):
         return_clean_images: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, Optional[torch.Tensor]]]:
         """Shared logic for training and validation steps.
+
         Args:
             batch: A datamodule batch containing at least the "input" key with clean images.
             return_clean_images: When ``True``, the method returns a tuple containing the loss
                 and a dict with clean images for FID computation. Used during validation only.
+
         Returns:
             - During training: The computed loss tensor.
             - During validation with ``return_clean_images=True``: A tuple of the loss tensor and
               a dict with clean images under the "clean_images_bchw" key and optional labels.
         """
-        
         # Inputs arrive in channels-last format from the datamodule; we keep that convention for the
         # network but convert to channels-first whenever diffusers expects it.
         images = batch["input"].to(self.device)

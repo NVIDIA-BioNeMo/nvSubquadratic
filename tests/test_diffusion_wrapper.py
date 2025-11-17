@@ -24,7 +24,7 @@ import pytest
 import torch
 
 from experiments.default_cfg import DiffusionConfig, DiffusionExperimentConfig
-from experiments.lightning_wrappers import DiffusionWrapper
+from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 
 
 class RecordingDenoiser(torch.nn.Module):
