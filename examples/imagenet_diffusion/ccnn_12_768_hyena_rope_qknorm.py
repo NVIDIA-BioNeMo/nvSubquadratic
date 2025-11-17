@@ -28,13 +28,13 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
 PLACEHOLDER = None
-WANDB_ENTITY = "dafidofff"
+WANDB_ENTITY = "davidmknigge"
 DATA_DIM = 2
 
 # Dataset 
-BATCH_SIZE = 64
+BATCH_SIZE = 42
 MAX_WORKERS = 16
-IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
+IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/home/dknigge/project_dir/huggingface/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
 HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
@@ -43,8 +43,8 @@ PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
 
 # Model 
-NUM_HIDDEN_CHANNELS = 256
-NUM_BLOCKS = 6
+NUM_HIDDEN_CHANNELS = 768
+NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
@@ -63,19 +63,15 @@ ACCUMULATE_GRAD_STEPS = 1
 NUM_TRAIN_TIMESTEPS = 1_000
 BETA_START = 1e-4
 BETA_END = 2e-2
-BETA_SCHEDULE = "linear"
+BETA_SCHEDULE = "cosine_interpolated"
 TIME_EMBED_DIM = NUM_HIDDEN_CHANNELS
 MAX_PERIOD = 10_000.0
-NUM_INFERENCE_STEPS = 50
-NUM_SAMPLES = 8
 LOG_SAMPLES = True
-EMA_ENABLED = True
-EMA_DECAY = 0.999
-EMA_WARMUP_STEPS = 1_000
-EMA_UPDATE_EVERY = 1
+
+# Classifier-free guidance
 CFG_ENABLED = True
 GUIDANCE_SCALE = 3.5
-CONDITION_DROPOUT_PROB = 0.1
+CONDITION_DROPOUT_PROB = 0.25
 
 
 def get_config() -> DiffusionExperimentConfig:
@@ -155,8 +151,8 @@ def get_config() -> DiffusionExperimentConfig:
                         num_channels="${net.hidden_dim}",
                     ),
                     apply_qk_norm=True,
-                    use_rope=True,
-                    rope_base=10000.0,
+                    use_rope=False,
+                    rope_base=10_000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
@@ -212,20 +208,11 @@ def get_config() -> DiffusionExperimentConfig:
         cosine_schedule_noise_res_low=max(32, FINAL_IMAGE_SIZE // 2),
         time_embed_dim=TIME_EMBED_DIM,
         max_period=MAX_PERIOD,
-        num_inference_steps=NUM_INFERENCE_STEPS,
-        ema_enabled=EMA_ENABLED,
-        ema_decay=EMA_DECAY,
-        ema_update_every=EMA_UPDATE_EVERY,
-        ema_warmup_steps=EMA_WARMUP_STEPS,
         num_classes=1_000,
         use_classifier_free_guidance=CFG_ENABLED,
         guidance_scale=GUIDANCE_SCALE,
         condition_dropout_prob=CONDITION_DROPOUT_PROB,
-        use_sigmoid_loss_weighting=True,
-        sigmoid_loss_bias=-3.0,
-        fid_enabled=True,
-        fid_num_batches=8,
-        fid_num_inference_steps=NUM_INFERENCE_STEPS,
+        fid_enabled=False,
     )
 
     config.wandb = WandbConfig(

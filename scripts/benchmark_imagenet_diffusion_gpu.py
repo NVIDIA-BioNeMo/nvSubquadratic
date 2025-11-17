@@ -7,8 +7,9 @@ import argparse
 import copy
 import json
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
-from typing import Callable, Iterable, List
+from typing import Callable, Iterable, List, Optional
 
 import torch
 
@@ -37,6 +38,21 @@ MODEL_SPECS: tuple[ModelSpec, ModelSpec, ModelSpec] = (
 )
 
 
+@dataclass(frozen=True)
+class CompileOptions:
+    """Holds torch.compile arguments for optional graph compilation."""
+
+    backend: str = "inductor"
+    mode: str = "default"
+
+
+def _autocast_context(device: torch.device, dtype: torch.dtype):
+    """Return a device-appropriate autocast context or a no-op."""
+    if device.type == "cuda" and dtype in (torch.float16, torch.bfloat16):
+        return torch.autocast(device_type=device.type, dtype=dtype)
+    return nullcontext()
+
+
 def _ensure_cuda() -> torch.device:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA GPU required for this benchmark.")
@@ -62,10 +78,27 @@ def _prepare_config(base_cfg, spec: ModelSpec, image_size: int):
     return apply_config_overrides(cfg, overrides)
 
 
-def _instantiate_wrapper(cfg, device: torch.device, dtype: torch.dtype):
+def _instantiate_wrapper(
+    cfg,
+    device: torch.device,
+    dtype: torch.dtype,
+    compile_options: Optional[CompileOptions] = None,
+):
     network = instantiate(cfg.net, in_channels=3, out_channels=3)
     wrapper = instantiate(cfg.lightning_wrapper_class, network=network, cfg=cfg)
-    wrapper = wrapper.to(device=device, dtype=dtype)
+    wrapper = wrapper.to(device=device)
+    setattr(wrapper, "_compiled_shared_step", None)
+
+    if compile_options is not None:
+        if not hasattr(torch, "compile"):
+            raise RuntimeError("torch.compile is not available in this PyTorch build.")
+        compile_kwargs = {}
+        if compile_options.backend:
+            compile_kwargs["backend"] = compile_options.backend
+        if compile_options.mode:
+            compile_kwargs["mode"] = compile_options.mode
+        wrapper.network = torch.compile(wrapper.network, **compile_kwargs)
+        wrapper._compiled_shared_step = torch.compile(wrapper._shared_step, **compile_kwargs)
     return wrapper
 
 
@@ -104,7 +137,7 @@ def _inference_fn(wrapper, resolution: int, dtype: torch.dtype):
 
     def _run():
         wrapper.eval()
-        with torch.no_grad():
+        with torch.no_grad(), _autocast_context(device, dtype):
             condition = wrapper._condition_from_timesteps(timesteps, labels=labels)
             wrapper.network({"input": images, "condition": condition})
 
@@ -119,9 +152,12 @@ def _training_fn(wrapper, resolution: int, dtype: torch.dtype):
     batch = {"input": images, "label": labels, "condition": None}
     optimizer = torch.optim.AdamW(wrapper.parameters(), lr=1e-4)
 
+    step_fn = getattr(wrapper, "_compiled_shared_step", None) or wrapper._shared_step
+
     def _run():
         optimizer.zero_grad(set_to_none=True)
-        loss = wrapper._shared_step(batch)
+        with _autocast_context(device, dtype):
+            loss = step_fn(batch)
         loss.backward()
         optimizer.step()
 
@@ -176,9 +212,10 @@ def benchmark_spec(
     dtype: torch.dtype,
     repeat: int,
     dtype_name: str,
+    compile_options: Optional[CompileOptions] = None,
 ) -> list[dict]:
     cfg = _prepare_config(base_cfg, spec, image_size)
-    wrapper = _instantiate_wrapper(cfg, device, dtype)
+    wrapper = _instantiate_wrapper(cfg, device, dtype, compile_options=compile_options)
     if spec.num_params is None:
         param_count = sum(p.numel() for p in wrapper.parameters())
         spec = replace(spec, num_params=param_count)
@@ -256,6 +293,23 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path to save the raw metrics as JSON.",
     )
+    parser.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="Wrap the network and training step with torch.compile before benchmarking.",
+    )
+    parser.add_argument(
+        "--compile-backend",
+        type=str,
+        default="inductor",
+        help="Backend to use when --torch-compile is enabled.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        help="Compilation mode to use when --torch-compile is enabled.",
+    )
     return parser.parse_args()
 
 
@@ -272,6 +326,12 @@ def main() -> None:
     args = parse_args()
     base_cfg = load_config_from_file(args.config)
     device = _ensure_cuda()
+    compile_options = None
+    if args.torch_compile:
+        compile_options = CompileOptions(
+            backend=args.compile_backend,
+            mode=args.compile_mode,
+        )
 
     results: List[dict] = []
     repeat = max(1, args.repeat)
@@ -288,6 +348,7 @@ def main() -> None:
                     dtype=dtype,
                     repeat=repeat,
                     dtype_name=dtype_name,
+                    compile_options=compile_options,
                 )
                 results.extend(spec_results)
 

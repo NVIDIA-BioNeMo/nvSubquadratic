@@ -108,9 +108,9 @@ class ImageNetDataModule(pl.LightningDataModule):
         
         self.input_channels = 3
         if task == 'classification':
-            self.output_channels = 1000
+            self.output_channels = num_classes
         elif task == 'generation':
-            self.output_channels = 1
+            self.output_channels = self.input_channels
         else:
             raise ValueError(f"Unsupported task: {task}")
         self.num_classes = num_classes  # ImageNet-1k has exactly one thousand semantic classes.

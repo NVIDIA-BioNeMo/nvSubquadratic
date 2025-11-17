@@ -118,7 +118,7 @@ class DiffusionConfig:
     num_train_timesteps: int = 1_000
     beta_start: float = 1e-4
     beta_end: float = 0.02
-    beta_schedule: str = "squaredcos_cap_v2"
+    beta_schedule: str = "cosine_interpolated"  # one of "linear", "scaled_linear", "cosine", "cosine_interpolated"
     cosine_schedule_logsnr_min: float = -10.0
     cosine_schedule_logsnr_max: float = 10.0
     cosine_schedule_image_resolution: int = 64
@@ -134,12 +134,12 @@ class DiffusionConfig:
     ddim_eta: float = 0.0
 
     use_sigmoid_loss_weighting: bool = True
-    sigmoid_loss_bias: float = 0.0
+    sigmoid_loss_bias: float = -1.0
 
-    ema_enabled: bool = False
-    ema_decay: float = 0.999
+    ema_enabled: bool = True
+    ema_decay: float = 0.9995
     ema_update_every: int = 1
-    ema_warmup_steps: int = 0
+    ema_warmup_steps: int = 5_000
 
     # Classifier-free guidance settings, enabled by default.
     use_classifier_free_guidance: bool = True

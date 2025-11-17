@@ -90,7 +90,7 @@ def construct_trainer(
         # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
         WandbCacheCleanupCallback(
             max_cache_size="5GB",
-            every_n_epochs=10,
+            every_n_epochs=2,
             executable="wandb",
             run_on_fit_start=True,
             background=True,

@@ -536,9 +536,8 @@ class DiffusionWrapper(LightningWrapperBase):
         labels_tensor: Optional[torch.Tensor]
         if self.class_conditioning:
             if labels is None:
-                # Deterministic fallback: repeat [0, 1, 2, ...] across the requested batch.
-                base = torch.arange(num_samples, device=device) % self.num_classes  # type: ignore[arg-type]
-                labels_tensor = base.long()
+                # Random fallback when no labels were provided.
+                labels_tensor = torch.randint(0, self.num_classes, (num_samples,), device=device, dtype=torch.long)
             else:
                 labels_tensor = torch.as_tensor(labels, device=device, dtype=torch.long).view(-1)
                 if labels_tensor.numel() == 1 and num_samples > 1:
@@ -660,12 +659,18 @@ class DiffusionWrapper(LightningWrapperBase):
 
         num_samples = int(self.num_generated_samples)
 
-        # For class-conditioned models we cycle over the first few classes so each validation grid
-        # showcases a diverse set of categories. Guidance scale determines whether the conditional
-        # branch is actually used during sampling.
+        # When class conditioning is enabled we draw random labels so validation grids vary each epoch.
+        # Guidance scale determines whether the conditional branch is actually used during sampling.
         labels_for_sampling = None
         if self.class_conditioning:
-            labels_for_sampling = torch.arange(num_samples, device=self.device) % self.num_classes  # type: ignore[arg-type]
+            assert self.num_classes is not None
+            labels_for_sampling = torch.randint(
+                low=0,
+                high=self.num_classes,
+                size=(num_samples,),
+                device=self.device,
+                dtype=torch.long,
+            )
 
         samples = self.sample(num_samples=num_samples, labels=labels_for_sampling)
         value_range = (-1.0, 1.0)
