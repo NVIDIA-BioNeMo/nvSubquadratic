@@ -1,21 +1,22 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
 """Lightning wrappers for the Classification and Regression experiments."""
-from typing import Optional
-import math
-import copy
-import warnings
-import numpy as np
 
-import wandb
+import copy
+import math
+import warnings
+from typing import Optional
+
+import numpy as np
 import torch
 import torch.nn.functional as F
-from torchvision.utils import make_grid
-from torchmetrics.image.fid import FrechetInceptionDistance
 from diffusers import DDIMScheduler
+from torchmetrics.image.fid import FrechetInceptionDistance
+from torchvision.utils import make_grid
 
-from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
+import wandb
 from experiments.default_cfg import DiffusionExperimentConfig
+from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
 
 class _FallbackFIDMetric:
@@ -57,6 +58,12 @@ class DiffusionWrapper(LightningWrapperBase):
         network: torch.nn.Module,
         cfg: DiffusionExperimentConfig,
     ) -> None:
+        """ Initialize the DiffusionWrapper.
+
+        args: 
+            network: The neural network to be used as the denoiser model.
+            cfg: The diffusion experiment configuration.
+        """
         super().__init__(network=network, cfg=cfg)
 
         if not isinstance(cfg, DiffusionExperimentConfig):
@@ -73,7 +80,7 @@ class DiffusionWrapper(LightningWrapperBase):
         self.beta_end = float(diffusion_cfg.beta_end)
 
         # Set the prediction type and validate it.
-        assert diffusion_cfg.prediction_type in ['epsilon', 'sample', 'v_prediction']
+        assert diffusion_cfg.prediction_type in ["epsilon", "sample", "v_prediction"]
         self.prediction_type = diffusion_cfg.prediction_type
 
         trained_betas = None
@@ -160,7 +167,9 @@ class DiffusionWrapper(LightningWrapperBase):
         # During training we optionally drop the conditioning signal at random so the
         # network learns an unconditional branch that we can later reuse at inference.
         self.condition_dropout_prob = float(diffusion_cfg.condition_dropout_prob) if self.class_conditioning else 0.0
-        self.num_classes: Optional[int] = int(diffusion_cfg.num_classes) if diffusion_cfg.num_classes is not None else None
+        self.num_classes: Optional[int] = (
+            int(diffusion_cfg.num_classes) if diffusion_cfg.num_classes is not None else None
+        )
 
         if diffusion_cfg.use_classifier_free_guidance and not self.class_conditioning:
             raise ValueError(
@@ -305,15 +314,22 @@ class DiffusionWrapper(LightningWrapperBase):
         )
         alphas_cumprod = torch.sigmoid(logsnr)
         alphas_cumprod = torch.clamp(alphas_cumprod, min=1e-7, max=1.0)
-        alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=alphas_cumprod.dtype, device=device), alphas_cumprod[:-1]])
+        alphas_cumprod_prev = torch.cat(
+            [torch.ones(1, dtype=alphas_cumprod.dtype, device=device), alphas_cumprod[:-1]]
+        )
         alphas = alphas_cumprod / alphas_cumprod_prev
         betas = 1.0 - alphas
         betas = torch.clamp(betas, min=1e-8, max=0.999)
         return betas.cpu().numpy().astype(np.float32)
 
     def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
-        # Standard sinusoidal embedding with configurable dimensionality, identical to the previous
-        # implementation so we preserve conditioning behaviour.
+        """Create sinusoidal timestep embeddings.
+            Standard sinusoidal embedding with configurable dimensionality, identical to the previous
+            implementation so we preserve conditioning behaviour.
+
+        Args:  
+            timesteps: a 1-D Tensor of N indices, one per batch element.
+        """
         device = timesteps.device
         if timesteps.dtype in (torch.int8, torch.int16, torch.int32, torch.int64):
             working = timesteps.to(torch.float32)
@@ -414,6 +430,17 @@ class DiffusionWrapper(LightningWrapperBase):
         *,
         return_clean_images: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, Optional[torch.Tensor]]]:
+        """Shared logic for training and validation steps.
+        Args:
+            batch: A datamodule batch containing at least the "input" key with clean images.
+            return_clean_images: When ``True``, the method returns a tuple containing the loss
+                and a dict with clean images for FID computation. Used during validation only.
+        Returns:
+            - During training: The computed loss tensor.
+            - During validation with ``return_clean_images=True``: A tuple of the loss tensor and
+              a dict with clean images under the "clean_images_bchw" key and optional labels.
+        """
+        
         # Inputs arrive in channels-last format from the datamodule; we keep that convention for the
         # network but convert to channels-first whenever diffusers expects it.
         images = batch["input"].to(self.device)

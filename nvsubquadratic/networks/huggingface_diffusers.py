@@ -270,7 +270,7 @@ class DiffusersUVitWrapper(nn.Module):
             kwargs["vocab_size"] = cfg.vocab_size
         return UVit2DModel(**kwargs)
 
-    def hf_register_diffusion_wrapper(self, wrapper: "DiffusionWrapper") -> None:
+    def hf_register_diffusion_wrapper(self, wrapper) -> None:
         if self._registered_wrapper_ref is not None and self._registered_wrapper_ref() is wrapper:
             return
 
@@ -299,6 +299,7 @@ class DiffusersUVitWrapper(nn.Module):
         wrapper._hf_timestep_callbacks.append(_update_timesteps)
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """ Forward pass of the UVit wrapper. """
         batch = input_and_condition["input"]
         sample_bchw = torch.moveaxis(batch, -1, 1).contiguous()
 
@@ -387,5 +388,3 @@ class DiffusersUVitWrapper(nn.Module):
         if tokens.dim() == 4 and tokens.shape[1] == 1:
             tokens = tokens.squeeze(1)
         return tokens
-
-
