@@ -102,9 +102,11 @@ class _PhaseRampCache1D:
             self._cache.move_to_end(key)
             return phase
 
-        f = torch.fft.rfftfreq(L, d=1.0, device=device, dtype=real_dtype)  # [Lf]
-        phases = -2.0 * math.pi * (s * f)  # [Lf]
-        phase = torch.complex(torch.cos(phases), torch.sin(phases))
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                f = torch.fft.rfftfreq(L, d=1.0, device=device, dtype=real_dtype)  # [Lf]
+                phases = -2.0 * math.pi * (s * f)  # [Lf]
+                phase = torch.complex(torch.cos(phases), torch.sin(phases))
         self._cache[key] = phase
         if len(self._cache) > self.maxsize:
             self._cache.popitem(last=False)
@@ -183,11 +185,13 @@ class _PhaseRampCache2D:
             self._cache.move_to_end(key)
             return phase
 
-        fx = torch.fft.fftfreq(X, d=1.0, device=device, dtype=real_dtype)  # [X]
-        fy = torch.fft.rfftfreq(Y, d=1.0, device=device, dtype=real_dtype)  # [Y//2+1]
-        phases = -2.0 * math.pi * (sx * fx[:, None] + sy * fy[None, :])  # [X, Yf]
-        # Build complex phase e^{i*phases}
-        phase = torch.complex(torch.cos(phases), torch.sin(phases))
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                fx = torch.fft.fftfreq(X, d=1.0, device=device, dtype=real_dtype)  # [X]
+                fy = torch.fft.rfftfreq(Y, d=1.0, device=device, dtype=real_dtype)  # [Y//2+1]
+                phases = -2.0 * math.pi * (sx * fx[:, None] + sy * fy[None, :])  # [X, Yf]
+                # Build complex phase e^{i*phases}
+                phase = torch.complex(torch.cos(phases), torch.sin(phases))
         # Insert + evict LRU
         self._cache[key] = phase
         if len(self._cache) > self.maxsize:
@@ -273,11 +277,15 @@ class _PhaseRampCache3D:
             self._cache.move_to_end(key)
             return phase
 
-        fx = torch.fft.fftfreq(X, d=1.0, device=device, dtype=real_dtype)  # [X]
-        fy = torch.fft.fftfreq(Y, d=1.0, device=device, dtype=real_dtype)  # [Y]
-        fz = torch.fft.rfftfreq(Z, d=1.0, device=device, dtype=real_dtype)  # [Zf]
-        phases = -2.0 * math.pi * (sx * fx[:, None, None] + sy * fy[None, :, None] + sz * fz[None, None, :])
-        phase = torch.complex(torch.cos(phases), torch.sin(phases))  # [X, Y, Zf]
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                fx = torch.fft.fftfreq(X, d=1.0, device=device, dtype=real_dtype)  # [X]
+                fy = torch.fft.fftfreq(Y, d=1.0, device=device, dtype=real_dtype)  # [Y]
+                fz = torch.fft.rfftfreq(Z, d=1.0, device=device, dtype=real_dtype)  # [Zf]
+                phases = -2.0 * math.pi * (
+                    sx * fx[:, None, None] + sy * fy[None, :, None] + sz * fz[None, None, :]
+                )
+                phase = torch.complex(torch.cos(phases), torch.sin(phases))  # [X, Y, Zf]
         self._cache[key] = phase
         if len(self._cache) > self.maxsize:
             self._cache.popitem(last=False)
