@@ -60,6 +60,7 @@ def test_imagenet_transform_keeps_dynamic_range(tmp_path):
         final_image_size=32,
         center_crop=True,
         drop_labels=True,
+        task="generation",
     )
     transform = dm._build_transform(train=False)
 

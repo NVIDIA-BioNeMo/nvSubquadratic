@@ -26,12 +26,6 @@ from nvsubquadratic.ops.fftconv import (
     fftconv3d_bhl,
     fftconv3d_bhl_w_reshape,
 )
-from nvsubquadratic.ops.fftconv_custom import (
-    fftconv2d_bhl as fftconv2d_bhl_custom,
-)
-from nvsubquadratic.ops.fftconv_custom import (
-    fftconv2d_bhl_w_reshape as fftconv2d_bhl_custom_w_reshape,
-)
 
 
 class CKConvND(torch.nn.Module):
@@ -59,18 +53,12 @@ class CKConvND(torch.nn.Module):
                 (wrap-around) convolution implemented via frequency-domain phase ramps.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
-        assert fft_padding in ["zero", "circular", "custom"], (
-            f"Invalid FFT padding: {fft_padding}. Must be 'zero', 'circular', or 'custom'."
-        )
+        assert fft_padding in ["zero", "circular"], f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
         if fft_padding == "circular":
             # Circular (periodic) convolution only makes sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
             assert grid_type == "single", (
                 "fft_padding='circular' requires grid_type='single' (kernel size equals input size)."
-            )
-        elif fft_padding == "custom":
-            assert grid_type == "single", (
-                "fft_padding='custom' requires grid_type='single' so the custom CUDA kernel matches the input size."
             )
 
         super().__init__()
@@ -100,9 +88,6 @@ class CKConvND(torch.nn.Module):
                 self.fftconv_fn_bhl_input = circular_fftconv3d_bhl
             else:
                 raise ValueError(f"Unsupported number of spatial dimensions: {data_dim}")
-        elif fft_padding == "custom" and data_dim == 2:
-            self.fftconv_fn = fftconv2d_bhl_custom_w_reshape
-            self.fftconv_fn_bhl_input = fftconv2d_bhl_custom
         else:  # "zero"
             if data_dim == 1:
                 self.fftconv_fn = fftconv1d_bhl_w_reshape

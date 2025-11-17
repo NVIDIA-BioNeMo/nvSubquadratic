@@ -31,7 +31,7 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
-from nvsubquadratic.modules.self_attention import SelfAttention
+from nvsubquadratic.modules.attention import Attention as SelfAttention
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.parallel.utils import (
     init_parallel_state,

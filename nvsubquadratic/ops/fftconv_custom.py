@@ -10,6 +10,7 @@ that preserves shapes, dtype checks, and shortcut semantics.
 
 from __future__ import annotations
 
+
 __all__ = [
     "fftconv2d_bhl",
     "fftconv2d_bhl_w_reshape",
@@ -19,7 +20,6 @@ __all__ = [
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-
 from subquadratic_ops_torch.fft_conv2d import fft_conv2d
 
 
