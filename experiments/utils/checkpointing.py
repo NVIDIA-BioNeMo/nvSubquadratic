@@ -302,9 +302,9 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             print(msg)
             raise RuntimeError(msg)
         if not os.path.isfile(path):
-            msg = f"[checkpoint/upload][error] Path is not a file: '{path}' for alias='{alias}'"
+            msg = f"[checkpoint/upload][warn] Path is not a file (maybe pruned already): '{path}' for alias='{alias}'"
             print(msg)
-            raise RuntimeError(msg)
+            return
         # Compute hash and skip if identical content already uploaded for this alias
         try:
             file_hash = self._file_sha256(path)
@@ -333,26 +333,34 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             api = wandb.Api()
             entity = getattr(run, "entity", None)
             project = getattr(run, "project", None)
+            versions = []
             if entity and project:
-                art_type = api.artifact_type(project=project, type_name="model")
-                collection = art_type.collection(artifact_name)
-                # In W&B public API, versions are iterated via `.artifacts()` on the collection
-                versions = list(collection.artifacts())
-                print(
-                    f"[checkpoint/prune] Using collection for {entity}/{project}:{artifact_name} → {len(versions)} versions"
-                )
-            else:
-                versions = []
+                locator = f"{entity}/{project}/{artifact_name}"
+                try:
+                    versions = list(api.artifact_versions("model", locator))
+                    print(
+                        f"[checkpoint/prune] Using artifact_versions for {locator} → {len(versions)} versions"
+                    )
+                except Exception as e:
+                    print(
+                        f"[checkpoint/prune][warn] artifact_versions lookup failed for {locator}: {e}."
+                    )
 
             # Fallback: use artifacts visible from this run only
             if not versions:
-                # run.logged_artifacts() returns artifact names like '<collection>:vN'; match by collection prefix
-                versions = [
-                    a
-                    for a in run.logged_artifacts()
-                    if isinstance(getattr(a, "name", None), str) and a.name.split(":", 1)[0] == artifact_name
-                ]
-                print(f"[checkpoint/prune] Fallback to run.logged_artifacts() → {len(versions)} versions")
+                api_run = None
+                if entity and project:
+                    try:
+                        api_run = api.run(f"{entity}/{project}/{run.id}")
+                    except Exception as e:
+                        print(f"[checkpoint/prune][warn] api.run lookup failed for {run.id}: {e}.")
+                if api_run is not None:
+                    versions = [
+                        a
+                        for a in api_run.logged_artifacts()
+                        if isinstance(getattr(a, "name", None), str) and a.name.split(":", 1)[0] == artifact_name
+                    ]
+                print(f"[checkpoint/prune] Fallback to logged_artifacts() → {len(versions)} versions")
 
             if len(versions) <= self.keep_last_k_versions:
                 print(f"[checkpoint/prune] Nothing to prune (have {len(versions)} ≤ keep {self.keep_last_k_versions})")

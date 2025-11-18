@@ -67,8 +67,10 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
 
         # Construct grid cache (cube) of size 2 * L_cache - 1.
         # TODO(@dwromero): We must make sure that the grid_cache is kept in float32.
-        t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
-        grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
+                grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
         self.register_buffer("grid_cache", grid_cache, persistent=False)
 
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
@@ -103,14 +105,16 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
 
         # If the sequence is longer than the cache, create a new grid cache.
         if self.L_cache < seq_len:
-            max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
-            t = torch.linspace(
-                -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
-            )
-            self.grid_cache = rearrange(
-                torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-            )
-            self.L_cache = seq_len
+            with torch.inference_mode(False):
+                with torch.no_grad():
+                    max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
+                    t = torch.linspace(
+                        -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
+                    )
+                    self.grid_cache = rearrange(
+                        torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
+                    )
+                    self.L_cache = seq_len
 
         # Ensure that the cached positions tensor has the correct data type.
         assert self.grid_cache.dtype == torch.float32, (
@@ -305,8 +309,10 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         _init_siren_weights(self.linear, is_first_layer=True, w0=self.omega_0)
 
         # Construct grid cache (cube) of size 2 * L_cache - 1.
-        t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
-        grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
+                grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
         self.register_buffer("grid_cache", grid_cache, persistent=False)
 
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
@@ -341,15 +347,17 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
 
         # If the sequence is longer than the cache, create a new grid cache.
         if self.L_cache < seq_len:
-            max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
-            t = torch.linspace(
-                -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
-            )
+            with torch.inference_mode(False):
+                with torch.no_grad():
+                    max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
+                    t = torch.linspace(
+                        -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
+                    )
 
-            self.grid_cache = rearrange(
-                torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-            )
-            self.L_cache = seq_len
+                    self.grid_cache = rearrange(
+                        torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
+                    )
+                    self.L_cache = seq_len
 
         # Ensure that the cached positions tensor has the correct data type.
         assert self.grid_cache.dtype == torch.float32, (
