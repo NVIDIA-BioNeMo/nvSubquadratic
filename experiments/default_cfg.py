@@ -95,6 +95,7 @@ class ExperimentConfig:
     deterministic: bool = False
     seed: int = 0
     comment: str = ""
+    compile: bool = False  # Whether to compile the model with torch.compile
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER

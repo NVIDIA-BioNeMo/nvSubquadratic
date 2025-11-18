@@ -111,8 +111,10 @@ def main() -> None:
     # Construct model
     network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
 
-    # Compile the model
-    network = torch.compile(network)
+    # Compile the model if specified
+    if config.compile:
+        print("Compiling model with torch.compile...")
+        network = torch.compile(network)
 
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)

@@ -165,6 +165,7 @@ class GaussianModulationND(torch.nn.Module):
             # IMPORTANT! DO NOT FORGET TO MANAGE GRADIENTS ON THE LIMITS FOR OTHER PARAMETRIZATIONS!
             pass
 
+    @torch.compiler.disable
     def _clamp_direct_std_param_pre_hook(self, module, inputs):
         """Clamp std_param into [min_std, max_std] just before forward without tracking grads."""
         with torch.no_grad():
