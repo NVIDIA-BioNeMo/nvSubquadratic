@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Tuple, Literal
+from typing import Literal, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -91,6 +91,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
     ) -> None:
+        """Initialize the ImageNet datamodule and cache configuration values."""
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
         self.batch_size = batch_size
@@ -105,7 +106,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.task = task
-        
+
         self.input_channels = 3
         if task == 'classification':
             self.output_channels = num_classes
@@ -122,7 +123,6 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
 
-
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
             self.final_image_size,
@@ -132,8 +132,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         # For generation tasks, we always use the diffusion normalization.
         # mapping images to [-1, 1].
         if self.task == "generation":
-          mean = self.normalization_mean
-          std = self.normalization_std
+            mean = self.normalization_mean
+            std = self.normalization_std
 
         # Since ImageNet images has varying sizes, we first resize the shorter edge to image_size + 32.
         ops: list[transforms.Transform] = [transforms.Resize(self.image_size + 32)]
@@ -166,6 +166,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         return transforms.Compose(ops)
 
     def prepare_data(self) -> None:
+        """Download the train/validation splits if they are not already cached locally."""
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,
@@ -185,6 +186,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         )
 
     def setup(self, stage: Optional[str] = None) -> None:
+        """Construct the datasets for the requested stage."""
         if stage in ("fit", None):
             self.train_dataset = _ImageNetDataset(
                 split="train",
@@ -240,18 +242,21 @@ class ImageNetDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self) -> DataLoader:
+        """Return the training dataloader."""
         if self.train_dataset is None:
             raise RuntimeError("train_dataloader called before setup('fit')")
 
         return self._build_loader(self.train_dataset, shuffle=True, drop_last=True)
 
     def val_dataloader(self) -> DataLoader:
+        """Return the validation dataloader."""
         if self.val_dataset is None:
             raise RuntimeError("val_dataloader called before setup")
 
         return self._build_loader(self.val_dataset, shuffle=False, drop_last=False)
 
     def test_dataloader(self) -> DataLoader:
+        """Return the test dataloader."""
         if self.val_dataset is None:
             raise RuntimeError("test_dataloader called before setup('test')")
 
@@ -289,6 +294,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         batch: Tuple[torch.Tensor, torch.Tensor],
         dataloader_idx: int,
     ) -> dict[str, torch.Tensor]:
+        """Convert tuple batches to dict batches expected by the diffusion wrappers."""
         images, labels = batch
 
         images = images.permute(0, 2, 3, 1).contiguous()  # (bsize, height, width, num_channels)

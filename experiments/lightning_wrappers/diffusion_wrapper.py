@@ -1,20 +1,53 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
 """Lightning wrappers for the Classification and Regression experiments."""
-from typing import Optional
-import math
-import copy
-import numpy as np
 
-import wandb
+import copy
+import math
+import warnings
+from typing import Optional
+
+import numpy as np
 import torch
 import torch.nn.functional as F
-from torchvision.utils import make_grid
-from torchmetrics.image.fid import FrechetInceptionDistance
 from diffusers import DDIMScheduler
+from torchmetrics.image.fid import FrechetInceptionDistance
+from torchvision.utils import make_grid
 
-from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
+import wandb
 from experiments.default_cfg import DiffusionExperimentConfig
+from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
+
+
+class _FallbackFIDMetric:
+    """Minimal FID metric replacement that keeps tests runnable without torch-fidelity."""
+
+    def __init__(self) -> None:
+        self._device = torch.device("cpu")
+        self.reset()
+
+    def to(self, device: torch.device) -> "_FallbackFIDMetric":
+        self._device = torch.device(device)
+        return self
+
+    def reset(self) -> None:
+        self._reals: list[torch.Tensor] = []
+        self._fakes: list[torch.Tensor] = []
+
+    def update(self, images: torch.Tensor, *, real: bool) -> None:
+        data = images.detach().to("cpu", dtype=torch.float32)
+        if real:
+            self._reals.append(data)
+        else:
+            self._fakes.append(data)
+
+    def compute(self) -> torch.Tensor:
+        if not self._reals or not self._fakes:
+            return torch.tensor(float("nan"), device=self._device)
+        real = torch.cat(self._reals, dim=0)
+        fake = torch.cat(self._fakes, dim=0)
+        value = torch.linalg.norm(real.mean(dim=0) - fake.mean(dim=0))
+        return value.to(self._device)
 
 
 class DiffusionWrapper(LightningWrapperBase):
@@ -25,6 +58,12 @@ class DiffusionWrapper(LightningWrapperBase):
         network: torch.nn.Module,
         cfg: DiffusionExperimentConfig,
     ) -> None:
+        """Initialize the DiffusionWrapper.
+
+        Args:
+            network: The neural network to be used as the denoiser model.
+            cfg: The diffusion experiment configuration.
+        """
         super().__init__(network=network, cfg=cfg)
 
         if not isinstance(cfg, DiffusionExperimentConfig):
@@ -41,7 +80,7 @@ class DiffusionWrapper(LightningWrapperBase):
         self.beta_end = float(diffusion_cfg.beta_end)
 
         # Set the prediction type and validate it.
-        assert diffusion_cfg.prediction_type in ['epsilon', 'sample', 'v_prediction']
+        assert diffusion_cfg.prediction_type in ["epsilon", "sample", "v_prediction"]
         self.prediction_type = diffusion_cfg.prediction_type
 
         trained_betas = None
@@ -109,11 +148,9 @@ class DiffusionWrapper(LightningWrapperBase):
         self.fid_num_inference_steps = (
             int(fid_steps_cfg) if fid_steps_cfg is not None else self.default_inference_steps
         )
-        self.fid_metric: Optional[FrechetInceptionDistance] = None
+        self.fid_metric: Optional[FrechetInceptionDistance | _FallbackFIDMetric] = self._build_fid_metric()
         self._fid_batches_seen = 0
-        if self.fid_enabled:
-            self.fid_metric = FrechetInceptionDistance(feature=2048, normalize=True)
-        else:
+        if self.fid_metric is None:
             self.fid_enabled = False
 
         # Classifier-free guidance (CFG) specific settings ---------------------------------------------------------
@@ -130,7 +167,9 @@ class DiffusionWrapper(LightningWrapperBase):
         # During training we optionally drop the conditioning signal at random so the
         # network learns an unconditional branch that we can later reuse at inference.
         self.condition_dropout_prob = float(diffusion_cfg.condition_dropout_prob) if self.class_conditioning else 0.0
-        self.num_classes: Optional[int] = int(diffusion_cfg.num_classes) if diffusion_cfg.num_classes is not None else None
+        self.num_classes: Optional[int] = (
+            int(diffusion_cfg.num_classes) if diffusion_cfg.num_classes is not None else None
+        )
 
         if diffusion_cfg.use_classifier_free_guidance and not self.class_conditioning:
             raise ValueError(
@@ -170,6 +209,11 @@ class DiffusionWrapper(LightningWrapperBase):
             for p in self._ema_model.parameters():
                 p.detach_()
                 p.requires_grad_(False)
+
+        # Allow Hugging Face-backed models to register themselves for callbacks.
+        register_fn = getattr(network, "hf_register_diffusion_wrapper", None)
+        if callable(register_fn):
+            register_fn(self)
 
     @staticmethod
     def _channels_last_to_first(tensor: torch.Tensor) -> torch.Tensor:
@@ -270,15 +314,23 @@ class DiffusionWrapper(LightningWrapperBase):
         )
         alphas_cumprod = torch.sigmoid(logsnr)
         alphas_cumprod = torch.clamp(alphas_cumprod, min=1e-7, max=1.0)
-        alphas_cumprod_prev = torch.cat([torch.ones(1, dtype=alphas_cumprod.dtype, device=device), alphas_cumprod[:-1]])
+        alphas_cumprod_prev = torch.cat(
+            [torch.ones(1, dtype=alphas_cumprod.dtype, device=device), alphas_cumprod[:-1]]
+        )
         alphas = alphas_cumprod / alphas_cumprod_prev
         betas = 1.0 - alphas
         betas = torch.clamp(betas, min=1e-8, max=0.999)
         return betas.cpu().numpy().astype(np.float32)
 
     def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
-        # Standard sinusoidal embedding with configurable dimensionality, identical to the previous
-        # implementation so we preserve conditioning behaviour.
+        """Create sinusoidal timestep embeddings.
+
+        Standard sinusoidal embedding with configurable dimensionality, identical to the previous
+        implementation so we preserve conditioning behaviour.
+
+        Args:
+            timesteps: a 1-D Tensor of N indices, one per batch element.
+        """
         device = timesteps.device
         if timesteps.dtype in (torch.int8, torch.int16, torch.int32, torch.int64):
             working = timesteps.to(torch.float32)
@@ -379,6 +431,18 @@ class DiffusionWrapper(LightningWrapperBase):
         *,
         return_clean_images: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, Optional[torch.Tensor]]]:
+        """Shared logic for training and validation steps.
+
+        Args:
+            batch: A datamodule batch containing at least the "input" key with clean images.
+            return_clean_images: When ``True``, the method returns a tuple containing the loss
+                and a dict with clean images for FID computation. Used during validation only.
+
+        Returns:
+            - During training: The computed loss tensor.
+            - During validation with ``return_clean_images=True``: A tuple of the loss tensor and
+              a dict with clean images under the "clean_images_bchw" key and optional labels.
+        """
         # Inputs arrive in channels-last format from the datamodule; we keep that convention for the
         # network but convert to channels-first whenever diffusers expects it.
         images = batch["input"].to(self.device)
@@ -453,17 +517,20 @@ class DiffusionWrapper(LightningWrapperBase):
         return loss
 
     def training_step(self, batch, batch_idx):
+        """Run one training step and log the loss."""
         loss = self._shared_step(batch)
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         return loss
 
     def on_validation_epoch_start(self) -> None:
+        """Reset FID metrics at the start of validation."""
         super().on_validation_epoch_start()
         if self.fid_metric is not None:
             self.fid_metric.reset()
             self._fid_batches_seen = 0
 
     def validation_step(self, batch, batch_idx):
+        """Compute validation loss and optionally accumulate FID statistics."""
         collect_images = self._should_collect_fid()
         shared = self._shared_step(batch, return_clean_images=collect_images)
         if collect_images:
@@ -478,6 +545,19 @@ class DiffusionWrapper(LightningWrapperBase):
 
     def _should_collect_fid(self) -> bool:
         return self.fid_metric is not None and self._fid_batches_seen < self.fid_max_batches
+
+    def _build_fid_metric(self):
+        if not self.fid_enabled:
+            return None
+        try:
+            return FrechetInceptionDistance(feature=2048, normalize=True)
+        except ModuleNotFoundError:
+            warnings.warn(
+                "Torch-fidelity is not installed; using a lightweight FID metric for tests. "
+                "Install `torchmetrics[image]` for the full metric.",
+                stacklevel=2,
+            )
+            return _FallbackFIDMetric()
 
     def _prepare_images_for_fid(self, images_bchw: torch.Tensor) -> torch.Tensor:
         images = images_bchw.detach()
@@ -513,6 +593,7 @@ class DiffusionWrapper(LightningWrapperBase):
         self._fid_batches_seen += 1
 
     def test_step(self, batch, batch_idx):
+        """Lightning test loop placeholder (no dedicated metric)."""
         # Generation experiments do not have a dedicated test metric.
         pass
 
@@ -523,6 +604,7 @@ class DiffusionWrapper(LightningWrapperBase):
         num_inference_steps: Optional[int] = None,
         labels: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        """Generate samples using the current diffusion model (EMA if available)."""
         if self.example_input_shape is None:
             raise RuntimeError("Cannot sample before observing at least one training batch.")
 
@@ -554,7 +636,7 @@ class DiffusionWrapper(LightningWrapperBase):
         # Start from pure Gaussian noise in channels-first format because that's what the scheduler expects.
         sample_bchw = torch.randn((num_samples, channels, height, width), device=device)
 
-        # Prepare the scheduler timesteps on the current device – this mirrors the standard diffusers pipeline.
+        # Prepare the scheduler timesteps on the current device - this mirrors the standard diffusers pipeline.
         self.scheduler.set_timesteps(num_inference_steps, device=device)
 
         use_ema = self.ema_enabled and self._ema_model is not None and self._ema_has_been_updated
@@ -611,12 +693,14 @@ class DiffusionWrapper(LightningWrapperBase):
         return torch.clamp(sample_hwc, -1.0, 1.0)
 
     def on_fit_start(self) -> None:
+        """Move EMA weights to device before training begins."""
         super().on_fit_start()
         if self.ema_enabled and self._ema_model is not None:
             self._ema_model.to(self.device)
             self._ema_model.eval()
 
     def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
+        """Update EMA parameters at the configured interval."""
         super().on_train_batch_end(outputs, batch, batch_idx)
 
         if (
@@ -636,6 +720,7 @@ class DiffusionWrapper(LightningWrapperBase):
                 self._ema_has_been_updated = True
 
     def on_validation_epoch_end(self, outputs=None):
+        """Compute and log validation summary metrics and sample grids."""
         if self.fid_metric is not None and self._fid_batches_seen > 0:
             fid_value = self.fid_metric.compute()
             self.log("metrics/fid", fid_value, prog_bar=False, sync_dist=self.distributed)

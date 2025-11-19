@@ -49,8 +49,7 @@ def _select_artifact_with_alias(artifacts, alias: Literal["best", "latest"]):
 
 
 def download_checkpoint(run_path: str, alias: Literal["best", "latest"] = "best") -> str:
-    """
-    Download the checkpoint files from the Weights & Biases artifact marked with a given alias (default: "best").
+    """Download the checkpoint files from the Weights & Biases artifact marked with a given alias (default: "best").
 
     Args:
         run_path: The W&B run path in the form "entity/project/run_id".
@@ -95,8 +94,7 @@ def download_checkpoint(run_path: str, alias: Literal["best", "latest"] = "best"
 
 
 def load_checkpoint_state_dict(ckpt_path: str) -> dict:
-    """
-    Load a .ckpt file and return a flat state_dict-like mapping.
+    """Load a .ckpt file and return a flat state_dict-like mapping.
 
     Supports both Lightning checkpoints (with a 'state_dict' key) and plain
     torch.save(state_dict) style checkpoints.
@@ -133,7 +131,6 @@ def load_state_dict_partially(model: torch.nn.Module, state_dict: Dict[str, torc
     - This function does in-place copies on the model's tensors; it does not replace the state_dict mapping.
     - It supports both parameters and buffers.
     """
-
     model_state = model.state_dict()
 
     # Report missing and unexpected keys (summary)
@@ -281,6 +278,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         remove_local_after_upload: bool = False,
         keep_last_k_versions: int = 2,
     ):
+        """Configure selective checkpoint uploads to W&B."""
         super().__init__()
         self.upload_best = upload_best
         self.upload_last = upload_last
@@ -395,7 +393,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
                     break
 
             # If protected set already exceeds keep budget, keep all protected and skip deletion
-            keep_ids = set(getattr(a, "id", a) for a in to_keep) | alias_protected
+            keep_ids = {getattr(a, "id", a) for a in to_keep} | alias_protected
             if len(keep_ids) < self.keep_last_k_versions:
                 # Fill remaining keep slots with newest others
                 for a in versions:
@@ -440,6 +438,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             print(f"[checkpoint/prune][error] {type(e).__name__}: {e}")
 
     def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        """Upload selected checkpoints at the end of validation if appropriate."""
         # Only upload during actual training runs to avoid alias churn during post-training validate
         if getattr(trainer, "sanity_checking", False):
             return

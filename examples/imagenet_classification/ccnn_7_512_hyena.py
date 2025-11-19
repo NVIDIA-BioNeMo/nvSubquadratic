@@ -1,20 +1,14 @@
 # TODO: Add license header here
 
-"""Config file for ImageNet diffusion using the shared ResNet backbone."""
+"""Config file for ImageNet classification using the shared ResNet backbone."""
 
 import os
 
 import torch
 
 from experiments.datamodules.imagenet import ImageNetDataModule
-from experiments.default_cfg import (
-    DiffusionConfig,
-    DiffusionExperimentConfig,
-    SchedulerConfig,
-    TrainConfig,
-    WandbConfig,
-)
-from experiments.lightning_wrappers import DiffusionWrapper
+from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -22,9 +16,9 @@ from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_
 from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock
+from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 
 PLACEHOLDER = None
@@ -32,7 +26,7 @@ WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
 # Dataset
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
@@ -43,57 +37,28 @@ PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
 # Model
-NUM_HIDDEN_CHANNELS = 256
-NUM_BLOCKS = 6
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "single"
-FFT_PADDING = "circular"
+GRID_TYPE = "double"
+FFT_PADDING = "zero"
 NUM_CLASSES = 1_000
 
 # Optimisation
-TRAINING_ITERATIONS = 800_000
-WARMUP_ITERATIONS_PERCENTAGE = 0.02
-WEIGHT_DECAY = 1e-3
-LEARNING_RATE = 2e-4
+TRAINING_ITERATIONS = 600_000
+WARMUP_ITERATIONS_PERCENTAGE = 0.05
+LEARNING_RATE = 3e-4
+WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
-ACCUMULATE_GRAD_STEPS = 1
-
-# Diffusion parameters
-NUM_TRAIN_TIMESTEPS = 1_000
-CLASSIFIER_FREE_GUIDANCE = True
-BETA_START = 1e-4
-BETA_END = 2e-2
-BETA_SCHEDULE = "linear"
-TIME_EMBED_DIM = NUM_HIDDEN_CHANNELS
-MAX_PERIOD = 10_000.0
-NUM_INFERENCE_STEPS = 50
-NUM_SAMPLES = 8
-LOG_SAMPLES = True
-COSINE_SCHEDULE_LOGSNR_MIN = -10.0
-COSINE_SCHEDULE_LOGSNR_MAX = 10.0
-PREDICTION_TYPE = "v_prediction"
-DDIM_ETA = 0.0
-EMA_ENABLED = True
-EMA_DECAY = 0.999
-EMA_WARMUP_STEPS = 1_000
-EMA_UPDATE_EVERY = 1
-GUIDANCE_SCALE = 3.5
-CONDITION_DROPOUT_PROB = 0.1
-USE_SIGMOID_LOSS_WEIGHTING = True
-SIGMOID_LOSS_BIAS = -3.0
-FID_ENABLED = True
-FID_NUM_BATCHES = 8
-FID_NUM_INFERENCE_STEPS = NUM_INFERENCE_STEPS
 
 
-def get_config() -> DiffusionExperimentConfig:
-    """Return the ImageNet diffusion configuration."""
-    config = DiffusionExperimentConfig()
+def get_config() -> ExperimentConfig:
+    """Return the ImageNet classification configuration."""
+    config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
-    config.classifier_free_guidance = CLASSIFIER_FREE_GUIDANCE
 
     config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
@@ -106,13 +71,13 @@ def get_config() -> DiffusionExperimentConfig:
         center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
-        hf_dataset_name="imagenet-1k",
-        hf_dataset_config=None,
+        hf_dataset_name=HF_DATASET_NAME,
+        hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
-        task="generation",
+        task="classification",
     )
 
-    config.net = LazyConfig(ResidualNetwork)(
+    config.net = LazyConfig(ClassificationResNet)(
         in_channels=PLACEHOLDER,
         out_channels=PLACEHOLDER,
         num_blocks=NUM_BLOCKS,
@@ -120,7 +85,7 @@ def get_config() -> DiffusionExperimentConfig:
         in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-        block_cfg=LazyConfig(AdaLNZeroResidualBlock)(
+        block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(Hyena)(
@@ -180,15 +145,14 @@ def get_config() -> DiffusionExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             mlp_norm_cfg="${net.norm_cfg}",
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
-            condition_norm_cfg="${net.norm_cfg}",
-            hidden_dim="${net.hidden_dim}",
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-        condition_in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
     )
 
-    config.lightning_wrapper_class = LazyConfig(DiffusionWrapper)()
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)()
 
     config.optimizer = LazyConfig(torch.optim.AdamW)(
         params=PLACEHOLDER,
@@ -200,50 +164,18 @@ def get_config() -> DiffusionExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
+        precision=PRECISION,
     )
 
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
-        mode="min",
-    )
-
-    # Compose diffusion config with explicit schedule, sampling, and EMA parameters.
-    config.diffusion = DiffusionConfig(
-        num_train_timesteps=NUM_TRAIN_TIMESTEPS,
-        beta_start=BETA_START,
-        beta_end=BETA_END,
-        beta_schedule=BETA_SCHEDULE,
-        cosine_schedule_logsnr_min=COSINE_SCHEDULE_LOGSNR_MIN,
-        cosine_schedule_logsnr_max=COSINE_SCHEDULE_LOGSNR_MAX,
-        cosine_schedule_image_resolution=FINAL_IMAGE_SIZE,
-        cosine_schedule_noise_res_high=FINAL_IMAGE_SIZE,
-        cosine_schedule_noise_res_low=max(32, FINAL_IMAGE_SIZE // 2),
-        prediction_type=PREDICTION_TYPE,
-        time_embed_dim=TIME_EMBED_DIM,
-        max_period=MAX_PERIOD,
-        num_inference_steps=NUM_INFERENCE_STEPS,
-        num_samples=NUM_SAMPLES,
-        log_samples=LOG_SAMPLES,
-        ddim_eta=DDIM_ETA,
-        ema_enabled=EMA_ENABLED,
-        ema_decay=EMA_DECAY,
-        ema_update_every=EMA_UPDATE_EVERY,
-        ema_warmup_steps=EMA_WARMUP_STEPS,
-        use_sigmoid_loss_weighting=USE_SIGMOID_LOSS_WEIGHTING,
-        sigmoid_loss_bias=SIGMOID_LOSS_BIAS,
-        use_classifier_free_guidance=CLASSIFIER_FREE_GUIDANCE,
-        guidance_scale=GUIDANCE_SCALE,
-        condition_dropout_prob=CONDITION_DROPOUT_PROB,
-        num_classes=NUM_CLASSES,
-        fid_enabled=FID_ENABLED,
-        fid_num_batches=FID_NUM_BATCHES,
-        fid_num_inference_steps=FID_NUM_INFERENCE_STEPS,
+        mode="max",
     )
 
     config.wandb = WandbConfig(
-        job_group="imagenet-diffusion",
+        job_group="imagenet_classification",
         entity=WANDB_ENTITY,
     )
 

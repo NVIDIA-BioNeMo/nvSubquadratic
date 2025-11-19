@@ -49,7 +49,7 @@ class Attention(torch.nn.Module):
         num_heads (int): The number of attention heads.
         apply_qk_norm (bool): Whether to apply QK normalization.
         use_rope (bool): Whether to apply RoPE.
-        is_causal (bool): Whether the attention is causal.
+        is_causal (bool): Whether the attention is causal. Defaults to False.
         attn_dropout (float): The dropout rate for the attention weights.
         rope_base (float): The base of the RoPE.
     """
@@ -60,7 +60,7 @@ class Attention(torch.nn.Module):
         num_heads: int,
         apply_qk_norm: bool,
         use_rope: bool,
-        is_causal: bool,
+        is_causal: bool = False,
         attn_dropout: float = 0.0,
         rope_base: float = 10000.0,
     ):

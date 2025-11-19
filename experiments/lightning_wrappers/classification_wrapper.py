@@ -2,12 +2,12 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
-import wandb
 import torch
 import torchmetrics
 
-from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
+import wandb
 from experiments.default_cfg import ExperimentConfig
+from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
 
 class ClassificationWrapper(LightningWrapperBase):

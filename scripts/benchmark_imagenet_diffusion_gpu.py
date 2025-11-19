@@ -10,6 +10,7 @@ import time
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable, List, Optional
+from functools import partial
 
 import torch
 
@@ -224,7 +225,7 @@ def benchmark_spec(
     results.append(
         _run_mode(
             mode="inference",
-            build_fn=lambda: _inference_fn(wrapper, image_size, dtype),
+            build_fn=partial(_inference_fn, wrapper, image_size, dtype),
             spec=spec,
             image_size=image_size,
             device=device,
@@ -236,7 +237,7 @@ def benchmark_spec(
     results.append(
         _run_mode(
             mode="training",
-            build_fn=lambda: _training_fn(wrapper, image_size, dtype),
+            build_fn=partial(_training_fn, wrapper, image_size, dtype),
             spec=spec,
             image_size=image_size,
             device=device,
@@ -251,7 +252,11 @@ def benchmark_spec(
 
 def _print_table(rows: Iterable[dict]) -> None:
     header = "{:<10} {:<8} {:>5} {:>5} {:<6} {:>10} {:>10} {:>6} {:>6} {:>10} {:<8}"
-    print(header.format("mode", "model", "res", "bs", "dtype", "time_ms", "mem_mb", "hidden", "layers", "params", "status"))
+    print(
+        header.format(
+            "mode", "model", "res", "bs", "dtype", "time_ms", "mem_mb", "hidden", "layers", "params", "status"
+        )
+    )
     for row in rows:
         time_val = row.get("time_ms")
         mem_val = row.get("peak_memory_mb")
@@ -259,7 +264,7 @@ def _print_table(rows: Iterable[dict]) -> None:
         mem_str = f"{mem_val:10.1f}" if isinstance(mem_val, (int, float)) else f"{'--':>10}"
         status = row.get("error", "ok")
         params = row.get("num_params")
-        params_str = f"{params/1e6:10.2f}M" if isinstance(params, (int, float)) else f"{'--':>10}"
+        params_str = f"{params / 1e6:10.2f}M" if isinstance(params, (int, float)) else f"{'--':>10}"
         print(
             f"{row['mode']:<10} {row['model']:<8} {row['image_size']:>5} {row['batch_size']:>5} {row['dtype']:<6} "
             f"{time_str} {mem_str} {row['hidden_dim']:>6} {row['num_layers']:>6} {params_str} {status:<8}"

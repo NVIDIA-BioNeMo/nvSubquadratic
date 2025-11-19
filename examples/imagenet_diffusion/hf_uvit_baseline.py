@@ -1,4 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
+
 import torch
 
 from experiments.datamodules.imagenet import ImageNetDataModule
@@ -15,6 +31,7 @@ from nvsubquadratic.networks.huggingface_diffusers import DiffusersUVitWrapper, 
 
 
 PLACEHOLDER = None
+WANDB_ENTITY = "dafidofff"
 
 # Dataset ----------------------------------------------------------------------
 BATCH_SIZE = 32
@@ -78,10 +95,12 @@ def get_config() -> DiffusionExperimentConfig:
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
         center_crop=True,
-        drop_labels=True,
+        # Keep labels so classifier-free guidance has valid class indices.
+        drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
         hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
+        task="generation",
     )
 
     hf_cfg = HuggingFaceUVitConfig(
@@ -135,6 +154,9 @@ def get_config() -> DiffusionExperimentConfig:
         ema_warmup_steps=EMA_WARMUP_STEPS,
     )
 
-    config.wandb = WandbConfig(job_group="imagenet_diffusion_hf_uvit_baseline")
+    config.wandb = WandbConfig(
+        job_group="imagenet_diffusion_hf_uvit_baseline",
+        entity=WANDB_ENTITY,
+    )
 
     return config

@@ -1,12 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import sys
 import types
 from pathlib import Path
-import sys
 
 import torch
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from nvsubquadratic.networks.huggingface_diffusers import (
     DiffusersDiTWrapper,
@@ -14,6 +25,11 @@ from nvsubquadratic.networks.huggingface_diffusers import (
     HuggingFaceDiTConfig,
     HuggingFaceUVitConfig,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class _DummyWrapper:
@@ -35,12 +51,12 @@ def _tiny_config() -> HuggingFaceDiTConfig:
         in_channels=1,
         out_channels=1,
         num_layers=1,
-    num_attention_heads=2,
-    attention_head_dim=8,
-    num_embeds_ada_norm=32,
-    activation_fn="gelu-approximate",
-    norm_type="ada_norm_zero",
-)
+        num_attention_heads=2,
+        attention_head_dim=8,
+        num_embeds_ada_norm=32,
+        activation_fn="gelu-approximate",
+        norm_type="ada_norm_zero",
+    )
 
 
 def test_hf_wrapper_tracks_timesteps():
@@ -62,7 +78,9 @@ def test_hf_wrapper_forward_matches_input_shape():
     model.hf_register_diffusion_wrapper(dummy_wrapper)
 
     batch_size = 2
-    inputs = torch.randn(batch_size, model.hf_config.sample_size, model.hf_config.sample_size, model.hf_config.in_channels)
+    inputs = torch.randn(
+        batch_size, model.hf_config.sample_size, model.hf_config.sample_size, model.hf_config.in_channels
+    )
     dummy_condition = torch.zeros(batch_size, model.hidden_dim)
 
     timesteps = torch.tensor([5, 11], dtype=torch.long)

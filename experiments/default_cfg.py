@@ -95,6 +95,7 @@ class ExperimentConfig:
     deterministic: bool = False
     seed: int = 0
     comment: str = ""
+    compile: bool = False  # Whether to compile the model with torch.compile
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
@@ -156,6 +157,7 @@ class DiffusionConfig:
 @dataclass
 class DiffusionExperimentConfig(ExperimentConfig):
     """Experiment configuration for diffusion runs."""
+
     # Override debug mode.
     debug: bool = False
 

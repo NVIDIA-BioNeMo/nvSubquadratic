@@ -62,12 +62,12 @@ class MNISTDataModule(pl.LightningDataModule):
         Args:
             data_dir: Directory to save the data
             batch_size: Batch size
-            data_type: Type of data. Can be "sequence" or "image".
+            data_type: Type of data. Can be 'sequence' or 'image'.
             num_workers: Number of workers
             pin_memory: Whether to pin memory
             use_deterministic_worker_init: Whether to use deterministic worker initialization
             seed: Seed for the data
-            output_channels: Optional override for the output channels exposed by the datamodule.
+            task: Which task to run, either 'classification' or 'generation'.
         """
         super().__init__()
 
@@ -87,11 +87,11 @@ class MNISTDataModule(pl.LightningDataModule):
 
         # Determine sizes of dataset
         self.input_channels = 1
-        
+
         # Determine the output channels for the network based on task type
-        if task == 'classification':
+        if task == "classification":
             self.output_channels = 10
-        elif task == 'generation':
+        elif task == "generation":
             self.output_channels = 1
         self.num_classes = 10  # MNIST provides ten digit classes (0-9).
 

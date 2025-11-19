@@ -9,7 +9,7 @@ import torch
 
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from experiments.lightning_wrappers import ClassificationWrapper
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init

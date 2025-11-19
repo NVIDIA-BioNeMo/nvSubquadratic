@@ -1,19 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Wrapper modules that adapt Hugging Face diffusers models to the nvSubQuadratic diffusion pipeline."""
 
 from __future__ import annotations
 
 import types
 import weakref
-
-from dataclasses import dataclass
-from typing import Callable, Iterable
+from dataclasses import asdict, dataclass, is_dataclass
+from typing import TYPE_CHECKING, Callable, Iterable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from diffusers.models import DiTTransformer2DModel
 from diffusers.models.unets.uvit_2d import UVit2DModel
+
+
+if TYPE_CHECKING:
+    from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 
 
 class _SharedTimestepState:
@@ -25,6 +42,7 @@ class _SharedTimestepState:
     def __deepcopy__(self, memo) -> "_SharedTimestepState":
         memo[id(self)] = self
         return self
+
 
 @dataclass
 class HuggingFaceDiTConfig:
@@ -84,6 +102,7 @@ class DiffusersDiTWrapper(nn.Module):
         in_channels: int | None = None,
         out_channels: int | None = None,
     ) -> None:
+        """Instantiate the wrapped DiT model with optional channel overrides."""
         super().__init__()
         self.hf_config = hf_config
         if in_channels is not None:
@@ -135,6 +154,7 @@ class DiffusersDiTWrapper(nn.Module):
         return DiTTransformer2DModel(**kwargs)
 
     def hf_register_diffusion_wrapper(self, wrapper: "DiffusionWrapper") -> None:
+        """Attach a diffusion wrapper so timestep hooks can be updated."""
         if self._registered_wrapper_ref is not None and self._registered_wrapper_ref() is wrapper:
             return
 
@@ -163,6 +183,7 @@ class DiffusersDiTWrapper(nn.Module):
         wrapper._hf_timestep_callbacks.append(_update_timesteps)
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Forward pass that mirrors the diffusers DiT interface."""
         if self._latest_timesteps is None:
             raise RuntimeError(
                 "DiffusersDiTWrapper.forward() was called before timesteps were populated. "
@@ -190,7 +211,14 @@ class DiffusersDiTWrapper(nn.Module):
         return {"logits": prediction}
 
     def extra_repr(self) -> str:  # pragma: no cover - debugging helper
-        trimmed = {k: v for k, v in self.hf_config.items() if v is not None}
+        """Return a compact repr of the underlying transformer and config."""
+        if hasattr(self.hf_config, "items"):
+            items = self.hf_config.items()
+        elif is_dataclass(self.hf_config):
+            items = asdict(self.hf_config).items()
+        else:
+            items = vars(self.hf_config).items()
+        trimmed = {k: v for k, v in items if v is not None}
         return f"transformer={self.transformer.__class__.__name__}, config={trimmed}"
 
 
@@ -203,6 +231,7 @@ class DiffusersUVitWrapper(nn.Module):
         in_channels: int | None = None,
         out_channels: int | None = None,
     ) -> None:
+        """Instantiate the wrapped UVit model with optional channel overrides."""
         super().__init__()
         if UVit2DModel is None:
             raise ImportError("diffusers>=0.35 with UVit2DModel support is required for DiffusersUVitWrapper")
@@ -251,6 +280,7 @@ class DiffusersUVitWrapper(nn.Module):
         return UVit2DModel(**kwargs)
 
     def hf_register_diffusion_wrapper(self, wrapper: "DiffusionWrapper") -> None:
+        """Attach a diffusion wrapper so timestep callbacks receive updates."""
         if self._registered_wrapper_ref is not None and self._registered_wrapper_ref() is wrapper:
             return
 
@@ -279,6 +309,7 @@ class DiffusersUVitWrapper(nn.Module):
         wrapper._hf_timestep_callbacks.append(_update_timesteps)
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Forward pass of the UVit wrapper."""
         batch = input_and_condition["input"]
         sample_bchw = torch.moveaxis(batch, -1, 1).contiguous()
 
@@ -303,7 +334,11 @@ class DiffusersUVitWrapper(nn.Module):
             enc_dim = getattr(config, "encoder_hidden_size", self.hidden_dim)
             encoder_hidden_states = torch.zeros(batch_size, 1, enc_dim, device=device, dtype=dtype)
 
-        cond_dim = getattr(config, "cond_embed_dim", pooled_text_emb.shape[-1] if isinstance(pooled_text_emb, torch.Tensor) else self.hidden_dim)
+        cond_dim = getattr(
+            config,
+            "cond_embed_dim",
+            pooled_text_emb.shape[-1] if isinstance(pooled_text_emb, torch.Tensor) else self.hidden_dim,
+        )
         if pooled_text_emb is None:
             pooled_text_emb = torch.zeros(batch_size, cond_dim, device=device, dtype=dtype)
         else:
@@ -317,7 +352,9 @@ class DiffusersUVitWrapper(nn.Module):
 
         if micro_conds is None:
             if self._latest_timesteps is None:
-                raise RuntimeError("UVit wrapper requires timestep information; ensure hf_register_diffusion_wrapper was invoked")
+                raise RuntimeError(
+                    "UVit wrapper requires timestep information; ensure hf_register_diffusion_wrapper was invoked"
+                )
             timesteps = self._latest_timesteps.to(device=device, dtype=torch.float32)
             micro_encode_dim = getattr(config, "micro_cond_encode_dim", 1) or 1
             micro_embed_dim = getattr(config, "micro_cond_embed_dim", micro_encode_dim)
@@ -361,28 +398,3 @@ class DiffusersUVitWrapper(nn.Module):
         if tokens.dim() == 4 and tokens.shape[1] == 1:
             tokens = tokens.squeeze(1)
         return tokens
-
-
-from experiments.lightning_wrappers import DiffusionWrapper as _LightningDiffusionWrapper
-
-
-
-def _patch_lightning_wrapper() -> None:
-    if _LightningDiffusionWrapper is None:
-        return
-    if getattr(_LightningDiffusionWrapper, "_hf_registration_patched", False):
-        return
-
-    original_init = _LightningDiffusionWrapper.__init__
-
-    def _wrapped_init(self, network, cfg):
-        original_init(self, network=network, cfg=cfg)
-        register_fn = getattr(network, "hf_register_diffusion_wrapper", None)
-        if callable(register_fn):
-            register_fn(self)
-
-    _LightningDiffusionWrapper.__init__ = _wrapped_init
-    _LightningDiffusionWrapper._hf_registration_patched = True
-
-
-_patch_lightning_wrapper()

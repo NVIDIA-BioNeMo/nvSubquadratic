@@ -9,7 +9,7 @@ import torch
 
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from experiments.lightning_wrappers import ClassificationWrapper
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -27,11 +27,11 @@ PLACEHOLDER = None
 DATA_TYPE = "image"
 DATA_DIM = 2
 
-# Dataset 
+# Dataset
 BATCH_SIZE = 128
 MAX_WORKERS = 16
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
-NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
 # Model parameters
 NUM_HIDDEN_CHANNELS = 160

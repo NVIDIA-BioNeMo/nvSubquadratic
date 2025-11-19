@@ -31,8 +31,13 @@ PLACEHOLDER = None
 WANDB_ENTITY = "davidmknigge"
 DATA_DIM = 2
 
+<<<<<<< HEAD
 # Dataset 
 BATCH_SIZE = 42
+=======
+# Dataset
+BATCH_SIZE = 64
+>>>>>>> 58e12197a29a2868a3afe2034f004f4a0df81d4a
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/home/dknigge/project_dir/huggingface/imagenet")
 HF_DATASET_NAME = "imagenet-1k"
@@ -40,7 +45,7 @@ HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
-NUM_WORKERS = min(MAX_WORKERS, os.cpu_count()-1 or MAX_WORKERS)
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
 # Model 
 NUM_HIDDEN_CHANNELS = 768
@@ -51,7 +56,7 @@ GRID_TYPE = "single"
 FFT_PADDING = "circular"
 NUM_CLASSES = 1_000
 
-# Optimisation 
+# Optimisation
 TRAINING_ITERATIONS = 800_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.02
 WEIGHT_DECAY = 1e-3
@@ -67,16 +72,34 @@ BETA_SCHEDULE = "cosine_interpolated"
 TIME_EMBED_DIM = NUM_HIDDEN_CHANNELS
 MAX_PERIOD = 10_000.0
 LOG_SAMPLES = True
+<<<<<<< HEAD
 
 # Classifier-free guidance
 CFG_ENABLED = True
 GUIDANCE_SCALE = 3.5
 CONDITION_DROPOUT_PROB = 0.25
+=======
+COSINE_SCHEDULE_LOGSNR_MIN = -10.0
+COSINE_SCHEDULE_LOGSNR_MAX = 10.0
+PREDICTION_TYPE = "v_prediction"
+DDIM_ETA = 0.0
+EMA_ENABLED = True
+EMA_DECAY = 0.999
+EMA_WARMUP_STEPS = 1_000
+EMA_UPDATE_EVERY = 1
+CFG_ENABLED = True
+GUIDANCE_SCALE = 3.5
+CONDITION_DROPOUT_PROB = 0.1
+USE_SIGMOID_LOSS_WEIGHTING = True
+SIGMOID_LOSS_BIAS = -3.0
+FID_ENABLED = True
+FID_NUM_BATCHES = 8
+FID_NUM_INFERENCE_STEPS = NUM_INFERENCE_STEPS
+>>>>>>> 58e12197a29a2868a3afe2034f004f4a0df81d4a
 
 
 def get_config() -> DiffusionExperimentConfig:
     """Return the ImageNet diffusion configuration."""
-
     config = DiffusionExperimentConfig()
     config.debug = False
     config.seed = 42
@@ -195,7 +218,7 @@ def get_config() -> DiffusionExperimentConfig:
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
-        mode='min',
+        mode="min",
     )
 
     config.diffusion = DiffusionConfig(
@@ -203,16 +226,39 @@ def get_config() -> DiffusionExperimentConfig:
         beta_start=BETA_START,
         beta_end=BETA_END,
         beta_schedule=BETA_SCHEDULE,
+        cosine_schedule_logsnr_min=COSINE_SCHEDULE_LOGSNR_MIN,
+        cosine_schedule_logsnr_max=COSINE_SCHEDULE_LOGSNR_MAX,
         cosine_schedule_image_resolution=FINAL_IMAGE_SIZE,
         cosine_schedule_noise_res_high=FINAL_IMAGE_SIZE,
         cosine_schedule_noise_res_low=max(32, FINAL_IMAGE_SIZE // 2),
+        prediction_type=PREDICTION_TYPE,
         time_embed_dim=TIME_EMBED_DIM,
         max_period=MAX_PERIOD,
+<<<<<<< HEAD
         num_classes=1_000,
         use_classifier_free_guidance=CFG_ENABLED,
         guidance_scale=GUIDANCE_SCALE,
         condition_dropout_prob=CONDITION_DROPOUT_PROB,
         fid_enabled=False,
+=======
+        num_inference_steps=NUM_INFERENCE_STEPS,
+        num_samples=NUM_SAMPLES,
+        log_samples=LOG_SAMPLES,
+        ddim_eta=DDIM_ETA,
+        ema_enabled=EMA_ENABLED,
+        ema_decay=EMA_DECAY,
+        ema_update_every=EMA_UPDATE_EVERY,
+        ema_warmup_steps=EMA_WARMUP_STEPS,
+        use_sigmoid_loss_weighting=USE_SIGMOID_LOSS_WEIGHTING,
+        sigmoid_loss_bias=SIGMOID_LOSS_BIAS,
+        num_classes=NUM_CLASSES,
+        use_classifier_free_guidance=CFG_ENABLED,
+        guidance_scale=GUIDANCE_SCALE,
+        condition_dropout_prob=CONDITION_DROPOUT_PROB,
+        fid_enabled=FID_ENABLED,
+        fid_num_batches=FID_NUM_BATCHES,
+        fid_num_inference_steps=FID_NUM_INFERENCE_STEPS,
+>>>>>>> 58e12197a29a2868a3afe2034f004f4a0df81d4a
     )
 
     config.wandb = WandbConfig(
