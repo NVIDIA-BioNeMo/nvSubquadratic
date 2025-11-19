@@ -41,8 +41,8 @@ NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "single"
-FFT_PADDING = "custom"
+GRID_TYPE = "double"
+FFT_PADDING = "zero"
 NUM_CLASSES = 1_000
 
 # Optimisation
