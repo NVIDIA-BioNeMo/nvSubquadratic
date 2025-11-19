@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -t 1-00:00:00
-#SBATCH --gres=gpu:4
+#SBATCH -t 2-00:00:00
+#SBATCH --gres=gpu:32
 #SBATCH --partition=gpu_h100
 #SBATCH --chdir="/home/dwessels2/code/nvSubquadratic-private"
 #SBATCH --output=/home/dwessels2/code/nvSubquadratic-private/outputs/%A.%a/output.txt
@@ -15,9 +15,5 @@ echo "This job is running on node: $SLURM_NODELIST"
 export HF_TOKEN=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
 
 export PYTHONPATH="."
-python -m experiments.run --config examples/imagenet_classification/ccnn_7_512_hyena.py
-python -m experiments.run --config examples/imagenet_classification/ccnn_7_512_hyena.py
-
-
-
-# python -m experiments.run --config examples/imagenet_diffusion/ccnn_12_768_hyena_rope_qknorm.py
+# python -m experiments.run --config examples/imagenet_classification/ccnn_7_512_hyena.py
+python -m experiments.run --config examples/imagenet_classification/ccnn_7_512_hyena_circular.py
