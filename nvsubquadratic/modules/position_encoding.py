@@ -34,7 +34,7 @@ class PositionEmbeddingND(nn.Module):
 
         for embedding in self.data_embeddings.values():
             for param in embedding.parameters():
-                param._no_wd = True
+                param._no_weight_decay = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Return the concatenated per-axis embeddings for the input grid."""
