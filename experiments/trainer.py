@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
 
+from experiments.callbacks.training_completion import TrainingCompletionCallback
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
 from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
@@ -81,6 +82,8 @@ def construct_trainer(
         pl_callbacks.LearningRateMonitor(log_weight_decay=True),
         # Timer callback
         pl_callbacks.Timer(),
+        # Training completion marker (for SLURM job chaining)
+        TrainingCompletionCallback(checkpoint_dir=checkpoint_dir),
         # Wandb selective checkpoint uploader
         WandbSelectiveCheckpointUploader(
             upload_best=True,
