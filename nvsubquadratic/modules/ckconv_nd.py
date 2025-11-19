@@ -26,6 +26,18 @@ from nvsubquadratic.ops.fftconv import (
     fftconv3d_bhl,
     fftconv3d_bhl_w_reshape,
 )
+from nvsubquadratic.ops.fftconv_custom import (
+    fftconv1d_bhl as fftconv1d_bhl_custom,
+)
+from nvsubquadratic.ops.fftconv_custom import (
+    fftconv1d_bhl_w_reshape as fftconv1d_bhl_custom_w_reshape,
+)
+from nvsubquadratic.ops.fftconv_custom import (
+    fftconv2d_bhl as fftconv2d_bhl_custom,
+)
+from nvsubquadratic.ops.fftconv_custom import (
+    fftconv2d_bhl_w_reshape as fftconv2d_bhl_custom_w_reshape,
+)
 
 
 class CKConvND(torch.nn.Module):
@@ -39,6 +51,7 @@ class CKConvND(torch.nn.Module):
         mask_cfg: LazyConfig,
         grid_type: Literal["double", "single"],
         fft_padding: Literal["zero", "circular"],
+        use_custom_kernel: bool = False,
     ):
         """Initialize the CKConvND.
 
@@ -51,22 +64,32 @@ class CKConvND(torch.nn.Module):
             fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
                 cropping (conventional FFT-based conv). 'circular' uses periodic
                 (wrap-around) convolution implemented via frequency-domain phase ramps.
+            use_custom_kernel: Whether to use the custom CUDA kernels (1D/2D only). Defaults to False.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
             f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
         )
+        assert not (use_custom_kernel and fft_padding == "circular"), (
+            "Custom kernels do not support circular padding; choose only one."
+        )
+        if use_custom_kernel and data_dim not in (1, 2):
+            raise ValueError("Custom CUDA kernels are only implemented for 1D and 2D inputs.")
+        
         if fft_padding == "circular":
             # Circular (periodic) convolution only makes sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
             assert grid_type == "single", (
                 "fft_padding='circular' requires grid_type='single' (kernel size equals input size)."
             )
+        if use_custom_kernel:
+            assert grid_type == "single", "Custom kernels require grid_type='single' so kernel matches input size."
 
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
+        self.use_custom_kernel = use_custom_kernel
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
@@ -90,6 +113,15 @@ class CKConvND(torch.nn.Module):
                 self.fftconv_fn_bhl_input = circular_fftconv3d_bhl
             else:
                 raise ValueError(f"Unsupported number of spatial dimensions: {data_dim}")
+        elif use_custom_kernel:
+            if data_dim == 1:
+                self.fftconv_fn = fftconv1d_bhl_custom_w_reshape
+                self.fftconv_fn_bhl_input = fftconv1d_bhl_custom
+            elif data_dim == 2:
+                self.fftconv_fn = fftconv2d_bhl_custom_w_reshape
+                self.fftconv_fn_bhl_input = fftconv2d_bhl_custom
+            else:
+                raise ValueError(f"Unsupported number of spatial dimensions for custom kernel: {data_dim}")
         else:  # "zero"
             if data_dim == 1:
                 self.fftconv_fn = fftconv1d_bhl_w_reshape

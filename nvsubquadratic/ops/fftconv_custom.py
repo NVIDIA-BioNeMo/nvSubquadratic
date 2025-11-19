@@ -12,6 +12,9 @@ from __future__ import annotations
 
 
 __all__ = [
+    "fftconv1d_bhl",
+    "fftconv1d_bhl_w_reshape",
+    "fftconv1d_blh",
     "fftconv2d_bhl",
     "fftconv2d_bhl_w_reshape",
     "fftconv2d_blh",
@@ -20,7 +23,16 @@ __all__ = [
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from subquadratic_ops_torch.fft_conv2d import fft_conv2d
+
+
+try:
+    from subquadratic_ops_torch.fft_causal_conv1d import fft_causal_conv1d
+    from subquadratic_ops_torch.fft_conv2d import fft_conv2d
+except ImportError as _custom_import_error:
+    fft_causal_conv1d = None  # type: ignore[assignment]
+    fft_conv2d = None  # type: ignore[assignment]
+else:
+    _custom_import_error = None
 
 
 def _validate_float32_tensor(name: str, tensor: torch.Tensor | None) -> None:
@@ -29,19 +41,77 @@ def _validate_float32_tensor(name: str, tensor: torch.Tensor | None) -> None:
     assert tensor.dtype == torch.float32, f"{name} must be float32. Current dtype: {tensor.dtype}"
 
 
+def _ensure_custom_available() -> None:
+    if _custom_import_error is not None:
+        raise ImportError(
+            "subquadratic_ops_torch is required for custom FFT kernels; install the provided wheel to enable this path."
+        ) from _custom_import_error
+
+
+def fftconv1d_bhl(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """1D FFT convolution with optional shortcut for BHL layout (B, H, L)."""
+    _ensure_custom_available()
+    _validate_float32_tensor("x", x)
+    _validate_float32_tensor("kernel", kernel)
+    _validate_float32_tensor("shortcut", shortcut)
+
+    assert x.ndim == 3, f"Expected x with 3 dims (B, H, L). Got {x.shape}."
+    assert kernel.ndim == 3, f"Expected kernel with 3 dims (1|B, H, K). Got {kernel.shape}."
+    _batch, H, _length = x.shape
+    assert x.is_cuda, "Custom CUDA kernel requires CUDA tensors."
+    assert kernel.shape[0] == 1, "Custom CUDA kernel only supports shared kernels (kernel.shape[0] == 1)."
+    _, H_k, _kernel_len = kernel.shape
+    assert H_k == H, "Input and kernel must have the same number of channels (H)."
+
+    weight = kernel[0]  # (H, K)
+    y = fft_causal_conv1d(x.contiguous(), weight.contiguous())
+    assert y.shape == x.shape, f"Kernel returned shape {y.shape}, expected {x.shape}."
+
+    if shortcut is not None:
+        assert shortcut.shape == (H,)
+        y = y.add(rearrange(shortcut, "h -> 1 h 1") * x)
+    return y
+
+
+def fftconv1d_bhl_w_reshape(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """1D FFT convolution with optional shortcut for BLH layout (B, L, H)."""
+    x_bhl = rearrange(x, "b l h -> b h l")
+    kernel_bhl = rearrange(kernel, "b k h -> b h k")
+    y_bhl = fftconv1d_bhl(x_bhl, kernel_bhl, shortcut)
+    return rearrange(y_bhl, "b h l -> b l h")
+
+
+def fftconv1d_blh(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Alias for fftconv1d_bhl_w_reshape to match nvsubquadratic.ops.fftconv API."""
+    return fftconv1d_bhl_w_reshape(x, kernel, shortcut)
+
+
 def fftconv2d_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """2D FFT convolution with optional shortcut for BHL layout (B, H, X, Y)."""
+    _ensure_custom_available()
     _validate_float32_tensor("x", x)
     _validate_float32_tensor("kernel", kernel)
     _validate_float32_tensor("shortcut", shortcut)
 
     assert x.ndim == 4, f"Expected x with 4 dims (B, H, X, Y). Got {x.shape}."
     assert kernel.ndim == 4, f"Expected kernel with 4 dims (1|B, H, K_x, K_y). Got {kernel.shape}."
-    B, H, X_in, Y_in = x.shape
+    _batch, H, X_in, Y_in = x.shape
     assert x.is_cuda, "Custom CUDA kernel requires CUDA tensors."
     assert kernel.shape[0] == 1, "Custom CUDA kernel only supports shared kernels (kernel.shape[0] == 1)."
     _, H_k, K_x, K_y = kernel.shape
@@ -49,8 +119,6 @@ def fftconv2d_bhl(
     assert K_x <= X_in and K_y <= Y_in, (
         "Custom CUDA kernel expects kernel spatial dims <= input; use grid_type='single' so they match."
     )
-    print(kernel.shape)
-    exit()
     pad_x = X_in - K_x
     pad_y = Y_in - K_y
     if pad_x or pad_y:
