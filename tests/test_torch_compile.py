@@ -136,8 +136,8 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
             max_diff = (g1 - g2).abs().max().item()
             mismatched_grads.append(f"{name}: max_diff={max_diff:.6e}")
 
-    assert not mismatched_grads, (
-        f"Gradients differ for {len(mismatched_grads)} parameters:\n" + "\n".join(mismatched_grads[:10])
+    assert not mismatched_grads, f"Gradients differ for {len(mismatched_grads)} parameters:\n" + "\n".join(
+        mismatched_grads[:10]
     )
 
 

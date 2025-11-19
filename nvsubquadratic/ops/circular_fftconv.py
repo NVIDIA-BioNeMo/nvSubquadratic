@@ -282,9 +282,7 @@ class _PhaseRampCache3D:
                 fx = torch.fft.fftfreq(X, d=1.0, device=device, dtype=real_dtype)  # [X]
                 fy = torch.fft.fftfreq(Y, d=1.0, device=device, dtype=real_dtype)  # [Y]
                 fz = torch.fft.rfftfreq(Z, d=1.0, device=device, dtype=real_dtype)  # [Zf]
-                phases = -2.0 * math.pi * (
-                    sx * fx[:, None, None] + sy * fy[None, :, None] + sz * fz[None, None, :]
-                )
+                phases = -2.0 * math.pi * (sx * fx[:, None, None] + sy * fy[None, :, None] + sz * fz[None, None, :])
                 phase = torch.complex(torch.cos(phases), torch.sin(phases))  # [X, Y, Zf]
         self._cache[key] = phase
         if len(self._cache) > self.maxsize:

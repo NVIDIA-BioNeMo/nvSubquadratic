@@ -107,16 +107,19 @@ class CKConvND(torch.nn.Module):
         self.grid_type = grid_type
 
     @torch.compiler.disable()
-    def apply_convolution(self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool) -> torch.Tensor:
+    def apply_convolution(
+        self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
+    ) -> torch.Tensor:
         """Apply the convolution operation using the FFT-based convolution function.
+
         Uses separate function to avoid torch.compile issues with complex numbers.
-        
+
         Args:
             x (torch.Tensor): Input tensor.
             conv_kernel (torch.Tensor): Convolution kernel tensor.
             shortcut (torch.Tensor): Shortcut tensor.
             is_bhl_input (bool): Whether the input is in BHL format.
-        
+
         Returns:
             torch.Tensor: Output tensor after applying convolution.
         """
@@ -199,8 +202,8 @@ class CKConvND(torch.nn.Module):
             shortcut = self.shortcut[start_idx:end_idx]
         else:
             shortcut = self.shortcut
-            
+
         # Apply convolution
         out = self.apply_convolution(x, conv_kernel, shortcut, is_bhl_input)
-        
+
         return out

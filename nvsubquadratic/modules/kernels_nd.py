@@ -70,7 +70,9 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         with torch.inference_mode(False):
             with torch.no_grad():
                 t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
-                grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
+                grid_cache = rearrange(
+                    torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
+                )
         self.register_buffer("grid_cache", grid_cache, persistent=False)
 
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
@@ -312,7 +314,9 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         with torch.inference_mode(False):
             with torch.no_grad():
                 t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
-                grid_cache = rearrange(torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ...")
+                grid_cache = rearrange(
+                    torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
+                )
         self.register_buffer("grid_cache", grid_cache, persistent=False)
 
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.

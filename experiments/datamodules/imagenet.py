@@ -108,9 +108,9 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.task = task
 
         self.input_channels = 3
-        if task == 'classification':
+        if task == "classification":
             self.output_channels = num_classes
-        elif task == 'generation':
+        elif task == "generation":
             self.output_channels = self.input_channels
         else:
             raise ValueError(f"Unsupported task: {task}")

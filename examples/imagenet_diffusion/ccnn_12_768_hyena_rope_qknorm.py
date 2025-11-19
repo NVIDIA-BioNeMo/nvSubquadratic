@@ -31,7 +31,7 @@ PLACEHOLDER = None
 WANDB_ENTITY = "davidmknigge"
 DATA_DIM = 2
 
-# Dataset 
+# Dataset
 BATCH_SIZE = 42
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/home/dknigge/project_dir/huggingface/imagenet")
@@ -42,7 +42,7 @@ FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
-# Model 
+# Model
 NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0

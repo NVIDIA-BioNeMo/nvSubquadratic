@@ -338,13 +338,9 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
                 locator = f"{entity}/{project}/{artifact_name}"
                 try:
                     versions = list(api.artifact_versions("model", locator))
-                    print(
-                        f"[checkpoint/prune] Using artifact_versions for {locator} → {len(versions)} versions"
-                    )
+                    print(f"[checkpoint/prune] Using artifact_versions for {locator} → {len(versions)} versions")
                 except Exception as e:
-                    print(
-                        f"[checkpoint/prune][warn] artifact_versions lookup failed for {locator}: {e}."
-                    )
+                    print(f"[checkpoint/prune][warn] artifact_versions lookup failed for {locator}: {e}.")
 
             # Fallback: use artifacts visible from this run only
             if not versions:

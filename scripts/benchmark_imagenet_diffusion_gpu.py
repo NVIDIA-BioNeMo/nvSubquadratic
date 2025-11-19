@@ -9,8 +9,8 @@ import json
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
-from typing import Callable, Iterable, List, Optional
 from functools import partial
+from typing import Callable, Iterable, List, Optional
 
 import torch
 
