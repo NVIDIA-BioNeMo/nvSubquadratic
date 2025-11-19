@@ -172,7 +172,7 @@ class ClassificationWrapper(LightningWrapperBase):
         train_step_outputs_keys = train_step_outputs[0].keys()
 
         # Log the logits histogram
-        if "logits" in train_step_outputs_keys:
+        if "logits" in train_step_outputs_keys and self.logger is not None:
             flattened_logits = torch.flatten(torch.cat([step_output["logits"] for step_output in train_step_outputs]))
             self.logger.experiment.log(
                 {
@@ -191,22 +191,24 @@ class ClassificationWrapper(LightningWrapperBase):
         train_acc = self.trainer.callback_metrics["train/acc_epoch"]
         if train_acc > self.best_train_acc:
             self.best_train_acc = train_acc.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_acc": self.best_train_acc,
-                    "global_step": self.global_step,
-                }
-            )
+            if self.logger is not None:
+                self.logger.experiment.log(
+                    {
+                        "train/best_acc": self.best_train_acc,
+                        "global_step": self.global_step,
+                    }
+                )
         # Log best training loss
         train_loss = self.trainer.callback_metrics["train/loss_epoch"]
         if train_loss < self.best_train_loss:
             self.best_train_loss = train_loss.item()
-            self.logger.experiment.log(
-                {
-                    "train/best_loss": self.best_train_loss,
-                    "global_step": self.global_step,
-                }
-            )
+            if self.logger is not None:
+                self.logger.experiment.log(
+                    {
+                        "train/best_loss": self.best_train_loss,
+                        "global_step": self.global_step,
+                    }
+                )
 
     def on_validation_epoch_end(self):
         """Log best validation accuracy and loss and logits over the validation set."""

@@ -2,6 +2,8 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
+import warnings
+
 import pytorch_lightning as pl
 import torch
 from omegaconf import OmegaConf
@@ -134,7 +136,10 @@ def construct_scheduler(
         )
     else:
         lr_scheduler = None
-        print(f"WARNING! No scheduler will be used. cfg.train.scheduler = {scheduler_type}")
+        warnings.warn(
+            f"No scheduler will be used. cfg.train.scheduler = {scheduler_type}",
+            stacklevel=2,
+        )
 
     # Concatenate schedulers if required
     if warmup_scheduler is not None:
