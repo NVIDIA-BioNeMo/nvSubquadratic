@@ -70,7 +70,7 @@ class Hyena(torch.nn.Module):
         self.pixelhyena_norm = instantiate(pixelhyena_norm_cfg)
         # Exclude self.pixelhyena_norm from the parameter group with weight decay
         for param in self.pixelhyena_norm.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
         # QK Normalization
         self.apply_qk_norm = apply_qk_norm
@@ -106,9 +106,10 @@ class Hyena(torch.nn.Module):
         if key in self._rope1d_cache:
             return self._rope1d_cache[key]
         # If not in cache, compute and cache
-        with torch.no_grad():
-            cos, sin = rope.construct_rope_1d_cache_bhl(seq_len, dim, device, dtype, self.rope_base)
-            self._rope1d_cache[key] = (cos, sin)
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                cos, sin = rope.construct_rope_1d_cache_bhl(seq_len, dim, device, dtype, self.rope_base)
+                self._rope1d_cache[key] = (cos, sin)
         return cos, sin
 
     def _rope_cache_2d(
@@ -136,11 +137,12 @@ class Hyena(torch.nn.Module):
         if key in self._rope2d_cache:
             return self._rope2d_cache[key]
         # If not in cache, compute and cache
-        with torch.no_grad():
-            cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_bhl(
-                height, width, dim_half, device, dtype, self.rope_base
-            )
-            self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_bhl(
+                    height, width, dim_half, device, dtype, self.rope_base
+                )
+                self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
         return cos_y, sin_y, cos_x, sin_x
 
     def _rope_cache_3d(
@@ -170,11 +172,12 @@ class Hyena(torch.nn.Module):
         if key in self._rope3d_cache:
             return self._rope3d_cache[key]
         # If not in cache, compute and cache
-        with torch.no_grad():
-            cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_bhl(
-                depth, height, width, dim_third, device, dtype, self.rope_base
-            )
-            self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_bhl(
+                    depth, height, width, dim_third, device, dtype, self.rope_base
+                )
+                self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
         return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
     def forward(

@@ -27,6 +27,9 @@ class ResidualNetwork(nn.Module):
         norm_cfg (LazyConfig): Configuration for the normalization
         block_cfg (LazyConfig): Configuration for the residual block
         dropout_in_cfg (LazyConfig): Configuration for the dropout in layer (applied to the input)
+        condition_in_proj_cfg (LazyConfig | None): Configuration for the condition input projection or None if no condition is used.
+            If provided, the condition tensor is of shape [B, * spatial_dims_condition, hidden_dim].
+            If not provided, the condition tensor is None.
     """
 
     def __init__(
@@ -40,6 +43,7 @@ class ResidualNetwork(nn.Module):
         norm_cfg: LazyConfig,
         block_cfg: LazyConfig,
         dropout_in_cfg: LazyConfig,
+        condition_in_proj_cfg: LazyConfig | None = None,
     ):
         """Initialize the ResidualNetwork."""
         super().__init__()
@@ -54,40 +58,59 @@ class ResidualNetwork(nn.Module):
         # Instantiate input projection for the network
         self.in_proj = instantiate(in_proj_cfg, in_features=in_channels, out_features=hidden_dim)
 
-        # Create residual blocks
-        blocks = []
-        for i in range(num_blocks):
-            print(f"Block {i}/{num_blocks}")
+        if condition_in_proj_cfg is not None:
+            # Instantiate condition input projection for the network
+            self.condition_in_proj = instantiate(
+                condition_in_proj_cfg, in_features=hidden_dim, out_features=hidden_dim
+            )
+        else:
+            self.condition_in_proj = None
 
-            blocks.append(instantiate(block_cfg))
-        self.blocks = nn.Sequential(*blocks)
+        # Create residual blocks
+        self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
 
         # Instantiate output norm
         self.out_norm = instantiate(norm_cfg)
         # Exclude self.out_norm from the parameter group with weight decay
         for param in self.out_norm.parameters():
-            param._no_wd = True
+            param._no_weight_decay = True
 
         # Instantiate output projection
         self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the ResNet.
+    def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Forward pass of the ResidualNetwork.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, *spatial_dims, self.in_channels)
+            input_and_condition: A dictionary containing the input and condition.
+                Keys: "input" and "condition".
+
+            - input: Input tensor of shape [B, * spatial_dims, hidden_dim].
+            - condition: Condition tensor of shape [B, * spatial_dims_condition, hidden_dim].
 
         Returns:
-            torch.Tensor: Output tensor of shape (batch_size, *spatial_dims, self.out_channels)
+            Dict[str, torch.Tensor]:
+                - "logits": tensor of shape [B, * spatial_dims, out_channels].
         """
+        # Extract the input and condition from the dictionary
+        x, condition = input_and_condition["input"], input_and_condition["condition"]
+
         # Apply in_dropout to the input
         x = self.dropout_in(x)
         # Apply input projection
         x = self.in_proj(x)
-        # Apply residual blocks
-        x = self.blocks(x)
+
+        # Apply condition input projection if provided
+        if self.condition_in_proj is not None:
+            assert condition is not None, "Condition must be provided if condition input projection is provided"
+            condition = self.condition_in_proj(condition)
+
+        # Apply residual blocks (with or without condition)
+        for block in self.blocks:
+            x = block(x, condition)
+
         # Apply output norm
         x = self.out_norm(x)
         # Apply output projection
         x = self.out_proj(x)
-        return x
+        return {"logits": x}

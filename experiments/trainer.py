@@ -2,25 +2,29 @@
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
+from pathlib import Path
+
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
 
-from experiments.default_cfg import ExperimentConfig
-from nvsubquadratic.lazy_config import instantiate
-from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
+from experiments.default_cfg import ExperimentConfig
+from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
+from nvsubquadratic.lazy_config import instantiate
 
 
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,
+    run_name: str,
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 
     Args:
         cfg (ExperimentConfig): The configuration.
         wandb_logger (pl.loggers.WandbLogger): The wandb logger.
+        run_name: Unique run identifier used for checkpoint locations.
 
     Returns:
         tuple[pl.Trainer, pl.Callback]: The constructed trainer and the checkpoint callback.
@@ -39,8 +43,13 @@ def construct_trainer(
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
 
+    # Derive checkpoint directory based on run name.
+    checkpoint_dir = Path("runs") / run_name / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
     # Callback for model checkpointing:
     checkpoint_callback = pl_callbacks.ModelCheckpoint(
+        dirpath=str(checkpoint_dir),
         monitor=monitor,
         mode=cfg.scheduler.mode,  # Save on best validation accuracy
         save_top_k=1,
@@ -82,7 +91,7 @@ def construct_trainer(
         # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
         WandbCacheCleanupCallback(
             max_cache_size="5GB",
-            every_n_epochs=10,
+            every_n_epochs=2,
             executable="wandb",
             run_on_fit_start=True,
             background=True,
@@ -110,5 +119,7 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
+        val_check_interval=cfg.trainer.val_check_interval,
+        limit_val_batches=cfg.trainer.limit_val_batches,
     )
     return trainer, checkpoint_callback

@@ -9,7 +9,7 @@ import torch
 
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from experiments.lightning_wrappers import ClassificationWrapper
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -27,13 +27,19 @@ PLACEHOLDER = None
 DATA_TYPE = "image"
 DATA_DIM = 2
 
-# Model parameters
+# Dataset
 BATCH_SIZE = 128
+MAX_WORKERS = 16
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
+NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
+
+# Model parameters
 NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
+GRID_TYPE = "single"
+FFT_PADDING = "circular"
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
@@ -65,6 +71,7 @@ def get_config() -> ExperimentConfig:
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
         use_deterministic_worker_init=True,  # Flag to use deterministic worker initialization
         seed=config.seed,  # Pass the seed value instead of a Generator object
+        task="classification",
     )
 
     # Add net config
@@ -104,6 +111,7 @@ def get_config() -> ExperimentConfig:
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels="3 * ${net.hidden_dim}",
@@ -116,13 +124,17 @@ def get_config() -> ExperimentConfig:
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels="${net.hidden_dim}"),
                     apply_qk_norm=True,
-                    use_rope=True,
+                    use_rope=False,
                     rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
-            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
+            sequence_mixer_norm_cfg="${net.norm_cfg}",
+            # Condition mixer
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
+            # MLP
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
@@ -131,7 +143,9 @@ def get_config() -> ExperimentConfig:
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
-            norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
+            mlp_norm_cfg="${net.norm_cfg}",
+            # Dropout
+            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
     )

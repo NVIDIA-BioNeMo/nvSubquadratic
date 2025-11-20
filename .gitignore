@@ -344,3 +344,4 @@ uv.lock
 # Run logs
 lightning_logs/
 wandb/
+runs/

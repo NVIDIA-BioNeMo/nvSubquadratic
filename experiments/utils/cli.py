@@ -5,11 +5,11 @@
 
 import dataclasses
 import datetime
+import getpass
 import importlib.util
 import re
 from pathlib import Path
-import getpass
-from typing import Any, List
+from typing import Any
 
 from rich.tree import Tree
 
@@ -31,9 +31,10 @@ _SHORT_NAME_ALIASES = {
 }
 
 
-def get_deterministic_run_name(config_path: str, overrides: List[str] = None, use_timestamp: bool = True) -> str:
-    """
-    Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
+def get_deterministic_run_name(
+    config_path: str, overrides: list[str] | None = None, use_timestamp: bool = True
+) -> str:
+    """Generate a deterministic run name based on the config file name, current timestamp, and any overrides.
 
     Args:
         config_path: Path to the configuration file
@@ -53,9 +54,12 @@ def get_deterministic_run_name(config_path: str, overrides: List[str] = None, us
     else:
         timestamp = ""
     # Always append the effective username to avoid collisions across users
-    username = getpass.getuser().upper()
-    # Usernames are always name.lastname. Let's extract the first letter of both the name and the lastname.
-    username = username.split(".")[0][0] + username.split(".")[1][0]
+    raw_username = getpass.getuser().upper()
+    parts = [p for p in raw_username.split(".") if p]
+    if len(parts) >= 2:
+        username = parts[0][0] + parts[1][0]
+    else:
+        username = raw_username[:2] if raw_username else "??"
 
     # Add override hash if overrides are provided
     if overrides and len(overrides) > 0:
@@ -109,7 +113,6 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     if module_path.endswith(".py"):
         module_path = module_path[:-3]  # Remove .py extension
 
-    # Import the module
     spec = importlib.util.spec_from_file_location(module_path, config_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -122,7 +125,7 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     return module.get_config()
 
 
-def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> ExperimentConfig:
+def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> ExperimentConfig:
     """Apply command-line overrides to a configuration.
 
     Args:
@@ -241,11 +244,11 @@ def apply_config_overrides(config: ExperimentConfig, overrides: List[str]) -> Ex
         return data_class(**kwargs)
 
     # Attempt to create new dataclass instance from the resolved config
-    new_config = dict_to_dataclass(resolved_conf, ExperimentConfig)
+    new_config = dict_to_dataclass(resolved_conf, type(config))
     return new_config
 
 
-def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: List[str]) -> None:
+def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: list[str]) -> None:
     """Prevent overriding fields that are defined as OmegaConf interpolations (e.g., "${...}").
 
     Args:

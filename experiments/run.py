@@ -11,15 +11,16 @@ Usage:
 
 import argparse
 import dataclasses
+import os
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning import callbacks as pl_callbacks
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
 from rich.tree import Tree
 
 import wandb
+from experiments.trainer import construct_trainer
 from experiments.utils.checkpointing import (
     download_checkpoint,
     load_checkpoint_state_dict,
@@ -35,11 +36,20 @@ from experiments.utils.cli import (
     verify_no_interpolator_overwrites,
 )
 from nvsubquadratic.lazy_config import instantiate
-from experiments.trainer import construct_trainer
 
 
-def parse_args():
-    """Parse command line arguments."""
+torch._dynamo.config.cache_size_limit = 32
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments for the experiment.
+
+    Sets up and parses arguments for the configuration file path and any command-line overrides.
+
+    Returns:
+        argparse.Namespace: An object containing the parsed command-line arguments. Includes 'config' for the
+                            configuration file path and 'overrides' for any specified configuration overrides.
+    """
     parser = argparse.ArgumentParser(description="MNIST Classification Training")
 
     # Config file path
@@ -60,8 +70,19 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    """Main function to run the MNIST classification experiment."""
+def main() -> None:
+    """Main function to run the experiment.
+
+    This function orchestrates the entire experiment lifecycle, including:
+    1.  Parsing command-line arguments.
+    2.  Loading and overriding configuration from files and command line.
+    3.  Setting up the environment, including seeding for reproducibility and configuring torch settings.
+    4.  Instantiating the data module, network model, and the Lightning wrapper.
+    5.  Setting up the Weights & Biases logger, with support for auto-resuming runs.
+    6.  Handling checkpoint loading for resuming training or fine-tuning.
+    7.  Constructing the PyTorch Lightning trainer with appropriate callbacks.
+    8.  Executing the training, validation, and testing phases of the experiment.
+    """
     # Parse command line arguments
     args = parse_args()
 
@@ -94,7 +115,7 @@ def main():
     if config.compile:
         print("Compiling model with torch.compile...")
         network = torch.compile(network)
-    
+
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
 
@@ -231,7 +252,7 @@ def main():
             print("[resume] Weight loading completed.")
 
     # Create trainer
-    trainer, checkpoint_callback = construct_trainer(config, wandb_logger)
+    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name)
 
     # Validate that the checkpoint has been correctly loaded before training (for no autoresume)
     if autoresume_ckpt_path is None and config.resume_from_checkpoint.load:
@@ -247,10 +268,14 @@ def main():
     if config.train.do:
         # Fit with full-state resume if autoresume provided a checkpoint, otherwise it will act as if no autoresume_ckpt_path passed in (it's None).
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=autoresume_ckpt_path)
-        # Load state dict from best performing model
-        model.load_state_dict(
-            torch.load(checkpoint_callback.best_model_path)["state_dict"],
-        )
+        # Load state dict from best performing model when available
+        best_ckpt_path = getattr(checkpoint_callback, "best_model_path", None)
+        if best_ckpt_path:
+            best_ckpt_path = str(best_ckpt_path)
+        if best_ckpt_path and os.path.isfile(best_ckpt_path):
+            model.load_state_dict(torch.load(best_ckpt_path)["state_dict"])
+        else:
+            print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 
     # Validate and test before finishing
     trainer.validate(

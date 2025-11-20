@@ -49,8 +49,7 @@ def _select_artifact_with_alias(artifacts, alias: Literal["best", "latest"]):
 
 
 def download_checkpoint(run_path: str, alias: Literal["best", "latest"] = "best") -> str:
-    """
-    Download the checkpoint files from the Weights & Biases artifact marked with a given alias (default: "best").
+    """Download the checkpoint files from the Weights & Biases artifact marked with a given alias (default: "best").
 
     Args:
         run_path: The W&B run path in the form "entity/project/run_id".
@@ -95,8 +94,7 @@ def download_checkpoint(run_path: str, alias: Literal["best", "latest"] = "best"
 
 
 def load_checkpoint_state_dict(ckpt_path: str) -> dict:
-    """
-    Load a .ckpt file and return a flat state_dict-like mapping.
+    """Load a .ckpt file and return a flat state_dict-like mapping.
 
     Supports both Lightning checkpoints (with a 'state_dict' key) and plain
     torch.save(state_dict) style checkpoints.
@@ -133,7 +131,6 @@ def load_state_dict_partially(model: torch.nn.Module, state_dict: Dict[str, torc
     - This function does in-place copies on the model's tensors; it does not replace the state_dict mapping.
     - It supports both parameters and buffers.
     """
-
     model_state = model.state_dict()
 
     # Report missing and unexpected keys (summary)
@@ -281,6 +278,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         remove_local_after_upload: bool = False,
         keep_last_k_versions: int = 2,
     ):
+        """Configure selective checkpoint uploads to W&B."""
         super().__init__()
         self.upload_best = upload_best
         self.upload_last = upload_last
@@ -304,9 +302,9 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             print(msg)
             raise RuntimeError(msg)
         if not os.path.isfile(path):
-            msg = f"[checkpoint/upload][error] Path is not a file: '{path}' for alias='{alias}'"
+            msg = f"[checkpoint/upload][warn] Path is not a file (maybe pruned already): '{path}' for alias='{alias}'"
             print(msg)
-            raise RuntimeError(msg)
+            return
         # Compute hash and skip if identical content already uploaded for this alias
         try:
             file_hash = self._file_sha256(path)
@@ -335,26 +333,30 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             api = wandb.Api()
             entity = getattr(run, "entity", None)
             project = getattr(run, "project", None)
+            versions = []
             if entity and project:
-                art_type = api.artifact_type(project=project, type_name="model")
-                collection = art_type.collection(artifact_name)
-                # In W&B public API, versions are iterated via `.artifacts()` on the collection
-                versions = list(collection.artifacts())
-                print(
-                    f"[checkpoint/prune] Using collection for {entity}/{project}:{artifact_name} → {len(versions)} versions"
-                )
-            else:
-                versions = []
+                locator = f"{entity}/{project}/{artifact_name}"
+                try:
+                    versions = list(api.artifact_versions("model", locator))
+                    print(f"[checkpoint/prune] Using artifact_versions for {locator} → {len(versions)} versions")
+                except Exception as e:
+                    print(f"[checkpoint/prune][warn] artifact_versions lookup failed for {locator}: {e}.")
 
             # Fallback: use artifacts visible from this run only
             if not versions:
-                # run.logged_artifacts() returns artifact names like '<collection>:vN'; match by collection prefix
-                versions = [
-                    a
-                    for a in run.logged_artifacts()
-                    if isinstance(getattr(a, "name", None), str) and a.name.split(":", 1)[0] == artifact_name
-                ]
-                print(f"[checkpoint/prune] Fallback to run.logged_artifacts() → {len(versions)} versions")
+                api_run = None
+                if entity and project:
+                    try:
+                        api_run = api.run(f"{entity}/{project}/{run.id}")
+                    except Exception as e:
+                        print(f"[checkpoint/prune][warn] api.run lookup failed for {run.id}: {e}.")
+                if api_run is not None:
+                    versions = [
+                        a
+                        for a in api_run.logged_artifacts()
+                        if isinstance(getattr(a, "name", None), str) and a.name.split(":", 1)[0] == artifact_name
+                    ]
+                print(f"[checkpoint/prune] Fallback to logged_artifacts() → {len(versions)} versions")
 
             if len(versions) <= self.keep_last_k_versions:
                 print(f"[checkpoint/prune] Nothing to prune (have {len(versions)} ≤ keep {self.keep_last_k_versions})")
@@ -387,7 +389,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
                     break
 
             # If protected set already exceeds keep budget, keep all protected and skip deletion
-            keep_ids = set(getattr(a, "id", a) for a in to_keep) | alias_protected
+            keep_ids = {getattr(a, "id", a) for a in to_keep} | alias_protected
             if len(keep_ids) < self.keep_last_k_versions:
                 # Fill remaining keep slots with newest others
                 for a in versions:
@@ -432,6 +434,7 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             print(f"[checkpoint/prune][error] {type(e).__name__}: {e}")
 
     def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        """Upload selected checkpoints at the end of validation if appropriate."""
         # Only upload during actual training runs to avoid alias churn during post-training validate
         if getattr(trainer, "sanity_checking", False):
             return

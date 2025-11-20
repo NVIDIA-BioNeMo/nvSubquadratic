@@ -12,8 +12,8 @@ from nvsubquadratic.parallel.utils import zigzag_gather_from_group_ranks, zigzag
 from nvsubquadratic.utils import qk_norm, rope
 
 
-class SelfAttention(torch.nn.Module):
-    """Multi-head self-attention with optional QK normalization and Rotary Positional Embeddings (RoPE).
+class Attention(torch.nn.Module):
+    """Multi-head attention (support for self and cross-attention) with optional QK normalization and Rotary Positional Embeddings (RoPE).
 
     Input / Output
     - Accepts sequences ``[B, T, C]`` or images ``[B, H, W, C]``.
@@ -43,6 +43,15 @@ class SelfAttention(torch.nn.Module):
       blocks (e.g., as in torchtitan: https://docs.pytorch.org/tutorials/unstable/context_parallel.html).
     - Future work: Migrate to PyTorch's standard CP attention API, which may also eliminate
       the requirement for zigzag-style communication patterns.
+
+    Args:
+        hidden_dim (int): The dimension of the hidden states.
+        num_heads (int): The number of attention heads.
+        apply_qk_norm (bool): Whether to apply QK normalization.
+        use_rope (bool): Whether to apply RoPE.
+        is_causal (bool): Whether the attention is causal. Defaults to False.
+        attn_dropout (float): The dropout rate for the attention weights.
+        rope_base (float): The base of the RoPE.
     """
 
     def __init__(
@@ -51,22 +60,11 @@ class SelfAttention(torch.nn.Module):
         num_heads: int,
         apply_qk_norm: bool,
         use_rope: bool,
+        is_causal: bool = False,
         attn_dropout: float = 0.0,
         rope_base: float = 10000.0,
     ):
-        """Initialize the SelfAttention module.
-
-        Args:
-            hidden_dim: The dimension of the hidden states.
-            num_heads: The number of attention heads.
-            apply_qk_norm: Whether to apply QK normalization.
-            use_rope: Whether to apply RoPE.
-            attn_dropout: The dropout rate for the attention weights.
-            rope_base: The base of the RoPE.
-
-        Raises:
-            AssertionError: If hidden_dim is not divisible by num_heads.
-        """
+        """Initialize the SelfAttention module."""
         super().__init__()
         assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"
         self.hidden_dim = hidden_dim
@@ -76,7 +74,7 @@ class SelfAttention(torch.nn.Module):
         self.apply_qk_norm = apply_qk_norm
         self.use_rope = use_rope
         self.rope_base = rope_base
-
+        self.is_causal = is_causal
         self.attn_dropout = attn_dropout
 
         # RoPE caches (keyed by shape, dtype, device)
@@ -84,6 +82,10 @@ class SelfAttention(torch.nn.Module):
             self._rope1d_cache = {}
             self._rope2d_cache = {}
             self._rope3d_cache = {}
+
+    def extra_repr(self) -> str:
+        """Extra repr for the Attention module."""
+        return f"num_heads={self.num_heads}, apply_qk_norm={self.apply_qk_norm}, is_causal={self.is_causal}, attn_dropout={self.attn_dropout}, use_rope={self.use_rope}, rope_base={self.rope_base}"
 
     def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
         """Precompute and cache 1D RoPE cos/sin for input of length seq_len.
@@ -107,9 +109,10 @@ class SelfAttention(torch.nn.Module):
         if key in self._rope1d_cache:
             return self._rope1d_cache[key]
         # If not in cache, compute and cache
-        with torch.no_grad():
-            cos, sin = rope.construct_rope_1d_cache_blh(seq_len, dim, device, dtype, self.rope_base)
-        self._rope1d_cache[key] = (cos, sin)
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                cos, sin = rope.construct_rope_1d_cache_blh(seq_len, dim, device, dtype, self.rope_base)
+                self._rope1d_cache[key] = (cos, sin)
         return cos, sin
 
     def _rope_cache_2d(
@@ -137,11 +140,12 @@ class SelfAttention(torch.nn.Module):
         if key in self._rope2d_cache:
             return self._rope2d_cache[key]
         # If not in cache, compute and cache
-        with torch.no_grad():
-            cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_blh(
-                height, width, dim_half, device, dtype, self.rope_base
-            )
-            self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_blh(
+                    height, width, dim_half, device, dtype, self.rope_base
+                )
+                self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
         return cos_y, sin_y, cos_x, sin_x
 
     def _rope_cache_3d(
@@ -171,11 +175,12 @@ class SelfAttention(torch.nn.Module):
         if key in self._rope3d_cache:
             return self._rope3d_cache[key]
         # If not in cache, compute and cache
-        with torch.no_grad():
-            cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_blh(
-                depth, height, width, dim_third, device, dtype, self.rope_base
-            )
-            self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_blh(
+                    depth, height, width, dim_third, device, dtype, self.rope_base
+                )
+                self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
         return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
     def _flatten_spatial(self, x: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
@@ -235,6 +240,7 @@ class SelfAttention(torch.nn.Module):
         # Pattern: All-gather K/V along sequence, keep Q local (or gather Q too for non-causal)
 
         if cp_group is not None and cp_group.size() > 1:
+            raise ValueError("Context parallelism must be revisited.")
             # For non-causal attention, gather full sequence for Q, K, V
             # Input: [B, *spatial_partial, hidden_dim] where spatial_partial = spatial/cp_size
             # Output: [B, *spatial_full, hidden_dim]
@@ -247,7 +253,7 @@ class SelfAttention(torch.nn.Module):
         query = rearrange(query, "b ... (h d) -> (b h) ... d", h=self.num_heads)
         key = rearrange(key, "b ... (h d) -> (b h) ... d", h=self.num_heads)
         value = rearrange(value, "b ... (h d) -> (b h) ... d", h=self.num_heads)
-        local_num_heads = self.num_heads
+        local_num_heads = self.num_heads  # TODO(@farhad): This looks to me like an error.
 
         # Optional RoPE positional encoding (before normalization)
         if self.use_rope:
@@ -318,7 +324,7 @@ class SelfAttention(torch.nn.Module):
                 rearrange(key.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
                 rearrange(value.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
                 dropout_p=self.attn_dropout if self.training else 0.0,
-                is_causal=False,
+                is_causal=self.is_causal,
                 # Scale is 1.0 if QK normalization is applied, otherwise self.scale
                 # When you L2-normalize Q and K, you are effectively doing cosine attention.
                 # PyTorch SDPA still applies the 1/sqrt(d) scaling to the logits. That makes the

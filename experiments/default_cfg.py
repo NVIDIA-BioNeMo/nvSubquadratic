@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
 
@@ -27,6 +27,17 @@ class TrainConfig:
 
 
 @dataclass
+class TrainerConfig:
+    """Lightning Trainer configuration overrides."""
+
+    # Check once every epoch by default.
+    val_check_interval: float = 1.0
+
+    # Run through all validation batches every epoch by default.
+    limit_val_batches: Union[int, float] = 1.0
+
+
+@dataclass
 class SchedulerConfig:
     """Scheduler configuration."""
 
@@ -34,6 +45,7 @@ class SchedulerConfig:
     warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
+    monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
 
 
 @dataclass
@@ -42,6 +54,7 @@ class WandbConfig:
 
     project: str = "nvsubquadratic"
     entity: str = "dromeroguzma"
+
     job_group: str = ""
 
 
@@ -57,24 +70,20 @@ class AutoResumeConfig:
     """
 
     enabled: bool = False
-    # Which artifact alias to resume from when found
     alias: Literal["best", "latest"] = "latest"
-    # Run name
     run_name: str | None = None
 
 
 @dataclass
 class ResumeFromCheckpointConfig:
-    """Configuration to specify wether to start training from a previously saved checkpoint."""
+    """Configuration to specify whether to start training from a previously saved checkpoint."""
 
-    load: bool = False  # Whether to load the checkpoint
-    alias: Literal["best", "latest"] = "latest"  # Either best or latest
-    strict: bool = True  # Whether to raise an error if the checkpoint does not exactly match the model architecture
-    partial_load: bool = False  # When strict is False, copy overlapping tensor slices from checkpoint into model
-    run_path: str = (
-        ""  # entity/project/run_id | When set, download checkpoint from this W&B run path (entity/project/run_id)
-    )
-    output_dir: str = ".artifacts/{run_id}/{alias}"  # Optional output directory to store downloaded artifacts; defaults to .artifacts/{run_id}/{alias}
+    load: bool = False
+    alias: Literal["best", "latest"] = "latest"
+    strict: bool = True
+    partial_load: bool = False
+    run_path: str = ""
+    output_dir: str = ".artifacts/{run_id}/{alias}"
 
 
 @dataclass
@@ -83,50 +92,73 @@ class ExperimentConfig:
 
     device: str = "cuda"
     debug: bool = True
-    deterministic: bool = False  # Need to be set to True for deterministic behavior
+    deterministic: bool = False
     seed: int = 0
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
 
-    # Dataset configuration that MUST be set in experiment config
-    # This should be instantiated with a LazyConfig object, e.g.:
-    #   config.dataset = LazyConfig("datamodules.mnist.MNISTDataModule", {
-    #       "data_dir": "/data",
-    #       "batch_size": 32,
-    #       "permuted": False
-    #   })
-    dataset: LazyConfig = PLACEHOLDER  # Must be resolved in the experiment config.
-
-    # Network configuration that MUST be set in experiment config
-    # This should be instantiated with a LazyConfig object, e.g.:
-    #   config.net = LazyConfig(ResNet)(
-    #       in_channels=1,
-    #       out_channels=10,
-    #       num_blocks=4,
-    #       ...
-    #   })
+    dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
-
-    lightning_wrapper_class: Literal[type("ClassificationWrapper"), type("RegressionWrapper")] = PLACEHOLDER
-
-    # Base optimizer MUST be set in experiment config
-    # This should be instantiated with a LazyConfig object, e.g.:
-    #   config.optimizer = LazyConfig(torch.optim.Adam)(
-    #       lr=0.01,
-    #       weight_decay=1e-6,
-    #   )
+    lightning_wrapper_class: LazyConfig = PLACEHOLDER
     optimizer: LazyConfig = PLACEHOLDER
 
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-
     train: TrainConfig = field(default_factory=TrainConfig)
-
+    trainer: TrainerConfig = field(default_factory=TrainerConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
 
     resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
-
-    # Auto-resume behavior based on W&B run name
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
-
-    # Optional: additional Trainer callbacks defined per-experiment and appended during construction
     callbacks: list[LazyConfig] = field(default_factory=list)
+
+
+@dataclass
+class DiffusionConfig:
+    """Diffusion configuration for schedule, sampling, and EMA."""
+
+    num_train_timesteps: int = 1_000
+    beta_start: float = 1e-4
+    beta_end: float = 0.02
+    beta_schedule: str = "cosine_interpolated"  # one of "linear", "scaled_linear", "cosine", "cosine_interpolated"
+    cosine_schedule_logsnr_min: float = -10.0
+    cosine_schedule_logsnr_max: float = 10.0
+    cosine_schedule_image_resolution: int = 64
+    cosine_schedule_noise_res_low: int = 32
+    cosine_schedule_noise_res_high: int = 64
+    prediction_type: str = "v_prediction"  # one of "epsilon", "v_prediction", "sample"
+    time_embed_dim: Optional[int] = None
+    max_period: float = 10_000.0
+
+    num_inference_steps: int = 150
+    num_samples: int = 25
+    log_samples: bool = True
+    ddim_eta: float = 0.0
+
+    use_sigmoid_loss_weighting: bool = True
+    sigmoid_loss_bias: float = -1.0
+
+    ema_enabled: bool = True
+    ema_decay: float = 0.9995
+    ema_update_every: int = 1
+    ema_warmup_steps: int = 5_000
+
+    # Classifier-free guidance settings, enabled by default.
+    use_classifier_free_guidance: bool = True
+    guidance_scale: float = 3.5
+    condition_dropout_prob: float = 0.1
+    num_classes: Optional[int] = 1000
+
+    # Online evaluation knobs.
+    fid_enabled: bool = False
+    fid_num_batches: int = 0
+    fid_num_inference_steps: Optional[int] = None
+
+
+@dataclass
+class DiffusionExperimentConfig(ExperimentConfig):
+    """Experiment configuration for diffusion runs."""
+
+    # Override debug mode.
+    debug: bool = False
+
+    diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)

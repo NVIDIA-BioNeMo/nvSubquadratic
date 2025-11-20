@@ -392,19 +392,21 @@ class UCF101DataModule(pl.LightningDataModule):
         return torch.stack(list(videos), dim=0), torch.as_tensor(labels, dtype=torch.long)
 
     @torch.no_grad()
-    def on_before_batch_transfer(self, batch, dataloader_idx):
-        """Function to reshape (if needed) the frames before batch transfer."""
+    def on_before_batch_transfer(self, batch, dataloader_idx) -> dict[str, torch.Tensor]:
+        """Function to reshape (if needed) the frames before batch transfer.
+
+        Returns:
+            dict[str, torch.Tensor]: A dictionary containing the input, label and condition.
+                Keys: "input", "label" and "condition".
+        """
+        video, label = batch
         # Must reshape the frames
         if self.frame_transform is not None:
-            video, label = batch
-            print(f"video: {video.shape}, label: {label}")
             batch_size, channels, temporal_length, height, width = video.shape
             video = rearrange(video, "b c t h w -> (b c t) h w")
             # Apply frame transform
             video = self.frame_transform(video)
             # Reconstruct to original shape
             video = rearrange(video, "(b c t) h w -> b t h w c", b=batch_size, t=temporal_length, c=channels)
-            print(f"reshaped video: {video.shape}, label: {label}")
-            return (video, label)
-        else:
-            return batch
+        # Return the dictionary
+        return {"input": video, "label": label, "condition": None}
