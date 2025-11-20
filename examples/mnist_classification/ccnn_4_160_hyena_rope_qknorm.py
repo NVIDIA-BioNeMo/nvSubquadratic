@@ -44,7 +44,7 @@ FFT_PADDING = "circular"
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
-NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
+NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
 GRAD_CLIP = 10.0
 
 WEIGHT_DECAY = 0.01
