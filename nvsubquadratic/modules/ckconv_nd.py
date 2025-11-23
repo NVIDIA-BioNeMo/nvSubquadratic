@@ -28,6 +28,22 @@ from nvsubquadratic.ops.fftconv import (
 )
 
 
+# Mapping from padding mode and data dimensionality to FFT convolution functions.
+# Each entry is a tuple: (fn_for_BLH_input (bhl + reshape), fn_for_BHL_input)
+FFT_FUNCTIONS = {
+    "circular": {
+        1: (circular_fftconv1d_bhl_w_reshape, circular_fftconv1d_bhl),
+        2: (circular_fftconv2d_bhl_w_reshape, circular_fftconv2d_bhl),
+        3: (circular_fftconv3d_bhl_w_reshape, circular_fftconv3d_bhl),
+    },
+    "zero": {
+        1: (fftconv1d_bhl_w_reshape, fftconv1d_bhl),
+        2: (fftconv2d_bhl_w_reshape, fftconv2d_bhl),
+        3: (fftconv3d_bhl_w_reshape, fftconv3d_bhl),
+    },
+}
+
+
 class CKConvND(torch.nn.Module):
     """CKConv (long-convolution) implementation for ND signals."""
 
@@ -78,30 +94,14 @@ class CKConvND(torch.nn.Module):
         self.shortcut.data.uniform_(-bounds, bounds)
 
         # Define FFT operation depending on padding and dimensionality
-        if fft_padding == "circular":
-            if data_dim == 1:
-                self.fftconv_fn = circular_fftconv1d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = circular_fftconv1d_bhl
-            elif data_dim == 2:
-                self.fftconv_fn = circular_fftconv2d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = circular_fftconv2d_bhl
-            elif data_dim == 3:
-                self.fftconv_fn = circular_fftconv3d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = circular_fftconv3d_bhl
-            else:
-                raise ValueError(f"Unsupported number of spatial dimensions: {data_dim}")
-        else:  # "zero"
-            if data_dim == 1:
-                self.fftconv_fn = fftconv1d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = fftconv1d_bhl
-            elif data_dim == 2:
-                self.fftconv_fn = fftconv2d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = fftconv2d_bhl
-            elif data_dim == 3:
-                self.fftconv_fn = fftconv3d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = fftconv3d_bhl
-            else:
-                raise ValueError(f"Unsupported number of spatial dimensions: {data_dim}")
+        try:
+            self.fftconv_fn, self.fftconv_fn_bhl_input = FFT_FUNCTIONS[self.fft_padding][self.data_dim]
+        except KeyError:
+            valid_dims = sorted(FFT_FUNCTIONS.get(self.fft_padding, {}).keys())
+            raise ValueError(
+                f"Unsupported configuration: fft_padding='{self.fft_padding}', data_dim={self.data_dim}. "
+                f"Valid dimensions for '{self.fft_padding}': {valid_dims}"
+            )
 
         # Define the grid type
         self.grid_type = grid_type
