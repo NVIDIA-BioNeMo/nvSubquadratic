@@ -324,11 +324,11 @@ class Hyena(torch.nn.Module):
         # rid of the problems around using circular convolutions.
         if not isinstance(self.output_norm, torch.nn.Identity):
             if isinstance(self.output_norm, torch.nn.GroupNorm):
-                value = self.output_norm(value)
+                y = self.output_norm(y)
             else:  # torch.nn.LayerNorm / torch.nn.RMSNorm expect last-dim
-                output_tmp = rearrange(value, "b c ... -> b ... c")
+                output_tmp = rearrange(y, "b c ... -> b ... c")
                 output_tmp = self.output_norm(output_tmp)
-                value = rearrange(output_tmp, "b ... c -> b c ...")
+                y = rearrange(output_tmp, "b ... c -> b c ...")
 
         # Reshape back to [B, * spatial_dims, C]
-        return rearrange(value, "b c ... -> b ... c")
+        return rearrange(y, "b c ... -> b ... c")
