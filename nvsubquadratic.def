@@ -31,6 +31,21 @@ From: nvcr.io/nvidia/pytorch:25.06-py3
 export PATH=/usr/local/bin:/usr/bin:$PATH
 hash -r
 
+# Ensure CUDA libs are on the path for Triton/TE driver lookups
+CUDA_COMPAT=/usr/local/cuda/compat/lib
+SINGULARITY_NV_LIB=/.singularity.d/libs
+if [ -d "$SINGULARITY_NV_LIB" ]; then
+    export LD_LIBRARY_PATH="$SINGULARITY_NV_LIB:${LD_LIBRARY_PATH}"
+    if [ -f "$SINGULARITY_NV_LIB/libcuda.so.1" ]; then
+        export TRITON_LIBCUDA_PATH="$SINGULARITY_NV_LIB/libcuda.so.1"
+    fi
+elif [ -d "$CUDA_COMPAT" ]; then
+    export LD_LIBRARY_PATH="$CUDA_COMPAT:${LD_LIBRARY_PATH}"
+    if [ -f "$CUDA_COMPAT/libcuda.so.1" ]; then
+        export TRITON_LIBCUDA_PATH="$CUDA_COMPAT/libcuda.so.1"
+    fi
+fi
+
 REPO=/workspaces/nvSubquadratic-private
 HOOK="$REPO/.git/hooks/pre-commit"
 if [ -d "$REPO/.git" ] && [ ! -f "$HOOK" ]; then
@@ -42,7 +57,7 @@ if [ -d "$REPO/.git" ] && [ ! -f "$HOOK" ]; then
         echo "[nvSubquadratic] pre-commit not found; skipping hook install."
     fi
 fi
-unset REPO HOOK
+unset REPO HOOK CUDA_COMPAT SINGULARITY_NV_LIB
 EOF
     chmod +x /etc/profile.d/nvsub_precommit.sh
     # Source the hook installer for interactive shells
