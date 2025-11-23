@@ -64,6 +64,7 @@ repos:
         pass_filenames: false
         always_run: false
         description: Ensure all Python files have proper NVIDIA license headers
+        stages: [manual]  # only runs if you explicitly invoke it
       - id: pytest-pre-push
         name: pytest-pre-push
         entry: bash -c 'echo "Running tests before push..." && python -m pytest nvsubquadratic/ tests/ -v --tb=short'

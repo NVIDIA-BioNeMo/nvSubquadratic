@@ -24,6 +24,30 @@ From: nvcr.io/nvidia/pytorch:25.06-py3
     else
         echo "Skipping subquadratic-ops installation; set GITLAB_TOKEN to enable."
     fi
+    # Auto-install git hooks on shell entry if missing
+    cat >/etc/profile.d/nvsub_precommit.sh <<'EOF'
+#!/bin/bash
+REPO=/workspaces/nvSubquadratic-private
+HOOK="$REPO/.git/hooks/pre-commit"
+if [ -d "$REPO/.git" ] && [ ! -f "$HOOK" ]; then
+    if command -v pre-commit >/dev/null 2>&1; then
+        echo "[nvSubquadratic] Installing pre-commit hooks..."
+        (cd "$REPO" && pre-commit install && pre-commit install --hook-type pre-push) || \
+            echo "[nvSubquadratic] pre-commit install failed (hooks not installed)."
+    else
+        echo "[nvSubquadratic] pre-commit not found; skipping hook install."
+    fi
+fi
+unset REPO HOOK
+EOF
+    chmod +x /etc/profile.d/nvsub_precommit.sh
+    # Source the hook installer for interactive shells
+    cat >>/etc/bash.bashrc <<'EOF'
+# Auto-install nvSubquadratic pre-commit hooks when entering the container
+if [ -f /etc/profile.d/nvsub_precommit.sh ]; then
+    source /etc/profile.d/nvsub_precommit.sh
+fi
+EOF
 
 %runscript
     exec jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root "$@"

@@ -54,6 +54,25 @@ docker build --build-arg GITLAB_TOKEN=$GITLAB_TOKEN -t nvsubquadratic:dev .
 docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces nvsubquadratic:dev
 ```
 
+### Apptainer
+
+```bash
+# Optional: set GitLab token for subquadratic-ops during build
+export GITLAB_TOKEN="your_gitlab_token_here"
+
+# Build SIF (add --fakeroot if required on your system)
+apptainer build nvsubquadratic.sif nvsubquadratic.def
+
+# Interactive shell with GPUs and live code from your checkout
+apptainer shell --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif
+
+# Run a command inside the image (example: tests)
+apptainer exec --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif python -m pytest nvsubquadratic/ tests/
+
+# Use the default runscript (starts Jupyter Lab as defined in the .def)
+apptainer run --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif --no-browser
+```
+
 ### Local Installation
 
 ```bash
