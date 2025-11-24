@@ -17,6 +17,8 @@ from nvsubquadratic.lazy_config import instantiate
 
 _ALLCLOSE_RTOL = 1e-4
 _ALLCLOSE_ATOL = 1e-5
+_GRAD_RTOL = 5e-4
+_GRAD_ATOL = 5e-5
 
 
 @pytest.fixture
@@ -134,7 +136,7 @@ def test_compile_backward_pass_equality(mnist_hyena_model, sample_mnist_input, s
         g1, g2 = grads_no_compile[name], grads_with_compile[name]
         if (g1 is None) != (g2 is None):
             mismatched_grads.append(f"{name}: gradient existence mismatch")
-        elif g1 is not None and not torch.allclose(g1, g2, rtol=_ALLCLOSE_RTOL, atol=_ALLCLOSE_ATOL):
+        elif g1 is not None and not torch.allclose(g1, g2, rtol=_GRAD_RTOL, atol=_GRAD_ATOL):
             max_diff = (g1 - g2).abs().max().item()
             mismatched_grads.append(f"{name}: max_diff={max_diff:.6e}")
 

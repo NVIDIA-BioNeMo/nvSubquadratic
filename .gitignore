@@ -242,6 +242,9 @@ $RECYCLE.BIN/
 # Docker
 .dockerignore
 
+# Apptainer images
+*.sif
+
 # Development and testing
 .pytest_cache/
 .coverage
