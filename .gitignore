@@ -348,3 +348,6 @@ uv.lock
 lightning_logs/
 wandb/
 runs/
+
+# Profiler results
+profile_results/
