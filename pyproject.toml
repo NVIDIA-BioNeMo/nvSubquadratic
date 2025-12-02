@@ -12,6 +12,7 @@ dependencies = [
     "torchvision>=0.15.0",
     "einops>=0.6.0",
     "numpy>=1.21.0",
+    "pyarrow>=14.0.0,<20.0.0",  # Constrained to be compatible with cudf/pylibcudf in NGC containers
     "datasets>=2.14.0",
     "diffusers>=0.25.0",
     "clean-fid>=0.1.35",

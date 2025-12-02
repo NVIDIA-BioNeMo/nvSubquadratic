@@ -24,6 +24,7 @@ class TrainConfig:
     grad_clip: float = 0.0
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
+    every_n_train_steps: int = 500  # Save checkpoint every n training steps
 
 
 @dataclass

@@ -1,7 +1,7 @@
 # TODO: Add licence header
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
+from typing import Optional
 from pathlib import Path
 
 import pytorch_lightning as pl
@@ -18,13 +18,18 @@ def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,
     run_name: str,
+    experiment_dir: Optional[Path] = None,
+    num_nodes: int = 1,
+    # 
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 
     Args:
         cfg (ExperimentConfig): The configuration.
         wandb_logger (pl.loggers.WandbLogger): The wandb logger.
-        run_name: Unique run identifier used for checkpoint locations.
+        run_name (str): The run name, used only if experiment_dir is not provided.
+        experiment_dir (Optional[Path]): The experiment directory. If not provided, the run name is used to create the checkpoint directory.
+        num_nodes (int): The number of nodes to use for training.
 
     Returns:
         tuple[pl.Trainer, pl.Callback]: The constructed trainer and the checkpoint callback.
@@ -44,8 +49,12 @@ def construct_trainer(
         monitor = "val/loss"
 
     # Derive checkpoint directory based on run name.
-    checkpoint_dir = Path("runs") / run_name / "checkpoints"
+    if not experiment_dir is None:
+        checkpoint_dir = experiment_dir / "checkpoints"
+    else:
+        checkpoint_dir = Path("runs") / run_name / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[checkpoint] Saving checkpoints to: {checkpoint_dir.resolve()}")
 
     # Callback for model checkpointing:
     checkpoint_callback = pl_callbacks.ModelCheckpoint(
@@ -55,6 +64,7 @@ def construct_trainer(
         save_top_k=1,
         save_last=True,  # Keep track of the model at the last epoch
         verbose=True,
+        every_n_train_steps=cfg.train.every_n_train_steps
     )
 
     # Distributed training params
@@ -67,7 +77,7 @@ def construct_trainer(
     else:
         strategy = "auto"
         sync_batchnorm = False
-    num_nodes = 1  # Multi-node training not verified.
+    # num_nodes = 1  # Multi-node training not verified.
 
     # Merge default callbacks with any experiment-defined callbacks
     user_callbacks = [instantiate(cb_cfg) for cb_cfg in cfg.callbacks] if cfg.callbacks else []
@@ -81,6 +91,8 @@ def construct_trainer(
         pl_callbacks.LearningRateMonitor(log_weight_decay=True),
         # Timer callback
         pl_callbacks.Timer(),
+        # Progress bar for SLURM/non-TTY environments - prints training progress with it/s
+        pl_callbacks.TQDMProgressBar(refresh_rate=10),
         # Wandb selective checkpoint uploader
         WandbSelectiveCheckpointUploader(
             upload_best=True,
@@ -121,5 +133,8 @@ def construct_trainer(
         benchmark=benchmark,
         val_check_interval=cfg.trainer.val_check_interval,
         limit_val_batches=cfg.trainer.limit_val_batches,
+        # Logging frequency
+        log_every_n_steps=10,
+        enable_progress_bar=True,
     )
     return trainer, checkpoint_callback

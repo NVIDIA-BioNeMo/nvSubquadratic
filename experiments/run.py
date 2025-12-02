@@ -12,7 +12,7 @@ Usage:
 import argparse
 import dataclasses
 import os
-
+from pathlib import Path
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.loggers import WandbLogger
@@ -59,6 +59,22 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to the configuration file, e.g., config/experiments/mnist/mnist_classification_cfg.py",
     )
+    
+    parser.add_argument(
+        "--experiment_dir",
+        type=str,
+        required=False,
+        default=None,
+        help="Path to the experiment directory, e.g., workspace/results. If not provided, the run name is used to create the checkpoint directory.",
+    )
+    
+    parser.add_argument(
+        "--num_nodes",
+        type=int,
+        required=False,
+        default=1,
+        help="Number of nodes to use for training, default is 1",
+    )
 
     # Add a catch-all for arbitrary config overrides
     parser.add_argument(
@@ -85,6 +101,12 @@ def main() -> None:
     """
     # Parse command line arguments
     args = parse_args()
+    
+    num_nodes = args.num_nodes
+    experiment_dir = Path(args.experiment_dir) if args.experiment_dir is not None else None
+    
+    if not experiment_dir is None:
+        experiment_dir.mkdir(parents=True, exist_ok=True)
 
     # Load configuration from file
     config = load_config_from_file(args.config)
@@ -252,7 +274,7 @@ def main() -> None:
             print("[resume] Weight loading completed.")
 
     # Create trainer
-    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name)
+    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name, experiment_dir, num_nodes)
 
     # Validate that the checkpoint has been correctly loaded before training (for no autoresume)
     if autoresume_ckpt_path is None and config.resume_from_checkpoint.load:
