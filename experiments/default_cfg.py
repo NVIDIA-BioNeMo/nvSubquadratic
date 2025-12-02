@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
 
@@ -115,7 +115,25 @@ class ExperimentConfig:
 
     start_from_checkpoint: StartFromCheckpointConfig = field(default_factory=StartFromCheckpointConfig)
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
-    callbacks: list[LazyConfig] = field(default_factory=list)
+    callbacks: list = field(default_factory=list)
+
+
+@dataclass
+class TextGenerationConfig:
+    """Configuration for text generation during validation."""
+    enabled: bool = False
+    every_n_epochs: int = 1
+    max_new_tokens: int = 50
+    temperature: float = 1.0
+    top_k: int = 50
+    top_p: float = 1.0
+    num_samples: int = 4
+
+
+@dataclass
+class TextPretrainingExperimentConfig(ExperimentConfig):
+    """Experiment configuration for text pretraining runs."""
+    text_generation: TextGenerationConfig = field(default_factory=TextGenerationConfig)
 
 
 @dataclass

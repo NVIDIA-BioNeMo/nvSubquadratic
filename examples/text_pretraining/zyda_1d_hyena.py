@@ -1,5 +1,9 @@
 """Config file for Text Pretraining using 1D Hyena on Zyda-2."""
+<<<<<<< HEAD
 
+=======
+import os
+>>>>>>> f1b80b7 (Initial commit text pretraining)
 import torch
 from pytorch_lightning import Trainer
 
@@ -27,9 +31,13 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 class EmbeddingAdapter(torch.nn.Embedding):
     """Adapter for Embedding to accept in_features and out_features."""
+<<<<<<< HEAD
 
     def __init__(self, in_features: int, out_features: int, **kwargs):
         """Initialize the adapter."""
+=======
+    def __init__(self, in_features: int, out_features: int, **kwargs):
+>>>>>>> f1b80b7 (Initial commit text pretraining)
         super().__init__(num_embeddings=in_features, embedding_dim=out_features, **kwargs)
 
 
@@ -38,12 +46,21 @@ WANDB_ENTITY = "dafidofff"
 DATA_DIM = 1
 
 # Dataset
+<<<<<<< HEAD
 BATCH_SIZE = 4
 MAX_LENGTH = 1024
 VOCAB_SIZE = 131072  # Mistral-NeMo-Minitron vocab size
 # Tokenization is done in the dataloader, so with to many workers
 # we might run out of cpu memory
 NUM_WORKERS = 4  # os.cpu_count() - 2 if os.cpu_count() else 4,
+=======
+BATCH_SIZE = 8
+MAX_LENGTH = 1024
+VOCAB_SIZE = 131072 # Mistral-NeMo-Minitron vocab size
+# Tokenization is done in the dataloader, so with to many workers 
+# we might run out of cpu memory
+NUM_WORKERS = 4     # os.cpu_count() - 2 if os.cpu_count() else 4, 
+>>>>>>> f1b80b7 (Initial commit text pretraining)
 
 # Model
 NUM_HIDDEN_CHANNELS = 256
@@ -61,13 +78,20 @@ GRAD_CLIP = 1.0
 VAL_CHECK_INTERVAL = 10000
 LIMIT_VAL_BATCHES = 100
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> f1b80b7 (Initial commit text pretraining)
 def get_config() -> TextPretrainingExperimentConfig:
     """Return the Text Pretraining configuration."""
     config = TextPretrainingExperimentConfig()
     config.debug = False
     config.seed = 42
+<<<<<<< HEAD
 
+=======
+    
+>>>>>>> f1b80b7 (Initial commit text pretraining)
     # Dataset
     config.dataset = LazyConfig(ZydaDataModule)(
         dataset_name="Zyphra/Zyda-2",
@@ -80,9 +104,13 @@ def get_config() -> TextPretrainingExperimentConfig:
     )
 
     # Model
+<<<<<<< HEAD
     config.net = LazyConfig(
         ResidualNetwork
     )(
+=======
+    config.net = LazyConfig(ResidualNetwork)(
+>>>>>>> f1b80b7 (Initial commit text pretraining)
         in_channels=VOCAB_SIZE,
         out_channels=VOCAB_SIZE,
         num_blocks=NUM_BLOCKS,
@@ -106,7 +134,11 @@ def get_config() -> TextPretrainingExperimentConfig:
                             num_layers=3,
                             embedding_dim=64,
                             omega_0=100.0,
+<<<<<<< HEAD
                             L_cache=MAX_LENGTH,  # Cache size
+=======
+                            L_cache=MAX_LENGTH, # Cache size
+>>>>>>> f1b80b7 (Initial commit text pretraining)
                             use_bias=True,
                             nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
                         ),
@@ -127,15 +159,11 @@ def get_config() -> TextPretrainingExperimentConfig:
                         out_channels="3 * ${net.hidden_dim}",
                         kernel_size=3,
                         groups="3 * ${net.hidden_dim}",
-                        padding=0,  # Padding handled by CausalConv1d
+                        padding=0, # Padding handled by CausalConv1d
                         bias=False,
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-                    pixelhyena_norm_cfg=LazyConfig(
-                        torch.nn.Identity
-                    )(),  # No pixel norm for 1D usually? Or maybe LayerNorm? Reference used GroupNorm(1) which is LayerNorm-ish.
-                    # Let's use Identity for now or LayerNorm if needed. Reference used GroupNorm(1).
-                    # pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels="${net.hidden_dim}"),
+                    pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(), 
                     apply_qk_norm=True,
                     use_rope=True,
                     rope_base=10000.0,
@@ -147,6 +175,7 @@ def get_config() -> TextPretrainingExperimentConfig:
             # No conditioning for pretraining
             condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
             condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
+            
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
@@ -158,7 +187,7 @@ def get_config() -> TextPretrainingExperimentConfig:
             mlp_norm_cfg="${net.norm_cfg}",
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
-        dropout_in_cfg=LazyConfig(torch.nn.Identity)(),  # No dropout on input indices
+        dropout_in_cfg=LazyConfig(torch.nn.Identity)(), # No dropout on input indices
         condition_in_proj_cfg=None,
     )
 
@@ -182,7 +211,7 @@ def get_config() -> TextPretrainingExperimentConfig:
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
-        betas=(0.9, 0.95),  # Standard for LLMs
+        betas=(0.9, 0.95), # Standard for LLMs
     )
 
     # Training
@@ -190,7 +219,7 @@ def get_config() -> TextPretrainingExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
-        track_grad_norm=2,  # Track L2 norm of gradients
+        track_grad_norm=2, # Track L2 norm of gradients
     )
 
     # Trainer

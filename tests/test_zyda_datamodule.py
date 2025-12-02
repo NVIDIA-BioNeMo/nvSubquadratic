@@ -1,6 +1,7 @@
 """Test ZydaDataModule."""
 
 
+import torch
 from experiments.datamodules.zyda_datamodule import ZydaDataModule
 
 def test_zyda_datamodule():
