@@ -3,15 +3,63 @@
 # Build instructions:
 #   docker build -t nvsubquadratic:dev .
 
-ARG PYTORCH_VERSION=25.06
+FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
 
-# Base image with PyTorch
-FROM nvcr.io/nvidia/pytorch:${PYTORCH_VERSION}-py3
+ARG MINIFORGE_NAME=Miniforge3
+ARG MINIFORGE_VERSION=25.3.0-3
 
-# Re-declare ARG after FROM to make it available in build stage
-ARG GITLAB_TOKEN
+ENV CONDA_DIR=/opt/conda
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV PATH=${CONDA_DIR}/bin:${PATH}
 
-# Set working directory
+RUN apt-get update > /dev/null && \
+    apt-get install --no-install-recommends --yes \
+        wget bzip2 ca-certificates \
+        git \
+        tini \
+        > /dev/null && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/${MINIFORGE_NAME}-${MINIFORGE_VERSION}-Linux-$(uname -m).sh -O /tmp/miniforge.sh && \
+    /bin/bash /tmp/miniforge.sh -b -p ${CONDA_DIR} && \
+    rm /tmp/miniforge.sh && \
+    conda clean --tarballs --index-cache --packages --yes && \
+    find ${CONDA_DIR} -follow -type f -name '*.a' -delete && \
+    find ${CONDA_DIR} -follow -type f -name '*.pyc' -delete && \
+    conda clean --force-pkgs-dirs --all --yes  && \
+    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> /etc/skel/.bashrc && \
+    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> ~/.bashrc
+
+RUN conda install --yes \
+        python=3.12 \
+        && conda clean --all --yes
+
+RUN pip install --no-cache-dir \
+        torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
+        && conda clean --all --yes
+RUN pip install --no-cache-dir \
+        einops \
+        pytorch-lightning \
+        wandb \
+        huggingface_hub \
+        datasets \
+        Pillow \
+        "pyarrow>=14.0.0,<20.0.0" \
+        "diffusers>=0.25.0" \
+        "clean-fid>=0.1.35" \
+        "megatron-core" \
+        "omegaconf>=2.3.0" \
+        "rich>=13.0.0"
+
+# ARG PYTORCH_VERSION=25.06
+
+# # Base image with PyTorch
+# FROM nvcr.io/nvidia/pytorch:${PYTORCH_VERSION}-py3
+
+# # Re-declare ARG after FROM to make it available in build stage
+# ARG GITLAB_TOKEN
+
+# # Set working directory
 WORKDIR /workspaces/nvSubquadratic-private
 
 # Install system dependencies
@@ -27,7 +75,7 @@ COPY . .
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 # Install the package (as root, system-wide)
-RUN pip install --no-cache-dir .
+# RUN pip install --no-cache-dir .
 
 # Install subquadratic_ops wheel file (as root, system-wide)
 # pip will automatically select the correct architecture (x86_64 / arm64)
@@ -40,16 +88,17 @@ RUN mkdir -p /etc/sudoers.d \
   && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
   && chmod 0440 /etc/sudoers.d/$USERNAME
 
-# Change ownership of workspaces directory to ubuntu user
-RUN chown -R $USERNAME:$USERNAME /workspaces
+# # Change ownership of workspaces directory to ubuntu user
+# RUN chown -R $USERNAME:$USERNAME /workspaces
 
-USER $USERNAME
+# USER $USERNAME
 
 # Set environment variables for development mode
 ENV PYTHONPATH="/workspaces/nvSubquadratic-private:${PYTHONPATH}"
 
 # Expose Jupyter port
-EXPOSE 8888
+# EXPOSE 8888
 
-# Development command
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+# # Development command
+# CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+SHELL ["conda", "run", "-n", "base", "/bin/bash", "-c"]
