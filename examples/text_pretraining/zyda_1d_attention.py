@@ -1,5 +1,5 @@
 """Config file for Text Pretraining using 1D Attention on Zyda-2."""
-import os
+
 import torch
 from pytorch_lightning import Trainer
 
@@ -23,6 +23,7 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 class EmbeddingAdapter(torch.nn.Embedding):
     """Adapter for Embedding to accept in_features and out_features."""
+
     def __init__(self, in_features: int, out_features: int, **kwargs):
         super().__init__(num_embeddings=in_features, embedding_dim=out_features, **kwargs)
 
@@ -34,15 +35,15 @@ DATA_DIM = 1
 # Dataset
 BATCH_SIZE = 8
 MAX_LENGTH = 1024
-VOCAB_SIZE = 131072 # Mistral-NeMo-Minitron vocab size
-# Tokenization is done in the dataloader, so with to many workers 
+VOCAB_SIZE = 131072  # Mistral-NeMo-Minitron vocab size
+# Tokenization is done in the dataloader, so with to many workers
 # we might run out of cpu memory
 NUM_WORKERS = 4
 
 # Model
 # Keeping similar param count to Hyena config:
 # - Same hidden_dim (256), same num_blocks (6)
-# - Attention has fewer params in the mixer itself (no global conv), 
+# - Attention has fewer params in the mixer itself (no global conv),
 #   but we keep num_heads=8 for a head_dim of 32
 NUM_HIDDEN_CHANNELS = 256
 NUM_BLOCKS = 6
@@ -58,12 +59,13 @@ GRAD_CLIP = 1.0
 VAL_CHECK_INTERVAL = 10000
 LIMIT_VAL_BATCHES = 100
 
+
 def get_config() -> TextPretrainingExperimentConfig:
     """Return the Text Pretraining configuration."""
     config = TextPretrainingExperimentConfig()
     config.debug = False
     config.seed = 42
-    
+
     # Dataset
     config.dataset = LazyConfig(ZydaDataModule)(
         dataset_name="Zyphra/Zyda-2",
@@ -105,7 +107,6 @@ def get_config() -> TextPretrainingExperimentConfig:
             # No conditioning for pretraining
             condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
             condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
-            
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
                 activation="glu",
@@ -117,7 +118,7 @@ def get_config() -> TextPretrainingExperimentConfig:
             mlp_norm_cfg="${net.norm_cfg}",
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
-        dropout_in_cfg=LazyConfig(torch.nn.Identity)(), # No dropout on input indices
+        dropout_in_cfg=LazyConfig(torch.nn.Identity)(),  # No dropout on input indices
         condition_in_proj_cfg=None,
     )
 
@@ -141,7 +142,7 @@ def get_config() -> TextPretrainingExperimentConfig:
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
-        betas=(0.9, 0.95), # Standard for LLMs
+        betas=(0.9, 0.95),  # Standard for LLMs
     )
 
     # Training
@@ -149,7 +150,7 @@ def get_config() -> TextPretrainingExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
-        track_grad_norm=2, # Track L2 norm of gradients
+        track_grad_norm=2,  # Track L2 norm of gradients
     )
 
     # Trainer
