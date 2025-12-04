@@ -652,6 +652,7 @@ def circular_fftconv3d_bhl_w_reshape(
     y_bhl = circular_fftconv3d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
     return rearrange(y_bhl, "b h x y z -> b x y z h")
 
+
 if __name__ == "__main__":
     # Minimal quick correctness + speed comparison for 1D, 2D, and 3D on H100
     """
