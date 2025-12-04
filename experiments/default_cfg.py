@@ -115,12 +115,13 @@ class ExperimentConfig:
 
     start_from_checkpoint: StartFromCheckpointConfig = field(default_factory=StartFromCheckpointConfig)
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
-    callbacks: list = field(default_factory=list)
+    callbacks: list[LazyConfig] = field(default_factory=list)
 
 
 @dataclass
 class TextGenerationConfig:
     """Configuration for text generation during validation."""
+
     enabled: bool = False
     every_n_epochs: int = 1
     max_new_tokens: int = 50
@@ -133,6 +134,7 @@ class TextGenerationConfig:
 @dataclass
 class TextPretrainingExperimentConfig(ExperimentConfig):
     """Experiment configuration for text pretraining runs."""
+
     text_generation: TextGenerationConfig = field(default_factory=TextGenerationConfig)
 
 
