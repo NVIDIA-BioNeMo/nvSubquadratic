@@ -5,7 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional, Union
+from typing import Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
 
