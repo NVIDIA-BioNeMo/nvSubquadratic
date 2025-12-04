@@ -1,6 +1,5 @@
 """Script to download Zyda-2 dataset."""
 
-import os
 from experiments.datamodules.zyda_datamodule import ZydaDataModule
 
 def download_zyda():
