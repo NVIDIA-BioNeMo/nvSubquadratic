@@ -42,11 +42,11 @@ def test_text_pretraining_wrapper():
     
     # Test training step
     loss = wrapper.training_step(batch, 0)
-    print("Training loss:", loss.item())
+    
     
     # Test validation step
     val_loss = wrapper.validation_step(batch, 0)
-    print("Validation loss:", val_loss.item())
+    
     
     assert loss > 0
     assert val_loss > 0
