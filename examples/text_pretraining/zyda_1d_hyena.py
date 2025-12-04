@@ -1,5 +1,4 @@
 """Config file for Text Pretraining using 1D Hyena on Zyda-2."""
-import os
 import torch
 from pytorch_lightning import Trainer
 
