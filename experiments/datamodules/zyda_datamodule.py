@@ -89,12 +89,12 @@ class ZydaDataModule(pl.LightningDataModule):
                 # Note: Zyda-2 is huge, splitting might take time/memory.
                 # We'll try to use the 'train' split and maybe take a subset if needed?
                 # But user asked to download and cache, so maybe they want the full thing.
-                # We'll just use the full dataset.
-                self.train_dataset = dataset
-                # TODO: Implement proper validation split if needed.
-                # For now, using a small subset for validation if possible, or just same.
-                # Actually, let's just use the train dataset for both if no split exists.
-                self.val_dataset = dataset
+                # Split the dataset into train and validation sets to avoid data leakage.
+                split_dataset = dataset.train_test_split(test_size=0.01, seed=42)
+                self.train_dataset = split_dataset["train"]
+                self.val_dataset = split_dataset["test"]
+                # Now train and val are distinct subsets.
+                # If Zyda-2 ever provides a val split, update accordingly.
 
         if stage == "test":
              self.test_dataset = load_dataset(
