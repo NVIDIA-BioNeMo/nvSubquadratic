@@ -179,7 +179,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        base_datamodule_cfg: LazyConfig[Dataset],
+        base_datamodule_cfg: LazyConfig,  # LazyConfig[pl.LightningDataModule]
         target_size: int,
         canvas_size: int,
         data_type: Literal["sequence", "image"] = "image",
@@ -602,11 +602,14 @@ class SpatialRecallDataModule(pl.LightningDataModule):
             raise RuntimeError("Call setup('test') before requesting test dataloader.")
         return self._build_loader(self.test_dataset, shuffle=False, drop_last=False)
 
-    def on_before_batch_transfer(self, batch, dataloader_idx):
+    def on_before_batch_transfer(self, batch, dataloader_idx) -> dict:
         """Rearrange batch tensors to expected format.
 
         For image: [B, C, H, W] -> [B, H, W, C]
         For sequence: [B, C, H, W] -> [B, H*W, C]
+
+        Returns:
+            dict: A dictionary with keys "input", "label", and "condition".
         """
         x, y = batch
 
@@ -619,7 +622,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         else:
             raise ValueError(f"Unsupported data_type: {self.data_type}")
 
-        return x, y
+        return {"input": x, "label": y, "condition": None}
 
 
 if __name__ == "__main__":
