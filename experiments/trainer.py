@@ -1,13 +1,14 @@
 # TODO: Add licence header
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
 
+from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
 from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
@@ -20,7 +21,6 @@ def construct_trainer(
     run_name: str,
     experiment_dir: Optional[Path] = None,
     num_nodes: int = 1,
-    # 
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 
@@ -49,7 +49,7 @@ def construct_trainer(
         monitor = "val/loss"
 
     # Derive checkpoint directory based on run name.
-    if not experiment_dir is None:
+    if experiment_dir is not None:
         checkpoint_dir = experiment_dir / "checkpoints"
     else:
         checkpoint_dir = Path("runs") / run_name / "checkpoints"
@@ -64,7 +64,7 @@ def construct_trainer(
         save_top_k=1,
         save_last=True,  # Keep track of the model at the last epoch
         verbose=True,
-        every_n_train_steps=cfg.train.every_n_train_steps
+        every_n_train_steps=cfg.train.every_n_train_steps,
     )
 
     # Distributed training params
@@ -112,6 +112,16 @@ def construct_trainer(
         # Append user-defined callbacks
         *user_callbacks,
     ]
+
+    if cfg.train.slurm_start_time is not None and cfg.train.slurm_time_limit_hours is not None:
+        callbacks_list.append(
+            WalltimeCheckpointer(
+                start_time=cfg.train.slurm_start_time,
+                time_limit_hours=cfg.train.slurm_time_limit_hours,
+                buffer_minutes=5.0,
+                checkpoint_dir=checkpoint_dir,
+            )
+        )
 
     # create trainer
     trainer = pl.Trainer(

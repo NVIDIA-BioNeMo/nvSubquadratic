@@ -8,15 +8,21 @@
 #SBATCH --mem-per-gpu=80G
 #SBATCH --gpus-per-node=8
 #SBATCH --time=04:00:00                     # 4h (under 4h limit with buffer)
-#SBATCH --mail-type=FAIL    
+#SBATCH --mail-type=FAIL
 #SBATCH --exclusive
 #SBATCH --job-name=healthcareeng_research-nvsubq.imagenet64.n4        # IMPORTANT: Keep same name for singleton to work
 
 set -x
 
+# Capture the start time immediately
+JOB_START_TIMESTAMP=$(date +%s)
+echo "Start time captured: ${JOB_START_TIMESTAMP}"
+
+
 # ============================================================================
 # Configuration - Edit these for your job
 # ============================================================================
+TIME_LIMIT_HOURS=4
 EXPERIMENT_NAME="imagenet64_hyena_baseline_multinode"  # Give your experiment a meaningful name
 CONFIG_FILE="examples/imagenet_classification/ccnn_7_512_hyena.py"
 CONFIG_OVERRIDES=""  # e.g., "train.iterations=100000 dataset.batch_size=32"
@@ -151,7 +157,9 @@ python -m experiments.run \
     --num_nodes ${SLURM_JOB_NUM_NODES} \
     --config ${CONFIG_PATH} \
     ${CONFIG_OVERRIDES} \
-    ${AUTORESUME_ARG}"
+    ${AUTORESUME_ARG} \
+    train.slurm_start_time=${JOB_START_TIMESTAMP} \
+    train.slurm_time_limit_hours=${TIME_LIMIT_HOURS}"
 
 
 echo "Launching training in container with srun..."

@@ -60,6 +60,7 @@ GRAD_CLIP = 1.0
 ACCUMULATE_GRAD_STEPS = 1
 
 # Diffusion parameters
+PREDICTION_TYPE = "sample"
 NUM_TRAIN_TIMESTEPS = 1_000
 BETA_START = 1e-4
 BETA_END = 2e-2
@@ -79,6 +80,7 @@ def get_config() -> DiffusionExperimentConfig:
     config = DiffusionExperimentConfig()
     config.debug = False
     config.seed = 42
+    config.compile = True
 
     hf_token = os.environ.get("HF_TOKEN")
 
@@ -198,6 +200,7 @@ def get_config() -> DiffusionExperimentConfig:
     )
 
     config.diffusion = DiffusionConfig(
+        prediction_type=PREDICTION_TYPE,
         num_train_timesteps=NUM_TRAIN_TIMESTEPS,
         beta_start=BETA_START,
         beta_end=BETA_END,
