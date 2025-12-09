@@ -1,14 +1,11 @@
 # TODO: Add license header here
 
 
-"""Config file for EMNIST spatial recall regression (2D) with Mamba2 backbone."""
+"""Config file for EMNIST spatial recall regression (2D) with Transformer (Attention) backbone and ViT-style patchification."""
 
 import os
 
 import torch
-
-# Import Mamba2 from mamba-ssm library
-from mamba_ssm import Mamba2
 
 from experiments.callbacks.image_grid_val_visualization import ValidationImageGridCallback
 from experiments.datamodules.emnist import EMNISTDataModule
@@ -16,10 +13,12 @@ from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModu
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
 from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
@@ -30,11 +29,14 @@ DATA_DIM = 2
 TARGET_SIZE = 16
 CANVAS_SIZE = 64
 
+# Patchification parameters
+PATCH_SIZE = 8  # 64/8 = 8x8 patches = 64 tokens (vs 4096 with linear)
+STRIDE = 8  # Non-overlapping patches (ViT-style)
+
 # Model parameters
 NUM_HIDDEN_CHANNELS = 160
 NUM_BLOCKS = 4
-MAMBA_HEADDIM = 64  # Mamba2 head dimension
-MAMBA_EXPAND = 2  # Expansion factor for inner dimension
+NUM_HEADS = 8
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 
@@ -51,7 +53,16 @@ LEARNING_RATE = 1e-4
 
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for the EMNIST spatial recall regression experiment.
+    """Get the configuration for the EMNIST spatial recall regression experiment with patchification.
+
+    This configuration uses ViT-style patchification:
+    - Patchify: Conv2d with kernel_size=stride=PATCH_SIZE (non-overlapping patches)
+    - Unpatchify: ConvTranspose2d to reconstruct full resolution
+
+    With PATCH_SIZE=8 on a 64x64 canvas:
+    - Input: [B, 64, 64, 3] → Patchify → [B, 8, 8, 160] (64 tokens vs 4096 with Linear)
+    - After blocks: [B, 8, 8, 160] → Unpatchify → [B, 64, 64, 1]
+    - Readout: [B, 64, 64, 1] → [B, 16, 16, 1]
 
     Returns:
         ExperimentConfig: The configuration for the experiment.
@@ -85,27 +96,47 @@ def get_config() -> ExperimentConfig:
         num_items=4,  # 1 target + 3 distractors
     )
 
-    # Network config - ResidualNetwork for regression with Mamba2 backbone
+    # Network config - ResidualNetwork for regression with Transformer (Attention) backbone
     # Input: [B, canvas_size, canvas_size, input_channels]
-    # Output: [B, target_size, target_size, 1] (the recalled image)
+    # After Patchify: [B, canvas_size/PATCH_SIZE, canvas_size/PATCH_SIZE, hidden_dim]
+    # After Unpatchify: [B, canvas_size, canvas_size, output_channels]
+    # After Readout: [B, target_size, target_size, output_channels]
     config.net = LazyConfig(ResidualNetwork)(
         in_channels=PLACEHOLDER,  # Will be filled from dataset.input_channels
         out_channels=PLACEHOLDER,  # Will be filled from dataset.output_channels
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        # Patchify as input projection
+        in_proj_cfg=LazyConfig(Patchify)(
+            in_features=PLACEHOLDER,
+            out_features=PLACEHOLDER,
+            data_dim=DATA_DIM,
+            patch_size=PATCH_SIZE,
+            stride=STRIDE,  # Non-overlapping patches (ViT-style)
+        ),
+        # Unpatchify as output projection (Inverse of patchification)
+        out_proj_cfg=LazyConfig(Unpatchify)(
+            in_features=PLACEHOLDER,
+            out_features=PLACEHOLDER,
+            data_dim=DATA_DIM,
+            patch_size="${net.in_proj_cfg.patch_size}",
+            stride="${net.in_proj_cfg.stride}",  # Inverse of patchification
+        ),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
-            # Mamba as the sequence mixer (not wrapped in QKVSequenceMixer)
-            # The Mamba wrapper handles flattening spatial dims and bidirectionality
-            sequence_mixer_cfg=LazyConfig(MambaNDMixer)(
-                mamba_layer_cfg=LazyConfig(Mamba2)(
-                    d_model="${net.hidden_dim}",
-                    headdim=MAMBA_HEADDIM,
-                    expand=MAMBA_EXPAND,
+            sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
+                hidden_dim="${net.hidden_dim}",
+                mixer_cfg=LazyConfig(Attention)(
+                    hidden_dim="${net.hidden_dim}",
+                    num_heads=NUM_HEADS,
+                    apply_qk_norm=True,
+                    use_rope=True,
+                    is_causal=False,
+                    rope_base=10000.0,
+                    attn_dropout=DROPOUT_RATE,
                 ),
-                bidirectional=True,  # Use bidirectional Mamba for better spatial understanding
+                init_method_in=small_init,
+                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             # Condition mixer (not used for spatial recall)
