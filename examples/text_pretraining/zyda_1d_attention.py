@@ -25,6 +25,7 @@ class EmbeddingAdapter(torch.nn.Embedding):
     """Adapter for Embedding to accept in_features and out_features."""
 
     def __init__(self, in_features: int, out_features: int, **kwargs):
+        """Initialize the adapter."""
         super().__init__(num_embeddings=in_features, embedding_dim=out_features, **kwargs)
 
 
@@ -33,7 +34,7 @@ WANDB_ENTITY = "dafidofff"
 DATA_DIM = 1
 
 # Dataset
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 MAX_LENGTH = 1024
 VOCAB_SIZE = 131072  # Mistral-NeMo-Minitron vocab size
 # Tokenization is done in the dataloader, so with to many workers
