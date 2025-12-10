@@ -27,7 +27,7 @@ CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"  # e.g., "train.iterations=1
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
 
 # Container configuration
-IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.03.25
+IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.09.25
 
 # Host paths
 WORKDIR=${PWD}
@@ -40,7 +40,7 @@ mkdir -p ${RUNS_DIR}
 
 # Generate a deterministic run name for this config (without timestamp for resume)
 # This allows PyTorch Lightning to automatically find and resume from checkpoints
-RUN_NAME_HASH=$(echo "${CONFIG_FILE} ${CONFIG_OVERRIDES}" | md5sum | awk '{print $1}' | cut -c1-8)
+RUN_NAME_HASH=$(echo "${CONFIG_FILE} ${CONFIG_OVERRIDES} ${EXPERIMENT_NAME}" | md5sum | awk '{print $1}' | cut -c1-8)
 RUN_NAME="run_${RUN_NAME_HASH}"
 
 # Experiment-specific directories
