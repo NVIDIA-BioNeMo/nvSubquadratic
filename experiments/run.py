@@ -60,22 +60,6 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to the configuration file, e.g., config/experiments/mnist/mnist_classification_cfg.py",
     )
-    
-    parser.add_argument(
-        "--experiment_dir",
-        type=str,
-        required=False,
-        default=None,
-        help="Path to the experiment directory, e.g., workspace/results. If not provided, the run name is used to create the checkpoint directory.",
-    )
-    
-    parser.add_argument(
-        "--num_nodes",
-        type=int,
-        required=False,
-        default=1,
-        help="Number of nodes to use for training, default is 1",
-    )
 
     # Add a catch-all for arbitrary config overrides
     parser.add_argument(
@@ -103,14 +87,15 @@ def main() -> None:
     # Parse command line arguments
     args = parse_args()
     
-    num_nodes = args.num_nodes
-
     # Load configuration from file
     config = load_config_from_file(args.config)
 
     # Validate that overrides do not target interpolated fields, then apply
     verify_no_interpolator_overwrites(config, args.overrides)
     config = apply_config_overrides(config, args.overrides)
+    
+    num_nodes = config.num_nodes
+    experiment_dir = config.experiment_dir
 
     # Set seed
     pl.seed_everything(config.seed, workers=True)
@@ -159,7 +144,7 @@ def main() -> None:
         run_name = get_deterministic_run_name(args.config, args.overrides, use_timestamp=True)
     
     
-    experiment_dir = Path(args.experiment_dir) if args.experiment_dir is not None else Path("runs") / run_name
+    experiment_dir = Path(experiment_dir) if experiment_dir is not None else Path("runs") / run_name
     experiment_dir.mkdir(parents=True, exist_ok=True)
     
     autoresume_ckpt_path = None
