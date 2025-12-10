@@ -25,7 +25,7 @@ echo "Start time captured: ${JOB_START_TIMESTAMP}"
 TIME_LIMIT_HOURS=4
 EXPERIMENT_NAME="imagenet64_hyena_baseline_multinode"  # Give your experiment a meaningful name
 CONFIG_FILE="examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py"
-CONFIG_OVERRIDES="train.batch_size=20"
+CONFIG_OVERRIDES=""
 
 # Container configuration
 IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.03.25
