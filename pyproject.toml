@@ -21,6 +21,8 @@ dependencies = [
     "omegaconf>=2.3.0",
     "wandb>=0.15.0",
     "rich>=13.0.0",
+    "Pillow",
+    "huggingface_hub",
 ]
 
 [tool.setuptools.packages.find]

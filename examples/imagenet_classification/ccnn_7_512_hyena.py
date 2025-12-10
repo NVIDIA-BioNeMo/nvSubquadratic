@@ -164,8 +164,7 @@ def get_config() -> ExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
-        precision=PRECISION,
-        every_n_train_steps=500,
+        precision=PRECISION
     )
 
     config.scheduler = SchedulerConfig(

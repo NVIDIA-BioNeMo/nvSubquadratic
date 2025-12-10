@@ -5,6 +5,7 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal, Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
@@ -24,8 +25,6 @@ class TrainConfig:
     grad_clip: float = 0.0
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
-    every_n_train_steps: int = 500  # Save checkpoint every n training steps
-
 
 @dataclass
 class TrainerConfig:
@@ -97,6 +96,8 @@ class ExperimentConfig:
     seed: int = 0
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
+    experiment_dir: Optional[Path] = None
+    num_nodes: int = 1
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER

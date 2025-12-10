@@ -64,7 +64,6 @@ def construct_trainer(
         save_top_k=1,
         save_last=True,  # Keep track of the model at the last epoch
         verbose=True,
-        every_n_train_steps=cfg.train.every_n_train_steps
     )
 
     # Distributed training params

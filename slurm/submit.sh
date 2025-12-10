@@ -14,12 +14,17 @@
 
 set -x
 
+# Container mount paths (where host paths will be mounted inside container)
+CONTAINER_DATA="/workspace/data"
+CONTAINER_RESULTS="/workspace/results"
+
 # ============================================================================
 # Configuration - Edit these for your job
 # ============================================================================
 EXPERIMENT_NAME="imagenet64_hyena_baseline_multinode"  # Give your experiment a meaningful name
 CONFIG_FILE="examples/imagenet_classification/ccnn_7_512_hyena.py"
-CONFIG_OVERRIDES=""  # e.g., "train.iterations=100000 dataset.batch_size=32"
+CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"  # e.g., "train.iterations=100000 dataset.batch_size=32"
+CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
 
 # Container configuration
 IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.03.25
@@ -29,9 +34,6 @@ WORKDIR=${PWD}
 RUNS_DIR="${WORKDIR}/runs"
 DATA_DIR="/lustre/fsw/portfolios/healthcareeng/projects/healthcareeng_bionemo/amoradzadeh/hyena"
 
-# Container mount paths (where host paths will be mounted inside container)
-CONTAINER_DATA="/workspace/data"
-CONTAINER_RESULTS="/workspace/results"
 
 # Create necessary directories
 mkdir -p ${RUNS_DIR}
@@ -147,8 +149,6 @@ export HF_DATASETS_CACHE=${CONTAINER_DATA}/.hf/datasets && \
 export TRANSFORMERS_CACHE=${CONTAINER_DATA}/.hf/transformers && \
 cd ${WORK_DIR} && \
 python -m experiments.run \
-    --experiment_dir ${CONTAINER_RESULTS} \
-    --num_nodes ${SLURM_JOB_NUM_NODES} \
     --config ${CONFIG_PATH} \
     ${CONFIG_OVERRIDES} \
     ${AUTORESUME_ARG}"
