@@ -28,7 +28,8 @@ RUN apt-get update > /dev/null && \
     find ${CONDA_DIR} -follow -type f -name '*.pyc' -delete && \
     conda clean --force-pkgs-dirs --all --yes  && \
     echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> /etc/skel/.bashrc && \
-    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> ~/.bashrc
+    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> ~/.bashrc && \
+    chmod -R a+rX ${CONDA_DIR}
 
 RUN conda install --yes \
         python=3.12 \
@@ -37,22 +38,16 @@ RUN conda install --yes \
 RUN pip install --no-cache-dir \
         torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
         && conda clean --all --yes
-# RUN pip install --no-cache-dir \
-#         einops \
-#         pytorch-lightning \
-#         wandb \
-#         huggingface_hub \
-#         datasets \
-#         Pillow \
-#         "pyarrow>=14.0.0,<20.0.0" \
-#         "diffusers>=0.25.0" \
-#         "clean-fid>=0.1.35" \
-#         "megatron-core" \
-#         "omegaconf>=2.3.0" \
-#         "rich>=13.0.0"
 
 # Re-declare ARG after FROM to make it available in build stage
 ARG GITLAB_TOKEN
+
+# Create ubuntu user with sudo privileges
+RUN apt-get update && apt-get install -y sudo && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r ubuntu && \
+    useradd -r -g ubuntu -G sudo -m -s /bin/bash ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Set working directory
 WORKDIR /workspaces/nvSubquadratic-private
@@ -76,6 +71,15 @@ RUN pip install --no-cache-dir .
 # pip will automatically select the correct architecture (x86_64 / arm64)
 # GITLAB_TOKEN is required for this installation
 RUN if [ -n "${GITLAB_TOKEN}" ]; then echo "Installing subquadratic-ops with token..." && pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple; else echo "Skipping subquadratic-ops installation because GITLAB_TOKEN is not available. Please set GITLAB_TOKEN environment variable."; fi
+
+# Set up ubuntu user's home directory and permissions
+RUN chown -R ubuntu:ubuntu /workspaces && \
+    mkdir -p /home/ubuntu && \
+    chown -R ubuntu:ubuntu /home/ubuntu && \
+    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> /home/ubuntu/.bashrc
+
+# Switch to ubuntu user
+USER ubuntu
 
 # Set environment variables for development mode
 ENV PYTHONPATH="/workspaces/nvSubquadratic-private:${PYTHONPATH}"
