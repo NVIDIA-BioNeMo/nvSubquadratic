@@ -13,6 +13,7 @@ import argparse
 import dataclasses
 import os
 from pathlib import Path
+
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.loggers import WandbLogger
@@ -21,13 +22,6 @@ from rich.tree import Tree
 
 import wandb
 from experiments.trainer import construct_trainer
-from experiments.utils.checkpointing import (
-    download_checkpoint,
-    load_checkpoint_state_dict,
-    load_state_dict_partially,
-    preview_state_dict_compatibility,
-)
-
 from experiments.utils.cli import (
     add_to_tree,
     apply_config_overrides,
@@ -86,14 +80,14 @@ def main() -> None:
     """
     # Parse command line arguments
     args = parse_args()
-    
+
     # Load configuration from file
     config = load_config_from_file(args.config)
 
     # Validate that overrides do not target interpolated fields, then apply
     verify_no_interpolator_overwrites(config, args.overrides)
     config = apply_config_overrides(config, args.overrides)
-    
+
     num_nodes = config.num_nodes
     experiment_dir = config.experiment_dir
 
@@ -142,18 +136,17 @@ def main() -> None:
     else:
         # Use the deterministic run name with timestamp
         run_name = get_deterministic_run_name(args.config, args.overrides, use_timestamp=True)
-    
-    
+
     experiment_dir = Path(experiment_dir) if experiment_dir is not None else Path("runs") / run_name
     experiment_dir.mkdir(parents=True, exist_ok=True)
-    
+
     autoresume_ckpt_path = None
     run_id_file = experiment_dir / "run.id"
     if run_id_file.exists():
         attach_run_id = run_id_file.read_text().strip()
     else:
         raise RuntimeError(f"[autoresume] No run ID file found in experiment directory '{experiment_dir}'.")
-    
+
     if config.autoresume.enabled:
         wandb_logger = WandbLogger(
             project=config.wandb.project,
@@ -183,14 +176,14 @@ def main() -> None:
         )
 
     ckpt_dir = experiment_dir / "checkpoints"
-    
+
     if ckpt_dir.exists():
         last_path = ckpt_dir / "last.ckpt"
         if last_path.exists():
             autoresume_ckpt_path = last_path
             print(f"Resuming from {autoresume_ckpt_path}")
         else:
-            print(f"No last.ckpt found in {ckpt_dir}, starting from scratch.")   
+            print(f"No last.ckpt found in {ckpt_dir}, starting from scratch.")
 
     # Recreate the command that instantiated this run.
     if isinstance(wandb_logger.experiment.settings, wandb.Settings):
@@ -205,7 +198,7 @@ def main() -> None:
     tree = Tree("Configuration")
     add_to_tree(tree, config_dict)
     rprint(tree)
-    
+
     # Create trainer
     trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name, experiment_dir, num_nodes)
 

@@ -8,7 +8,7 @@
 #SBATCH --mem-per-gpu=80G
 #SBATCH --gpus-per-node=8
 #SBATCH --time=04:00:00                     # 4h (under 4h limit with buffer)
-#SBATCH --mail-type=FAIL    
+#SBATCH --mail-type=FAIL
 #SBATCH --exclusive
 #SBATCH --job-name=healthcareeng_research-nvsubq.imagenet64.n4        # IMPORTANT: Keep same name for singleton to work
 

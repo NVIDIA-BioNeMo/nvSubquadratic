@@ -5,7 +5,6 @@
 """Default configuration for experiments with nvSubQuadratic."""
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal, Optional, Union
 
 from nvsubquadratic.lazy_config import LazyConfig
@@ -25,6 +24,7 @@ class TrainConfig:
     grad_clip: float = 0.0
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
+
 
 @dataclass
 class TrainerConfig:

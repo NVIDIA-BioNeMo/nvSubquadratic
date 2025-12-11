@@ -1,8 +1,8 @@
 # TODO: Add licence header
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import pytorch_lightning as pl
 import torch
@@ -20,7 +20,7 @@ def construct_trainer(
     run_name: str,
     experiment_dir: Optional[Path] = None,
     num_nodes: int = 1,
-    # 
+    #
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 
@@ -49,7 +49,7 @@ def construct_trainer(
         monitor = "val/loss"
 
     # Derive checkpoint directory based on run name.
-    if not experiment_dir is None:
+    if experiment_dir is not None:
         checkpoint_dir = experiment_dir / "checkpoints"
     else:
         checkpoint_dir = Path("runs") / run_name / "checkpoints"

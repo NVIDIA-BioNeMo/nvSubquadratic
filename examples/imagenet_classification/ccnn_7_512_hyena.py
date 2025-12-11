@@ -161,10 +161,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.train = TrainConfig(
-        batch_size="${dataset.batch_size}",
-        iterations=TRAINING_ITERATIONS,
-        grad_clip=GRAD_CLIP,
-        precision=PRECISION
+        batch_size="${dataset.batch_size}", iterations=TRAINING_ITERATIONS, grad_clip=GRAD_CLIP, precision=PRECISION
     )
 
     config.scheduler = SchedulerConfig(
