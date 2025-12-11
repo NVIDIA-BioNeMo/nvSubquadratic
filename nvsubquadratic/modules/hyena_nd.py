@@ -315,8 +315,7 @@ class Hyena(torch.nn.Module):
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
         # Second gate
-        # y = y * self.gate_nonlinear(value) in-place.
-        y.mul_(self.gate_nonlinear(value))
+        y = y * self.gate_nonlinear(value)
 
         # Optional value normalization before applying the second gate.
         # We add a normalization layer at the end of the second gate to align more with the Mamba defition.
