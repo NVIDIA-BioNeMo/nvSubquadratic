@@ -1,6 +1,6 @@
 {
 	"name": "nvSubquadratic Development Container",
-	"runArgs": [
+ 	"runArgs": [
 		"--gpus=all",
 		"--shm-size=4g"
 	],

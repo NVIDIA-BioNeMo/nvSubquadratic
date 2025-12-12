@@ -291,8 +291,8 @@ class Hyena(torch.nn.Module):
             query, key = qk_norm.apply_qk_norm(query, key, dim=1)
 
         # First gate
-        # z = query * key in-place. We remove the nonlinearity here to align more with the Mamba defition.
-        query.mul_(key)
+        # z = query * key. We remove the nonlinearity here to align more with the Mamba defition.
+        query = query * key
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
@@ -315,8 +315,7 @@ class Hyena(torch.nn.Module):
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
         # Second gate
-        # y = y * self.gate_nonlinear(value) in-place.
-        y.mul_(self.gate_nonlinear(value))
+        y = y * self.gate_nonlinear(value)
 
         # Optional value normalization before applying the second gate.
         # We add a normalization layer at the end of the second gate to align more with the Mamba defition.

@@ -29,7 +29,7 @@ DATA_DIM = 2
 BATCH_SIZE = 32
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
-HF_DATASET_NAME = "imagenet-1k"
+HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
@@ -161,10 +161,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.train = TrainConfig(
-        batch_size="${dataset.batch_size}",
-        iterations=TRAINING_ITERATIONS,
-        grad_clip=GRAD_CLIP,
-        precision=PRECISION,
+        batch_size="${dataset.batch_size}", iterations=TRAINING_ITERATIONS, grad_clip=GRAD_CLIP, precision=PRECISION
     )
 
     config.scheduler = SchedulerConfig(

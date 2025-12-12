@@ -80,7 +80,7 @@ class MLP(nn.Module):
         elif self.activation == "swiglu":
             # SwiGLU: SiLU(x) * y
             a, b = torch.chunk(x, 2, dim=-1)
-            return b.mul_(F.silu(a))
+            return b * F.silu(a)
         else:
             raise ValueError(f"Unsupported activation: {self.activation}")
 

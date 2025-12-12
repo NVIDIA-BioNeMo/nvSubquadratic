@@ -96,6 +96,8 @@ class ExperimentConfig:
     seed: int = 0
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
+    experiment_dir: Optional[str] = None
+    num_nodes: int = 1
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
