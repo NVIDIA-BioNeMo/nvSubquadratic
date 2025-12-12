@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.patchify import DualPathPatchify, DualPathUnpatchify, SpectralUnpatchify
 
 
 class ResidualNetwork(nn.Module):
@@ -59,7 +60,12 @@ class ResidualNetwork(nn.Module):
         self.dropout_in = instantiate(dropout_in_cfg)
 
         # Instantiate input projection for the network
-        self.in_proj = instantiate(in_proj_cfg)
+        # Try standard signature first (in_features, out_features), fall back to simpler modules
+        try:
+            self.in_proj = instantiate(in_proj_cfg, in_features=in_channels, out_features=hidden_dim)
+        except TypeError:
+            # Fallback for modules with different signatures (e.g., nn.Linear -> hidden_dim)
+            self.in_proj = instantiate(in_proj_cfg, hidden_dim=hidden_dim * in_channels)
 
         if condition_in_proj_cfg is not None:
             # Instantiate condition input projection for the network
@@ -119,10 +125,18 @@ class ResidualNetwork(nn.Module):
         # Extract the input and condition from the dictionary
         x, condition = input_and_condition["input"], input_and_condition["condition"]
 
+        x_spatial_shape = x.shape[1:-1]
+
         # Apply in_dropout to the input
         x = self.dropout_in(x)
         # Apply input projection
-        x = self.in_proj(x)
+        if isinstance(self.in_proj, DualPathPatchify):
+            # DualPathPatchify uses BHL format (B, C, H, W)
+            x_bhl = x.permute(0, 3, 1, 2)  # BHWC -> BCHW
+            x_bhl = self.in_proj(x_bhl)
+            x = x_bhl.permute(0, 2, 3, 1)  # BCHW -> BHWC
+        else:
+            x = self.in_proj(x)
 
         # Apply condition input projection if provided
         if self.condition_in_proj is not None:
@@ -135,8 +149,19 @@ class ResidualNetwork(nn.Module):
 
         # Apply output norm
         x = self.out_norm(x)
+
+        # import ipdb; ipdb.set_trace()
+
         # Apply output projection
-        x = self.out_proj(x)
+        if isinstance(self.out_proj, SpectralUnpatchify):
+            x = self.out_proj(x, target_shape=x_spatial_shape, is_bhl_input=False)
+        elif isinstance(self.out_proj, DualPathUnpatchify):
+            # DualPathUnpatchify uses BHL format (B, C, H, W) and needs target_shape
+            x_bhl = x.permute(0, 3, 1, 2)  # BHWC -> BCHW
+            x_bhl = self.out_proj(x_bhl, target_shape=x_spatial_shape)
+            x = x_bhl.permute(0, 2, 3, 1)  # BCHW -> BHWC
+        else:
+            x = self.out_proj(x)
 
         # Get the readout region if target size is provided
         if self.target_size is not None:

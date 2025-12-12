@@ -107,6 +107,14 @@ class ClassificationWrapper(LightningWrapperBase):
             prog_bar=True,
             sync_dist=self.distributed,
         )
+        # Log stride from in_proj if it has a get_stride method (e.g., DualPathPatchify, SpectralPatchify)
+        if hasattr(self.network, "in_proj") and hasattr(self.network.in_proj, "get_stride"):
+            stride = self.network.in_proj.get_stride()
+            if stride is not None:
+                dim_suffixes = ["_x", "_y", "_z"]  # Support up to 3D
+                for dim_idx, s in enumerate(stride.tolist()):
+                    suffix = dim_suffixes[dim_idx] if dim_idx < len(dim_suffixes) else f"_{dim_idx}"
+                    self.log(f"train/in_proj/stride{suffix}", s, on_epoch=True, sync_dist=self.distributed)
         # Add other outputs to the list of other outputs. This is used for end of epoch logging.
         self.other_outputs_train.append(other_outputs)
         # Return loss
@@ -133,6 +141,16 @@ class ClassificationWrapper(LightningWrapperBase):
             prog_bar=True,
             sync_dist=self.distributed,
         )
+        # Log stride from in_proj if it has a get_stride method (e.g., DualPathPatchify, SpectralPatchify)
+        if hasattr(self.network, "in_proj") and hasattr(self.network.in_proj, "get_stride"):
+            stride = self.network.in_proj.get_stride()
+            if stride is not None:
+                dim_suffixes = ["_x", "_y", "_z"]  # Support up to 3D
+                for dim_idx, s in enumerate(stride.tolist()):
+                    suffix = dim_suffixes[dim_idx] if dim_idx < len(dim_suffixes) else f"_{dim_idx}"
+                    self.log(
+                        f"val/in_proj/stride{suffix}", s, on_step=False, on_epoch=True, sync_dist=self.distributed
+                    )
         # Add other outputs to the list of other outputs. This is used for end of epoch logging.
         self.other_outputs_validation.append(other_outputs)
         # Return loss

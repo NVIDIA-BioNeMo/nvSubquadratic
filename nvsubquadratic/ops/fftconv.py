@@ -76,6 +76,8 @@ __all__ = [
 import torch
 from einops import rearrange
 
+from nvsubquadratic.ops.spectral_masking import spectral_downsampling2d_bhl
+
 
 ###############################################################################
 # BLH variants
@@ -372,19 +374,32 @@ def fftconv1d_bhl_w_reshape(
 def fftconv2d_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
+    is_depthwise: bool,
     shortcut: torch.Tensor | None = None,
+    spectral_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """2D FFT convolution with optional shortcut, for inputs with layout (batch, height, width, hidden).
+    """2D FFT convolution with optional shortcut and spectral mask, for inputs with layout (batch, height, width, hidden).
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+    When spectral_mask is provided, performs learnable downsampling.
 
     This is a wrapper around fftconv2d_bhl that reshapes the input and kernel to (batch, hidden, height, width)
     and (1, hidden, K_x, K_y) respectively as our benchmarking results show that this is faster than processing
     with the original layout (batch, height, width, hidden) and (1, K_x, K_y, hidden) directly.
     """
     x = rearrange(x, "b x y h -> b h x y")
-    kernel = rearrange(kernel, "b x y h -> b h x y")
-    y = fftconv2d_bhl(x, kernel, shortcut)
+    if is_depthwise:
+        kernel = rearrange(kernel, "b x y h -> b h x y")
+    else:
+        kernel = rearrange(kernel, "1 ... (c_out c_in) -> c_out c_in ...", c_in=x.shape[1])
+    spectral_mask = rearrange(spectral_mask, "b x y h -> b h x y") if spectral_mask is not None else None
+    y = fftconv2d_bhl(
+        x,
+        kernel,
+        is_depthwise=is_depthwise,
+        shortcut=shortcut,
+        spectral_mask=spectral_mask,
+    )
     return rearrange(y, "b h x y -> b x y h")
 
 
@@ -519,37 +534,69 @@ def fftconv1d_bhl(
 def fftconv2d_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
+    is_depthwise: bool,
     shortcut: torch.Tensor | None = None,
+    spectral_mask: torch.Tensor | None = None,
+    apply_soft_spectral_mask: bool = True,
 ) -> torch.Tensor:
-    """2D FFT convolution with optional shortcut, for inputs with layout (batch, hidden, height, width).
+    """2D FFT convolution with optional shortcut and spectral mask, for inputs with layout (batch, hidden, height, width).
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+    When spectral_mask is provided, performs DiffStride-like learnable downsampling by cropping
+    in the frequency domain. The output size is determined by the spectral mask size.
+
+    Note on non-depthwise convolution:
+        For non-depthwise (is_depthwise=False), this performs a full convolution where each output
+        channel is a sum over all input channels. To preserve variance, the kernel weights should
+        be initialized with scale 1/sqrt(hidden_dim_in), similar to Kaiming initialization for Linear layers.
 
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, hidden_dim, X_in, Y_in).
-        kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, K_x, K_y).
-        shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
+        kernel (torch.Tensor): Kernel tensor of shape:
+            - Depthwise: (1, hidden_dim, K_x, K_y)
+            - Non-depthwise: (hidden_dim_out, hidden_dim_in, K_x, K_y)
+        is_depthwise (bool): Whether to perform depthwise convolution.
+        shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim).
+            Cannot be used together with spectral_mask. Defaults to None.
+        spectral_mask (torch.Tensor | None, optional): Optional spectral mask of shape (1, hidden_dim, sM_x, sM_y)
+            for learnable downsampling. When provided, both input and kernel are cropped in frequency domain
+            to (sM_x, sM_y), and the output spatial size is (sM_x, 2*(sM_y-1)). Defaults to None.
+        apply_soft_spectral_mask (bool): Whether to apply soft spectral masking during downsampling.
+            If False, only hard frequency cropping is applied (sharper but may have ringing).
+            Default: True.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in).
+        torch.Tensor: Output tensor of shape (batch_size, hidden_dim_out, X_out, Y_out).
+            When spectral_mask is None: X_out=X_in, Y_out=Y_in (same as input).
+            When spectral_mask is provided: X_out=sM_x, Y_out=2*(sM_y-1) (downsampled).
     """
     assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
     assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
 
     B, hidden_dim, X_in, Y_in = x.shape
 
-    assert len(kernel.shape) == 4, f"Unexpected kernel shape: {kernel.shape}."
-    assert kernel.shape[0] in (1, B), (
-        f"Leading dimension must be 1 or batch_size ({B}). Got kernel.shape={kernel.shape}."
-    )
+    if shortcut is not None:
+        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+        assert shortcut.shape == (hidden_dim,)
 
-    _, _, K_x, K_y = kernel.shape
+    assert len(kernel.shape) == 4, f"Unexpected kernel shape: {kernel.shape}."
+
+    B_or_hidden_dim, _hidden_dim, K_x, K_y = kernel.shape
 
     assert K_x <= X_in * 2, f"Kernel size must be less than 2 * X_in. Got {K_x}."
     assert K_y <= Y_in * 2, f"Kernel size must be less than 2 * Y_in. Got {K_y}."
-    assert hidden_dim == kernel.shape[1], "Input and kernel must have the same number of channels (H)."
+    assert hidden_dim == kernel.shape[1], (
+        f"Input and kernel must have the same number of channels (H). Got {hidden_dim} and {kernel.shape[1]}."
+    )
+
+    if not is_depthwise:
+        assert _hidden_dim == hidden_dim, (
+            "Kernel must have batch dimension 1 or hidden dimension for depthwise convolution."
+        )
+    if is_depthwise:
+        assert B_or_hidden_dim == 1, (
+            "Kernel must have batch dimension equal to batch size for non-depthwise convolution."
+        )
 
     # 1. Determine FFT size for linear convolution (same as 'same' version)
     fft_shape = (
@@ -562,7 +609,12 @@ def fftconv2d_bhl(
     fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(2, 3))
 
     # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    if is_depthwise:
+        fft_x.mul_(fft_kernel)
+    else:
+        # Non-depthwise: sum over input channels.
+        # Note: For variance preservation, kernel weights should be initialized with scale 1/sqrt(hidden_dim).
+        fft_x = torch.einsum("b i x y, o i x y -> b o x y", fft_x, fft_kernel)
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -577,9 +629,15 @@ def fftconv2d_bhl(
         ..., crop_start_x : crop_start_x + X_in, crop_start_y : crop_start_y + Y_in
     ]
 
+    # Shortcut can only be applied when output shape matches input shape (no spectral mask)
     if shortcut is not None:
-        assert shortcut.shape == (hidden_dim,)
         y.add_(rearrange(shortcut, "h -> 1 h 1 1") * x)
+
+    # 6. Apply spectral mask for learnable downsampling (AFTER convolution)
+    # This is a post-processing step that low-pass filters and downsamples the convolution output.
+    # The spectral_mask shape (1, H, sM_x, sM_y) determines the output size.
+    if spectral_mask is not None:
+        y = spectral_downsampling2d_bhl(y, spectral_mask)
 
     return y
 
