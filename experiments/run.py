@@ -107,7 +107,7 @@ def main() -> None:
     datamodule.setup()
 
     # Construct model
-    network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
+    network = instantiate(config.net)
 
     # Compile the model if specified
     if config.compile:
@@ -143,9 +143,12 @@ def main() -> None:
     autoresume_ckpt_path = None
     run_id_file = experiment_dir / "run.id"
     if run_id_file.exists():
+        # Resume existing run
         attach_run_id = run_id_file.read_text().strip()
     else:
-        raise RuntimeError(f"[autoresume] No run ID file found in experiment directory '{experiment_dir}'.")
+        # Fresh run - generate new run ID
+        attach_run_id = wandb.util.generate_id()
+        run_id_file.write_text(attach_run_id)
 
     if config.autoresume.enabled:
         wandb_logger = WandbLogger(

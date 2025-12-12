@@ -15,7 +15,7 @@ from experiments.datamodules.emnist import EMNISTDataModule
 from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
 from nvsubquadratic.modules.mlp import MLP
@@ -23,6 +23,9 @@ from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
+# Dataset parameters
+INPUT_CHANNELS = 3  # RGB with colored frames
+OUTPUT_CHANNELS = 1  # Grayscale target
 DATA_TYPE = "image"
 DATA_DIM = 2
 
@@ -89,12 +92,13 @@ def get_config() -> ExperimentConfig:
     # Input: [B, canvas_size, canvas_size, input_channels]
     # Output: [B, target_size, target_size, 1] (the recalled image)
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,  # Will be filled from dataset.input_channels
-        out_channels=PLACEHOLDER,  # Will be filled from dataset.output_channels
+        in_channels=INPUT_CHANNELS,
+        out_channels=OUTPUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        data_dim=DATA_DIM,
+        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
             # Mamba as the sequence mixer (not wrapped in QKVSequenceMixer)

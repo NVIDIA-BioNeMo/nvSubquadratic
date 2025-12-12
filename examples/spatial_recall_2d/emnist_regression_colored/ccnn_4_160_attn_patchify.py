@@ -12,7 +12,7 @@ from experiments.datamodules.emnist import EMNISTDataModule
 from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
@@ -22,6 +22,9 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
+# Dataset parameters
+INPUT_CHANNELS = 3  # RGB with colored frames
+OUTPUT_CHANNELS = 1  # Grayscale target
 DATA_TYPE = "image"
 DATA_DIM = 2
 
@@ -102,23 +105,24 @@ def get_config() -> ExperimentConfig:
     # After Unpatchify: [B, canvas_size, canvas_size, output_channels]
     # After Readout: [B, target_size, target_size, output_channels]
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,  # Will be filled from dataset.input_channels
-        out_channels=PLACEHOLDER,  # Will be filled from dataset.output_channels
+        in_channels=INPUT_CHANNELS,
+        out_channels=OUTPUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
+        data_dim=DATA_DIM,
         # Patchify as input projection
         in_proj_cfg=LazyConfig(Patchify)(
-            in_features=PLACEHOLDER,
-            out_features=PLACEHOLDER,
-            data_dim=DATA_DIM,
+            in_features="${net.in_channels}",
+            out_features="${net.hidden_dim}",
+            data_dim="${net.data_dim}",
             patch_size=PATCH_SIZE,
             stride=STRIDE,  # Non-overlapping patches (ViT-style)
         ),
         # Unpatchify as output projection (Inverse of patchification)
         out_proj_cfg=LazyConfig(Unpatchify)(
-            in_features=PLACEHOLDER,
-            out_features=PLACEHOLDER,
-            data_dim=DATA_DIM,
+            in_features="${net.hidden_dim}",
+            out_features="${net.out_channels}",
+            data_dim="${net.data_dim}",
             patch_size="${net.in_proj_cfg.patch_size}",
             stride="${net.in_proj_cfg.stride}",  # Inverse of patchification
         ),
