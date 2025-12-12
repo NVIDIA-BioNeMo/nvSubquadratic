@@ -63,9 +63,6 @@ class RegressionWrapper(LightningWrapperBase):
         # Extract the label from the batch
         labels = batch.pop("label")
 
-        # Validate the structure of the batch and pass to the model
-        assert len(batch) == 2, "Batch must contain exactly 2 keys: 'input' and 'condition'"
-
         output = self(input_and_condition=batch)  # Pass {input: x, condition: condition}
 
         assert isinstance(output, dict), "Output must be a dictionary"

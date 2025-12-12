@@ -221,8 +221,8 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
             return
 
         global_step = trainer.global_step
-        # if global_step == 0:
-        #     return
+        if global_step == 0:
+            return
         if global_step % self.every_n_train_steps != 0:
             return
         if global_step == self._last_logged_step:
