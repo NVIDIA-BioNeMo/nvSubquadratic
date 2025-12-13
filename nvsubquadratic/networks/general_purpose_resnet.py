@@ -88,7 +88,7 @@ class ResidualNetwork(nn.Module):
         """Get the readout region (bottom-right target_size region) of the input tensor.
 
         Args:
-            x: Input tensor of shape [batch_size, *spatial_dims, hidden_dim].
+            x: Input tensor of shape [batch_size, *spatial_dims, out_channels].
 
         Returns:
             torch.Tensor: Readout region of shape [batch_size, *(target_size,)*spatial_dims, out_channels].
