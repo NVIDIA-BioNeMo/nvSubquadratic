@@ -537,7 +537,6 @@ def fftconv2d_bhl(
     is_depthwise: bool,
     shortcut: torch.Tensor | None = None,
     spectral_mask: torch.Tensor | None = None,
-    apply_soft_spectral_mask: bool = True,
 ) -> torch.Tensor:
     """2D FFT convolution with optional shortcut and spectral mask, for inputs with layout (batch, hidden, height, width).
 
@@ -561,9 +560,6 @@ def fftconv2d_bhl(
         spectral_mask (torch.Tensor | None, optional): Optional spectral mask of shape (1, hidden_dim, sM_x, sM_y)
             for learnable downsampling. When provided, both input and kernel are cropped in frequency domain
             to (sM_x, sM_y), and the output spatial size is (sM_x, 2*(sM_y-1)). Defaults to None.
-        apply_soft_spectral_mask (bool): Whether to apply soft spectral masking during downsampling.
-            If False, only hard frequency cropping is applied (sharper but may have ringing).
-            Default: True.
 
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim_out, X_out, Y_out).

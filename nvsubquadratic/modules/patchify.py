@@ -221,14 +221,7 @@ class SpectralUnpatchify(torch.nn.Module):
         self.interpolation_mode = interpolation_mode
         self.align_corners = align_corners if interpolation_mode != "nearest" else None
 
-        try:
-            self.output_proj = instantiate(output_proj_cfg, in_features=in_features, out_features=out_features)
-        except TypeError:
-            try:
-                self.output_proj = instantiate(output_proj_cfg, hidden_dim=in_features * out_features)
-            except TypeError:
-                # Fallback: instantiate without extra kwargs (e.g., for Conv2d with full config)
-                self.output_proj = instantiate(output_proj_cfg)
+        self.output_proj = instantiate(output_proj_cfg)
 
     def forward(
         self,
