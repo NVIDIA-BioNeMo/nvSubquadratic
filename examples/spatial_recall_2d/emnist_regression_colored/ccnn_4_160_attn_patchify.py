@@ -51,6 +51,7 @@ GRAD_CLIP = 10.0
 PRECISION = "bf16-mixed"
 BATCH_SIZE = 64
 
+# Optimizer parameters
 WEIGHT_DECAY = 1e-3
 LEARNING_RATE = 1e-4
 

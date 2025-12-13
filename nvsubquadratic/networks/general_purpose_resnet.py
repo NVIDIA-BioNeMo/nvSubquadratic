@@ -60,18 +60,11 @@ class ResidualNetwork(nn.Module):
         self.dropout_in = instantiate(dropout_in_cfg)
 
         # Instantiate input projection for the network
-        # Try standard signature first (in_features, out_features), fall back to simpler modules
-        try:
-            self.in_proj = instantiate(in_proj_cfg, in_features=in_channels, out_features=hidden_dim)
-        except TypeError:
-            # Fallback for modules with different signatures (e.g., nn.Linear -> hidden_dim)
-            self.in_proj = instantiate(in_proj_cfg, hidden_dim=hidden_dim * in_channels)
+        self.in_proj = instantiate(in_proj_cfg)
 
         if condition_in_proj_cfg is not None:
             # Instantiate condition input projection for the network
-            self.condition_in_proj = instantiate(
-                condition_in_proj_cfg, in_features=hidden_dim, out_features=hidden_dim
-            )
+            self.condition_in_proj = instantiate(condition_in_proj_cfg)
         else:
             self.condition_in_proj = None
 

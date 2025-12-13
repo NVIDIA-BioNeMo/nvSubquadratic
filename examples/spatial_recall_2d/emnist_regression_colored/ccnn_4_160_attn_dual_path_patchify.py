@@ -25,7 +25,7 @@ from experiments.datamodules.emnist import EMNISTDataModule
 from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.masks_nd import SpectralGaussianMaskND
@@ -36,6 +36,9 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
+# Dataset parameters
+INPUT_CHANNELS = 3  # RGB with colored frames
+OUTPUT_CHANNELS = 1  # Grayscale target
 DATA_TYPE = "image"
 DATA_DIM = 2
 
@@ -46,6 +49,7 @@ CANVAS_SIZE = 64
 # Dual-path patchify hyperparameters
 INIT_STRIDE = 4
 MAX_STRIDE = 16
+SPECTRAL_MASK_CLIP_VALUE = 0.5
 
 # Model parameters
 NUM_HIDDEN_CHANNELS = 160
@@ -111,53 +115,57 @@ def get_config():
     # After DualPathUnpatchify: [B, canvas_size, canvas_size, output_channels]
     # After Readout: [B, target_size, target_size, output_channels]
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,  # Will be filled from dataset.input_channels
-        out_channels=PLACEHOLDER,  # Will be filled from dataset.output_channels
+        in_channels=INPUT_CHANNELS,  # Will be filled from dataset.input_channels
+        out_channels=OUTPUT_CHANNELS,  # Will be filled from dataset.output_channels
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
+        data_dim=DATA_DIM,
         # DualPathPatchify as input projection (spectral + spatial paths)
         # Note: in_features and out_features are passed by ResidualNetwork during instantiation
         in_proj_cfg=LazyConfig(DualPathPatchify)(
-            data_dim=DATA_DIM,
+            in_features="${net.in_channels}",
+            out_features="${net.hidden_dim}",
+            data_dim="${net.data_dim}",
             max_stride=MAX_STRIDE,
             spectral_patchify_cfg=LazyConfig(SpectralPatchify)(
-                in_features=3,  # RGB input
-                out_features=NUM_HIDDEN_CHANNELS,
-                data_dim=DATA_DIM,
+                in_features="${net.in_channels}",
+                out_features="${net.hidden_dim}",
+                data_dim="${net.data_dim}",
                 spectral_mask_cfg=LazyConfig(SpectralGaussianMaskND)(
-                    data_dim=DATA_DIM,
-                    clip_value=0.5,
-                    init_stride_value=float(INIT_STRIDE),
+                    data_dim="${net.data_dim}",
+                    clip_value=SPECTRAL_MASK_CLIP_VALUE,
+                    init_stride_value=INIT_STRIDE,
                     min_stride_value=1.0,
-                    max_stride_value=float(MAX_STRIDE),
+                    max_stride_value="${net.in_proj_cfg.max_stride}",
                     parametrization="direct",
                 ),
                 conv_cfg=LazyConfig(torch.nn.Conv2d)(
-                    in_channels=3,  # RGB input
-                    out_channels=NUM_HIDDEN_CHANNELS,
-                    kernel_size=MAX_STRIDE,
+                    in_channels="${net.in_channels}",
+                    out_channels="${net.hidden_dim}",
+                    kernel_size="${net.in_proj_cfg.max_stride}",
                     padding="same",
                 ),
             ),
             freeze_spectral_mask=False,  # Allow stride to be learned
         ),
         # DualPathUnpatchify as output projection (spectral + spatial upsampling)
-        # Note: in_features and out_features are passed by ResidualNetwork during instantiation
         out_proj_cfg=LazyConfig(DualPathUnpatchify)(
-            data_dim=DATA_DIM,
+            in_features="${net.hidden_dim}",
+            out_features="${net.out_channels}",
+            data_dim="${net.data_dim}",
             spectral_unpatchify_cfg=LazyConfig(SpectralUnpatchify)(
-                in_features=NUM_HIDDEN_CHANNELS,
-                out_features=1,  # Single channel output for this task
-                data_dim=DATA_DIM,
+                in_features="${net.hidden_dim}",
+                out_features="${net.out_channels}",
+                data_dim="${net.data_dim}",
                 output_proj_cfg=LazyConfig(torch.nn.Conv2d)(
-                    in_channels=NUM_HIDDEN_CHANNELS,
-                    out_channels=1,
-                    kernel_size=MAX_STRIDE,
+                    in_channels="${net.hidden_dim}",
+                    out_channels="${net.out_channels}",
+                    kernel_size="${net.in_proj_cfg.max_stride}",
                     padding="same",
                 ),
                 interpolation_mode="bilinear",
             ),
-            max_stride=MAX_STRIDE,
+            max_stride="${net.in_proj_cfg.max_stride}",
             interpolation_mode="bilinear",
         ),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
@@ -194,7 +202,7 @@ def get_config():
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-        target_size=TARGET_SIZE,  # For readout region extraction
+        target_size="${dataset.target_size}",  # For readout region extraction
     )
 
     # ============================================================
