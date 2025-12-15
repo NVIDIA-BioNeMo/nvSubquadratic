@@ -65,7 +65,6 @@ def construct_trainer(
         save_top_k=1,
         save_last=True,  # Keep track of the model at the last epoch
         verbose=True,
-        every_n_train_steps=cfg.train.every_n_train_steps,
     )
 
     # Distributed training params
@@ -114,11 +113,11 @@ def construct_trainer(
         *user_callbacks,
     ]
 
-    if cfg.train.slurm_start_time is not None and cfg.train.slurm_time_limit_hours is not None:
+    if cfg.train.run_start_time is not None and cfg.train.run_time_limit_hours is not None:
         callbacks_list.append(
             WalltimeCheckpointer(
-                start_time=cfg.train.slurm_start_time,
-                time_limit_hours=cfg.train.slurm_time_limit_hours,
+                start_time=cfg.train.run_start_time,
+                time_limit_hours=cfg.train.run_time_limit_hours,
                 buffer_minutes=5.0,
                 checkpoint_dir=checkpoint_dir,
             )

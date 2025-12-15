@@ -156,8 +156,8 @@ python -m experiments.run \
     --config ${CONFIG_PATH} \
     ${CONFIG_OVERRIDES} \
     ${AUTORESUME_ARG} \
-    train.slurm_start_time=${JOB_START_TIMESTAMP} \
-    train.slurm_time_limit_hours=${TIME_LIMIT_HOURS}"
+    train.run_start_time=${JOB_START_TIMESTAMP} \
+    train.run_time_limit_hours=${TIME_LIMIT_HOURS}"
 
 echo "Launching training in container with srun..."
 echo "Command: ${PYTHON_CMD}"
