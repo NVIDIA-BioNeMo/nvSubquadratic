@@ -60,7 +60,7 @@ GRAD_CLIP = 1.0
 ACCUMULATE_GRAD_STEPS = 1
 
 # Diffusion parameters
-PREDICTION_TYPE = "sample"
+PREDICTION_TYPE = "v_prediction"
 NUM_TRAIN_TIMESTEPS = 1_000
 BETA_START = 1e-4
 BETA_END = 2e-2

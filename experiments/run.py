@@ -55,22 +55,6 @@ def parse_args() -> argparse.Namespace:
         help="Path to the configuration file, e.g., config/experiments/mnist/mnist_classification_cfg.py",
     )
 
-    parser.add_argument(
-        "--experiment_dir",
-        type=str,
-        required=False,
-        default=None,
-        help="Path to the experiment directory, e.g., workspace/results. If not provided, the run name is used to create the checkpoint directory.",
-    )
-
-    parser.add_argument(
-        "--num_nodes",
-        type=int,
-        required=False,
-        default=1,
-        help="Number of nodes to use for training, default is 1",
-    )
-
     # Add a catch-all for arbitrary config overrides
     parser.add_argument(
         "overrides",
@@ -96,8 +80,6 @@ def main() -> None:
     """
     # Parse command line arguments
     args = parse_args()
-
-    num_nodes = args.num_nodes
 
     # Load configuration from file
     config = load_config_from_file(args.config)
