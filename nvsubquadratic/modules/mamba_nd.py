@@ -59,7 +59,7 @@ class Mamba(torch.nn.Module):
         # output of the core (forward) layer
         if self.bidirectional:
             out_rev = self.core_layer_rev(torch.flip(x, dims=[1]))
-            out.add_(torch.flip(out_rev, dims=[1]))
+            out = out + torch.flip(out_rev, dims=[1])
 
         # Reshape output to original [B, * spatial_dims, hidden_dim] shape
         out = out.reshape(*x_shape)

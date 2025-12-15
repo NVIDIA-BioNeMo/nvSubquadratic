@@ -21,6 +21,7 @@ def construct_trainer(
     run_name: str,
     experiment_dir: Optional[Path] = None,
     num_nodes: int = 1,
+    #
 ) -> tuple[pl.Trainer, pl.Callback]:
     """Construct a trainer and the checkpoint callback from a configuration.
 

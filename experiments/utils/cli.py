@@ -80,15 +80,29 @@ def get_deterministic_run_name(
                 short_key = _SHORT_NAME_ALIASES.get(short_key, short_key)
                 # replace value with short alias if it exists
                 value = _SHORT_NAME_ALIASES.get(value, value)
+                # Truncate float values to 4 decimal places
+                try:
+                    float_val = float(value)
+                    # Check if it's actually a float (not an int)
+                    if "." in str(value) or "e" in str(value).lower():
+                        value = f"{float_val:.4g}"
+                except (ValueError, TypeError):
+                    pass
                 processed_overrides.append(f"{short_key}={value}")
             filtered_overrides = processed_overrides
             # Sort overrides for deterministic ordering
             filtered_overrides.sort()
             # Create a string representation of the overrides
             override_str = "_".join(filtered_overrides).replace("=", "_")
-            return (
+            run_name = (
                 f"{username.upper()}_{config_name}_{override_str}{timestamp}"  # Final _{timestamp} is handled before.
             )
+            # Limit total run name length to avoid OSError: File name too long
+            # Leave room for timestamp (~20 chars) if it's included
+            max_base_len = 180 if use_timestamp else 200
+            if len(run_name) > max_base_len + len(timestamp):
+                run_name = run_name[: max_base_len - len(timestamp)] + timestamp
+            return run_name
 
     # Default return without overrides or if all overrides were filtered out
     return f"{username.upper()}_{config_name}{timestamp}"  # Final _{timestamp} is handled before in the function call

@@ -1,12 +1,12 @@
 # TODO: Add license header here
 
-"""Config file for ImageNet classification using the shared ResNet backbone."""
+"""Config file for TinyImageNet classification using the shared ResNet backbone."""
 
 import os
 
 import torch
 
-from experiments.datamodules.imagenet import ImageNetDataModule
+from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
@@ -27,11 +27,12 @@ DATA_DIM = 2
 
 # Dataset
 BATCH_SIZE = 32
-MAX_WORKERS = 16
-IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
-HF_DATASET_NAME = "ILSVRC/imagenet-1k"
+MAX_WORKERS = 8
+# Cache dir for TinyImageNet
+IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", os.path.expanduser("~/.cache/tinyimagenet"))
+HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None
-IMAGE_SIZE = 256
+IMAGE_SIZE = 64
 FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
@@ -41,9 +42,9 @@ NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
-FFT_PADDING = "zero"
-NUM_CLASSES = 1_000
+GRID_TYPE = "single"
+FFT_PADDING = "circular"
+NUM_CLASSES = 200
 
 # Optimisation
 TRAINING_ITERATIONS = 600_000
@@ -54,13 +55,13 @@ GRAD_CLIP = 1.0
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ImageNet classification configuration."""
+    """Return the TinyImageNet classification configuration."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    config.dataset = LazyConfig(TinyImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -68,7 +69,7 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True,
+        center_crop=False,  # TinyImageNet is already 64x64
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
@@ -161,7 +162,10 @@ def get_config() -> ExperimentConfig:
     )
 
     config.train = TrainConfig(
-        batch_size="${dataset.batch_size}", iterations=TRAINING_ITERATIONS, grad_clip=GRAD_CLIP, precision=PRECISION
+        batch_size="${dataset.batch_size}",
+        iterations=TRAINING_ITERATIONS,
+        grad_clip=GRAD_CLIP,
+        precision=PRECISION,
     )
 
     config.scheduler = SchedulerConfig(
@@ -172,7 +176,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.wandb = WandbConfig(
-        job_group="imagenet_classification",
+        job_group="tinyimagenet_classification",
         entity=WANDB_ENTITY,
     )
 

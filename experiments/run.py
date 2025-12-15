@@ -16,11 +16,11 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-import wandb
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
 from rich.tree import Tree
 
+import wandb
 from experiments.trainer import construct_trainer
 from experiments.utils.cli import (
     add_to_tree,
@@ -106,6 +106,9 @@ def main() -> None:
     verify_no_interpolator_overwrites(config, args.overrides)
     config = apply_config_overrides(config, args.overrides)
 
+    num_nodes = config.num_nodes
+    experiment_dir = config.experiment_dir
+
     # Set seed
     pl.seed_everything(config.seed, workers=True)
 
@@ -152,7 +155,7 @@ def main() -> None:
         # Use the deterministic run name with timestamp
         run_name = get_deterministic_run_name(args.config, args.overrides, use_timestamp=True)
 
-    experiment_dir = Path(args.experiment_dir) if args.experiment_dir is not None else Path("runs") / run_name
+    experiment_dir = Path(experiment_dir) if experiment_dir is not None else Path("runs") / run_name
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     autoresume_ckpt_path = None
