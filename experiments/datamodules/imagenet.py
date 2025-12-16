@@ -63,9 +63,9 @@ class ThreeAugment(torch.nn.Module):
         # Select one augmentation with equal probability
         idx = torch.randint(0, 3, (1,)).item()
         
-        # Apply specific logic per transform if needed
-        if idx == 2: # GaussianBlur
-             # ConvNeXt/DeiT III might use specific sigma logic, using standard range [0.1, 2.0]
+        # For GaussianBlur, use DeiT III logic
+        # DeiT III uses specific sigma logic, using standard range [0.1, 2.0]
+        if idx == 2: 
              sigma = torch.rand(1).item() * 1.9 + 0.1
              return transforms.GaussianBlur(kernel_size=5, sigma=sigma)(img)
              
