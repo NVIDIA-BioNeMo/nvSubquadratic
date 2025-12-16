@@ -37,11 +37,16 @@ def construct_trainer(
         deterministic = False
         benchmark = True
 
-    # Metric to monitor
-    if cfg.scheduler.mode == "max":
-        monitor = "val/acc"
-    elif cfg.scheduler.mode == "min":
-        monitor = "val/loss"
+    # Metric to monitor (allow explicit override via config.scheduler.monitor).
+    monitor = cfg.scheduler.monitor
+    if monitor is None:
+        if cfg.scheduler.mode == "max":
+            monitor = "val/acc"
+        elif cfg.scheduler.mode == "min":
+            monitor = "val/loss"
+        else:
+            # Fallback to validation loss if the mode is unusual.
+            monitor = "val/loss"
 
     # Derive checkpoint directory based on run name.
     checkpoint_dir = Path("runs") / run_name / "checkpoints"

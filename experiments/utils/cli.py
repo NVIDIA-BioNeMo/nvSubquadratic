@@ -8,6 +8,7 @@ import datetime
 import getpass
 import importlib.util
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -115,7 +116,13 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
 
     spec = importlib.util.spec_from_file_location(module_path, config_path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[module_path] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        # Ensure we don't leave a partially constructed module lying around.
+        sys.modules.pop(module_path, None)
+        raise
 
     # Get the get_config function
     if not hasattr(module, "get_config"):

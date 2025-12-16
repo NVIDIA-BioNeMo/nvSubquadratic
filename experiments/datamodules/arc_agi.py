@@ -195,6 +195,8 @@ class ArcAGIDataModule(pl.LightningDataModule):
         train_split: str = "training",
         val_split: str = "evaluation",
         test_split: Optional[str] = None,
+        condition_on_label_mask: bool = False,
+        condition_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
@@ -215,6 +217,8 @@ class ArcAGIDataModule(pl.LightningDataModule):
         self.train_split = train_split
         self.val_split = val_split
         self.test_split = test_split or val_split
+        self.condition_on_label_mask = condition_on_label_mask
+        self.condition_dim = condition_dim
 
         # Interfaces with downstream network instantiation.
         self.input_channels = num_colors if one_hot_inputs else 1
@@ -319,9 +323,15 @@ class ArcAGIDataModule(pl.LightningDataModule):
             "pair_index": batch["pair_index"],
         }
 
-        return {
+        batch_dict = {
             "input": inputs,
             "label": labels,
             "condition": condition,
         }
+        if self.condition_on_label_mask:
+            model_condition = masks.float().unsqueeze(-1)
+            if self.condition_dim is not None:
+                model_condition = model_condition.expand(-1, -1, -1, self.condition_dim)
+            batch_dict["model_condition"] = model_condition
 
+        return batch_dict

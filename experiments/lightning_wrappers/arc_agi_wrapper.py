@@ -64,7 +64,11 @@ class ArcAGIWrapper(LightningWrapperBase):
         if mask is None:
             raise ValueError("condition['label_mask'] is required for masked loss/metrics.")
 
-        output = self(input_and_condition=batch)
+        model_inputs = {
+            "input": batch["input"],
+            "condition": batch.get("model_condition"),
+        }
+        output = self(input_and_condition=model_inputs)
         if not isinstance(output, dict) or "logits" not in output:
             raise ValueError("Model must return a dict with a 'logits' key.")
 
