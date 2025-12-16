@@ -17,7 +17,7 @@ export KAGGLE_USERNAME=dafidofff
 export PYTHONPATH=.
 
 # Language Experiment
-export TOKENIZERS_PARALLELISM=false # Disable tokenizers parallelism to avoid segfaults
+export TOKENIZERS_PARALLELISM=false    # Disable tokenizers parallelism to avoid segfaults
 # PYTHONPATH=. python experiments/run.py --config examples/text_pretraining/zyda_1d_hyena.py
 # PYTHONPATH=. python experiments/run.py --config examples/text_pretraining/zyda_1d_attention.py
 # python scripts/evaluate_with_lingua.py \
@@ -26,12 +26,10 @@ export TOKENIZERS_PARALLELISM=false # Disable tokenizers parallelism to avoid se
 #     --tasks arc_easy,hellaswag \
 #     --batch_size 8 \
 #     --device cuda
-python scripts/evaluate_with_lingua.py \
-    --ckpt_path /home/dwessel/code/nvSubquadratic-private/runs/DW_examples_text_pretraining_zyda_1d_hyena_2025-12-02-14-05-52/checkpoints/last.ckpt \
-    --config_path examples/text_pretraining/zyda_1d_hyena.py \
-    --tasks arc_easy,hellaswag \
-    --batch_size 8 \
-    --device cuda
+
+PYTHONPATH=lingua_clone:. torchrun --nproc_per_node=1 lingua_clone/apps/main/train.py \
+    config=examples/text_pretraining/lingua_hyena_train.yaml \
+    dump_dir=results/hyena_fineweb10bt_lingua
 
 # ImageNet Experiment
 # python experiments/run.py --config examples/imagenet_classification/tiny_ccnn_7_512_hyena_circular.py

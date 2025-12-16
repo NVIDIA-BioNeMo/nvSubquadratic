@@ -18,10 +18,6 @@ export PYTHONPATH=.
 
 # Language Experiment
 export TOKENIZERS_PARALLELISM=false # Disable tokenizers parallelism to avoid segfaults
-# python scripts/prepare_lingua_data.py \
-#     --dataset_name Zyphra/Zyda-2 \
-#     --output_dir data/lingua_zyda \
-#     --chunk_size 10000
 python lingua_clone/setup/download_prepare_hf_data.py fineweb_edu_10bt 24 \
     --data_dir ./data \
     --seed 42 \
