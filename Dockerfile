@@ -49,58 +49,7 @@ RUN apt-get update && apt-get install -y sudo && \
     useradd -r -g ubuntu -G sudo -m -s /bin/bash ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-ENV CONDA_DIR=/opt/conda
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
-ENV PATH=${CONDA_DIR}/bin:${PATH}
-
-RUN apt-get update > /dev/null && \
-    apt-get install --no-install-recommends --yes \
-        wget bzip2 ca-certificates \
-        git \
-        tini \
-        > /dev/null && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/${MINIFORGE_NAME}-${MINIFORGE_VERSION}-Linux-$(uname -m).sh -O /tmp/miniforge.sh && \
-    /bin/bash /tmp/miniforge.sh -b -p ${CONDA_DIR} && \
-    rm /tmp/miniforge.sh && \
-    conda clean --tarballs --index-cache --packages --yes && \
-    find ${CONDA_DIR} -follow -type f -name '*.a' -delete && \
-    find ${CONDA_DIR} -follow -type f -name '*.pyc' -delete && \
-    conda clean --force-pkgs-dirs --all --yes  && \
-    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> /etc/skel/.bashrc && \
-    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> ~/.bashrc
-
-RUN conda install --yes \
-        python=3.12 \
-        && conda clean --all --yes
-
-RUN pip install --no-cache-dir \
-        torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
-        && conda clean --all --yes
-RUN pip install --no-cache-dir \
-        einops \
-        pytorch-lightning \
-        wandb \
-        huggingface_hub \
-        datasets \
-        Pillow \
-        "pyarrow>=14.0.0,<20.0.0" \
-        "diffusers>=0.25.0" \
-        "clean-fid>=0.1.35" \
-        "megatron-core" \
-        "omegaconf>=2.3.0" \
-        "rich>=13.0.0"
-
-# ARG PYTORCH_VERSION=25.06
-
-# # Base image with PyTorch
-# FROM nvcr.io/nvidia/pytorch:${PYTORCH_VERSION}-py3
-
-# # Re-declare ARG after FROM to make it available in build stage
-# ARG GITLAB_TOKEN
-
-# # Set working directory
+# Set working directory
 WORKDIR /workspaces/nvSubquadratic-private
 
 # Install system dependencies
@@ -136,7 +85,7 @@ USER ubuntu
 ENV PYTHONPATH="/workspaces/nvSubquadratic-private:${PYTHONPATH}"
 
 # Expose Jupyter port
-# EXPOSE 8888
+EXPOSE 8888
 
 # Development command
 SHELL ["conda", "run", "-n", "base", "/bin/bash", "-c"]

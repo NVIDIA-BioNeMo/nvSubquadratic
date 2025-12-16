@@ -10,7 +10,7 @@
 #SBATCH --time=04:00:00                     # 4h (under 4h limit with buffer)
 #SBATCH --mail-type=FAIL
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_research-nvsubq.imagenet64.n4        # IMPORTANT: Keep same name for singleton to work
+#SBATCH --job-name=healthcareeng_research-nvsubq.imagenet64-diffusion.n4        # IMPORTANT: Keep same name for singleton to work
 
 set -x
 
@@ -18,33 +18,34 @@ set -x
 JOB_START_TIMESTAMP=$(date +%s)
 echo "Start time captured: ${JOB_START_TIMESTAMP}"
 
+# Container mount paths (where host paths will be mounted inside container)
+CONTAINER_DATA="/workspace/data"
+CONTAINER_RESULTS="/workspace/results"
 
 # ============================================================================
 # Configuration - Edit these for your job
 # ============================================================================
 TIME_LIMIT_HOURS=4
-EXPERIMENT_NAME="imagenet64_hyena_baseline_multinode"  # Give your experiment a meaningful name
+EXPERIMENT_NAME="imagenet64_diffusion_hyena_baseline_multinode"  # Give your experiment a meaningful name
 CONFIG_FILE="examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py"
-CONFIG_OVERRIDES=""
+CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"  # e.g., "train.iterations=100000 dataset.batch_size=32"
+CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
 
 # Container configuration
-IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.03.25
+IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.09.25
 
 # Host paths
 WORKDIR=${PWD}
 RUNS_DIR="${WORKDIR}/runs"
 DATA_DIR="/lustre/fsw/portfolios/healthcareeng/projects/healthcareeng_bionemo/amoradzadeh/hyena"
 
-# Container mount paths (where host paths will be mounted inside container)
-CONTAINER_DATA="/workspace/data"
-CONTAINER_RESULTS="/workspace/results"
 
 # Create necessary directories
 mkdir -p ${RUNS_DIR}
 
 # Generate a deterministic run name for this config (without timestamp for resume)
 # This allows PyTorch Lightning to automatically find and resume from checkpoints
-RUN_NAME_HASH=$(echo "${CONFIG_FILE} ${CONFIG_OVERRIDES}" | md5sum | awk '{print $1}' | cut -c1-8)
+RUN_NAME_HASH=$(echo "${CONFIG_FILE} ${CONFIG_OVERRIDES} ${EXPERIMENT_NAME}" | md5sum | awk '{print $1}' | cut -c1-8)
 RUN_NAME="run_${RUN_NAME_HASH}"
 
 # Experiment-specific directories
@@ -153,14 +154,11 @@ export HF_DATASETS_CACHE=${CONTAINER_DATA}/.hf/datasets && \
 export TRANSFORMERS_CACHE=${CONTAINER_DATA}/.hf/transformers && \
 cd ${WORK_DIR} && \
 python -m experiments.run \
-    --experiment_dir ${CONTAINER_RESULTS} \
-    --num_nodes ${SLURM_JOB_NUM_NODES} \
     --config ${CONFIG_PATH} \
     ${CONFIG_OVERRIDES} \
     ${AUTORESUME_ARG} \
     train.run_start_time=${JOB_START_TIMESTAMP} \
     train.run_time_limit_hours=${TIME_LIMIT_HOURS}"
-
 
 echo "Launching training in container with srun..."
 echo "Command: ${PYTHON_CMD}"
