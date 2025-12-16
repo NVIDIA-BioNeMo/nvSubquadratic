@@ -25,8 +25,8 @@ class TrainConfig:
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
     run_start_time: Optional[float] = None  # This is to keep track of the start time of the job
-    run_time_limit_hours: float = (
-        4.0  # If set, the WalltimeCheckpointer will stop training when the time limit is reached
+    run_time_limit_hours: Optional[float] = (
+        None  # If both run_start_time and run_time_limit_hours are set, the WalltimeCheckpointer will stop training when the time limit is reached. If either is None, no walltime limit is enforced.
     )
 
 

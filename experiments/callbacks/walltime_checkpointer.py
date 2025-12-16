@@ -26,12 +26,12 @@ class WalltimeCheckpointer(pl.Callback):
         """WalltimeCheckpointer constructor.
 
         Args:
-        start_time: Timestamp when the job started (e.g. from time.time() or `date +%s`).
-        checkpoint_dir: Directory where to save the checkpoint.
-        time_limit_hours: The allocation time limit in hours.
-        buffer_minutes: How many minutes before the limit to stop.
-        checkpoint_filename: Name of the checkpoint file to save.
-        stop_trainer_after_time_limit: Whether to stop the trainer after the time limit.
+            start_time: Timestamp when the job started (e.g. from time.time() or `date +%s`).
+            checkpoint_dir: Directory where to save the checkpoint.
+            time_limit_hours: The allocation time limit in hours.
+            buffer_minutes: How many minutes before the limit to stop.
+            checkpoint_filename: Name of the checkpoint file to save.
+            stop_trainer_after_time_limit: Whether to stop the trainer after the time limit.
 
         """
         super().__init__()
