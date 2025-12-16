@@ -39,9 +39,6 @@ RUN pip install --no-cache-dir \
         torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
         && conda clean --all --yes
 
-# Re-declare ARG after FROM to make it available in build stage
-ARG GITLAB_TOKEN
-
 # Create ubuntu user with sudo privileges
 RUN apt-get update && apt-get install -y sudo && \
     rm -rf /var/lib/apt/lists/* && \
@@ -66,11 +63,6 @@ RUN pip install --no-cache-dir -r requirements-dev.txt
 
 # Install the package (as root, system-wide)
 RUN pip install --no-cache-dir .
-
-# Install subquadratic_ops wheel file (as root, system-wide)
-# pip will automatically select the correct architecture (x86_64 / arm64)
-# GITLAB_TOKEN is required for this installation
-RUN if [ -n "${GITLAB_TOKEN}" ]; then echo "Installing subquadratic-ops with token..." && pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple; else echo "Skipping subquadratic-ops installation because GITLAB_TOKEN is not available. Please set GITLAB_TOKEN environment variable."; fi
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \
