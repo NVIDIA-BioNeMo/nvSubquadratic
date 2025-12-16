@@ -221,15 +221,17 @@ def main() -> None:
         else:
             print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 
-    # Validate and test before finishing
-    trainer.validate(
-        model,
-        datamodule=datamodule,
-    )
-    trainer.test(
-        model,
-        datamodule=datamodule,
-    )
+    # Validate and test before finishing, only when total num train steps has been reached
+    # to avoid val/test on slurm jobs that are stopped before training is finished.
+    if config.train.iterations == trainer.global_step:
+        trainer.validate(
+            model,
+            datamodule=datamodule,
+        )
+        trainer.test(
+            model,
+            datamodule=datamodule,
+        )
 
 
 if __name__ == "__main__":

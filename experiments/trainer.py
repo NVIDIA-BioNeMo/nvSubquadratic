@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
 
+from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
 from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
@@ -111,6 +112,16 @@ def construct_trainer(
         # Append user-defined callbacks
         *user_callbacks,
     ]
+
+    if cfg.train.run_start_time is not None and cfg.train.run_time_limit_hours is not None:
+        callbacks_list.append(
+            WalltimeCheckpointer(
+                start_time=cfg.train.run_start_time,
+                time_limit_hours=cfg.train.run_time_limit_hours,
+                buffer_minutes=5.0,
+                checkpoint_dir=checkpoint_dir,
+            )
+        )
 
     # create trainer
     trainer = pl.Trainer(

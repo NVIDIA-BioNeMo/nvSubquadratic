@@ -376,10 +376,10 @@ def circular_fftconv1d_bhl(
     shift = -((K - 1) // 2)
     if use_phase_shift:
         phase = _phase_ramp_cache_1d.get(L, shift, x.device, x.dtype)  # [Lf]
-        fft_kernel.mul_(phase)  # broadcast over (B|1, H)
+        fft_kernel = fft_kernel * phase  # broadcast over (B|1, H)
 
     # Depthwise per-channel multiplication
-    fft_x.mul_(fft_kernel)
+    fft_x = fft_x * fft_kernel
 
     y = torch.fft.irfft(fft_x, n=L, dim=2)
     if not use_phase_shift:
@@ -387,7 +387,7 @@ def circular_fftconv1d_bhl(
 
     if shortcut is not None:
         assert shortcut.shape == (H,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1") * x
 
     return y
 
@@ -460,10 +460,10 @@ def circular_fftconv2d_bhl(
     shift_y = -((K_y - 1) // 2)
     if use_phase_shift:
         phase = _phase_ramp_cache_2d.get(X_in, Y_in, shift_x, shift_y, x.device, x.dtype)
-        fft_kernel.mul_(phase)  # broadcast over (B|1, H)
+        fft_kernel = fft_kernel * phase  # broadcast over (B|1, H)
 
     # Depthwise per-channel multiplication
-    fft_x.mul_(fft_kernel)
+    fft_x = fft_x * fft_kernel
 
     y = torch.fft.irfft2(fft_x, s=(X_in, Y_in), dim=(2, 3))
     if not use_phase_shift:
@@ -471,7 +471,7 @@ def circular_fftconv2d_bhl(
 
     if shortcut is not None:
         assert shortcut.shape == (H,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
 
     return y
 
@@ -562,10 +562,10 @@ def circular_fftconv3d_bhl(
     shift_z = -((Kz_ - 1) // 2)
     if use_phase_shift:
         phase = _phase_ramp_cache_3d.get(X, Y, Z, shift_x, shift_y, shift_z, x.device, x.dtype)  # [X,Y,Zf]
-        fft_kernel.mul_(phase)  # broadcast over (B|1, H)
+        fft_kernel = fft_kernel * phase  # broadcast over (B|1, H)
 
     # Depthwise per-channel multiplication
-    fft_x.mul_(fft_kernel)
+    fft_x = fft_x * fft_kernel
 
     y = torch.fft.irfftn(fft_x, s=(X, Y, Z), dim=(2, 3, 4))
     if not use_phase_shift:
@@ -573,7 +573,7 @@ def circular_fftconv3d_bhl(
 
     if shortcut is not None:
         assert shortcut.shape == (H,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1 1 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1 1 1") * x
 
     return y
 

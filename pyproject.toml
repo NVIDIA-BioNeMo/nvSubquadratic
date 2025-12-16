@@ -23,6 +23,7 @@ dependencies = [
     "rich>=13.0.0",
     "Pillow",
     "huggingface_hub",
+    "subquadratic-ops-torch-cu12",
 ]
 
 [tool.setuptools.packages.find]

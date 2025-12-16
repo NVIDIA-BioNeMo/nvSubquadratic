@@ -10,7 +10,7 @@
 #SBATCH --time=04:00:00                     # 4h (under 4h limit with buffer)
 #SBATCH --mail-type=FAIL
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_research-nvsubq.imagenet64.n4        # IMPORTANT: Keep same name for singleton to work
+#SBATCH --job-name=healthcareeng_research-nvsubq.imagenet64-diffusion.n4        # IMPORTANT: Keep same name for singleton to work
 
 set -x
 
@@ -26,8 +26,8 @@ CONTAINER_RESULTS="/workspace/results"
 # Configuration - Edit these for your job
 # ============================================================================
 TIME_LIMIT_HOURS=4
-EXPERIMENT_NAME="imagenet64_hyena_baseline_multinode"  # Give your experiment a meaningful name
-CONFIG_FILE="examples/imagenet_classification/ccnn_7_512_hyena.py"
+EXPERIMENT_NAME="imagenet64_diffusion_hyena_baseline_multinode"  # Give your experiment a meaningful name
+CONFIG_FILE="examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py"
 CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"  # e.g., "train.iterations=100000 dataset.batch_size=32"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
 
