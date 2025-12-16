@@ -79,6 +79,9 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         hf_auth_token: Optional[str] = None,
         num_classes: int = 200,
         task: Literal["classification", "generation"] = "classification",
+        # Augmentations
+        mixup_cfg: Optional[MixupConfig] = None,
+        augment_cfg: Optional[AugmentConfig] = None,
     ) -> None:
         """Initialize the TinyImageNet datamodule."""
         super().__init__()
@@ -95,6 +98,10 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.task = task
+        
+        # Default configs if not provided
+        self.mixup_cfg = mixup_cfg
+        self.augment_cfg = augment_cfg
 
         self.input_channels = 3
         if task == "classification":
@@ -111,6 +118,18 @@ class TinyImageNetDataModule(pl.LightningDataModule):
 
         self.train_dataset: Optional[_TinyImageNetDataset] = None
         self.val_dataset: Optional[_TinyImageNetDataset] = None
+
+        self.mixup_fn: Optional[Mixup] = None
+        if self.mixup_cfg is not None and (self.mixup_cfg.mixup > 0 or self.mixup_cfg.cutmix > 0):
+            self.mixup_fn = Mixup(
+                mixup_alpha=self.mixup_cfg.mixup,
+                cutmix_alpha=self.mixup_cfg.cutmix,
+                prob=self.mixup_cfg.mixup_prob,
+                switch_prob=self.mixup_cfg.mixup_switch_prob,
+                mode=self.mixup_cfg.mixup_mode,
+                label_smoothing=self.mixup_cfg.smoothing,
+                num_classes=num_classes,
+            )
 
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean = TINYIMAGENET_MEAN
@@ -133,6 +152,17 @@ class TinyImageNetDataModule(pl.LightningDataModule):
             # Standard augmentation
             ops.append(transforms.RandomCrop(self.image_size, padding=4))
             ops.append(transforms.RandomHorizontalFlip())
+            
+            if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
+                 # Standard Color Jitter
+                ops.append(transforms.ColorJitter(
+                    brightness=self.augment_cfg.color_jitter, 
+                    contrast=self.augment_cfg.color_jitter, 
+                    saturation=self.augment_cfg.color_jitter
+                ))
+                # 3-Augment (Gray, Solar, Blur)
+                ops.append(ThreeAugment())
+
         else:
             if self.center_crop and self.image_size < 64:
                 ops.append(transforms.CenterCrop(self.image_size))
@@ -284,9 +314,13 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         """Convert tuple batches to dict batches expected by the diffusion wrappers."""
         images, labels = batch
 
+        if self.mixup_fn is not None and self.trainer.training:
+            images, labels = self.mixup_fn(images, labels)
+
         images = images.permute(0, 2, 3, 1).contiguous()  # (bsize, height, width, num_channels)
 
-        labels = labels.view(-1)  # (bsize,)
+        if len(labels.shape) == 1:
+            labels = labels.view(-1)  # (bsize,)
 
         return {
             "input": images,

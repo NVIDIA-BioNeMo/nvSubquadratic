@@ -7,6 +7,7 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
+from timm.data import create_transform, Mixup
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -23,6 +24,52 @@ IMAGENET_MEAN_STD_BY_SIZE = {
 
 DEFAULT_IMAGENET_MEAN = [0.485, 0.456, 0.406]
 DEFAULT_IMAGENET_STD = [0.229, 0.224, 0.225]
+
+
+from dataclasses import dataclass, field
+
+@dataclass
+class MixupConfig:
+    mixup: float = 0.0
+    cutmix: float = 0.0
+    mixup_prob: float = 1.0
+    mixup_switch_prob: float = 0.5
+    mixup_mode: str = "batch"
+    smoothing: float = 0.1
+    
+@dataclass
+class AugmentConfig:
+    use_three_augment: bool = False
+    color_jitter: float = 0.4
+    # Future expansion: use_simple_random_crop, etc.
+
+
+class ThreeAugment(torch.nn.Module):
+    """DeiT III 3-Augment: Grayscale, Solarization, Gaussian Blur."""
+    
+    def __init__(self, prob: float = 1.0):
+        super().__init__()
+        self.prob = prob
+        self.transforms = [
+            transforms.RandomGrayscale(p=1.0),
+            transforms.RandomSolarize(threshold=0.5, p=1.0), 
+            transforms.GaussianBlur(kernel_size=3) # approx default, sigma random 0.1-2.0 usually
+        ]
+
+    def forward(self, img):
+        if torch.rand(1) > self.prob:
+            return img
+            
+        # Select one augmentation with equal probability
+        idx = torch.randint(0, 3, (1,)).item()
+        
+        # Apply specific logic per transform if needed
+        if idx == 2: # GaussianBlur
+             # ConvNeXt/DeiT III might use specific sigma logic, using standard range [0.1, 2.0]
+             sigma = torch.rand(1).item() * 1.9 + 0.1
+             return transforms.GaussianBlur(kernel_size=5, sigma=sigma)(img)
+             
+        return self.transforms[idx](img)
 
 
 class _ImageNetDataset(Dataset):
@@ -90,6 +137,9 @@ class ImageNetDataModule(pl.LightningDataModule):
         hf_auth_token: Optional[str] = None,
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
+        # Augmentations
+        mixup_cfg: Optional[MixupConfig] = None,
+        augment_cfg: Optional[AugmentConfig] = None,
     ) -> None:
         """Initialize the ImageNet datamodule and cache configuration values."""
         super().__init__()
@@ -106,19 +156,26 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.task = task
+        
+        # Default configs if not provided
+        self.mixup_cfg = mixup_cfg
+        self.augment_cfg = augment_cfg
 
-        self.input_channels = 3
-        if task == "classification":
-            self.output_channels = num_classes
-        elif task == "generation":
-            self.output_channels = self.input_channels
-        else:
-            raise ValueError(f"Unsupported task: {task}")
-        self.num_classes = num_classes  # ImageNet-1k has exactly one thousand semantic classes.
+        self.normalization_mean = [0.5, 0.5, 0.5]
+        self.normalization_std = [0.5, 0.5, 0.5]
 
-        # Diffusion experiments consume inputs scaled to [-1, 1].
-        self.normalization_mean = (0.5, 0.5, 0.5)
-        self.normalization_std = (0.5, 0.5, 0.5)
+        self.mixup_fn: Optional[Mixup] = None
+        self.mixup_fn: Optional[Mixup] = None
+        if self.mixup_cfg is not None and (self.mixup_cfg.mixup > 0 or self.mixup_cfg.cutmix > 0):
+            self.mixup_fn = Mixup(
+                mixup_alpha=self.mixup_cfg.mixup,
+                cutmix_alpha=self.mixup_cfg.cutmix,
+                prob=self.mixup_cfg.mixup_prob,
+                switch_prob=self.mixup_cfg.mixup_switch_prob,
+                mode=self.mixup_cfg.mixup_mode,
+                label_smoothing=self.mixup_cfg.smoothing,
+                num_classes=num_classes,
+            )
 
         self.train_dataset: Optional[_ImageNetDataset] = None
         self.val_dataset: Optional[_ImageNetDataset] = None
@@ -135,33 +192,47 @@ class ImageNetDataModule(pl.LightningDataModule):
             mean = self.normalization_mean
             std = self.normalization_std
 
-        # Since ImageNet images has varying sizes, we first resize the shorter edge to image_size + 32.
-        ops: list[transforms.Transform] = [transforms.Resize(self.image_size + 32)]
+        # Initialize ops with Simple Random Crop logic: Resize -> RandomCrop
+        # For SRC, we typically resize to slightly larger than crop size (e.g. 256 for 224 crop) or
+        # resize shortest edge to target size.
+        # Original code used Resize(image_size + 32). This is standard SRC.
+        ops: list[transforms.Transform] = []
 
-        # During training we use random crop, during eval either center crop or resize.
         if train:
+            # Simple Random Crop
+            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
             ops.append(transforms.RandomCrop(self.image_size))
+            
+            # Manual augmentation pipeline matching DeiT III / User request
+            # "ColorJitter Grayscale Gaussian Blur Solarization"
+            ops.append(transforms.RandomHorizontalFlip())
+            
+            if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
+                 # Standard Color Jitter
+                ops.append(transforms.ColorJitter(
+                    brightness=self.augment_cfg.color_jitter, 
+                    contrast=self.augment_cfg.color_jitter, 
+                    saturation=self.augment_cfg.color_jitter
+                ))
+                # 3-Augment (Gray, Solar, Blur)
+                ops.append(ThreeAugment())
         else:
+            # Validation: Resize + CenterCrop or Resize
+            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
             if self.center_crop:
                 ops.append(transforms.CenterCrop(self.image_size))
             else:
-                ops.append(transforms.Resize(self.image_size))
-
-        if train:
-            ops.append(transforms.RandomHorizontalFlip())
+                ops.append(transforms.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC))
 
         if self.final_image_size != self.image_size:
-            ops.append(
+             ops.append(
                 transforms.Resize(
                     self.final_image_size,
                     interpolation=InterpolationMode.BICUBIC,
                 )
             )
 
-        # Final preprocessing auggmentation. Only dequantization for generation tasks.
         ops.append(transforms.ToTensor())
-        if self.task == "generation":
-            ops.append(transforms.Lambda(self._uniform_dequantize))
         ops.append(transforms.Normalize(mean=mean, std=std))
         return transforms.Compose(ops)
 
@@ -297,9 +368,13 @@ class ImageNetDataModule(pl.LightningDataModule):
         """Convert tuple batches to dict batches expected by the diffusion wrappers."""
         images, labels = batch
 
+        if self.mixup_fn is not None and self.trainer.training:
+            images, labels = self.mixup_fn(images, labels)
+
         images = images.permute(0, 2, 3, 1).contiguous()  # (bsize, height, width, num_channels)
 
-        labels = labels.view(-1)  # (bsize,)
+        if len(labels.shape) == 1:
+            labels = labels.view(-1)  # (bsize,)
 
         return {
             "input": images,
