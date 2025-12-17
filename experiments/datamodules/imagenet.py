@@ -1,13 +1,15 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
 from datasets import load_dataset
+from omegaconf import DictConfig, OmegaConf
+from timm.data import Mixup
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
-from timm.data import create_transform, Mixup
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -26,19 +28,22 @@ DEFAULT_IMAGENET_MEAN = [0.485, 0.456, 0.406]
 DEFAULT_IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-from dataclasses import dataclass, field
-
 @dataclass
 class MixupConfig:
+    """Configuration for mixup."""
+
     mixup: float = 0.0
     cutmix: float = 0.0
     mixup_prob: float = 1.0
     mixup_switch_prob: float = 0.5
     mixup_mode: str = "batch"
     smoothing: float = 0.1
-    
+
+
 @dataclass
 class AugmentConfig:
+    """Configuration for augmentations."""
+
     use_three_augment: bool = False
     color_jitter: float = 0.4
     # Future expansion: use_simple_random_crop, etc.
@@ -46,29 +51,31 @@ class AugmentConfig:
 
 class ThreeAugment(torch.nn.Module):
     """DeiT III 3-Augment: Grayscale, Solarization, Gaussian Blur."""
-    
+
     def __init__(self, prob: float = 1.0):
+        """Initialize the 3-augment with probability `prob`."""
         super().__init__()
         self.prob = prob
         self.transforms = [
             transforms.RandomGrayscale(p=1.0),
-            transforms.RandomSolarize(threshold=0.5, p=1.0), 
-            transforms.GaussianBlur(kernel_size=3) # approx default, sigma random 0.1-2.0 usually
+            transforms.RandomSolarize(threshold=0.5, p=1.0),
+            transforms.GaussianBlur(kernel_size=3),  # approx default, sigma random 0.1-2.0 usually
         ]
 
     def forward(self, img):
+        """Apply 3-augment with probability `self.prob`."""
         if torch.rand(1) > self.prob:
             return img
-            
+
         # Select one augmentation with equal probability
         idx = torch.randint(0, 3, (1,)).item()
-        
+
         # For GaussianBlur, use DeiT III logic
         # DeiT III uses specific sigma logic, using standard range [0.1, 2.0]
-        if idx == 2: 
-             sigma = torch.rand(1).item() * 1.9 + 0.1
-             return transforms.GaussianBlur(kernel_size=5, sigma=sigma)(img)
-             
+        if idx == 2:
+            sigma = torch.rand(1).item() * 1.9 + 0.1
+            return transforms.GaussianBlur(kernel_size=5, sigma=sigma)(img)
+
         return self.transforms[idx](img)
 
 
@@ -156,10 +163,26 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.task = task
-        
-        # Default configs if not provided
-        self.mixup_cfg = mixup_cfg
-        self.augment_cfg = augment_cfg
+
+        self.task = task
+
+        # Handle mixup_cfg
+        if isinstance(mixup_cfg, (dict, DictConfig)):
+            # Merge provided dict with default MixupConfig to ensure all keys like 'mixup_prob' exist
+            base_cfg = OmegaConf.structured(MixupConfig)
+            merged_cfg = OmegaConf.merge(base_cfg, mixup_cfg)
+            self.mixup_cfg = OmegaConf.to_object(merged_cfg)
+        else:
+            self.mixup_cfg = mixup_cfg
+
+        # Handle augment_cfg
+        if isinstance(augment_cfg, (dict, DictConfig)):
+            # Merge provided dict with default AugmentConfig
+            base_cfg = OmegaConf.structured(AugmentConfig)
+            merged_cfg = OmegaConf.merge(base_cfg, augment_cfg)
+            self.augment_cfg = OmegaConf.to_object(merged_cfg)
+        else:
+            self.augment_cfg = augment_cfg
 
         self.normalization_mean = [0.5, 0.5, 0.5]
         self.normalization_std = [0.5, 0.5, 0.5]
@@ -202,18 +225,20 @@ class ImageNetDataModule(pl.LightningDataModule):
             # Simple Random Crop
             ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
             ops.append(transforms.RandomCrop(self.image_size))
-            
+
             # Manual augmentation pipeline matching DeiT III / User request
             # "ColorJitter Grayscale Gaussian Blur Solarization"
             ops.append(transforms.RandomHorizontalFlip())
-            
+
             if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
-                 # Standard Color Jitter
-                ops.append(transforms.ColorJitter(
-                    brightness=self.augment_cfg.color_jitter, 
-                    contrast=self.augment_cfg.color_jitter, 
-                    saturation=self.augment_cfg.color_jitter
-                ))
+                # Standard Color Jitter
+                ops.append(
+                    transforms.ColorJitter(
+                        brightness=self.augment_cfg.color_jitter,
+                        contrast=self.augment_cfg.color_jitter,
+                        saturation=self.augment_cfg.color_jitter,
+                    )
+                )
                 # 3-Augment (Gray, Solar, Blur)
                 ops.append(ThreeAugment())
         else:
@@ -225,7 +250,7 @@ class ImageNetDataModule(pl.LightningDataModule):
                 ops.append(transforms.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC))
 
         if self.final_image_size != self.image_size:
-             ops.append(
+            ops.append(
                 transforms.Resize(
                     self.final_image_size,
                     interpolation=InterpolationMode.BICUBIC,

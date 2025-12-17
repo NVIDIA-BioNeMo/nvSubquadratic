@@ -4,9 +4,13 @@ from typing import Literal, Optional, Tuple
 import pytorch_lightning as pl
 import torch
 from datasets import load_dataset
+from omegaconf import DictConfig, OmegaConf
+from timm.data import Mixup
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
+
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ThreeAugment
 
 
 # TinyImageNet statistics
@@ -98,10 +102,24 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         self.hf_dataset_config = hf_dataset_config
         self.hf_auth_token = hf_auth_token
         self.task = task
-        
-        # Default configs if not provided
-        self.mixup_cfg = mixup_cfg
-        self.augment_cfg = augment_cfg
+
+        # Handle mixup_cfg
+        if isinstance(mixup_cfg, (dict, DictConfig)):
+            # Merge provided dict with default MixupConfig to ensure all keys like 'mixup_prob' exist
+            base_cfg = OmegaConf.structured(MixupConfig)
+            merged_cfg = OmegaConf.merge(base_cfg, mixup_cfg)
+            self.mixup_cfg = OmegaConf.to_object(merged_cfg)
+        else:
+            self.mixup_cfg = mixup_cfg
+
+        # Handle augment_cfg
+        if isinstance(augment_cfg, (dict, DictConfig)):
+            # Merge provided dict with default AugmentConfig
+            base_cfg = OmegaConf.structured(AugmentConfig)
+            merged_cfg = OmegaConf.merge(base_cfg, augment_cfg)
+            self.augment_cfg = OmegaConf.to_object(merged_cfg)
+        else:
+            self.augment_cfg = augment_cfg
 
         self.input_channels = 3
         if task == "classification":
@@ -152,14 +170,16 @@ class TinyImageNetDataModule(pl.LightningDataModule):
             # Standard augmentation
             ops.append(transforms.RandomCrop(self.image_size, padding=4))
             ops.append(transforms.RandomHorizontalFlip())
-            
+
             if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
-                 # Standard Color Jitter
-                ops.append(transforms.ColorJitter(
-                    brightness=self.augment_cfg.color_jitter, 
-                    contrast=self.augment_cfg.color_jitter, 
-                    saturation=self.augment_cfg.color_jitter
-                ))
+                # Standard Color Jitter
+                ops.append(
+                    transforms.ColorJitter(
+                        brightness=self.augment_cfg.color_jitter,
+                        contrast=self.augment_cfg.color_jitter,
+                        saturation=self.augment_cfg.color_jitter,
+                    )
+                )
                 # 3-Augment (Gray, Solar, Blur)
                 ops.append(ThreeAugment())
 
