@@ -16,14 +16,14 @@ From: nvcr.io/nvidia/pytorch:25.06-py3
         apt-get install -y --no-install-recommends build-essential git && \
         rm -rf /var/lib/apt/lists/*
     cd /workspaces/nvSubquadratic-private
+
+    # Set up git safe directory
+    git config --global --add safe.directory /workspaces/nvSubquadratic-private
+
+    # Install dependencies
     pip install --no-cache-dir -r requirements-dev.txt
-    pip install --no-cache-dir -e .
-    if [ -n "${GITLAB_TOKEN}" ]; then
-        pip install subquadratic-ops==v0.0.1+cuda12.9 \
-            --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple
-    else
-        echo "Skipping subquadratic-ops installation; set GITLAB_TOKEN to enable."
-    fi
+    pip install --no-cache-dir --no-build-isolation -e .
+
     # Auto-install git hooks on shell entry if missing
     cat >/etc/profile.d/nvsub_precommit.sh <<'EOF'
 #!/bin/bash
