@@ -6,7 +6,7 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import ImageNetDataModule
+from experiments.datamodules.tinyimagenet import AugmentConfig, MixupConfig, TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
@@ -52,15 +52,14 @@ LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 
-
 def get_config() -> ExperimentConfig:
-    """Return the ImageNet classification configuration."""
+    """Return the TinyImageNet classification configuration."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    config.dataset = LazyConfig(TinyImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -68,13 +67,25 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True,
+        center_crop=False,  # TinyImageNet is already 64x64
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
         hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
         task="classification",
+        # Enable Augmentations
+        mixup_cfg=LazyConfig(MixupConfig)(
+            mixup=0.8,
+            cutmix=1.0,  # Enable both mixup and cutmix
+            mixup_prob=1.0,
+            mixup_switch_prob=0.5,
+            mixup_mode="batch",
+        ),
+        augment_cfg=LazyConfig(AugmentConfig)(
+            use_three_augment=True,
+            color_jitter=0.4,
+        ),
     )
 
     config.net = LazyConfig(ClassificationResNet)(
