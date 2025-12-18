@@ -6,7 +6,7 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ImageNetDataModule
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
@@ -26,10 +26,10 @@ WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
 # Dataset
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 MAX_WORKERS = 16
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
-HF_DATASET_NAME = "ILSVRC/imagenet-1k"
+HF_DATASET_NAME = "imagenet-1k"
 HF_DATASET_CONFIG = None
 IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
@@ -41,8 +41,8 @@ NUM_HIDDEN_CHANNELS = 512
 NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"
-FFT_PADDING = "zero"
+GRID_TYPE = "single"
+FFT_PADDING = "circular"
 NUM_CLASSES = 1_000
 
 # Optimisation
@@ -51,6 +51,7 @@ WARMUP_ITERATIONS_PERCENTAGE = 0.05
 LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
+
 
 def get_config() -> ExperimentConfig:
     """Return the ImageNet classification configuration."""
@@ -67,7 +68,7 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True, 
+        center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
@@ -172,7 +173,10 @@ def get_config() -> ExperimentConfig:
     )
 
     config.train = TrainConfig(
-        batch_size="${dataset.batch_size}", iterations=TRAINING_ITERATIONS, grad_clip=GRAD_CLIP, precision=PRECISION
+        batch_size="${dataset.batch_size}",
+        iterations=TRAINING_ITERATIONS,
+        grad_clip=GRAD_CLIP,
+        precision=PRECISION,
     )
 
     config.scheduler = SchedulerConfig(

@@ -62,7 +62,20 @@ def parse_args() -> argparse.Namespace:
         help="Configuration overrides, e.g., dataset.batch_size=64",
     )
 
-    return parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+    # Support --key=value format (common in wandb sweeps)
+    for arg in unknown:
+        if arg.startswith("--"):
+            # Strip the leading --
+            # This turns --dataset.batch_size=32 into dataset.batch_size=32
+            args.overrides.append(arg[2:])
+        else:
+            # If it doesn't start with -- but wasn't caught by positional, keep it.
+            # (Though effectively 'overrides' nargs='*' should catch non-dashed args)
+            args.overrides.append(arg)
+
+    return args
 
 
 def main() -> None:
@@ -145,7 +158,7 @@ def main() -> None:
     if run_id_file.exists():
         attach_run_id = run_id_file.read_text().strip()
     else:
-        raise RuntimeError(f"[autoresume] No run ID file found in experiment directory '{experiment_dir}'.")
+        attach_run_id = None
 
     if config.autoresume.enabled:
         wandb_logger = WandbLogger(
