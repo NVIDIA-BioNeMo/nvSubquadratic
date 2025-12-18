@@ -6,7 +6,7 @@ import os
 
 import torch
 
-from experiments.datamodules.tinyimagenet import AugmentConfig, MixupConfig, TinyImageNetDataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
@@ -53,13 +53,13 @@ WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 
 def get_config() -> ExperimentConfig:
-    """Return the TinyImageNet classification configuration."""
+    """Return the ImageNet classification configuration."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(TinyImageNetDataModule)(
+    config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -67,7 +67,7 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=False,  # TinyImageNet is already 64x64
+        center_crop=True, 
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
