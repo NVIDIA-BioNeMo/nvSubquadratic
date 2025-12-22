@@ -184,6 +184,15 @@ class ImageNetDataModule(pl.LightningDataModule):
         else:
             self.augment_cfg = augment_cfg
 
+        self.input_channels = 3
+        if task == "classification":
+            self.output_channels = num_classes
+        elif task == "generation":
+            self.output_channels = self.input_channels
+        else:
+            raise ValueError(f"Unsupported task: {task}")
+        self.num_classes = num_classes
+
         self.normalization_mean = [0.5, 0.5, 0.5]
         self.normalization_std = [0.5, 0.5, 0.5]
 
