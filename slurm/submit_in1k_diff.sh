@@ -119,15 +119,6 @@ export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # ============================================================================
-# Check if training is already complete
-# ============================================================================
-if [ -f ${COMPLETION_FLAG} ]; then
-    echo "Training already complete for this run. Exiting."
-    echo "$(date): Job ${SLURM_JOB_ID} exited early - training complete" >> ${RESULTS_PATH}/job_chain.log
-    exit 0
-fi
-
-# ============================================================================
 # Run Training
 # ============================================================================
 echo "Starting/resuming training at $(date)"

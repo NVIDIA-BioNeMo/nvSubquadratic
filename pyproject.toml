@@ -26,6 +26,7 @@ dependencies = [
     "Pillow",
     "huggingface_hub",
     "subquadratic-ops-torch-cu12",
+    "timm==1.0.22",
 ]
 
 [tool.setuptools.packages.find]
