@@ -37,7 +37,7 @@ IMAGE_NAME=nvcr.io/nvidian/cvai_bnmo_trng/nvsubquadratic:12.09.25
 # Host paths
 WORKDIR=${PWD}
 RUNS_DIR="${WORKDIR}/runs"
-DATA_DIR="/lustre/fsw/portfolios/healthcareeng/projects/healthcareeng_bionemo/amoradzadeh/hyena"
+DATA_DIR=<Path to the data directory>
 
 
 # Create necessary directories
@@ -51,7 +51,6 @@ RUN_NAME="run_${RUN_NAME_HASH}"
 # Experiment-specific directories
 EXPERIMENT_DIR="${RUNS_DIR}/${EXPERIMENT_NAME}"
 RESULTS_PATH="${EXPERIMENT_DIR}/${RUN_NAME}"
-COMPLETION_FLAG="${RESULTS_PATH}/.training_complete"
 
 # Create necessary directories
 mkdir -p ${EXPERIMENT_DIR}
@@ -120,15 +119,6 @@ export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # ============================================================================
-# Check if training is already complete
-# ============================================================================
-if [ -f ${COMPLETION_FLAG} ]; then
-    echo "Training already complete for this run. Exiting."
-    echo "$(date): Job ${SLURM_JOB_ID} exited early - training complete" >> ${RESULTS_PATH}/job_chain.log
-    exit 0
-fi
-
-# ============================================================================
 # Run Training
 # ============================================================================
 echo "Starting/resuming training at $(date)"
@@ -175,12 +165,6 @@ TRAIN_EXIT_CODE=$?
 
 echo "Training process exited with code: ${TRAIN_EXIT_CODE} at $(date)"
 echo "$(date): Job ${SLURM_JOB_ID} completed with exit code ${TRAIN_EXIT_CODE}" >> ${RESULTS_PATH}/job_chain.log
-
-# Check if training completed and mark it
-if [ -f "${RESULTS_PATH}/checkpoints/.training_complete" ]; then
-    echo "Training completion marker found - marking as complete"
-    touch ${COMPLETION_FLAG}
-fi
 
 set +x
 

@@ -4,9 +4,13 @@ from typing import Literal, Optional, Tuple
 import pytorch_lightning as pl
 import torch
 from datasets import load_dataset
+from omegaconf import DictConfig, OmegaConf
+from timm.data import Mixup
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
+
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ThreeAugment
 
 
 # TinyImageNet statistics
@@ -79,6 +83,9 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         hf_auth_token: Optional[str] = None,
         num_classes: int = 200,
         task: Literal["classification", "generation"] = "classification",
+        # Augmentations
+        mixup_cfg: Optional[MixupConfig] = None,
+        augment_cfg: Optional[AugmentConfig] = None,
     ) -> None:
         """Initialize the TinyImageNet datamodule."""
         super().__init__()
@@ -96,6 +103,24 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         self.hf_auth_token = hf_auth_token
         self.task = task
 
+        # Handle mixup_cfg
+        if isinstance(mixup_cfg, (dict, DictConfig)):
+            # Merge provided dict with default MixupConfig to ensure all keys like 'mixup_prob' exist
+            base_cfg = OmegaConf.structured(MixupConfig)
+            merged_cfg = OmegaConf.merge(base_cfg, mixup_cfg)
+            self.mixup_cfg = OmegaConf.to_object(merged_cfg)
+        else:
+            self.mixup_cfg = mixup_cfg
+
+        # Handle augment_cfg
+        if isinstance(augment_cfg, (dict, DictConfig)):
+            # Merge provided dict with default AugmentConfig
+            base_cfg = OmegaConf.structured(AugmentConfig)
+            merged_cfg = OmegaConf.merge(base_cfg, augment_cfg)
+            self.augment_cfg = OmegaConf.to_object(merged_cfg)
+        else:
+            self.augment_cfg = augment_cfg
+
         self.input_channels = 3
         if task == "classification":
             self.output_channels = num_classes
@@ -111,6 +136,18 @@ class TinyImageNetDataModule(pl.LightningDataModule):
 
         self.train_dataset: Optional[_TinyImageNetDataset] = None
         self.val_dataset: Optional[_TinyImageNetDataset] = None
+
+        self.mixup_fn: Optional[Mixup] = None
+        if self.mixup_cfg is not None and (self.mixup_cfg.mixup > 0 or self.mixup_cfg.cutmix > 0):
+            self.mixup_fn = Mixup(
+                mixup_alpha=self.mixup_cfg.mixup,
+                cutmix_alpha=self.mixup_cfg.cutmix,
+                prob=self.mixup_cfg.mixup_prob,
+                switch_prob=self.mixup_cfg.mixup_switch_prob,
+                mode=self.mixup_cfg.mixup_mode,
+                label_smoothing=self.mixup_cfg.smoothing,
+                num_classes=num_classes,
+            )
 
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean = TINYIMAGENET_MEAN
@@ -133,6 +170,19 @@ class TinyImageNetDataModule(pl.LightningDataModule):
             # Standard augmentation
             ops.append(transforms.RandomCrop(self.image_size, padding=4))
             ops.append(transforms.RandomHorizontalFlip())
+
+            if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
+                # Standard Color Jitter
+                ops.append(
+                    transforms.ColorJitter(
+                        brightness=self.augment_cfg.color_jitter,
+                        contrast=self.augment_cfg.color_jitter,
+                        saturation=self.augment_cfg.color_jitter,
+                    )
+                )
+                # 3-Augment (Gray, Solar, Blur)
+                ops.append(ThreeAugment())
+
         else:
             if self.center_crop and self.image_size < 64:
                 ops.append(transforms.CenterCrop(self.image_size))
@@ -284,9 +334,13 @@ class TinyImageNetDataModule(pl.LightningDataModule):
         """Convert tuple batches to dict batches expected by the diffusion wrappers."""
         images, labels = batch
 
+        if self.mixup_fn is not None and self.trainer.training:
+            images, labels = self.mixup_fn(images, labels)
+
         images = images.permute(0, 2, 3, 1).contiguous()  # (bsize, height, width, num_channels)
 
-        labels = labels.view(-1)  # (bsize,)
+        if len(labels.shape) == 1:
+            labels = labels.view(-1)  # (bsize,)
 
         return {
             "input": images,

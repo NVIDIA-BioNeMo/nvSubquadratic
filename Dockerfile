@@ -14,10 +14,10 @@ ENV PATH=${CONDA_DIR}/bin:${PATH}
 
 RUN apt-get update > /dev/null && \
     apt-get install --no-install-recommends --yes \
-        wget bzip2 ca-certificates \
-        git \
-        tini \
-        > /dev/null && \
+    wget bzip2 ca-certificates \
+    git \
+    tini \
+    > /dev/null && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/${MINIFORGE_NAME}-${MINIFORGE_VERSION}-Linux-$(uname -m).sh -O /tmp/miniforge.sh && \
@@ -32,15 +32,12 @@ RUN apt-get update > /dev/null && \
     chmod -R a+rX ${CONDA_DIR}
 
 RUN conda install --yes \
-        python=3.12 \
-        && conda clean --all --yes
+    python=3.12 \
+    && conda clean --all --yes
 
 RUN pip install --no-cache-dir \
-        torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
-        && conda clean --all --yes
-
-# Re-declare ARG after FROM to make it available in build stage
-ARG GITLAB_TOKEN
+    torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
+    && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
 RUN apt-get update && apt-get install -y sudo && \
@@ -54,23 +51,21 @@ WORKDIR /workspaces/nvSubquadratic-private
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  build-essential \
-  git \
-  && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the entire project for development (as root first for package installation)
 COPY . .
+
+# Set up git safe directory
+RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 
 # Install development dependencies first (as root, system-wide)
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 # Install the package (as root, system-wide)
-RUN pip install --no-cache-dir .
-
-# Install subquadratic_ops wheel file (as root, system-wide)
-# pip will automatically select the correct architecture (x86_64 / arm64)
-# GITLAB_TOKEN is required for this installation
-RUN if [ -n "${GITLAB_TOKEN}" ]; then echo "Installing subquadratic-ops with token..." && pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple; else echo "Skipping subquadratic-ops installation because GITLAB_TOKEN is not available. Please set GITLAB_TOKEN environment variable."; fi
+RUN pip install --no-cache-dir --no-build-isolation .
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \

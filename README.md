@@ -18,7 +18,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 
 - CUDA-compatible NVIDIA GPU (Ampere or Hopper architecture)
 - CUDA Toolkit 12.0 or higher
-- Python 3.9 or higher
+- Python 3.11 or higher
 
 ## Architecture
 
@@ -32,34 +32,23 @@ nvSubquadratic provides a **high-level PyTorch interface** that depends on the *
 
 ### Package Manager
 
-This project uses **Poetry** for dependency management (required for nSpect security scanning).
+This project uses **pip** with `pyproject.toml` for dependency management. A `Pipfile.lock` is maintained for nSpect security scanning compliance.
 
 ### Dev Container (Recommended)
 
-```bash
-# Set GitLab token for subquadratic-ops
-export GITLAB_TOKEN="your_gitlab_token_here"
-
-# Open in VS Code and select "Reopen in Container"
-```
+Open in VS Code and select "Reopen in Container". The devcontainer extension will automatically build the Docker image and set up the development environment with all dependencies pre-installed.
 
 ### Docker
 
 ```bash
-# Set GitLab token
-export GITLAB_TOKEN="your_gitlab_token_here"
-
 # Build and run
-docker build --build-arg GITLAB_TOKEN=$GITLAB_TOKEN -t nvsubquadratic:dev .
-docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces nvsubquadratic:dev
+docker build -t nvsubquadratic:dev .
+docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic:dev
 ```
 
 ### Apptainer
 
 ```bash
-# Optional: set GitLab token for subquadratic-ops during build
-export GITLAB_TOKEN="your_gitlab_token_here"
-
 # Build SIF (add --fakeroot if required on your system)
 apptainer build nvsubquadratic.sif nvsubquadratic.def
 
@@ -76,21 +65,18 @@ apptainer run --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadrat
 ### Local Installation
 
 ```bash
-# Install Poetry if not already installed
-curl -sSL https://install.python-poetry.org | python3 -
+# Create and activate a virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install PyTorch with CUDA support first
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch with CUDA support first (before package dependencies)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
-# Install all dependencies (production + development)
-poetry install
+# Install development dependencies
+pip install -r requirements-dev.txt
 
-# Install subquadratic-ops (requires GitLab token)
-export GITLAB_TOKEN="your_gitlab_token_here"
-poetry run pip install subquadratic-ops==v0.0.1+cuda12.9 --index-url https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple
-
-# Activate the virtual environment
-poetry shell
+# Install the package in editable mode (installs remaining dependencies from pyproject.toml)
+pip install --no-build-isolation -e .
 ```
 
 ## Development
@@ -98,8 +84,8 @@ poetry shell
 Pre-commit hooks are automatically installed in the dev container. For other installation methods:
 
 ```bash
-poetry run pre-commit install
-poetry run pre-commit install --hook-type pre-push
+pre-commit install
+pre-commit install --hook-type pre-push
 ```
 
 ### Updating Dependencies for Security Scanning
@@ -128,4 +114,6 @@ pipenv lock
 
 **On push:**
 
-- Runs all tests (push is blocked if tests fail)
+- Runs all tests (pytest)
+- Runs distributed tests with torchrun (if 2+ GPUs available)
+- Push is blocked if tests fail
