@@ -9,13 +9,13 @@ This directory contains configuration files for the hyperparameter sweep of diff
 
 ## Priority 2: High-Res Baselines
 
-1. **Base (128x128)**: High-resolution baseline. `base_128.py`.
-1. **Base (256x256)**: Very high-resolution baseline. `base_256.py`.
+1. **Base (128x128)**: Medium-resolution baseline. `base_128.py`.
+1. **Base (256x256)**: Medium+-resolution baseline. `base_256.py`.
 1. **XL (128x128)**: `xl_128.py`. **Extreme cost/Risk**.
 
 ## Priority 3: Low-Res Baseline
 
-1. **Base (64x64)**: `base_64.py`.
+1. **Base (64x64)**: `base_64.py`. This is running currently under [this experiment](https://wandb.ai/dafidofff/nvsubquadratic/runs/vKZdfRjB?nw=nwuserdafidofff).
 
 ## Priority 4: Ablations
 
