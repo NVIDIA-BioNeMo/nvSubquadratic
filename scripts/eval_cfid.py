@@ -207,6 +207,8 @@ def main() -> None:
         autocast_dtype = torch.float32
 
     # Use the training dataloader to ensure we sample labels from the correct distribution
+    datamodule.prepare_data()
+    datamodule.setup(stage="fit")
     loader = datamodule.train_dataloader()
     iterator = iter(loader)
 
