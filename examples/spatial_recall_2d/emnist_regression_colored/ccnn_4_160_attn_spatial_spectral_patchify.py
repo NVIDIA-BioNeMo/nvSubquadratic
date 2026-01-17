@@ -25,7 +25,7 @@ from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import SpectralLinearMaskND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND, SpectralLinearMaskND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import SpectralUnpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
@@ -136,7 +136,12 @@ def get_config() -> ExperimentConfig:
                 use_bias=True,
                 hidden_omega_0=1.0,
             ),
-            mask_cfg=LazyConfig(torch.nn.Identity)(),  # No spatial mask
+            mask_cfg=LazyConfig(GaussianModulationND)(
+                data_dim=DATA_DIM,
+                modulation_factor=0.1,
+                modulation_std=0.1,
+                modulation_type="gaussian",
+            ),
             spectral_mask_cfg=LazyConfig(SpectralLinearMaskND)(
                 data_dim=DATA_DIM,
                 transition_fraction=0.1,

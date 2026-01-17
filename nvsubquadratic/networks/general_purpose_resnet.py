@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.ckconv_patchify import CKConvPatchify, CKConvUnpatchify
 from nvsubquadratic.modules.patchify import DualPathPatchify, DualPathUnpatchify, SpectralUnpatchify
 
 
@@ -123,8 +124,8 @@ class ResidualNetwork(nn.Module):
         # Apply in_dropout to the input
         x = self.dropout_in(x)
         # Apply input projection
-        if isinstance(self.in_proj, DualPathPatchify):
-            # DualPathPatchify uses BHL format (B, C, H, W)
+        if isinstance(self.in_proj, (DualPathPatchify, CKConvPatchify)):
+            # DualPathPatchify and CKConvPatchify use BHL format (B, C, H, W)
             x_bhl = x.permute(0, 3, 1, 2)  # BHWC -> BCHW
             x_bhl = self.in_proj(x_bhl)
             x = x_bhl.permute(0, 2, 3, 1)  # BCHW -> BHWC
@@ -152,6 +153,11 @@ class ResidualNetwork(nn.Module):
             # DualPathUnpatchify uses BHL format (B, C, H, W) and needs target_shape
             x_bhl = x.permute(0, 3, 1, 2)  # BHWC -> BCHW
             x_bhl = self.out_proj(x_bhl, target_shape=x_spatial_shape)
+            x = x_bhl.permute(0, 2, 3, 1)  # BCHW -> BHWC
+        elif isinstance(self.out_proj, CKConvUnpatchify):
+            # CKConvUnpatchify uses BHL format (B, C, H, W) and needs target_size
+            x_bhl = x.permute(0, 3, 1, 2)  # BHWC -> BCHW
+            x_bhl = self.out_proj(x_bhl, target_size=x_spatial_shape)
             x = x_bhl.permute(0, 2, 3, 1)  # BCHW -> BHWC
         else:
             x = self.out_proj(x)

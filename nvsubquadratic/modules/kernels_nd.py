@@ -470,9 +470,9 @@ class SIRENKernelND(torch.nn.Module):
             if isinstance(layer, torch.nn.Linear):
                 _init_siren_weights(layer, is_first_layer=False, w0=self.hidden_omega_0)
         _init_siren_weights(self.out_linear, is_first_layer=False, w0=self.hidden_omega_0)
-        # Add Wang initialization to the output layer (to account for the fact that the output is used as a convolutional kernel)
-        with torch.no_grad():
-            self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))  # Modulation by expected kernel size.
+        # # Add Wang initialization to the output layer (to account for the fact that the output is used as a convolutional kernel)
+        # with torch.no_grad():
+        #     self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))  # Modulation by expected kernel size.
 
         # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear)
         # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.

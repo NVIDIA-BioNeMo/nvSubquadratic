@@ -1,7 +1,21 @@
 # TODO: Add license header here
 
 
-"""Config file for EMNIST spatial recall regression (2D) with Transformer (Attention) backbone and ViT-style patchification."""
+"""Config file for EMNIST spatial recall regression (2D) with CKConv learnable stride patchification.
+
+This config uses:
+- CKConvPatchify: SIREN-based continuous kernel with learnable stride
+- CKConvUnpatchify: Matching unpatchify with shared kernel
+- Attention as the sequence mixer
+
+Key features:
+- Learnable stride via differentiable blending between adjacent integer strides
+- Shared SIREN kernel between patchify and unpatchify (24x more parameter efficient)
+- Can achieve zero reconstruction loss at any integer stride
+- Stride logged to wandb for tracking
+
+This is the recommended patchification approach for learnable stride + perfect reconstruction.
+"""
 
 import os
 
@@ -14,9 +28,9 @@ from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConf
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.ckconv_patchify import CKConvPatchify, CKConvUnpatchify
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
@@ -32,9 +46,13 @@ DATA_DIM = 2
 TARGET_SIZE = 16
 CANVAS_SIZE = 64
 
-# Patchification parameters
-PATCH_SIZE = 16
-STRIDE = 4  # Non-overlapping patches (ViT-style) not used. Here's overlap
+# CKConv patchify hyperparameters (matching baseline patchify config)
+KERNEL_SIZE = 16  # Same as PATCH_SIZE in baseline (overlapping patches if > stride)
+INIT_STRIDE = 4  # Same as STRIDE in baseline
+MAX_STRIDE = 16
+FREEZE_STRIDE = False  # Set to True to keep stride fixed during training
+KERNEL_HIDDEN_DIM = 64
+KERNEL_NUM_LAYERS = 3
 
 # Model parameters
 NUM_HIDDEN_CHANNELS = 256
@@ -56,54 +74,48 @@ WEIGHT_DECAY = 1e-3
 LEARNING_RATE = 1e-4
 
 
-def get_config() -> ExperimentConfig:
-    """Get the configuration for the EMNIST spatial recall regression experiment with patchification.
-
-    This configuration uses ViT-style patchification:
-    - Patchify: Conv2d with kernel_size=stride=PATCH_SIZE (non-overlapping patches)
-    - Unpatchify: ConvTranspose2d to reconstruct full resolution
-
-    With PATCH_SIZE=8 on a 64x64 canvas:
-    - Input: [B, 64, 64, 3] → Patchify → [B, 8, 8, 160] (64 tokens vs 4096 with Linear)
-    - After blocks: [B, 8, 8, 160] → Unpatchify → [B, 64, 64, 1]
-    - Readout: [B, 64, 64, 1] → [B, 16, 16, 1]
-
-    Returns:
-        ExperimentConfig: The configuration for the experiment.
-    """
+def get_config():
+    """Build and return the full experiment configuration."""
     config = ExperimentConfig()
 
-    # Base EMNIST datamodule config
-    base_datamodule_cfg = LazyConfig(EMNISTDataModule)(
-        data_dir=".data/emnist",
-        batch_size=BATCH_SIZE,
-        data_type=DATA_TYPE,
-        num_workers=NUM_WORKERS,
-        pin_memory=torch.cuda.is_available() and config.device == "cuda",
-        permuted=False,
-        seed=config.seed,
-        normalize_input=True,
-        split="byclass",
-    )
-
-    # Spatial recall datamodule wrapping the base EMNIST datamodule
-    # Colored frames mode: 3-channel RGB input with colored bounding boxes
-    # num_items=4 means 1 target + 3 distractors
+    # ============================================================
+    # Dataset Configuration
+    # ============================================================
+    # Use EMNIST as the base dataset for spatial recall task
     config.dataset = LazyConfig(SpatialRecallDataModule)(
-        base_datamodule_cfg=base_datamodule_cfg,
-        target_size=TARGET_SIZE,
+        # Base datamodule for the dataset
+        base_datamodule_cfg=LazyConfig(EMNISTDataModule)(
+            data_dir=".data/emnist",
+            batch_size=BATCH_SIZE,
+            data_type=DATA_TYPE,
+            num_workers=NUM_WORKERS,
+            pin_memory=torch.cuda.is_available() and config.device == "cuda",
+            permuted=False,
+            seed=config.seed,
+            normalize_input=True,
+            split="byclass",
+        ),
         canvas_size=CANVAS_SIZE,
+        target_size=TARGET_SIZE,
         data_type=DATA_TYPE,
         placement="random",  # Items placed randomly for colored frames
         with_mask=False,
-        use_colored_frames=True,  # 3-channel RGB with colored bounding boxes
+        use_colored_frames=True,
         num_items=4,  # 1 target + 3 distractors
     )
 
-    # Network config - ResidualNetwork for regression with Transformer (Attention) backbone
+    # ============================================================
+    # Lightning Wrapper Configuration
+    # ============================================================
+    # Lightning wrapper for regression
+    config.lightning_wrapper_class = LazyConfig(RegressionWrapper)(metric="MSE")
+
+    # ============================================================
+    # Network Configuration
+    # ============================================================
     # Input: [B, canvas_size, canvas_size, input_channels]
-    # After Patchify: [B, canvas_size/PATCH_SIZE, canvas_size/PATCH_SIZE, hidden_dim]
-    # After Unpatchify: [B, canvas_size, canvas_size, output_channels]
+    # After CKConvPatchify: [B, ~canvas_size/stride, ~canvas_size/stride, hidden_dim]
+    # After CKConvUnpatchify: [B, canvas_size, canvas_size, output_channels]
     # After Readout: [B, target_size, target_size, output_channels]
     config.net = LazyConfig(ResidualNetwork)(
         in_channels=INPUT_CHANNELS,
@@ -111,21 +123,30 @@ def get_config() -> ExperimentConfig:
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,
-        # Patchify as input projection
-        in_proj_cfg=LazyConfig(Patchify)(
+        # CKConvPatchify as input projection (SIREN-based continuous kernel with learnable stride)
+        in_proj_cfg=LazyConfig(CKConvPatchify)(
             in_features="${net.in_channels}",
             out_features="${net.hidden_dim}",
             data_dim="${net.data_dim}",
-            patch_size=PATCH_SIZE,
-            stride=STRIDE,  # Non-overlapping patches (ViT-style)
+            init_stride=INIT_STRIDE,
+            max_stride=MAX_STRIDE,
+            kernel_size=KERNEL_SIZE,  # Same as PATCH_SIZE in baseline (overlapping patches)
+            freeze_stride=FREEZE_STRIDE,
+            kernel_hidden_dim=KERNEL_HIDDEN_DIM,
+            kernel_num_layers=KERNEL_NUM_LAYERS,
         ),
-        # Unpatchify as output projection (Inverse of patchification)
-        out_proj_cfg=LazyConfig(Unpatchify)(
+        # CKConvUnpatchify as output projection
+        out_proj_cfg=LazyConfig(CKConvUnpatchify)(
             in_features="${net.hidden_dim}",
             out_features="${net.out_channels}",
             data_dim="${net.data_dim}",
-            patch_size="${net.in_proj_cfg.patch_size}",
-            stride="${net.in_proj_cfg.stride}",  # Inverse of patchification
+            init_stride="${net.in_proj_cfg.init_stride}",
+            max_stride="${net.in_proj_cfg.max_stride}",
+            kernel_size="${net.in_proj_cfg.kernel_size}",  # Same as PATCH_SIZE in baseline (overlapping patches)
+            freeze_stride="${net.in_proj_cfg.freeze_stride}",
+            kernel_hidden_dim="${net.in_proj_cfg.kernel_hidden_dim}",
+            kernel_num_layers="${net.in_proj_cfg.kernel_num_layers}",
+            target_size="${dataset.canvas_size}",
         ),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
@@ -145,8 +166,8 @@ def get_config() -> ExperimentConfig:
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             # Condition mixer (not used for spatial recall)
-            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),  # No condition mixer.
-            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No condition mixer.
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
             # MLP
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
@@ -161,19 +182,20 @@ def get_config() -> ExperimentConfig:
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-        target_size=TARGET_SIZE,  # For readout region extraction
+        target_size="${dataset.target_size}",  # For readout region extraction
     )
 
-    # Lightning wrapper for regression
-    config.lightning_wrapper_class = LazyConfig(RegressionWrapper)(metric="MSE")
-
-    # Optimizer config
+    # ============================================================
+    # Optimizer Configuration
+    # ============================================================
     config.optimizer = LazyConfig(torch.optim.AdamW)(
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
     )
 
-    # Scheduler config
+    # ============================================================
+    # Scheduler Configuration
+    # ============================================================
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
@@ -181,20 +203,27 @@ def get_config() -> ExperimentConfig:
         mode="min",
     )
 
-    # Training config
+    # ============================================================
+    # Training Configuration
+    # ============================================================
     config.train = TrainConfig(
         batch_size="${dataset.base_datamodule_cfg.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
     )
 
-    # Wandb config
+    # ============================================================
+    # Wandb Configuration
+    # ============================================================
     config.wandb = WandbConfig(
         job_group="spatial_recall_2d_emnist_regression_colored_patchify_ablations",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )
 
+    # ============================================================
+    # Callbacks Configuration
+    # ============================================================
     config.callbacks = [
         ValidationImageGridCallback(
             num_samples=8,

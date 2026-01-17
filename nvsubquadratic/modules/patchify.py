@@ -544,9 +544,27 @@ class DualPathPatchify(torch.nn.Module):
         # init_stride: int = 4,
         max_stride: int = 16,
         freeze_spectral_mask: bool = False,
+        use_stride_dependent_mask: bool = True,
+        spatial_mask_clip_value: float = 0.5,
         **kwargs,  # For compatibility with ResidualNetwork and other callers
     ):
-        """Initialize the DualPathPatchify module."""
+        """Initialize the DualPathPatchify module.
+
+        Args:
+            in_features: Number of input channels.
+            out_features: Number of output channels.
+            data_dim: Spatial dimensionality (currently only 2 is supported).
+            spectral_patchify_cfg: LazyConfig for the SpectralPatchify module.
+            max_stride: Maximum stride the architecture supports.
+            freeze_spectral_mask: Whether to freeze the spectral mask parameters.
+            use_stride_dependent_mask: If True, apply a Gaussian mask to the spatial conv
+                kernel where the effective kernel size matches the current stride.
+                This creates a differentiable path from stride to the spatial branch.
+            spatial_mask_clip_value: Threshold for defining effective kernel size (0 < clip < 1).
+                The effective kernel size is the region where mask > clip_value.
+            **kwargs: Additional keyword arguments for compatibility with ResidualNetwork
+                and other callers. These are ignored.
+        """
         super().__init__()
 
         assert data_dim == 2, f"DualPathPatchify only supports data_dim=2, got {data_dim}"
@@ -558,6 +576,14 @@ class DualPathPatchify(torch.nn.Module):
         self.out_features = out_features
         # self.init_stride = init_stride
         self.max_stride = max_stride
+        self.use_stride_dependent_mask = use_stride_dependent_mask
+        self.spatial_mask_clip_value = spatial_mask_clip_value
+
+        # Precompute cutoff factor: sqrt(-2 * ln(clip_value))
+        # This relates kernel_size_fraction to sigma: kernel_size = sigma * cutoff_factor
+        import math
+
+        self._cutoff_factor = math.sqrt(-2.0 * math.log(spatial_mask_clip_value))
 
         # Import here to avoid circular imports
         # from nvsubquadratic.modules.masks_nd import SpectralLinearMaskND
@@ -594,15 +620,29 @@ class DualPathPatchify(torch.nn.Module):
         )
 
         # === SPATIAL PATH ===
-        # Conv with kernel_size=max_stride, stride=1, padding=0
-        # Output is then subsampled using the spectral path's stride
+        # Conv with kernel_size=max_stride+1 (odd size for proper centering), stride=1, padding=0
+        # Using odd kernel size ensures the Gaussian center is exactly at (0, 0)
+        # Use odd kernel size for proper Gaussian centering (center pixel at exactly 0)
+        self._spatial_kernel_size = max_stride if max_stride % 2 == 1 else max_stride + 1
         self.spatial_conv = torch.nn.Conv2d(
             in_channels=in_features,
             out_channels=out_features,
-            kernel_size=max_stride,
+            kernel_size=self._spatial_kernel_size,
             stride=1,
             padding=0,
         )
+
+        # Pre-compute coordinate grid for Gaussian mask (normalized to [-1, 1])
+        if self.use_stride_dependent_mask:
+            kH, kW = self._spatial_kernel_size, self._spatial_kernel_size
+            # Create coordinate grids normalized to [-1, 1]
+            # With odd kernel size, center pixel is at exactly (0, 0)
+            y = torch.linspace(-1.0, 1.0, kH)
+            x = torch.linspace(-1.0, 1.0, kW)
+            yy, xx = torch.meshgrid(y, x, indexing="ij")
+            # Register as buffer (not a parameter, but moves with device)
+            self.register_buffer("_kernel_grid_y", yy)  # [kH, kW]
+            self.register_buffer("_kernel_grid_x", xx)  # [kH, kW]
 
         # Freeze spectral mask if requested
         if freeze_spectral_mask:
@@ -616,6 +656,41 @@ class DualPathPatchify(torch.nn.Module):
             torch.Tensor: Stride per dimension, shape [data_dim].
         """
         return self.spectral_patchify.get_stride()
+
+    def _compute_spatial_mask(self, stride: torch.Tensor) -> torch.Tensor:
+        """Compute Gaussian mask for spatial conv kernel based on current stride.
+
+        The effective kernel size is set to match the stride:
+        - stride = 4 → use ~4/max_stride fraction of the kernel
+        - stride = max_stride → use full kernel
+
+        The relationship between sigma and effective kernel size uses clip_value:
+            kernel_size_fraction = sigma * sqrt(-2 * ln(clip_value))
+            sigma = kernel_size_fraction / cutoff_factor
+
+        Args:
+            stride: Current stride tensor of shape [2] (stride_y, stride_x).
+
+        Returns:
+            Gaussian mask of shape [1, 1, kH, kW] to broadcast with conv weights.
+        """
+        # Effective kernel size as fraction of the full kernel
+        # stride / max_stride gives the fraction (e.g., 4/16 = 0.25)
+        kernel_size_frac_y = stride[0] / self.max_stride
+        kernel_size_frac_x = stride[1] / self.max_stride
+
+        # Convert to sigma using the clip_value relationship
+        # kernel_size_fraction = sigma * cutoff_factor => sigma = kernel_size_fraction / cutoff_factor
+        sigma_y = kernel_size_frac_y / self._cutoff_factor
+        sigma_x = kernel_size_frac_x / self._cutoff_factor
+
+        # Compute Gaussian: exp(-0.5 * ((x/sigma)^2 + (y/sigma)^2))
+        # Grid is normalized to [-1, 1], so sigma is also in normalized units
+        exponent = -0.5 * ((self._kernel_grid_x / sigma_x) ** 2 + (self._kernel_grid_y / sigma_y) ** 2)
+        gauss = torch.exp(exponent)
+
+        # Shape: [1, 1, kH, kW] for broadcasting with [out_ch, in_ch, kH, kW]
+        return gauss.unsqueeze(0).unsqueeze(0)
 
     def forward(
         self,
@@ -636,17 +711,38 @@ class DualPathPatchify(torch.nn.Module):
         x_spectral = self.spectral_patchify(x, is_bhl_input=True)
 
         # === SPATIAL PATH ===
-        # Apply conv (stride=1, no padding)
-        x_spatial = self.spatial_conv(x)
+        if self.use_stride_dependent_mask:
+            # Create Gaussian mask based on current stride (differentiable)
+            # Effective kernel size matches stride: smaller stride → smaller kernel
+            kernel_mask = self._compute_spatial_mask(current_stride)
 
-        # Subsample using spectral path's stride (per-dimension)
-        stride_h = max(1, round(current_stride[0].item()))
-        stride_w = max(1, round(current_stride[1].item()))
-        x_spatial = x_spatial[:, :, ::stride_h, ::stride_w]
+            # Apply mask to conv weights
+            masked_weight = self.spatial_conv.weight * kernel_mask
 
-        # Resize spatial to match spectral if needed
-        if x_spatial.shape[2:] != x_spectral.shape[2:]:
-            x_spatial = F.interpolate(x_spatial, size=x_spectral.shape[2:], mode="bilinear")
+            # Use F.conv2d with masked weights (gradients flow through mask -> stride)
+            x_spatial = F.conv2d(
+                x,
+                masked_weight,
+                self.spatial_conv.bias,
+                stride=1,
+                padding=0,
+            )
+        else:
+            # Standard conv without stride-dependent masking
+            x_spatial = self.spatial_conv(x)
+
+        # Use bilinear downsampling to match spectral output size (differentiable)
+        # This avoids the non-differentiable discrete striding which caused gradient mismatch
+        x_spatial = F.interpolate(x_spatial, size=x_spectral.shape[2:], mode="bilinear", align_corners=False)
+
+        # OLD: Non-differentiable discrete striding (commented out)
+        # The issue was that round() and .item() break the gradient flow, so stride only
+        # received gradients from the spectral path, not the spatial path.
+        # stride_h = max(1, round(current_stride[0].item()))
+        # stride_w = max(1, round(current_stride[1].item()))
+        # x_spatial = x_spatial[:, :, ::stride_h, ::stride_w]
+        # if x_spatial.shape[2:] != x_spectral.shape[2:]:
+        #     x_spatial = F.interpolate(x_spatial, size=x_spectral.shape[2:], mode="bilinear")
 
         # Combine paths (sum)
         output = x_spectral + x_spatial
@@ -655,7 +751,11 @@ class DualPathPatchify(torch.nn.Module):
 
     def extra_repr(self) -> str:
         """Additional string when printing the module."""
-        return f"in_features={self.in_features}, out_features={self.out_features}, max_stride={self.max_stride}"
+        mask_info = f", clip_value={self.spatial_mask_clip_value}" if self.use_stride_dependent_mask else ""
+        return (
+            f"in_features={self.in_features}, out_features={self.out_features}, "
+            f"max_stride={self.max_stride}, use_stride_dependent_mask={self.use_stride_dependent_mask}{mask_info}"
+        )
 
 
 class DualPathUnpatchify(torch.nn.Module):
