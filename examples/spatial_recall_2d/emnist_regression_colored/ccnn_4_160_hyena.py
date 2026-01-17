@@ -12,7 +12,7 @@ from experiments.datamodules.emnist import EMNISTDataModule
 from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -23,6 +23,9 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
+# Dataset parameters
+INPUT_CHANNELS = 3  # RGB with colored frames
+OUTPUT_CHANNELS = 1  # Grayscale target
 DATA_TYPE = "image"
 DATA_DIM = 2
 
@@ -89,22 +92,23 @@ def get_config() -> ExperimentConfig:
     # Input: [B, canvas_size, canvas_size, input_channels]
     # Output: [B, target_size, target_size, 1] (the recalled image)
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,  # Will be filled from dataset.input_channels
-        out_channels=PLACEHOLDER,  # Will be filled from dataset.output_channels
+        in_channels=INPUT_CHANNELS,
+        out_channels=OUTPUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        data_dim=DATA_DIM,
+        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(Hyena)(
                     global_conv_cfg=LazyConfig(CKConvND)(
-                        data_dim=DATA_DIM,
+                        data_dim="${net.data_dim}",
                         hidden_dim="${net.hidden_dim}",
                         kernel_cfg=LazyConfig(SIRENKernelND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                            data_dim="${net.data_dim}",
                             out_dim="${net.hidden_dim}",
                             mlp_hidden_dim=32,
                             num_layers=3,
@@ -144,7 +148,7 @@ def get_config() -> ExperimentConfig:
                 dim="${net.hidden_dim}",
                 activation="glu",
                 expansion_factor=1.0,
-                dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),  # No dropout required.
+                dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
             ),

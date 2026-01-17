@@ -15,7 +15,7 @@ from experiments.default_cfg import (
     WandbConfig,
 )
 from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -27,12 +27,13 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
-PLACEHOLDER = None
-WANDB_ENTITY = "dafidofff"
+# Dataset parameters
+INPUT_CHANNELS = 1  # MNIST grayscale
+OUTPUT_CHANNELS = 1  # Reconstruct grayscale
 DATA_TYPE = "image"
 DATA_DIM = 2
 
-# Dataset
+# Training parameters
 BATCH_SIZE = 128
 MAX_WORKERS = 16
 MNIST_PATH = ".data/mnist"
@@ -40,7 +41,7 @@ PRECISION = "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() or MAX_WORKERS)
 IMAGE_SIZE = 28
 
-# Model
+# Model parameters
 HIDDEN_DIM = 160
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
@@ -49,7 +50,7 @@ GRID_TYPE = "single"
 FFT_PADDING = "circular"
 NUM_CLASSES = 10
 
-# Optimisation
+# Optimisation parameters
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 GRAD_CLIP = 10.0
@@ -105,22 +106,23 @@ def get_config() -> DiffusionExperimentConfig:
     )
 
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,
-        out_channels=PLACEHOLDER,
+        in_channels=INPUT_CHANNELS,
+        out_channels=OUTPUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=HIDDEN_DIM,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        data_dim=DATA_DIM,
+        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(AdaLNZeroResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(Hyena)(
                     global_conv_cfg=LazyConfig(CKConvND)(
-                        data_dim=DATA_DIM,
+                        data_dim="${net.data_dim}",
                         hidden_dim="${net.hidden_dim}",
                         kernel_cfg=LazyConfig(SIRENKernelND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                            data_dim="${net.data_dim}",
                             out_dim="${net.hidden_dim}",
                             mlp_hidden_dim=32,
                             num_layers=3,
@@ -131,7 +133,7 @@ def get_config() -> DiffusionExperimentConfig:
                             hidden_omega_0=1.0,
                         ),
                         mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                            data_dim="${net.data_dim}",
                             num_channels="${net.hidden_dim}",
                             min_std=0.025,
                             max_std=1.25,
@@ -160,7 +162,7 @@ def get_config() -> DiffusionExperimentConfig:
                     rope_base=10000.0,
                 ),
                 init_method_in=small_init,
-                init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
+                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             mlp_cfg=LazyConfig(MLP)(
@@ -169,7 +171,7 @@ def get_config() -> DiffusionExperimentConfig:
                 expansion_factor=2.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
                 init_method_in=small_init,
-                init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
+                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
             ),
             mlp_norm_cfg="${net.norm_cfg}",
             condition_norm_cfg="${net.norm_cfg}",
@@ -177,7 +179,9 @@ def get_config() -> DiffusionExperimentConfig:
             hidden_dim="${net.hidden_dim}",
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-        condition_in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        condition_in_proj_cfg=LazyConfig(torch.nn.Linear)(
+            in_features="${net.hidden_dim}", out_features="${net.hidden_dim}"
+        ),
     )
 
     config.lightning_wrapper_class = LazyConfig(DiffusionWrapper)()
@@ -236,7 +240,8 @@ def get_config() -> DiffusionExperimentConfig:
 
     config.wandb = WandbConfig(
         job_group="mnist-diffusion",
-        entity=WANDB_ENTITY,
+        entity="implicit-long-convs",
+        project="nvsubquadratic",
     )
 
     return config

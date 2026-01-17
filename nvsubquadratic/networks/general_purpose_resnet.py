@@ -38,6 +38,7 @@ class ResidualNetwork(nn.Module):
         out_channels: int,
         num_blocks: int,
         hidden_dim: int,
+        data_dim: int,
         in_proj_cfg: LazyConfig,
         out_proj_cfg: LazyConfig,
         norm_cfg: LazyConfig,
@@ -52,12 +53,13 @@ class ResidualNetwork(nn.Module):
         self.out_channels = out_channels
         self.num_blocks = num_blocks
         self.hidden_dim = hidden_dim
+        self.data_dim = data_dim
 
         # Instantiate dropout_in
         self.dropout_in = instantiate(dropout_in_cfg)
 
         # Instantiate input projection for the network
-        self.in_proj = instantiate(in_proj_cfg, in_features=in_channels, out_features=hidden_dim)
+        self.in_proj = instantiate(in_proj_cfg)
 
         if condition_in_proj_cfg is not None:
             # Instantiate condition input projection for the network
@@ -77,10 +79,28 @@ class ResidualNetwork(nn.Module):
             param._no_weight_decay = True
 
         # Instantiate output projection
-        self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)
+        self.out_proj = instantiate(out_proj_cfg)
 
         # Target size for readout -- only used for spatial recall tasks for now.
         self.target_size = target_size
+
+    def _get_readout_region(self, x: torch.Tensor) -> torch.Tensor:
+        """Get the readout region (bottom-right target_size region) of the input tensor.
+
+        Args:
+            x: Input tensor of shape [batch_size, *spatial_dims, out_channels].
+
+        Returns:
+            torch.Tensor: Readout region of shape [batch_size, *(target_size,)*spatial_dims, out_channels].
+        """
+        if x.ndim == 1 + 2:  # 1D input - [batch_size, seq_len, hidden_dim]
+            return x[:, -self.target_size :, :]
+        elif x.ndim == 1 + 3:  # 2D input - [batch_size, height, width, hidden_dim]
+            return x[:, -self.target_size :, -self.target_size :, :]
+        elif x.ndim == 1 + 4:  # 3D input - [batch_size, depth, height, width, hidden_dim]
+            return x[:, -self.target_size :, -self.target_size :, -self.target_size :, :]
+        else:
+            raise ValueError(f"Unexpected input dimension: {x.ndim}. Expected 1D, 2D or 3D spatial dimensions.")
 
     def _get_readout_region(self, x: torch.Tensor) -> torch.Tensor:
         """Get the readout region (bottom-right target_size region) of the input tensor.
