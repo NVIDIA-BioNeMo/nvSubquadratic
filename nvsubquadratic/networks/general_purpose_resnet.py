@@ -102,6 +102,24 @@ class ResidualNetwork(nn.Module):
         else:
             raise ValueError(f"Unexpected input dimension: {x.ndim}. Expected 1D, 2D or 3D spatial dimensions.")
 
+    def _get_readout_region(self, x: torch.Tensor) -> torch.Tensor:
+        """Get the readout region (bottom-right target_size region) of the input tensor.
+
+        Args:
+            x: Input tensor of shape [batch_size, *spatial_dims, hidden_dim].
+
+        Returns:
+            torch.Tensor: Readout region of shape [batch_size, *(target_size,)*spatial_dims, out_channels].
+        """
+        if x.ndim == 1 + 2:  # 1D input - [batch_size, seq_len, hidden_dim]
+            return x[:, -self.target_size :, :]
+        elif x.ndim == 1 + 3:  # 2D input - [batch_size, height, width, hidden_dim]
+            return x[:, -self.target_size :, -self.target_size :, :]
+        elif x.ndim == 1 + 4:  # 3D input - [batch_size, depth, height, width, hidden_dim]
+            return x[:, -self.target_size :, -self.target_size :, -self.target_size :, :]
+        else:
+            raise ValueError(f"Unexpected input dimension: {x.ndim}. Expected 1D, 2D or 3D spatial dimensions.")
+
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Forward pass of the ResidualNetwork.
 

@@ -62,7 +62,20 @@ def parse_args() -> argparse.Namespace:
         help="Configuration overrides, e.g., dataset.batch_size=64",
     )
 
-    return parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+    # Support --key=value format (common in wandb sweeps)
+    for arg in unknown:
+        if arg.startswith("--"):
+            # Strip the leading --
+            # This turns --dataset.batch_size=32 into dataset.batch_size=32
+            args.overrides.append(arg[2:])
+        else:
+            # If it doesn't start with -- but wasn't caught by positional, keep it.
+            # (Though effectively 'overrides' nargs='*' should catch non-dashed args)
+            args.overrides.append(arg)
+
+    return args
 
 
 def main() -> None:
@@ -224,15 +237,17 @@ def main() -> None:
         else:
             print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 
-    # Validate and test before finishing
-    trainer.validate(
-        model,
-        datamodule=datamodule,
-    )
-    trainer.test(
-        model,
-        datamodule=datamodule,
-    )
+    # Validate and test before finishing, only when total num train steps has been reached
+    # to avoid val/test on slurm jobs that are stopped before training is finished.
+    if config.train.iterations == trainer.global_step:
+        trainer.validate(
+            model,
+            datamodule=datamodule,
+        )
+        trainer.test(
+            model,
+            datamodule=datamodule,
+        )
 
 
 if __name__ == "__main__":
