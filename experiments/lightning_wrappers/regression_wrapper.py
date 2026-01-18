@@ -85,6 +85,8 @@ class RegressionWrapper(LightningWrapperBase):
 
     def training_step(self, batch, batch_idx):
         """Perform training step and log the training loss."""
+        # Start timing (CUDA events)
+        self._start_timing()
         # Perform step
         predictions, loss, other_outputs = self._step(batch, self.train_metric)
         # Log loss

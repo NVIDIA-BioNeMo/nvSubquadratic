@@ -324,32 +324,91 @@ def verify_no_interpolator_overwrites(config: ExperimentConfig, overrides: list[
         )
 
 
-def config_to_dict_for_rich(config: Any) -> Any:
-    """Recursively convert a dataclass or LazyConfig object to a dictionary for rich printing."""
-    if dataclasses.is_dataclass(config):
-        # Convert dataclass to a dictionary
+def _serialize_config_value(config: Any) -> Any:
+    """Recursively convert a config to a JSON-serializable dictionary.
+
+    Handles:
+    - Dataclasses
+    - OmegaConf DictConfig objects (with unresolved interpolations preserved as strings)
+    - LazyConfig objects
+    - Function/callable references (converted to qualified name strings)
+    - Object instances (converted to class name strings)
+    - Lists and dicts (recursively processed)
+
+    Used by config_to_dict for both WandB logging and rich tree printing.
+    """
+    # Import here to avoid circular imports
+    from omegaconf import DictConfig, ListConfig, OmegaConf
+
+    if config is None:
+        return None
+
+    # Handle dataclasses
+    if dataclasses.is_dataclass(config) and not isinstance(config, type):
         result = {}
         for f in dataclasses.fields(config):
             value = getattr(config, f.name)
-            result[f.name] = config_to_dict_for_rich(value)
+            result[f.name] = _serialize_config_value(value)
         return result
-    elif isinstance(config, LazyConfig):
-        # For LazyConfig, create a dictionary with its target and keyword arguments
-        # and recursively process the kwargs
-        kwargs = {k: config_to_dict_for_rich(v) for k, v in config.kwargs.items()}
-        return {
-            "__target__": config.target,
-            **kwargs,
-        }
-    elif isinstance(config, list):
-        # Recursively process lists
-        return [config_to_dict_for_rich(v) for v in config]
-    elif isinstance(config, dict):
-        # Recursively process dictionaries
-        return {k: config_to_dict_for_rich(v) for k, v in config.items()}
-    else:
-        # Return the value as is if it's not a dataclass, LazyConfig, list, or dict
-        return config
+
+    # Handle OmegaConf DictConfig - convert to plain dict with resolved values
+    if isinstance(config, DictConfig):
+        # Convert to plain dict, resolving any remaining interpolations
+        # (config should already be resolved by apply_config_overrides)
+        raw_dict = OmegaConf.to_container(config, resolve=True)
+        # Recursively process to handle nested non-serializable objects (functions, etc.)
+        return _serialize_config_value(raw_dict)
+
+    # Handle OmegaConf ListConfig
+    if isinstance(config, ListConfig):
+        raw_list = OmegaConf.to_container(config, resolve=True)
+        return _serialize_config_value(raw_list)
+
+    # Handle LazyConfig objects
+    if isinstance(config, LazyConfig):
+        kwargs = {k: _serialize_config_value(v) for k, v in config.kwargs.items()}
+        return {"__target__": config.target, **kwargs}
+
+    # Handle regular lists
+    if isinstance(config, list):
+        return [_serialize_config_value(v) for v in config]
+
+    # Handle regular dicts
+    if isinstance(config, dict):
+        return {k: _serialize_config_value(v) for k, v in config.items()}
+
+    # Handle functions and callables - convert to qualified name
+    if callable(config) and hasattr(config, "__module__") and hasattr(config, "__name__"):
+        return f"{config.__module__}.{config.__name__}"
+
+    # Handle class types
+    if isinstance(config, type):
+        return f"{config.__module__}.{config.__name__}"
+
+    # Handle object instances that aren't basic types
+    if hasattr(config, "__class__") and not isinstance(config, (int, float, str, bool, type(None))):
+        cls = config.__class__
+        # For simple objects, just return class name
+        return f"{cls.__module__}.{cls.__name__}"
+
+    # Return basic types as-is (int, float, str, bool, None)
+    return config
+
+
+def config_to_dict(config: Any) -> Any:
+    """Recursively convert a config to a JSON-serializable dictionary.
+
+    Handles:
+    - Dataclasses
+    - OmegaConf DictConfig/ListConfig objects
+    - LazyConfig objects
+    - Function/callable references (converted to qualified name strings)
+    - Object instances (converted to class name strings)
+    - Lists and dicts (recursively processed)
+
+    Used for both WandB logging and rich tree printing.
+    """
+    return _serialize_config_value(config)
 
 
 def add_to_tree(tree: Tree, data: Any, key: str = ""):

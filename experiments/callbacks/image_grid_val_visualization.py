@@ -25,6 +25,9 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         every_n_train_steps: How often to visualize (in training steps). Set to None to disable.
         key: Key to use for the visualization in the logger.
         show_input: Whether to show the input image alongside prediction and label.
+        show_mask_separately: If True and input has 2 channels, display the
+                grayscale canvas and mask as separate side-by-side images in the grid.
+                Grid becomes: [canvas, mask, prediction, label] per row.
         denormalize: Whether to denormalize the images.
         mean: Mean of the dataset (for denormalization).
         std: Standard deviation of the dataset (for denormalization).
@@ -39,6 +42,7 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         every_n_train_steps: Optional[int] = None,
         key: str = "val/image_grid",
         show_input: bool = True,
+        show_mask_separately: bool = False,
         denormalize: bool = True,
         mean: float = 0.1307,
         std: float = 0.3081,
@@ -51,6 +55,7 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         self.every_n_train_steps = every_n_train_steps
         self.key = key
         self.show_input = show_input
+        self.show_mask_separately = show_mask_separately
         self.denormalize = denormalize
         self.mean = mean
         self.std = std
@@ -72,8 +77,10 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         - B(H*W)C where H*W is flattened (reshaped using `flattened_image_shape` or inferred square)
         """
         if tensor.ndim == 4:
-            # Either BCHW or BHWC
-            if tensor.shape[-1] in (1, 3):
+            # Either BCHW or BHWC - detect by checking which dim is small (channels)
+            # BHWC: last dim is small (1, 2, or 3 channels), and second dim is large (H)
+            # BCHW: second dim is small (1, 2, or 3 channels)
+            if tensor.shape[-1] in (1, 2, 3) and tensor.shape[1] > 3:
                 return rearrange(tensor, "b h w c -> b c h w")
             return tensor
 
@@ -154,39 +161,63 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         # This handles cases where input is larger than prediction/label (e.g., spatial recall)
         max_h = max(x_nchw.shape[2], preds_nchw.shape[2], y_nchw.shape[2])
         max_w = max(x_nchw.shape[3], preds_nchw.shape[3], y_nchw.shape[3])
-        max_c = max(x_nchw.shape[1], preds_nchw.shape[1], y_nchw.shape[1])
+        # max_c = max(x_nchw.shape[1], preds_nchw.shape[1], y_nchw.shape[1])
 
         def resize_if_needed(tensor: torch.Tensor, target_h: int, target_w: int) -> torch.Tensor:
             if tensor.shape[2] != target_h or tensor.shape[3] != target_w:
                 return torch.nn.functional.interpolate(tensor, size=(target_h, target_w), mode="nearest")
             return tensor
 
-        def expand_channels_if_needed(tensor: torch.Tensor, target_c: int) -> torch.Tensor:
-            """Expand grayscale (1-channel) to RGB (3-channel) if needed."""
-            if tensor.shape[1] == target_c:
-                return tensor
-            if tensor.shape[1] == 1 and target_c == 3:
+        def to_grayscale_rgb(tensor: torch.Tensor) -> torch.Tensor:
+            """Convert 1-channel grayscale to 3-channel RGB by repeating."""
+            if tensor.shape[1] == 1:
                 return tensor.repeat(1, 3, 1, 1)
-            return tensor
+            if tensor.shape[1] == 3:
+                return tensor
+            # For 2 channels without mask separation, just take first channel
+            return tensor[:, 0:1].repeat(1, 3, 1, 1)
 
+        # Check if we should split mask for separate side-by-side display
+        input_has_mask = x_nchw.shape[1] == 2 and self.show_mask_separately
+        mask_nchw = None
+        if input_has_mask:
+            # Split input: channel 0 = grayscale canvas, channel 1 = binary mask
+            mask_nchw = x_nchw[:, 1:2]  # [B, 1, H, W]
+            x_nchw = x_nchw[:, 0:1]  # [B, 1, H, W]
+
+        # Resize all to same spatial size
         x_nchw = resize_if_needed(x_nchw, max_h, max_w)
         preds_nchw = resize_if_needed(preds_nchw, max_h, max_w)
         y_nchw = resize_if_needed(y_nchw, max_h, max_w)
+        if mask_nchw is not None:
+            mask_nchw = resize_if_needed(mask_nchw, max_h, max_w)
 
-        x_nchw = expand_channels_if_needed(x_nchw, max_c)
-        preds_nchw = expand_channels_if_needed(preds_nchw, max_c)
-        y_nchw = expand_channels_if_needed(y_nchw, max_c)
+        # Convert all to RGB for consistent grid display
+        x_nchw = to_grayscale_rgb(x_nchw)
+        preds_nchw = to_grayscale_rgb(preds_nchw)
+        y_nchw = to_grayscale_rgb(y_nchw)
+        if mask_nchw is not None:
+            mask_nchw = to_grayscale_rgb(mask_nchw)
 
-        # Build image grid: [input0, pred0, label0, input1, pred1, label1, ...] or [pred0, label0, ...]
+        # Build image grid
+        # With mask separation: [canvas, mask, pred, label] per row (nrow=4)
+        # Without: [input, pred, label] or [pred, label] per row
         images = []
         for i in range(n):
             if self.show_input:
                 images.append(x_nchw[i])
+            if mask_nchw is not None:
+                images.append(mask_nchw[i])
             images.append(preds_nchw[i])
             images.append(y_nchw[i])
 
         imgs = torch.stack(images, dim=0).detach().cpu().clamp(0.0, 1.0)
-        nrow = 3 if self.show_input else 2
+        if mask_nchw is not None:
+            nrow = 4  # canvas | mask | prediction | label
+        elif self.show_input:
+            nrow = 3  # input | prediction | label
+        else:
+            nrow = 2  # prediction | label
         grid = make_grid(imgs, nrow=nrow, padding=2)
 
         # Log with available logger

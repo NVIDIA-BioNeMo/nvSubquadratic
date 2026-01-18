@@ -10,7 +10,6 @@ Usage:
 """
 
 import argparse
-import dataclasses
 import os
 from pathlib import Path
 
@@ -25,7 +24,7 @@ from experiments.trainer import construct_trainer
 from experiments.utils.cli import (
     add_to_tree,
     apply_config_overrides,
-    config_to_dict_for_rich,
+    config_to_dict,
     get_deterministic_run_name,
     load_config_from_file,
     verify_no_interpolator_overwrites,
@@ -163,6 +162,9 @@ def main() -> None:
         attach_run_id = wandb.util.generate_id()
         run_id_file.write_text(attach_run_id)
 
+    # Serialize config once for both WandB and tree printing
+    config_dict = config_to_dict(config)
+
     if config.autoresume.enabled:
         wandb_logger = WandbLogger(
             project=config.wandb.project,
@@ -184,7 +186,7 @@ def main() -> None:
             id=attach_run_id,
             resume="allow",
             name=run_name,
-            config=dataclasses.asdict(config),  # Convert dataclass config to dict
+            config=config_dict,
             log_model=log_model,
             offline=offline,
             save_code=True,
@@ -209,8 +211,7 @@ def main() -> None:
         # Log the command.
         wandb_logger.experiment.config.update({"command": command}, allow_val_change=True)
 
-    # Print the config files prior to training
-    config_dict = config_to_dict_for_rich(config)
+    # Print the config tree
     tree = Tree("Configuration")
     add_to_tree(tree, config_dict)
     rprint(tree)
