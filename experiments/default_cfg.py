@@ -79,15 +79,15 @@ class AutoResumeConfig:
 
 
 @dataclass
-class ResumeFromCheckpointConfig:
-    """Configuration to specify whether to start training from a previously saved checkpoint."""
+class StartFromCheckpointConfig:
+    """Configuration to start training from weights of a previously saved checkpoint (weights only, no optimizer/scheduler state)."""
 
     load: bool = False
     alias: Literal["best", "latest"] = "latest"
     strict: bool = True
     partial_load: bool = False
     run_path: str = ""
-    output_dir: str = ".artifacts/{run_id}/{alias}"
+    callbacks: list = field(default_factory=list)  # List of LazyConfig callbacks to process state_dict before loading
 
 
 @dataclass
@@ -113,7 +113,7 @@ class ExperimentConfig:
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
 
-    resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
+    start_from_checkpoint: StartFromCheckpointConfig = field(default_factory=StartFromCheckpointConfig)
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
     callbacks: list[LazyConfig] = field(default_factory=list)
 

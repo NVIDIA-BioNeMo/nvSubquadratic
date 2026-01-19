@@ -215,15 +215,33 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
         # Apply the override
         key_parts = key.split(".")
 
-        # Navigate to the correct part of the config
+        # Navigate to the correct part of the config, validating each part exists
         current_dict = config_dict
+        path_so_far = []
         for i, part in enumerate(key_parts[:-1]):
+            path_so_far.append(part)
             if part not in current_dict:
-                current_dict[part] = {}
+                raise ValueError(
+                    f"Invalid config override: '{key}'. Path '{'.'.join(path_so_far)}' does not exist in config."
+                )
             current_dict = current_dict[part]
+            if not isinstance(current_dict, dict):
+                raise ValueError(
+                    f"Invalid config override: '{key}'. "
+                    f"'{'.'.join(path_so_far)}' is not a nested config (got {type(current_dict).__name__})."
+                )
+
+        # Validate the final key exists before setting
+        final_key = key_parts[-1]
+        if final_key not in current_dict:
+            raise ValueError(
+                f"Invalid config override: '{key}'. "
+                f"Key '{final_key}' does not exist in config. "
+                f"Available keys: {list(current_dict.keys())}"
+            )
 
         # Set the value
-        current_dict[key_parts[-1]] = value
+        current_dict[final_key] = value
 
     # Resolve ${...} interpolations while preserving DictConfig for dot-access
     from omegaconf import DictConfig as _DictConfig

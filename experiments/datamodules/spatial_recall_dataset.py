@@ -5,14 +5,20 @@ spatial recall tasks where images are placed on a larger canvas and the model mu
 recall the target at a designated readout location (bottom-right corner).
 
 Supports:
-    - Fixed placement: Target always at top-left corner
+    - 2D Spatial Recall: Images placed as 2D patches on 2D canvas
+    - 1D Spatial Recall: Images flattened first, then placed as contiguous segments in 1D canvas
+    - Fixed placement: Target always at start position
     - Random placement: Target at random valid positions (non-overlapping with readout)
     - Optional mask channel to indicate target location
     - Colored frames mode: RGB canvas with colored bounding boxes around items
     - Multiple items (distractors) on the canvas
 
 Usage:
+    # 2D mode
     PYTHONPATH=. python experiments/datamodules/spatial_recall_dataset.py
+
+    # 1D mode
+    PYTHONPATH=. python experiments/datamodules/spatial_recall_dataset.py --mode 1d
 """
 
 from typing import Literal, Optional, Tuple
@@ -625,6 +631,421 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         return {"input": x, "label": y, "condition": None}
 
 
+# =============================================================================
+# 1D Spatial Recall Dataset and DataModule
+# =============================================================================
+class SpatialRecall1DDataset(Dataset):
+    """1D Spatial Recall Dataset.
+
+    Creates a truly 1D spatial recall task where:
+    1. Images are resized to target_size × target_size
+    2. Images are flattened to a 1D sequence of length target_size²
+    3. The flattened image is placed as a contiguous segment in a 1D canvas
+    4. The model must recall the flattened image at the readout region (end of canvas)
+
+    This is fundamentally different from flattening a 2D canvas because:
+    - In 2D→flatten: 2D spatial locality is partially preserved (row-major order)
+    - In true 1D: The image is an unstructured blob identified only by position
+
+    Args:
+        base_dataset: Base dataset providing (image, label) pairs.
+        target_size: Size to resize images to (target_size × target_size → target_size² elements).
+        canvas_length: Length of the 1D canvas. Must be >= 2 * target_size² for random placement.
+        generator: Random generator for reproducibility.
+        placement: Placement mode - "fixed" (start) or "random".
+        with_mask: If True, add a binary mask channel indicating target location.
+        readout_value: Value to fill the readout region with (default 0.0). Use e.g. -1.0 to
+            explicitly mark the readout region so the model knows where to output.
+    """
+
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        target_size: int,
+        canvas_length: int,
+        generator: torch.Generator,
+        placement: Literal["fixed", "random"] = "fixed",
+        with_mask: bool = False,
+        readout_value: float = 0.0,
+    ) -> None:
+        """Initialize the SpatialRecall1DDataset."""
+        super().__init__()
+
+        self.segment_length = target_size * target_size  # Flattened image length
+
+        assert canvas_length >= self.segment_length, (
+            f"canvas_length must be >= target_size². "
+            f"Got canvas_length={canvas_length}, target_size²={self.segment_length}"
+        )
+        if placement == "random":
+            assert canvas_length >= 2 * self.segment_length, (
+                f"Random placement requires canvas_length >= 2 * target_size² to avoid overlap with readout. "
+                f"Got canvas_length={canvas_length}, target_size²={self.segment_length}"
+            )
+
+        self.base_dataset = base_dataset
+        self.target_size = target_size
+        self.canvas_length = canvas_length
+        self.generator = generator
+        self.placement = placement
+        self.with_mask = with_mask
+        self.readout_value = readout_value
+
+        # Precompute valid positions for random placement
+        # Readout region is at the END of the sequence (last segment_length elements)
+        # So valid start positions are 0 to (canvas_length - 2 * segment_length)
+        if placement == "random":
+            max_start = canvas_length - 2 * self.segment_length
+            self.valid_positions = torch.arange(0, max_start + 1, dtype=torch.long)
+        else:
+            self.valid_positions = None
+
+    def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor]:
+        """Return 1D canvas and flattened target for the given index."""
+        img, _ = self.base_dataset[idx]
+        # img: [C, H, W] from base dataset
+
+        # Resize to target size
+        target_img = torch.nn.functional.interpolate(
+            img.unsqueeze(0),
+            size=(self.target_size, self.target_size),
+            mode="bilinear",
+            align_corners=False,
+        ).squeeze(0)  # [C, target_size, target_size]
+
+        # Flatten to 1D: [C, target_size, target_size] -> [C, target_size²]
+        num_channels = target_img.shape[0]
+        target_flat = target_img.view(num_channels, -1)  # [C, segment_length]
+
+        # Create 1D canvas: [C, canvas_length]
+        canvas = torch.zeros(
+            (num_channels, self.canvas_length),
+            dtype=target_flat.dtype,
+            device=target_flat.device,
+        )
+
+        # Determine placement position
+        if self.placement == "fixed":
+            pos = 0
+        else:  # random
+            num_pos = self.valid_positions.shape[0]
+            idx_pos = int(torch.randint(low=0, high=num_pos, size=(1,), generator=self.generator).item())
+            pos = int(self.valid_positions[idx_pos].item())
+
+        # Place flattened image in canvas
+        canvas[:, pos : pos + self.segment_length] = target_flat
+
+        # Fill readout region (last segment_length elements) with readout_value
+        # This marks where the model should output the recalled image
+        readout_start = self.canvas_length - self.segment_length
+        if self.readout_value != 0.0:
+            canvas[:, readout_start:] = self.readout_value
+
+        # Add mask channel if requested
+        if self.with_mask:
+            mask = torch.zeros(
+                (1, self.canvas_length),
+                dtype=target_flat.dtype,
+                device=target_flat.device,
+            )
+            mask[:, pos : pos + self.segment_length] = 1.0
+            canvas = torch.cat([canvas, mask], dim=0)
+
+        # Label is the flattened target image
+        label = target_flat
+
+        return canvas, label
+
+
+class SpatialRecall1DDataModule(pl.LightningDataModule):
+    """1D Spatial Recall DataModule for PyTorch Lightning.
+
+    Wraps a base datamodule to create 1D spatial recall tasks where flattened images
+    are placed in a 1D canvas and must be recalled.
+
+    Args:
+        base_datamodule_cfg: A LazyConfig for the base datamodule.
+        target_size: Size to resize images to (becomes target_size² length segment).
+        canvas_size: Size of the canvas per dimension (canvas_length = canvas_size²).
+        placement: Placement mode - "fixed" or "random".
+        with_mask: Add mask channel indicating target location.
+        num_items: Number of items to place (1 = target only, >1 = target + distractors).
+        readout_value: Value to fill the readout region with (default 0.0). Use e.g. -1.0 to
+            explicitly mark the readout region so the model knows where to output.
+    """
+
+    def __init__(
+        self,
+        base_datamodule_cfg: LazyConfig,
+        target_size: int,
+        canvas_size: int,
+        placement: Literal["fixed", "random"] = "fixed",
+        with_mask: bool = False,
+        num_items: int = 1,
+        readout_value: float = 0.0,
+    ) -> None:
+        """Initialize the SpatialRecall1DDataModule."""
+        super().__init__()
+
+        assert placement in ("fixed", "random"), f"placement must be 'fixed' or 'random', got {placement}"
+        if num_items > 1:
+            assert placement == "random", "num_items > 1 requires placement='random'"
+            assert with_mask, "num_items > 1 requires with_mask=True to identify target"
+
+        self._base_datamodule_cfg = base_datamodule_cfg
+        self._base_datamodule: Optional[pl.LightningDataModule] = None
+
+        self.target_size = target_size
+        self.canvas_size = canvas_size
+        self.canvas_length = canvas_size * canvas_size  # Computed from canvas_size
+        self.segment_length = target_size * target_size
+        self.placement = placement
+        self.with_mask = with_mask
+        self.num_items = num_items
+        self.readout_value = readout_value
+
+        # Properties from base datamodule
+        self._batch_size: Optional[int] = None
+        self._num_workers: Optional[int] = None
+        self._pin_memory: Optional[bool] = None
+        self._seed: Optional[int] = None
+
+        # Generators
+        self._generator: Optional[torch.Generator] = None
+        self._train_generator: Optional[torch.Generator] = None
+        self._val_generator: Optional[torch.Generator] = None
+        self._test_generator: Optional[torch.Generator] = None
+
+        # Input/output channels
+        if with_mask:
+            self.input_channels = 2  # Grayscale + mask
+        else:
+            self.input_channels = 1  # Grayscale
+        self.output_channels = 1
+
+        # Datasets
+        self.train_dataset: Optional[Dataset] = None
+        self.val_dataset: Optional[Dataset] = None
+        self.test_dataset: Optional[Dataset] = None
+
+    def _instantiate_base_datamodule(self) -> pl.LightningDataModule:
+        """Instantiate the base datamodule from LazyConfig."""
+        self._base_datamodule = instantiate(self._base_datamodule_cfg)
+        return self._base_datamodule
+
+    def _extract_base_properties(self) -> None:
+        """Extract properties from the base datamodule."""
+        base = self._base_datamodule
+        self._batch_size = base.batch_size
+        self._num_workers = base.num_workers
+        self._pin_memory = base.pin_memory
+        self._seed = base.seed
+
+        self._generator = torch.Generator().manual_seed(self._seed)
+        self._train_generator = torch.Generator().manual_seed(self._seed + 1000)
+        self._val_generator = torch.Generator().manual_seed(self._seed + 2000)
+        self._test_generator = torch.Generator().manual_seed(self._seed + 3000)
+
+    @property
+    def batch_size(self) -> int:
+        """Batch size from base datamodule."""
+        if self._batch_size is None:
+            raise RuntimeError("Call setup() before accessing batch_size.")
+        return self._batch_size
+
+    @property
+    def num_workers(self) -> int:
+        """Number of workers from base datamodule."""
+        if self._num_workers is None:
+            raise RuntimeError("Call setup() before accessing num_workers.")
+        return self._num_workers
+
+    @property
+    def pin_memory(self) -> bool:
+        """Pin memory setting from base datamodule."""
+        if self._pin_memory is None:
+            raise RuntimeError("Call setup() before accessing pin_memory.")
+        return self._pin_memory
+
+    @property
+    def seed(self) -> int:
+        """Seed from base datamodule."""
+        if self._seed is None:
+            raise RuntimeError("Call setup() before accessing seed.")
+        return self._seed
+
+    def prepare_data(self) -> None:
+        """Prepare data by calling base datamodule's prepare_data."""
+        base = self._instantiate_base_datamodule()
+        base.prepare_data()
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        """Set up datasets for the given stage."""
+        base = self._instantiate_base_datamodule()
+        base.setup(stage)
+        self._extract_base_properties()
+
+        if stage in ("fit", None):
+            self.train_dataset = SpatialRecall1DDataset(
+                base.train_dataset,
+                self.target_size,
+                self.canvas_length,
+                self._train_generator,
+                self.placement,
+                self.with_mask,
+                self.readout_value,
+            )
+            self.val_dataset = SpatialRecall1DDataset(
+                base.val_dataset,
+                self.target_size,
+                self.canvas_length,
+                self._val_generator,
+                self.placement,
+                self.with_mask,
+                self.readout_value,
+            )
+
+        if stage in ("test", None):
+            self.test_dataset = SpatialRecall1DDataset(
+                base.test_dataset,
+                self.target_size,
+                self.canvas_length,
+                self._test_generator,
+                self.placement,
+                self.with_mask,
+                self.readout_value,
+            )
+
+    def _multi_item_collate(self, batch: list) -> Tuple[Tensor, Tensor]:
+        """Collate function for multi-item mode with mask channel."""
+        xs, ys = zip(*batch)
+        xs = [x.clone() for x in xs]
+        ys = list(ys)
+
+        batch_size = len(xs)
+        seg_len = self.segment_length
+        L = self.canvas_length
+
+        # Valid positions (readout at end, so valid start is 0 to L - 2*seg_len)
+        max_start = L - 2 * seg_len
+        valid_positions = torch.arange(0, max_start + 1, dtype=torch.long)
+
+        g = self._generator
+
+        for i in range(batch_size):
+            canvas_i = xs[i]  # [C, L] where C=2 (intensity + mask)
+            occupied = []
+
+            # Find target location from mask channel
+            if canvas_i.shape[0] >= 2:
+                mask = canvas_i[1]  # [L]
+                nz = (mask > 0).nonzero(as_tuple=False)
+                if nz.numel() > 0:
+                    start = int(nz.min().item())
+                    end = int(nz.max().item()) + 1
+                    occupied.append((start, end))
+
+            def overlaps_any(pos: int) -> bool:
+                p_end = pos + seg_len
+                for o_start, o_end in occupied:
+                    if not (p_end <= o_start or o_end <= pos):
+                        return True
+                return False
+
+            # Get distractor indices
+            max_distractors = max(0, self.num_items - 1)
+            all_indices = torch.arange(batch_size, dtype=torch.long)
+            other_indices = all_indices[all_indices != i]
+            perm_idx = torch.randperm(other_indices.numel(), generator=g)
+            distractor_indices = other_indices[perm_idx][:max_distractors]
+
+            # Place distractors
+            num_positions = valid_positions.shape[0]
+            perm_pos = torch.randperm(num_positions, generator=g)
+            pos_cursor = 0
+
+            for j in distractor_indices.tolist():
+                placed = False
+                attempts = 0
+                while attempts < num_positions and pos_cursor < num_positions:
+                    pos = int(valid_positions[perm_pos[pos_cursor]].item())
+                    pos_cursor += 1
+                    attempts += 1
+                    if overlaps_any(pos):
+                        continue
+                    # Place distractor intensity only (no mask)
+                    canvas_i[0, pos : pos + seg_len] = ys[j][0]
+                    occupied.append((pos, pos + seg_len))
+                    placed = True
+                    break
+                if not placed:
+                    break
+
+            xs[i] = canvas_i
+
+        return torch.stack(xs, dim=0), torch.stack(ys, dim=0)
+
+    def _get_collate_fn(self):
+        """Get the appropriate collate function based on configuration."""
+        if self.num_items > 1:
+            return self._multi_item_collate
+        return None
+
+    def _build_loader(self, dataset: Dataset, shuffle: bool, drop_last: bool = False) -> DataLoader:
+        """Build a DataLoader."""
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=drop_last,
+            generator=self._generator,
+            persistent_workers=self.num_workers > 0,
+            collate_fn=self._get_collate_fn(),
+        )
+
+    def train_dataloader(self) -> DataLoader:
+        """Create training dataloader."""
+        if self.train_dataset is None:
+            raise RuntimeError("Call setup('fit') before requesting train dataloader.")
+        return self._build_loader(self.train_dataset, shuffle=True, drop_last=True)
+
+    def val_dataloader(self) -> DataLoader:
+        """Create validation dataloader."""
+        if self.val_dataset is None:
+            raise RuntimeError("Call setup('fit') before requesting val dataloader.")
+        return self._build_loader(self.val_dataset, shuffle=False, drop_last=False)
+
+    def test_dataloader(self) -> DataLoader:
+        """Create test dataloader."""
+        if self.test_dataset is None:
+            raise RuntimeError("Call setup('test') before requesting test dataloader.")
+        return self._build_loader(self.test_dataset, shuffle=False, drop_last=False)
+
+    def on_before_batch_transfer(self, batch, dataloader_idx) -> dict:
+        """Rearrange batch tensors to expected format.
+
+        Input: [B, C, L] -> [B, L, C]
+        Label: [B, C, segment_length] -> [B, segment_length, C]
+
+        Returns:
+            dict: A dictionary with keys "input", "label", and "condition".
+        """
+        x, y = batch
+
+        # [B, C, L] -> [B, L, C]
+        x = rearrange(x, "b c l -> b l c")
+        # [B, C, segment_length] -> [B, segment_length, C]
+        y = rearrange(y, "b c l -> b l c")
+
+        return {"input": x, "label": y, "condition": None}
+
+
 if __name__ == "__main__":
     import argparse
     import os
@@ -639,12 +1060,13 @@ if __name__ == "__main__":
     from nvsubquadratic.lazy_config import LazyConfig
 
     parser = argparse.ArgumentParser(description="Visualize Spatial Recall samples")
+    parser.add_argument("--mode", type=str, default="2d", choices=["1d", "2d"], help="1D or 2D spatial recall")
     parser.add_argument("--placement", type=str, default="fixed", choices=["fixed", "random"])
     parser.add_argument("--with-mask", action="store_true", help="Add mask channel")
-    parser.add_argument("--colored-frames", action="store_true", help="Use colored frames (RGB)")
+    parser.add_argument("--colored-frames", action="store_true", help="Use colored frames (RGB, 2D only)")
     parser.add_argument("--num-items", type=int, default=1, help="Number of items on canvas")
     parser.add_argument("--target-size", type=int, default=16, help="Target image size")
-    parser.add_argument("--canvas-size", type=int, default=64, help="Canvas size")
+    parser.add_argument("--canvas-size", type=int, default=64, help="Canvas size (2D) or sqrt of canvas length (1D)")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     parser.add_argument("--data-dir", type=str, default="./.data", help="Data directory")
     parser.add_argument("--output-dir", type=str, default="_tmp", help="Output directory")
@@ -652,7 +1074,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--emnist-split", type=str, default="digits", choices=["digits", "letters", "balanced", "bymerge", "byclass"]
     )
+    parser.add_argument(
+        "--readout-value", type=float, default=0.0, help="Value to fill readout region (1D only, default 0.0)"
+    )
     args = parser.parse_args()
+
+    # Validate arguments
+    if args.mode == "1d" and args.colored_frames:
+        print("Warning: --colored-frames is only supported in 2D mode. Ignoring.")
+        args.colored_frames = False
 
     torch.manual_seed(42)
     os.makedirs(args.output_dir, exist_ok=True)
@@ -683,28 +1113,48 @@ if __name__ == "__main__":
         )
 
     # Create spatial recall datamodule wrapping the base
-    dm = SpatialRecallDataModule(
-        base_datamodule_cfg=base_datamodule_cfg,
-        target_size=args.target_size,
-        canvas_size=args.canvas_size,
-        data_type="image",
-        placement=args.placement,
-        with_mask=args.with_mask,
-        use_colored_frames=args.colored_frames,
-        num_items=args.num_items,
-    )
+    if args.mode == "2d":
+        dm = SpatialRecallDataModule(
+            base_datamodule_cfg=base_datamodule_cfg,
+            target_size=args.target_size,
+            canvas_size=args.canvas_size,
+            data_type="image",
+            placement=args.placement,
+            with_mask=args.with_mask,
+            use_colored_frames=args.colored_frames,
+            num_items=args.num_items,
+        )
+    else:  # 1D mode
+        dm = SpatialRecall1DDataModule(
+            base_datamodule_cfg=base_datamodule_cfg,
+            target_size=args.target_size,
+            canvas_size=args.canvas_size,  # DataModule computes canvas_length = canvas_size²
+            placement=args.placement,
+            with_mask=args.with_mask,
+            num_items=args.num_items,
+            readout_value=args.readout_value,
+        )
+
     dm.prepare_data()
     dm.setup("fit")
 
+    print(f"Mode: {args.mode.upper()}")
     print(f"Dataset: {args.dataset}")
     if args.dataset == "emnist":
         print(f"EMNIST split: {args.emnist_split}")
     print(f"Placement: {args.placement}")
     print(f"With mask: {args.with_mask}")
-    print(f"Colored frames: {args.colored_frames}")
+    if args.mode == "2d":
+        print(f"Colored frames: {args.colored_frames}")
+    if args.mode == "1d":
+        print(f"Readout value: {args.readout_value}")
     print(f"Num items: {args.num_items}")
     print(f"Target size: {args.target_size}")
-    print(f"Canvas size: {args.canvas_size}")
+    if args.mode == "2d":
+        print(f"Canvas size: {args.canvas_size}×{args.canvas_size}")
+    else:
+        print(f"Canvas length: {args.canvas_size * args.canvas_size}")
+        print(f"Segment length: {args.target_size * args.target_size}")
     print(f"Input channels: {dm.input_channels}")
     print(f"Output channels: {dm.output_channels}")
     print(f"Batch size: {dm.batch_size}")
@@ -719,7 +1169,87 @@ if __name__ == "__main__":
     # Visualize batch
     B = min(args.batch_size, 8)
 
-    if args.colored_frames:
+    if args.mode == "1d":
+        # 1D mode: show canvas as 1D line plot and label as 2D image
+        # Note: x shape is [B, C, L], y shape is [B, C, segment_length] (raw from dataloader)
+        if args.with_mask:
+            num_cols = 3
+            fig, axes = plt.subplots(B, num_cols, figsize=(12, 2 * B))
+            if B == 1:
+                axes = axes.reshape(1, -1)
+            for i in range(B):
+                # Canvas intensity as line plot [C, L] -> [L] for channel 0
+                canvas_data = x[i, 0, :].cpu().numpy()
+                axes[i, 0].plot(canvas_data, linewidth=0.5)
+                # Adjust ylim based on data range (to show readout_value like -1)
+                y_min = min(-0.1, canvas_data.min() - 0.1)
+                y_max = max(1.1, canvas_data.max() + 0.1)
+                axes[i, 0].set_ylim(y_min, y_max)
+                # Add horizontal line at readout_value if it's different from 0
+                if args.readout_value != 0:
+                    axes[i, 0].axhline(
+                        y=args.readout_value,
+                        color="red",
+                        linestyle="--",
+                        linewidth=0.5,
+                        alpha=0.7,
+                        label=f"readout={args.readout_value}",
+                    )
+                    if i == 0:
+                        axes[i, 0].legend(loc="upper right", fontsize=6)
+                if i == 0:
+                    axes[i, 0].set_title("Canvas (1D)")
+                axes[i, 0].set_xlabel("Position")
+
+                # Mask as line plot [C, L] -> [L] for channel 1
+                axes[i, 1].plot(x[i, 1, :].cpu().numpy(), linewidth=0.5, color="orange")
+                axes[i, 1].set_ylim(-0.1, 1.1)
+                if i == 0:
+                    axes[i, 1].set_title("Mask (1D)")
+                axes[i, 1].set_xlabel("Position")
+
+                # Label reshaped back to 2D [C, seg_len] -> [seg_len] -> [H, W]
+                label_2d = y[i, 0, :].cpu().reshape(args.target_size, args.target_size)
+                axes[i, 2].imshow(label_2d, cmap="gray")
+                if i == 0:
+                    axes[i, 2].set_title(f"Label ({args.target_size}×{args.target_size})")
+                axes[i, 2].axis("off")
+        else:
+            num_cols = 2
+            fig, axes = plt.subplots(B, num_cols, figsize=(10, 2 * B))
+            if B == 1:
+                axes = axes.reshape(1, -1)
+            for i in range(B):
+                # Canvas as line plot [C, L] -> [L] for channel 0
+                canvas_data = x[i, 0, :].cpu().numpy()
+                axes[i, 0].plot(canvas_data, linewidth=0.5)
+                # Adjust ylim based on data range (to show readout_value like -1)
+                y_min = min(-0.1, canvas_data.min() - 0.1)
+                y_max = max(1.1, canvas_data.max() + 0.1)
+                axes[i, 0].set_ylim(y_min, y_max)
+                # Add horizontal line at readout_value if it's different from 0
+                if args.readout_value != 0:
+                    axes[i, 0].axhline(
+                        y=args.readout_value,
+                        color="red",
+                        linestyle="--",
+                        linewidth=0.5,
+                        alpha=0.7,
+                        label=f"readout={args.readout_value}",
+                    )
+                    if i == 0:
+                        axes[i, 0].legend(loc="upper right", fontsize=6)
+                if i == 0:
+                    axes[i, 0].set_title("Canvas (1D)")
+                axes[i, 0].set_xlabel("Position")
+
+                # Label reshaped back to 2D [C, seg_len] -> [seg_len] -> [H, W]
+                label_2d = y[i, 0, :].cpu().reshape(args.target_size, args.target_size)
+                axes[i, 1].imshow(label_2d, cmap="gray")
+                if i == 0:
+                    axes[i, 1].set_title(f"Label ({args.target_size}×{args.target_size})")
+                axes[i, 1].axis("off")
+    elif args.colored_frames:
         # RGB mode: show canvas and label
         num_cols = 2
         fig, axes = plt.subplots(B, num_cols, figsize=(4 * num_cols, 2.5 * B))
@@ -774,7 +1304,7 @@ if __name__ == "__main__":
     fig.tight_layout()
 
     # Build filename
-    mode_str = args.placement
+    mode_str = f"{args.mode}_{args.placement}"
     if args.with_mask:
         mode_str += "_mask"
     if args.colored_frames:
