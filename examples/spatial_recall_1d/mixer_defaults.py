@@ -3,24 +3,25 @@
 """Default mixer configurations for 1D spatial recall experiments.
 
 Provides pre-configured LazyConfig mixers for common architectures:
-- Hyena: CKConv with SIREN kernel
+- Hyena: CKConv with SIREN kernel (causal or non-causal)
 - Mamba: Bidirectional Mamba2
 - Attention: Multi-head self-attention
 
 Key difference from 2D:
 - L_cache uses canvas_length (e.g., 4096) not canvas_size (e.g., 64)
-- Short conv uses Conv1d not Conv2d
+- Short conv uses Conv1d not Conv2d (or CausalConv1D for causal mode)
 
 Usage:
     from examples.spatial_recall_1d.mixer_defaults import get_hyena_mixer_cfg
 
-    mixer_cfg = get_hyena_mixer_cfg()
+    mixer_cfg = get_hyena_mixer_cfg(is_causal=True)
 """
 
 import torch
 
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.causal_conv1d import CausalConv1D
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -47,8 +48,10 @@ def get_hyena_mixer_cfg(
     apply_qk_norm: bool = True,
     use_rope: bool = False,
     rope_base: float = 10000.0,
-    # Kernel cache size (for 1D, use canvas_length)
-    L_cache: str | int = "${dataset.canvas_length}",
+    is_causal: bool = False,
+    # Kernel cache size (for 1D, use canvas_length by default)
+    L_cache: str | int = "${dataset.canvas_size} * ${dataset.canvas_size}",
+    short_conv_kernel_size: int = 3,
 ) -> LazyConfig:
     """Get Hyena mixer config with SIREN kernel for 1D sequences.
 
@@ -65,12 +68,32 @@ def get_hyena_mixer_cfg(
         apply_qk_norm: Apply QK normalization.
         use_rope: Use rotary position embeddings.
         rope_base: Base for RoPE.
+        is_causal: Whether to use causal convolutions (for autoregressive tasks).
         L_cache: Kernel cache size (should be canvas_length for 1D).
+        short_conv_kernel_size: Kernel size for short conv (default: 3).
 
     Returns:
         LazyConfig for QKVSequenceMixer with Hyena.
     """
-    raise NotImplementedError("Hyena is not supported for 1D sequences.")
+    # Short conv: CausalConv1D for causal mode, else standard Conv1d with symmetric padding
+    if is_causal:
+        short_conv_cfg = LazyConfig(CausalConv1D)(
+            in_channels="3 * ${net.hidden_dim}",
+            out_channels="3 * ${net.hidden_dim}",
+            kernel_size=short_conv_kernel_size,
+            groups="3 * ${net.hidden_dim}",
+            bias=False,
+        )
+    else:
+        short_conv_cfg = LazyConfig(torch.nn.Conv1d)(
+            in_channels="3 * ${net.hidden_dim}",
+            out_channels="3 * ${net.hidden_dim}",
+            kernel_size=short_conv_kernel_size,
+            groups="3 * ${net.hidden_dim}",
+            padding=short_conv_kernel_size // 2,
+            bias=False,
+        )
+
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim="${net.hidden_dim}",
         mixer_cfg=LazyConfig(Hyena)(
@@ -91,16 +114,9 @@ def get_hyena_mixer_cfg(
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type=grid_type,
                 fft_padding=fft_padding,
+                is_causal=is_causal,
             ),
-            # Short conv: Conv1d for 1D sequences
-            short_conv_cfg=LazyConfig(torch.nn.Conv1d)(
-                in_channels="3 * ${net.hidden_dim}",
-                out_channels="3 * ${net.hidden_dim}",
-                kernel_size=3,
-                groups="3 * ${net.hidden_dim}",
-                padding=1,
-                bias=False,
-            ),
+            short_conv_cfg=short_conv_cfg,
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
             apply_qk_norm=apply_qk_norm,
@@ -121,6 +137,13 @@ def get_mamba_mixer_cfg(
     headdim: int = 64,
     expand: int = 2,
     bidirectional: bool = True,
+    # SSM state and frequency parameters
+    d_state: int = 128,
+    A_init_range: tuple[float, float] = (1, 16),
+    dt_min: float = 0.001,
+    dt_max: float = 0.1,
+    dt_init_floor: float = 1e-4,
+    dt_limit: tuple[float, float] = (0.0, float("inf")),
 ) -> LazyConfig:
     """Get Mamba2 mixer configuration.
 
@@ -130,9 +153,26 @@ def get_mamba_mixer_cfg(
         headdim: Mamba2 head dimension.
         expand: Expansion factor for inner dimension.
         bidirectional: Whether to use bidirectional Mamba.
+        d_state: SSM state dimension. Larger = more capacity for long-range patterns.
+        A_init_range: Range for A matrix initialization (controls decay rate).
+            Smaller values = slower decay = longer memory.
+            Larger values = faster decay = shorter memory.
+            Default (1, 16) is the original Mamba2 setting.
+        dt_min: Minimum time step for discretization initialization.
+            Smaller = finer temporal resolution = slower effective decay.
+        dt_max: Maximum time step for discretization initialization.
+            Larger = coarser temporal resolution = faster effective decay.
+        dt_init_floor: Floor for dt initialization (numerical stability).
+        dt_limit: Runtime limits on dt values (min, max).
 
     Returns:
         LazyConfig for MambaNDMixer.
+
+    Example - Longer memory (analogous to larger rope_base/L_cache):
+        get_mamba_mixer_cfg(A_init_range=(0.5, 4), dt_min=0.0001, dt_max=0.01)
+
+    Example - Shorter memory (faster dynamics):
+        get_mamba_mixer_cfg(A_init_range=(4, 32), dt_min=0.01, dt_max=0.5)
     """
     # Import here to avoid requiring mamba-ssm if not using Mamba
     from mamba_ssm import Mamba2
@@ -144,6 +184,12 @@ def get_mamba_mixer_cfg(
             d_model="${net.hidden_dim}",
             headdim=headdim,
             expand=expand,
+            d_state=d_state,
+            A_init_range=A_init_range,
+            dt_min=dt_min,
+            dt_max=dt_max,
+            dt_init_floor=dt_init_floor,
+            dt_limit=dt_limit,
         ),
         bidirectional=bidirectional,
     )

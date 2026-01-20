@@ -210,6 +210,26 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
                     value = True
                 elif value.lower() == "false":
                     value = False
+                # Handle tuples: (x, y) or (x,y)
+                elif value.startswith("(") and value.endswith(")"):
+                    try:
+                        import ast
+
+                        parsed = ast.literal_eval(value)
+                        if isinstance(parsed, tuple):
+                            value = parsed
+                    except (ValueError, SyntaxError):
+                        pass  # Keep as string if parsing fails
+                # Handle lists: [x, y] or [x,y]
+                elif value.startswith("[") and value.endswith("]"):
+                    try:
+                        import ast
+
+                        parsed = ast.literal_eval(value)
+                        if isinstance(parsed, list):
+                            value = parsed
+                    except (ValueError, SyntaxError):
+                        pass  # Keep as string if parsing fails
                 # Otherwise keep as string
 
         # Apply the override

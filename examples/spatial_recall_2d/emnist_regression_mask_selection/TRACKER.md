@@ -57,33 +57,41 @@ ______________________________________________________________________
 
 ### Hyena + Patchify (100k)
 
-| Size   | p=1   | p=2       | p=4       | p=8   | p=16  | p=32  |
-| ------ | ----- | --------- | --------- | ----- | ----- | ----- |
-| **M**  | -     | **0.001** | 0.002     | 0.019 | 0.049 | 0.104 |
-| **S**  | 0.008 | 0.013     | **0.015** | 0.027 | 0.071 | 0.155 |
-| **XS** | -     | **0.012** | 0.020     | 0.045 | 0.120 | 0.210 |
+| Size   | p=1            | p=2       | p=4       | p=8   | p=16  | p=32  |
+| ------ | -------------- | --------- | --------- | ----- | ----- | ----- |
+| **M**  | 🔄 0.007 (80%) | **0.001** | 0.002     | 0.019 | 0.049 | 0.104 |
+| **S**  | 0.008          | 0.013     | **0.015** | 0.027 | 0.071 | 0.155 |
+| **XS** | 🔄 0.014 (63%) | **0.012** | 0.020     | 0.045 | 0.120 | 0.210 |
 
 ### Mamba + Patchify (100k)
 
-| Size   | p=1   | p=2       | p=4       | p=8   | p=16  | p=32  |
-| ------ | ----- | --------- | --------- | ----- | ----- | ----- |
-| **M**  | -     | **0.023** | 0.003     | 0.012 | 0.040 | 0.100 |
-| **S**  | 0.267 | 0.068     | **0.010** | 0.023 | 0.072 | 0.161 |
-| **XS** | 0.383 | 0.054     | **0.038** | 0.044 | 0.113 | 0.230 |
+| Size   | p=1           | p=2       | p=4       | p=8   | p=16  | p=32  |
+| ------ | ------------- | --------- | --------- | ----- | ----- | ----- |
+| **M**  | 🔄 0.69 (39%) | **0.023** | 0.003     | 0.012 | 0.040 | 0.100 |
+| **S**  | 0.267         | 0.068     | **0.010** | 0.023 | 0.072 | 0.161 |
+| **XS** | 0.383         | 0.054     | **0.038** | 0.044 | 0.113 | 0.230 |
 
 ### Attention + Patchify (100k)
 
-| Size   | p=1   | p=2   | p=4       | p=8       | p=16  | p=32  |
-| ------ | ----- | ----- | --------- | --------- | ----- | ----- |
-| **M**  | 0.017 | 0.019 | 0.021     | **0.016** | 0.048 | 0.120 |
-| **S**  | 0.070 | 0.045 | **0.026** | 0.027     | 0.075 | 0.165 |
-| **XS** | -     | 0.144 | 0.094     | **0.060** | 0.116 | 0.226 |
+| Size   | p=1       | p=2   | p=4       | p=8       | p=16  | p=32  |
+| ------ | --------- | ----- | --------- | --------- | ----- | ----- |
+| **M**  | 0.017     | 0.019 | 0.021     | **0.016** | 0.048 | 0.120 |
+| **S**  | 0.070     | 0.045 | **0.026** | 0.027     | 0.075 | 0.165 |
+| **XS** | **0.158** | 0.144 | 0.094     | 0.060     | 0.116 | 0.226 |
 
-> ✅ **Attn S/XS 100k runs now complete** (jobs 172271-172274, 172277-172278)
+> ✅ **Attn S/XS 100k runs now complete!**
 
-### Non-Patchify Models (100k) - NOT RUN
+### Non-Patchify Models (100k) - 1 COMPLETE ✅, 2 RUNNING 🔄
 
-> ❌ **None of the non-patchify 100k runs were ever submitted!**
+| Config       | Size | Val Loss              | Notes                          |
+| ------------ | ---- | --------------------- | ------------------------------ |
+| **hyena_m**  | M    | 🔄 **0.007** (80%) 🔥 | Running - looking excellent!   |
+| **hyena_s**  | S    | ✅ **0.0065** 🏆      | DONE! New non-patchify record! |
+| **hyena_xs** | XS   | 🔄 0.014 (63%)        | Running                        |
+| mamba_xs     | XS   | **0.396**             | ✅ Done - fails (as expected)  |
+| attn_xs      | XS   | **0.294**             | ✅ Done - fails (as expected)  |
+
+> ⚠️ `mamba_m`, `mamba_s`, `attn_m`, `attn_s` broke in simple_copy - skipped
 
 ______________________________________________________________________
 
@@ -210,8 +218,8 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-01-19 (Verified from WandB API - thorough check)
-**Status**: 🚀 19 missing runs now submitted! See job IDs below.
+**Last Updated**: 2026-01-19 16:00 PST
+**Status**: 🔄 4 runs still running, 15 completed. Hyena S non-patch finished at **0.0065**!
 
 ______________________________________________________________________
 
@@ -219,23 +227,25 @@ ______________________________________________________________________
 
 > **Note**: WandB verification confirmed **0 crashed/failed** runs. All "missing" experiments simply weren't submitted before.
 
-### 100k Patchify - 12 runs (10 COMPLETE ✅)
+### 100k Patchify - 12 runs (11 COMPLETE ✅)
 
 | Arch  | Size | Patches                   | SLURM IDs              | Status                                                                         |
 | ----- | ---- | ------------------------- | ---------------------- | ------------------------------------------------------------------------------ |
-| Hyena | M    | p=1                       | 172265                 | 🔄 19%                                                                         |
-| Hyena | XS   | p=1                       | 172266                 | 🔄 58%                                                                         |
-| Mamba | M    | p=1, p=2, p=32            | 172267, 172268, 172269 | ✅ p=2: **0.023**, p=32: 0.100, p=1: 🔄29%                                     |
+| Hyena | M    | p=1                       | 172398 (resumed)       | 🔄 80% (val=0.007) - almost done!                                              |
+| Hyena | XS   | p=1                       | 172266                 | 🔄 63% (val=0.014)                                                             |
+| Mamba | M    | p=1, p=2, p=32            | 172267, 172268, 172269 | ✅ p=2: **0.023**, p=32: 0.100, p=1: 🔄39% (val=0.69)                          |
 | Attn  | S    | p=2, p=4, p=8, p=16, p=32 | 172270-172274          | ✅ **ALL DONE** (p=2: 0.045, p=4: 0.026, p=8: 0.027, p=16: 0.075, p=32: 0.165) |
-| Attn  | XS   | p=1, p=2, p=4, p=32       | 172275-172278          | ✅ p=2: 0.144, p=4: 0.094, p=32: 0.226, p=1: 🔄39%                             |
+| Attn  | XS   | p=1, p=2, p=4, p=32       | 172399 (resumed)       | ✅ **ALL DONE** (p=1: **0.158**, p=2: 0.144, p=4: 0.094, p=32: 0.226)          |
 
-### 100k Non-Patchify - SUBMITTED (5 runs) - LOW priority
+### 100k Non-Patchify - 5 runs (3 COMPLETE ✅, 2 RUNNING 🔄)
 
-| Arch  | Sizes    | SLURM IDs     | Notes                             |
-| ----- | -------- | ------------- | --------------------------------- |
-| Hyena | M, S, XS | 172288-172290 | ✅ Running (low)                  |
-| Mamba | XS       | 172291        | ⚠️ M, S broke in simple_copy exps |
-| Attn  | XS       | 172292        | ⚠️ M, S broke in simple_copy exps |
+| Arch  | Sizes | SLURM IDs        | Val Loss              | Notes                            |
+| ----- | ----- | ---------------- | --------------------- | -------------------------------- |
+| Hyena | M     | 172400 (resumed) | 🔄 **0.007** (80%) 🔥 | Autoresumed - looking excellent! |
+| Hyena | S     | 172397 (resumed) | ✅ **0.0065** 🏆      | DONE! New non-patchify record!   |
+| Hyena | XS    | 172290           | 🔄 0.014 (63%)        | Running                          |
+| Mamba | XS    | 172401 (resumed) | ✅ 0.408              | Done - fails (as expected)       |
+| Attn  | XS    | 172402 (resumed) | ✅ 0.294              | Done - fails (as expected)       |
 
 ### 20k Patchify - ✅ COMPLETE (2 runs)
 
@@ -253,14 +263,16 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-### Total Submitted: 19 runs (ALL RUNNING ✅)
+### Total Submitted: 19 runs (15 COMPLETE ✅, 4 RUNNING 🔄)
 
-| Category          | Count  | SLURM IDs     | Priority |
-| ----------------- | ------ | ------------- | -------- |
-| 100k Patchify     | 12     | 172265-172278 | high     |
-| 100k Non-Patchify | 5      | 172288-172292 | low      |
-| 20k Patchify      | 2      | 172286-172287 | low      |
-| 20k Non-Patchify  | 0      | Skipped       | -        |
-| **Total**         | **19** |               |          |
+| Category          | Count  | Completed | Running | Notes                                  |
+| ----------------- | ------ | --------- | ------- | -------------------------------------- |
+| 100k Patchify     | 12     | 10        | 2       | Hyena M p=1, XS p=1, Mamba M p=1 going |
+| 100k Non-Patchify | 5      | 3         | 2       | ✅ Hyena S done (0.0065)! M/XS running |
+| 20k Patchify      | 2      | 2         | 0       | ✅ All done                            |
+| 20k Non-Patchify  | 0      | -         | -       | Skipped (broken configs)               |
+| **Total**         | **19** | **15**    | **4**   |                                        |
 
-> **Note on broken configs**: `mamba_m`, `mamba_s`, `attn_m`, `attn_s` (non-patchify) broke during simple_copy experiments and are not needed for this task.
+> **Note on broken configs**: `mamba_m`, `mamba_s`, `attn_m`, `attn_s` (non-patchify) broke during simple_copy experiments.
+>
+> **Autoresume**: Successfully used to resume 6 preempted jobs! Works by downloading checkpoints from WandB.

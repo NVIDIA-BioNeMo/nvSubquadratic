@@ -19,6 +19,8 @@ from nvsubquadratic.ops.circular_fftconv import (
     circular_fftconv3d_bhl_w_reshape,
 )
 from nvsubquadratic.ops.fftconv import (
+    causal_fftconv1d_bhl,
+    causal_fftconv1d_bhl_w_reshape,
     fftconv1d_bhl,
     fftconv1d_bhl_w_reshape,
     fftconv2d_bhl,
@@ -41,6 +43,10 @@ FFT_FUNCTIONS = {
         2: (fftconv2d_bhl_w_reshape, fftconv2d_bhl),
         3: (fftconv3d_bhl_w_reshape, fftconv3d_bhl),
     },
+    "causal": {
+        1: (causal_fftconv1d_bhl_w_reshape, causal_fftconv1d_bhl),
+        # Causal is only supported for 1D (sequences)
+    },
 }
 
 
@@ -55,6 +61,7 @@ class CKConvND(torch.nn.Module):
         mask_cfg: LazyConfig,
         grid_type: Literal["double", "single"],
         fft_padding: Literal["zero", "circular"],
+        is_causal: bool = False,
     ):
         """Initialize the CKConvND.
 
@@ -67,11 +74,17 @@ class CKConvND(torch.nn.Module):
             fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
                 cropping (conventional FFT-based conv). 'circular' uses periodic
                 (wrap-around) convolution implemented via frequency-domain phase ramps.
+                Must be 'zero' when is_causal=True.
+            is_causal: If True, use causal (left-only) convolution where output at position i
+                only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
             f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
         )
+        if is_causal:
+            assert data_dim == 1, f"Causal CKConvND only supports 1D inputs. Got {data_dim}D."
+            assert fft_padding == "zero", f"Causal CKConvND requires fft_padding='zero'. Got '{fft_padding}'."
         if fft_padding == "circular":
             # Circular (periodic) convolution only makes sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
@@ -83,6 +96,7 @@ class CKConvND(torch.nn.Module):
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
+        self.is_causal = is_causal
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
@@ -94,17 +108,26 @@ class CKConvND(torch.nn.Module):
         self.shortcut.data.uniform_(-bounds, bounds)
 
         # Define FFT operation depending on padding and dimensionality
+        # Causal mode overrides fft_padding for 1D
+        effective_padding = "causal" if is_causal else self.fft_padding
         try:
-            self.fftconv_fn, self.fftconv_fn_bhl_input = FFT_FUNCTIONS[self.fft_padding][self.data_dim]
+            self.fftconv_fn, self.fftconv_fn_bhl_input = FFT_FUNCTIONS[effective_padding][self.data_dim]
         except KeyError:
-            valid_dims = sorted(FFT_FUNCTIONS.get(self.fft_padding, {}).keys())
+            valid_dims = sorted(FFT_FUNCTIONS.get(effective_padding, {}).keys())
             raise ValueError(
-                f"Unsupported configuration: fft_padding='{self.fft_padding}', data_dim={self.data_dim}. "
-                f"Valid dimensions for '{self.fft_padding}': {valid_dims}"
+                f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
+                f"Valid dimensions for '{effective_padding}': {valid_dims}"
             )
 
         # Define the grid type
         self.grid_type = grid_type
+
+    def extra_repr(self) -> str:
+        """Return extra representation string for the module."""
+        return (
+            f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
+            f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}"
+        )
 
     @torch.compiler.disable()
     def apply_convolution(
@@ -184,8 +207,19 @@ class CKConvND(torch.nn.Module):
         if not isinstance(self.mask, torch.nn.Identity):
             conv_kernel = self.mask(grid=grid, x=conv_kernel)
 
+        # For causal convolution, crop the kernel to use only the "positive" half
+        # (i.e., the part that looks backward in time). The kernel is in BLH format: [1, L, H].
+        # We keep positions from L//2 to L-1, which after the FFT flip becomes causal.
+        if self.is_causal:
+            # Kernel shape is [1, kernel_len, hidden_dim] for 1D
+            # Crop to [1, kernel_len // 2, hidden_dim] keeping the second half
+            kernel_len = conv_kernel.shape[-2]
+            conv_kernel = conv_kernel[..., kernel_len // 2 :, :]
+
         # Handle context parallelism by slicing the kernel to match input channel dimensions
         if cp_group is not None and cp_group.size() > 1:
+            if self.is_causal:
+                raise ValueError("Causal CKConvND has not been verified to work with context parallelism.")
             cp_world_size = cp_group.size()
             cp_rank = cp_group.rank()
 
