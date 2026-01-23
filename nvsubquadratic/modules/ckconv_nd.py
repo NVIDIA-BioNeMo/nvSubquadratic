@@ -28,6 +28,20 @@ from nvsubquadratic.ops.fftconv import (
 )
 
 
+# Import custom CUDA FFT kernels (optional, requires subquadratic_ops_torch)
+try:
+    from nvsubquadratic.ops.fftconv_custom import (
+        fftconv2d_bhl as fftconv2d_bhl_custom,
+    )
+    from nvsubquadratic.ops.fftconv_custom import (
+        fftconv2d_bhl_w_reshape as fftconv2d_bhl_w_reshape_custom,
+    )
+
+    _HAS_CUSTOM_FFTCONV = True
+except ImportError:
+    _HAS_CUSTOM_FFTCONV = False
+
+
 # Mapping from padding mode and data dimensionality to FFT convolution functions.
 # Each entry is a tuple: (fn_for_BLH_input (bhl + reshape), fn_for_BHL_input)
 FFT_FUNCTIONS = {
@@ -43,6 +57,12 @@ FFT_FUNCTIONS = {
     },
 }
 
+# Add custom CUDA kernel if available
+if _HAS_CUSTOM_FFTCONV:
+    FFT_FUNCTIONS["custom"] = {
+        2: (fftconv2d_bhl_w_reshape_custom, fftconv2d_bhl_custom),
+    }
+
 
 class CKConvND(torch.nn.Module):
     """CKConv (long-convolution) implementation for ND signals."""
@@ -54,7 +74,7 @@ class CKConvND(torch.nn.Module):
         kernel_cfg: LazyConfig,
         mask_cfg: LazyConfig,
         grid_type: Literal["double", "single"],
-        fft_padding: Literal["zero", "circular"],
+        fft_padding: Literal["zero", "circular", "custom"],
     ):
         """Initialize the CKConvND.
 
@@ -64,19 +84,26 @@ class CKConvND(torch.nn.Module):
             kernel_cfg: LazyConfig for the kernel.
             mask_cfg: LazyConfig for the mask.
             grid_type: Type of grid to use.
-            fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
-                cropping (conventional FFT-based conv). 'circular' uses periodic
-                (wrap-around) convolution implemented via frequency-domain phase ramps.
+            fft_padding: Boundary behavior of the FFT convolution.
+                - 'zero': Uses zero-padding with cropping (conventional FFT-based conv).
+                - 'circular': Uses periodic (wrap-around) convolution via frequency-domain phase ramps.
+                - 'custom': Uses optimized CUDA FFT kernel from subquadratic_ops_torch (2D only).
+
+        NOTE: The custom cuda kernel is only implemented for 2D data for now and only uses single grid type.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
-        assert fft_padding in ["zero", "circular"], (
-            f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
+
+        valid_fft_modes = ["zero", "circular"] + (["custom"] if _HAS_CUSTOM_FFTCONV else [])
+        assert fft_padding in valid_fft_modes, (
+            f"Invalid FFT padding: {fft_padding}. Must be one of {valid_fft_modes}."
+            + (" Note: 'custom' requires subquadratic_ops_torch package." if not _HAS_CUSTOM_FFTCONV else "")
         )
-        if fft_padding == "circular":
-            # Circular (periodic) convolution only makes sense with kernel size == input size,
+
+        if fft_padding in ["circular", "custom"]:
+            # Circular and custom convolution only make sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
             assert grid_type == "single", (
-                "fft_padding='circular' requires grid_type='single' (kernel size equals input size)."
+                f"fft_padding='{fft_padding}' requires grid_type='single' (kernel size equals input size)."
             )
 
         super().__init__()

@@ -1,6 +1,6 @@
 # TODO: Add license header here
 
-"""Config file for TinyImageNet classification using the shared ResNet backbone."""
+"""Config file for TinyImageNet classification using custom CUDA FFT kernels."""
 
 import os
 
@@ -45,7 +45,7 @@ NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
-FFT_PADDING = "circular"
+FFT_PADDING = "custom"  # Use optimized CUDA FFT kernel (requires subquadratic_ops_torch)
 
 # Optimisation
 TRAINING_ITERATIONS = 600_000
@@ -56,7 +56,7 @@ GRAD_CLIP = 1.0
 
 
 def get_config() -> ExperimentConfig:
-    """Return the TinyImageNet classification configuration."""
+    """Return the TinyImageNet classification configuration with custom CUDA FFT kernels."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42

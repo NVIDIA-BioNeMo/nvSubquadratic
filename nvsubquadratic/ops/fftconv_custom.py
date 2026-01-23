@@ -36,7 +36,9 @@ Limitations
 -----------
 - Requires CUDA tensors.
 - Only supports shared kernels (kernel.shape[0] == 1).
-- **Kernel spatial dimensions must equal input spatial dimensions** (full-size kernels).
+- **Kernel spatial dimensions should match or be close to input spatial dimensions**.
+  If the kernel is slightly smaller (e.g., 63 vs 64 due to grid_type='single' generating
+  2n-1 sized kernels), it will be automatically zero-padded to match the input size.
 """
 
 __all__ = [
@@ -65,12 +67,13 @@ def fftconv2d_bhl(
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
     Note: The custom CUDA kernel requires kernel spatial dimensions to match the input
-    spatial dimensions exactly. Use `grid_type='single'` when generating kernels.
+    spatial dimensions exactly. If the kernel is slightly smaller (e.g., 63 vs 64 due to
+    the grid_type='single' generating 2n-1 sized kernels), it will be zero-padded to match.
 
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, hidden_dim, X_in, Y_in).
-        kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, X_in, Y_in).
-            Note: K_x must equal X_in and K_y must equal Y_in.
+        kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, K_x, K_y).
+            Note: K_x should be close to X_in and K_y close to Y_in (will be padded if needed).
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
@@ -88,20 +91,35 @@ def fftconv2d_bhl(
 
     _, _, K_x, K_y = kernel.shape
 
-    # Custom kernel requires kernel spatial dims to match input spatial dims
-    assert K_x == X_in, f"Kernel K_x must equal X_in. Got K_x={K_x}, X_in={X_in}."
-    assert K_y == Y_in, f"Kernel K_y must equal Y_in. Got K_y={K_y}, Y_in={Y_in}."
     assert hidden_dim == kernel.shape[1], "Input and kernel must have the same number of channels (H)."
     assert x.is_cuda, "Custom CUDA kernel requires CUDA tensors."
 
-    # 1. Extract weight tensor with shape expected by custom kernel: (hidden_dim, K_x, K_y)
+    # 1. Extract weight tensor: (hidden_dim, K_x, K_y)
     weight = kernel[0]  # [hidden_dim, K_x, K_y]
 
-    # 2. Apply the custom CUDA FFT convolution kernel
+    # 2. Pad kernel if needed to match input spatial dimensions
+    # The kernel from grid_type='single' has size (2*grid_len - 1), which is always odd.
+    # If input has even dimensions, we need to pad the kernel by 1.
+    if K_x != X_in or K_y != Y_in:
+        # Compute padding needed (pad on the right/bottom)
+        pad_x = X_in - K_x
+        pad_y = Y_in - K_y
+        assert pad_x >= 0 and pad_y >= 0, (
+            f"Kernel cannot be larger than input. Got kernel ({K_x}, {K_y}), input ({X_in}, {Y_in})."
+        )
+        # F.pad expects (left, right, top, bottom) for 2D
+        # We pad symmetrically: left/right for last dim, top/bottom for second-to-last
+        pad_left = pad_y // 2
+        pad_right = pad_y - pad_left
+        pad_top = pad_x // 2
+        pad_bottom = pad_x - pad_top
+        weight = torch.nn.functional.pad(weight, (pad_left, pad_right, pad_top, pad_bottom), mode="constant", value=0)
+
+    # 3. Apply the custom CUDA FFT convolution kernel
     y = fft_conv2d(x.contiguous(), weight.contiguous())
     assert y.shape == x.shape, f"Kernel returned shape {y.shape}, expected {x.shape}."
 
-    # 3. Add shortcut if provided
+    # 4. Add shortcut if provided
     if shortcut is not None:
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
