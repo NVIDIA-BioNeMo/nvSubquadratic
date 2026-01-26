@@ -46,6 +46,8 @@ class SpatialRecallDataset(Dataset):
         generator: Random generator for reproducibility.
         placement: Placement mode - "fixed" (top-left) or "random".
         with_mask: If True, add a binary mask channel indicating target location.
+        readout_value: Value to fill the readout region with (default 0.0). Use e.g. -1.0 to
+            explicitly mark the readout region so the model knows where to output.
     """
 
     def __init__(
@@ -56,6 +58,7 @@ class SpatialRecallDataset(Dataset):
         generator: torch.Generator,
         placement: Literal["fixed", "random"] = "fixed",
         with_mask: bool = False,
+        readout_value: float = 0.0,
     ) -> None:
         """Initialize the SpatialRecallDataset."""
         super().__init__()
@@ -75,6 +78,7 @@ class SpatialRecallDataset(Dataset):
         self.generator = generator
         self.placement = placement
         self.with_mask = with_mask
+        self.readout_value = readout_value
 
         # Precompute valid positions for random placement
         if placement == "random":
@@ -133,6 +137,13 @@ class SpatialRecallDataset(Dataset):
         # Place image on canvas
         canvas[:, y0 : y0 + h, x0 : x0 + w] = target_img
 
+        # Fill readout region (bottom-right corner) with readout_value
+        # This marks where the model should output the recalled image
+        if self.readout_value != 0.0:
+            readout_y0 = self.canvas_size - self.target_size
+            readout_x0 = self.canvas_size - self.target_size
+            canvas[:, readout_y0:, readout_x0:] = self.readout_value
+
         # Add mask channel if requested
         if self.with_mask:
             mask = torch.zeros(
@@ -166,6 +177,12 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         with_mask: Add mask channel indicating target location.
         use_colored_frames: Use RGB canvas with colored bounding boxes.
         num_items: Number of items to place (1 = target only, >1 = target + distractors).
+        readout_value: Value to fill the readout region with (default 0.0). Use e.g. -1.0 to
+            explicitly mark the readout region so the model knows where to output.
+            Note: When use_colored_frames=True, the colored border is preserved.
+        colored_label: If True and use_colored_frames=True, the label will be RGB with the
+            digit colored using the same color as its frame. This creates a "color conditioning"
+            task where the model must output the digit in the correct color.
     """
 
     # Fixed RGB palette for colored frames (8 high-contrast colors)
@@ -193,6 +210,8 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         with_mask: bool = False,
         use_colored_frames: bool = False,
         num_items: int = 1,
+        readout_value: float = 0.0,
+        colored_label: bool = False,
     ) -> None:
         """Initialize the SpatialRecallDataModule."""
         super().__init__()
@@ -201,6 +220,8 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         assert data_type in ("sequence", "image"), f"data_type must be 'sequence' or 'image', got {data_type}"
         assert placement in ("fixed", "random"), f"placement must be 'fixed' or 'random', got {placement}"
         assert not (with_mask and use_colored_frames), "with_mask and use_colored_frames cannot both be True"
+        if colored_label:
+            assert use_colored_frames, "colored_label=True requires use_colored_frames=True"
         if num_items > 1:
             assert placement == "random", "num_items > 1 requires placement='random'"
             assert with_mask or use_colored_frames, (
@@ -221,6 +242,8 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         self.with_mask = with_mask
         self.use_colored_frames = use_colored_frames
         self.num_items = num_items
+        self.readout_value = readout_value
+        self.colored_label = colored_label
 
         # These will be set from base datamodule after instantiation
         self._batch_size: Optional[int] = None
@@ -242,7 +265,8 @@ class SpatialRecallDataModule(pl.LightningDataModule):
         else:
             self.input_channels = 1  # Grayscale
 
-        self.output_channels = 1  # Always grayscale target
+        # Output channels: 3 if colored_label, otherwise 1 (grayscale)
+        self.output_channels = 3 if colored_label else 1
 
         # Placeholders
         self.train_dataset: Optional[Dataset] = None
@@ -324,6 +348,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                     self._train_generator,
                     self.placement,
                     self.with_mask,
+                    self.readout_value,
                 )
                 self.val_dataset = SpatialRecallDataset(
                     base_val_datamodule,
@@ -332,9 +357,11 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                     self._val_generator,
                     self.placement,
                     self.with_mask,
+                    self.readout_value,
                 )
             else:
                 # For multi-item mode, wrap with simple dataset (no mask) and apply in collate
+                # For colored frames, the collate function creates RGB canvas and handles readout_value
                 self.train_dataset = SpatialRecallDataset(
                     base_train_datamodule,
                     self.target_size,
@@ -342,6 +369,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                     self._train_generator,
                     self.placement,
                     with_mask=self.with_mask and not self.use_colored_frames,
+                    readout_value=self.readout_value,
                 )
                 self.val_dataset = SpatialRecallDataset(
                     base_val_datamodule,
@@ -350,6 +378,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                     self._val_generator,
                     self.placement,
                     with_mask=self.with_mask and not self.use_colored_frames,
+                    readout_value=self.readout_value,
                 )
 
         if stage in ("test", None):
@@ -362,6 +391,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                     self._test_generator,
                     self.placement,
                     self.with_mask,
+                    self.readout_value,
                 )
             else:
                 self.test_dataset = SpatialRecallDataset(
@@ -371,6 +401,7 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                     self._test_generator,
                     self.placement,
                     with_mask=self.with_mask and not self.use_colored_frames,
+                    readout_value=self.readout_value,
                 )
 
     def _multi_item_collate(self, batch: list) -> Tuple[Tensor, Tensor]:
@@ -557,13 +588,33 @@ class SpatialRecallDataModule(pl.LightningDataModule):
                 _, _, sel_cidx, _ = target_meta
                 color = palette[sel_cidx]
                 y0_readout, x0_readout = C - t, C - t
+
+                # Fill readout region interior with readout_value (if not 0.0)
+                # This marks where the model should output the recalled image
+                # Interior is the region inside the 1-pixel border
+                if self.readout_value != 0.0 and t > 2:
+                    # Interior region: skip the 1-pixel border on all sides
+                    canvas_rgb[:, y0_readout + 1 : C - 1, x0_readout + 1 : C - 1] = self.readout_value
+
                 draw_outline_rgb(canvas_rgb, y0_readout, x0_readout, t, color)
                 x_rgb_list.append(canvas_rgb)
-                y_sel_list.append(ys[i])
+
+                # Build label: colored (RGB) or grayscale
+                if self.colored_label:
+                    # Create RGB label: digit intensity * color
+                    # ys[i] is [1, H, W], color is [3]
+                    # Result: [3, H, W] where each channel = intensity * color_channel
+                    label_rgb = ys[i] * color.view(3, 1, 1)
+                    y_sel_list.append(label_rgb)
+                else:
+                    y_sel_list.append(ys[i])
             else:
                 # Fallback
                 x_rgb_list.append(xs[i].repeat(3, 1, 1) if xs[i].shape[0] == 1 else xs[i][:3])
-                y_sel_list.append(ys[i])
+                if self.colored_label:
+                    y_sel_list.append(ys[i].repeat(3, 1, 1))  # Fallback: grayscale as RGB
+                else:
+                    y_sel_list.append(ys[i])
 
         return torch.stack(x_rgb_list, dim=0), torch.stack(y_sel_list, dim=0)
 
@@ -1074,8 +1125,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--emnist-split", type=str, default="digits", choices=["digits", "letters", "balanced", "bymerge", "byclass"]
     )
+    parser.add_argument("--readout-value", type=float, default=0.0, help="Value to fill readout region (default 0.0)")
     parser.add_argument(
-        "--readout-value", type=float, default=0.0, help="Value to fill readout region (1D only, default 0.0)"
+        "--colored-label",
+        action="store_true",
+        help="Output RGB label colored with frame color (requires --colored-frames)",
     )
     args = parser.parse_args()
 
@@ -1083,6 +1137,9 @@ if __name__ == "__main__":
     if args.mode == "1d" and args.colored_frames:
         print("Warning: --colored-frames is only supported in 2D mode. Ignoring.")
         args.colored_frames = False
+    if args.colored_label and not args.colored_frames:
+        print("Warning: --colored-label requires --colored-frames. Enabling --colored-frames.")
+        args.colored_frames = True
 
     torch.manual_seed(42)
     os.makedirs(args.output_dir, exist_ok=True)
@@ -1123,6 +1180,8 @@ if __name__ == "__main__":
             with_mask=args.with_mask,
             use_colored_frames=args.colored_frames,
             num_items=args.num_items,
+            readout_value=args.readout_value,
+            colored_label=args.colored_label,
         )
     else:  # 1D mode
         dm = SpatialRecall1DDataModule(
@@ -1146,7 +1205,8 @@ if __name__ == "__main__":
     print(f"With mask: {args.with_mask}")
     if args.mode == "2d":
         print(f"Colored frames: {args.colored_frames}")
-    if args.mode == "1d":
+        print(f"Colored label: {args.colored_label}")
+    if args.readout_value != 0:
         print(f"Readout value: {args.readout_value}")
     print(f"Num items: {args.num_items}")
     print(f"Target size: {args.target_size}")
@@ -1257,14 +1317,30 @@ if __name__ == "__main__":
             axes = axes.reshape(1, -1)
         for i in range(B):
             # Canvas RGB (permute from [C, H, W] to [H, W, C])
-            axes[i, 0].imshow(x[i].permute(1, 2, 0).cpu().clip(0, 1))
+            # Normalize to [0, 1] range accounting for possible negative readout_value
+            canvas_rgb = x[i].permute(1, 2, 0).cpu()
+            if args.readout_value < 0:
+                # Shift and scale: map [readout_value, 1] to [0, 1]
+                canvas_rgb = (canvas_rgb - args.readout_value) / (1.0 - args.readout_value)
+            canvas_rgb = canvas_rgb.clip(0, 1)
+            axes[i, 0].imshow(canvas_rgb)
             if i == 0:
-                axes[i, 0].set_title("Canvas (RGB)")
+                title = "Canvas (RGB)"
+                if args.readout_value != 0:
+                    title += f" [readout={args.readout_value}]"
+                axes[i, 0].set_title(title)
             axes[i, 0].axis("off")
-            # Label
-            axes[i, 1].imshow(y[i, 0].cpu(), cmap="gray")
-            if i == 0:
-                axes[i, 1].set_title("Label")
+            # Label: RGB if colored_label, grayscale otherwise
+            if args.colored_label:
+                # y is [3, H, W] -> [H, W, 3]
+                label_rgb = y[i].permute(1, 2, 0).cpu().clip(0, 1)
+                axes[i, 1].imshow(label_rgb)
+                if i == 0:
+                    axes[i, 1].set_title("Label (RGB)")
+            else:
+                axes[i, 1].imshow(y[i, 0].cpu(), cmap="gray")
+                if i == 0:
+                    axes[i, 1].set_title("Label")
             axes[i, 1].axis("off")
     elif args.with_mask:
         # Mask mode: show intensity, mask, label
@@ -1272,10 +1348,16 @@ if __name__ == "__main__":
         fig, axes = plt.subplots(B, num_cols, figsize=(4 * num_cols, 2.5 * B))
         if B == 1:
             axes = axes.reshape(1, -1)
+        # Set vmin/vmax to show readout_value properly
+        vmin = min(0, args.readout_value)
+        vmax = 1
         for i in range(B):
-            axes[i, 0].imshow(x[i, 0].cpu(), cmap="gray")
+            axes[i, 0].imshow(x[i, 0].cpu(), cmap="gray", vmin=vmin, vmax=vmax)
             if i == 0:
-                axes[i, 0].set_title("Canvas")
+                title = "Canvas"
+                if args.readout_value != 0:
+                    title += f" [readout={args.readout_value}]"
+                axes[i, 0].set_title(title)
             axes[i, 0].axis("off")
             axes[i, 1].imshow(x[i, 1].cpu(), cmap="gray")
             if i == 0:
@@ -1291,10 +1373,16 @@ if __name__ == "__main__":
         fig, axes = plt.subplots(B, num_cols, figsize=(4 * num_cols, 2.5 * B))
         if B == 1:
             axes = axes.reshape(1, -1)
+        # Set vmin/vmax to show readout_value properly
+        vmin = min(0, args.readout_value)
+        vmax = 1
         for i in range(B):
-            axes[i, 0].imshow(x[i, 0].cpu(), cmap="gray")
+            axes[i, 0].imshow(x[i, 0].cpu(), cmap="gray", vmin=vmin, vmax=vmax)
             if i == 0:
-                axes[i, 0].set_title("Canvas")
+                title = "Canvas"
+                if args.readout_value != 0:
+                    title += f" [readout={args.readout_value}]"
+                axes[i, 0].set_title(title)
             axes[i, 0].axis("off")
             axes[i, 1].imshow(y[i, 0].cpu(), cmap="gray")
             if i == 0:
@@ -1309,6 +1397,8 @@ if __name__ == "__main__":
         mode_str += "_mask"
     if args.colored_frames:
         mode_str += "_colored"
+    if args.colored_label:
+        mode_str += "_coloredlabel"
     if args.num_items > 1:
         mode_str += f"_{args.num_items}items"
 

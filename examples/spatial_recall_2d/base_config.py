@@ -207,6 +207,8 @@ def base_emnist_spatial_recall_2d_dataset_config(
     with_mask: bool,
     normalize_input: bool,
     # Optional overrides
+    readout_value: float = 0.0,
+    colored_label: bool = False,
     data_dir: str = ".data/emnist",
     split: str = "byclass",
     pin_memory: bool = True,
@@ -223,6 +225,12 @@ def base_emnist_spatial_recall_2d_dataset_config(
         placement: "fixed" for deterministic placement, "random" for random placement.
         with_mask: If True, add a binary mask channel indicating target location.
         normalize_input: Whether to normalize input to [-1, 1].
+        readout_value: Value to fill the readout region with (default 0.0). Use e.g. -1.0 to
+            explicitly mark the readout region so the model knows where to output.
+            Note: When use_colored_frames=True, the colored border is preserved.
+        colored_label: If True and use_colored_frames=True, the label will be RGB (3 channels)
+            with the digit colored using the same color as its frame. This creates a
+            "color conditioning" task where the model must output the digit in the correct color.
         data_dir: Directory for EMNIST data.
         split: EMNIST split to use.
         pin_memory: Whether to pin memory for faster GPU transfer.
@@ -254,4 +262,6 @@ def base_emnist_spatial_recall_2d_dataset_config(
         with_mask=with_mask,
         use_colored_frames=use_colored_frames,
         num_items=num_items,
+        readout_value=readout_value,
+        colored_label=colored_label,
     )
