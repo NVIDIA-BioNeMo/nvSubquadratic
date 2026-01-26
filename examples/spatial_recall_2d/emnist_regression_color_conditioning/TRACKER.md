@@ -27,7 +27,7 @@ ______________________________________________________________________
 | Config                 | Architecture | Patchify | Size | Patch | Status        |
 | ---------------------- | ------------ | -------- | ---- | ----- | ------------- |
 | ccnn_hyena_xs          | Hyena        | No       | XS   | -     | ✅ 0.0218     |
-| ccnn_hyena_s           | Hyena        | No       | S    | -     | ❌ Crashed    |
+| ccnn_hyena_s           | Hyena        | No       | S    | -     | ✅ 0.0139     |
 | ccnn_hyena_m           | Hyena        | No       | M    | -     | ✅ **0.0028** |
 | ccnn_mamba_xs          | Mamba        | No       | XS   | -     | ✅ 0.0754     |
 | ccnn_mamba_s           | Mamba        | No       | S    | -     | ✅ 0.0778     |
@@ -51,19 +51,18 @@ ______________________________________________________________________
 
 ### Top 10 Results (50k iterations)
 
-| Rank | Architecture | Size | Patch | Val Loss   | WandB ID | Notes                         |
-| ---- | ------------ | ---- | ----- | ---------- | -------- | ----------------------------- |
-| 1    | **Hyena**    | M    | none  | **0.0028** | tqbnoevm | ✅ **NEW BEST!** Non-patchify |
-| 2    | Hyena        | M    | p=2   | 0.0043     | 8mm3bhl5 | ✅ Best patchify              |
-| 3    | Mamba        | M    | p=4   | 0.0050     | tnpmnw72 | ✅                            |
-| 4    | Hyena        | S    | p=2   | 0.0078     | vu5flsj1 | ✅                            |
-| 5    | Hyena        | XS   | p=2   | 0.0103     | hchvn3u7 | ✅ Best XS                    |
-| 6    | Mamba        | XS   | p=4   | 0.0159     | 103dn9dy | ✅                            |
-| 7    | Hyena        | XS   | none  | 0.0218     | pps0ivor | ✅ Non-patchify               |
-| 8    | Mamba        | S    | p=4   | 0.0231     | w0julwcz | ✅                            |
-| 9    | Mamba        | M    | none  | 0.0253     | y6k3jm36 | ✅ Non-patchify               |
-| 10   | Hyena        | XS   | p=4   | 0.0255     | t2jpyelg | ✅                            |
-| 10   | Mamba        | XS   | p=2   | 0.0659     | rp9kz8fy | ✅                            |
+| Rank | Architecture | Size | Patch | Val Loss   | WandB ID | Notes                     |
+| ---- | ------------ | ---- | ----- | ---------- | -------- | ------------------------- |
+| 1    | **Hyena**    | M    | none  | **0.0028** | tqbnoevm | ✅ **BEST!** Non-patchify |
+| 2    | Hyena        | M    | p=2   | 0.0043     | 8mm3bhl5 | ✅ Best patchify          |
+| 3    | Mamba        | M    | p=4   | 0.0050     | tnpmnw72 | ✅                        |
+| 4    | Hyena        | S    | p=2   | 0.0078     | vu5flsj1 | ✅                        |
+| 5    | Hyena        | XS   | p=2   | 0.0103     | hchvn3u7 | ✅ Best XS                |
+| 6    | Hyena        | S    | none  | 0.0139     | lxbrmb5e | ✅ Non-patchify (resumed) |
+| 7    | Mamba        | XS   | p=4   | 0.0159     | 103dn9dy | ✅                        |
+| 8    | Hyena        | XS   | none  | 0.0218     | pps0ivor | ✅ Non-patchify           |
+| 9    | Mamba        | S    | p=4   | 0.0231     | w0julwcz | ✅                        |
+| 10   | Mamba        | M    | none  | 0.0253     | y6k3jm36 | ✅ Non-patchify           |
 
 ### S/M Results Comparison (50k iterations)
 
@@ -194,28 +193,29 @@ ______________________________________________________________________
 
 - **Date**: 2026-01-25
 - **Purpose**: Compare non-patchify models at larger sizes
-- **Status**: ✅ 5/6 completed, 1 crashed
+- **Status**: ✅ All 6 completed!
 
-| Config       | Architecture | Size | Hidden | Val Loss   | WandB ID | Status           |
-| ------------ | ------------ | ---- | ------ | ---------- | -------- | ---------------- |
-| ccnn_hyena_s | Hyena        | S    | 256    | -          | lxbrmb5e | ❌ Crashed@14209 |
-| ccnn_hyena_m | Hyena        | M    | 416    | **0.0028** | tqbnoevm | ✅ Best!         |
-| ccnn_mamba_s | Mamba        | S    | 160    | 0.0778     | 3agn9x3e | ✅               |
-| ccnn_mamba_m | Mamba        | M    | 256    | 0.0253     | y6k3jm36 | ✅               |
-| ccnn_attn_s  | Attention    | S    | 256    | 0.2667     | rteejbf3 | ✅               |
-| ccnn_attn_m  | Attention    | M    | 384    | 0.2731     | bzgvkbob | ✅               |
+| Config       | Architecture | Size | Hidden | Val Loss   | WandB ID | Status            |
+| ------------ | ------------ | ---- | ------ | ---------- | -------- | ----------------- |
+| ccnn_hyena_s | Hyena        | S    | 256    | **0.0139** | lxbrmb5e | ✅ Resumed & done |
+| ccnn_hyena_m | Hyena        | M    | 416    | **0.0028** | tqbnoevm | ✅ Best!          |
+| ccnn_mamba_s | Mamba        | S    | 160    | 0.0778     | 3agn9x3e | ✅                |
+| ccnn_mamba_m | Mamba        | M    | 256    | 0.0253     | y6k3jm36 | ✅                |
+| ccnn_attn_s  | Attention    | S    | 256    | 0.2667     | rteejbf3 | ✅                |
+| ccnn_attn_m  | Attention    | M    | 384    | 0.2731     | bzgvkbob | ✅                |
 
 ### Non-Patchify Results Comparison
 
-| Arch      | XS                | S                 | M                     |
-| --------- | ----------------- | ----------------- | --------------------- |
-| Hyena     | 0.0218 (pps0ivor) | ❌ crashed        | **0.0028** (tqbnoevm) |
-| Mamba     | 0.0754 (qd9sm7u2) | 0.0778 (3agn9x3e) | 0.0253 (y6k3jm36)     |
-| Attention | 0.2738 (twgy8s8l) | 0.2667 (rteejbf3) | 0.2731 (bzgvkbob)     |
+| Arch      | XS                | S                     | M                     |
+| --------- | ----------------- | --------------------- | --------------------- |
+| Hyena     | 0.0218 (pps0ivor) | **0.0139** (lxbrmb5e) | **0.0028** (tqbnoevm) |
+| Mamba     | 0.0754 (qd9sm7u2) | 0.0778 (3agn9x3e)     | 0.0253 (y6k3jm36)     |
+| Attention | 0.2738 (twgy8s8l) | 0.2667 (rteejbf3)     | 0.2731 (bzgvkbob)     |
 
 **Observations:**
 
 - Hyena M non-patchify (0.0028) outperforms Hyena M patchify p=2 (0.0043)!
+- Hyena scales very well: XS (0.022) → S (0.014) → M (0.003) = **7x improvement!**
 - Mamba scales well with size (M is 3x better than S/XS)
 - Attention shows no improvement with scale for non-patchify
 
@@ -224,4 +224,4 @@ ______________________________________________________________________
 ______________________________________________________________________
 
 **Last Updated**: 2026-01-26
-**Status**: ✅ 5/6 non-patchify S/M done | 🏃 Hyena S resuming (SLURM 176663, from step 14209)
+**Status**: ✅ All non-patchify S/M experiments completed!
