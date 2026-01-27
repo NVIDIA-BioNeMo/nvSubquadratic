@@ -115,10 +115,11 @@ def get_config() -> TextPretrainingExperimentConfig:
         out_channels=VOCAB_SIZE,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
+        data_dim=DATA_DIM,
         # Input projection is Embedding layer via Adapter
-        in_proj_cfg=LazyConfig(EmbeddingAdapter)(),
+        in_proj_cfg=LazyConfig(EmbeddingAdapter)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
         # Output projection is Linear layer
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(

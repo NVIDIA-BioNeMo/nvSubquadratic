@@ -3,9 +3,9 @@
 # #SBATCH --partition=performance
 #SBATCH --partition=capacity
 #SBATCH --time=48:00:00
-#SBATCH --gres=gpu:1
-#SBATCH --mem=30G
-#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:4
+#SBATCH --mem=120G
+#SBATCH --cpus-per-task=128
 
 # Activate venv
 source ~/miniforge3/etc/profile.d/conda.sh
@@ -27,7 +27,7 @@ export TOKENIZERS_PARALLELISM=false    # Disable tokenizers parallelism to avoid
 #     --batch_size 8 \
 #     --device cuda
 
-PYTHONPATH=lingua_clone:. torchrun --nproc_per_node=1 lingua_clone/apps/main/train.py \
+PYTHONPATH=lingua_clone:. torchrun --nproc_per_node=4 lingua_clone/apps/main/train.py \
     config=examples/text_pretraining/lingua_hyena_train.yaml \
     dump_dir=results/hyena_fineweb10bt_lingua
 

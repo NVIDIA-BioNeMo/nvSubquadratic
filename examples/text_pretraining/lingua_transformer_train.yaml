@@ -1,40 +1,44 @@
-# Config for training Hyena on FineWeb Edu 10BT
-name: "hyena_fineweb_train"
+# Config for training LMTransformer on FineWeb Edu 10BT
+# This uses the native Lingua transformer (no modern_ccnn_config_path)
+name: "transformer_fineweb_train"
 steps: 400000
-probe_freq: 100
+probe_freq: null  # Probing not enabled (requires disabling activation checkpointing)
+grad_acc_steps: 4
 seed: 42
 
 optim:
     lr: 3e-4
     warmup: 2000
     lr_min_ratio: 0.000001
-    clip: 0.5
+    clip: 1.0
 
 distributed:
     fsdp_type: full_shard
     compile: true
     model_dtype: bf16
     matmul_allow_tf32: true
-    selective_activation_checkpointing: false
+    selective_activation_checkpointing: true  # Enabled for memory efficiency
     tp_size: 1
 
 model:
-    # These will be overridden by the wrapper using the config file
-    dim: 1024
-    n_layers: 8
-    n_heads: 8
-    # Path to the user's model config (relative to project root)
-    modern_ccnn_config_path: "examples/text_pretraining/zyda_1d_hyena.py"
+    # ~150M parameter transformer (similar scale to Hyena for comparison)
+    dim: 768
+    n_layers: 12
+    n_heads: 12
+    # No modern_ccnn_config_path -> uses native LMTransformer
 
 data:
     root_dir: "data"
     sources:
         fineweb_edu_10bt_shuffled: 1.0
-    batch_size: 8
+    batch_size: 2
+
     prefetch_size: 64
     seq_len: 2048
     n_views: 2
     load_async: true
+    add_bos: true
+    add_eos: true
     tokenizer:
         name: "nvidia/Mistral-NeMo-Minitron-8B-Base"
 
