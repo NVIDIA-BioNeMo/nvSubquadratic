@@ -311,7 +311,8 @@ class LightningWrapperBase(pl.LightningModule):
         """Log the model architecture and parameter count to Weights & Biases once training starts."""
         super().on_fit_start()
 
-        if self.logger is not None:
+        # Only log on rank 0 to avoid DDP issues with WandB
+        if self.logger is not None and self.global_rank == 0:
             model_repr = str(self.network)
             # Log as HTML wrapped in <pre> to preserve formatting in the UI.
             self.logger.experiment.log(
