@@ -48,6 +48,48 @@ python -m nvsubquadratic.train \
 
 | Model | Hidden Dim | Approx Params |
 | ----- | ---------- | ------------- |
-| XS    | 160        | ~700K-1M      |
-| S     | 256        | ~1.8M-2.2M    |
-| M     | 512        | ~7M-9M        |
+| XS    | 160        | ~800K         |
+| S     | 256        | ~2M           |
+| M     | 416        | ~5M           |
+
+## Max Batch Sizes (80GB H100)
+
+Due to 3D FFT convolutions requiring fp32 internally, memory is the main constraint.
+
+| Model | fp32 max | bf16-mixed max |
+| ----- | -------- | -------------- |
+| XS    | 20       | 22             |
+| S     | 12       | 14             |
+| M     | 7        | 8              |
+
+To achieve effective batch size 64, use gradient accumulation:
+
+```bash
+# XS: batch=16, accum=4 -> effective 64
+sbatch run_cxis.sh examples/.../ccnn_hyena_xs.py \
+    train.precision=bf16-mixed \
+    dataset.base_datamodule_cfg.batch_size=16 \
+    train.accumulate_grad_steps=4
+
+# S: batch=8, accum=8 -> effective 64
+sbatch run_cxis.sh examples/.../ccnn_hyena_s.py \
+    train.precision=bf16-mixed \
+    dataset.base_datamodule_cfg.batch_size=8 \
+    train.accumulate_grad_steps=8
+
+# M: batch=8, accum=8 -> effective 64
+sbatch run_cxis.sh examples/.../ccnn_hyena_m.py \
+    train.precision=bf16-mixed \
+    dataset.base_datamodule_cfg.batch_size=8 \
+    train.accumulate_grad_steps=8
+```
+
+Or use multi-GPU DDP:
+
+```bash
+# 4 GPUs with batch=16 each -> effective 64
+sbatch --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=8 run_cxis.sh \
+    examples/.../ccnn_hyena_xs.py \
+    train.precision=bf16-mixed \
+    dataset.base_datamodule_cfg.batch_size=16
+```
