@@ -44,6 +44,13 @@ ______________________________________________________________________
 | ccnn_mamba_patchify_m  | Mamba        | Yes      | M    | p=4   | ✅ 0.0050     |
 | ccnn_attn_patchify_s   | Attention    | Yes      | S    | p=8   | ✅ 0.1256     |
 | ccnn_attn_patchify_m   | Attention    | Yes      | M    | p=8   | ✅ 0.0743     |
+| ccnn_delta_hyena_xs    | Delta-Hyena  | No       | XS   | -     | Running       |
+| ccnn_delta_hyena_s     | Delta-Hyena  | No       | S    | -     | Running       |
+| ccnn_delta_hyena_m     | Delta-Hyena  | No       | M    | -     | Running       |
+| ccnn_delta_hyena_patchify_xs | Delta-Hyena | Yes | XS | p=2 | Running |
+| ccnn_delta_hyena_patchify_s  | Delta-Hyena | Yes | S | p=2 | Running |
+| ccnn_delta_hyena_patchify_m  | Delta-Hyena | Yes | M | p=2 | Running |
+| ccnn_reasoning_delta_hyena_xs | Reasoning Delta | No | XS* | r=4 | Running |
 
 ______________________________________________________________________
 
@@ -223,5 +230,14 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-01-26
-**Status**: ✅ All non-patchify S/M experiments completed!
+**Last Updated**: 2026-01-29
+**Status**: 🚀 Benchmarking optimized Delta-Hyena and Reasoning Delta-Hyena on `geodude` partition (RTX A5000). Batch size reduced to 32 to fit 24GB VRAM.
+
+**Active Jobs (Parallel Scan Optimized)**:
+- ccnn_delta_hyena_xs: 121209
+- ccnn_delta_hyena_s: 121210
+- ccnn_delta_hyena_m: 121211
+- ccnn_delta_hyena_patchify_xs: 121212
+- ccnn_delta_hyena_patchify_s: 121213
+- ccnn_delta_hyena_patchify_m: 121214
+- ccnn_reasoning_delta_hyena_xs: 121215

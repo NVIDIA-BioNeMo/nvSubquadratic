@@ -1,13 +1,11 @@
 # TODO: Add license header here
 
-"""EMNIST Spatial Recall 2D (Color Conditioning) - Hyena S (No Patchify).
+"""EMNIST Spatial Recall 2D (Color Conditioning) - Delta-Hyena S (No Patchify).
 
 Model Size: S (Small)
 - Hidden dim: 256
 
 Task: 4 items on canvas with colored frames, output digit in matching color.
-Input: 3-channel RGB with colored bounding boxes.
-Output: 3-channel RGB digit colored with frame color.
 """
 
 import examples.spatial_recall_2d.mixer_defaults as spatial_recall_2d_mixer_defaults
@@ -22,7 +20,7 @@ from nvsubquadratic.lazy_config import PLACEHOLDER
 
 
 # Dataset-specific parameters
-BATCH_SIZE = 32 # was 64
+BATCH_SIZE = 32
 TARGET_SIZE = 16
 CANVAS_SIZE = 64
 NUM_ITEMS = 4
@@ -37,18 +35,21 @@ TRAINING_ITERATIONS = 50_000
 
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for EMNIST color conditioning with Hyena S (no patchify)."""
+    """Get the configuration for EMNIST color conditioning with Delta-Hyena S (no patchify)."""
     config = spatial_recall_2d_base_experiment_config(
         in_channels=INPUT_CHANNELS,
         out_channels=OUTPUT_CHANNELS,
         hidden_dim=HIDDEN_DIM,
         training_iterations=TRAINING_ITERATIONS,
-        wandb_job_group="spatial_recall_2d_emnist_color_conditioning_s",
+        wandb_job_group="spatial_recall_2d_emnist_color_conditioning_delta_s",
     )
 
-    # Mixer: Hyena with SIREN kernel
+    # Mixer: Associative Delta-Hyena
     assert config.net.block_cfg.sequence_mixer_cfg == PLACEHOLDER
-    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_2d_mixer_defaults.get_hyena_mixer_cfg()
+    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_2d_mixer_defaults.get_delta_hyena_mixer_cfg(
+        num_heads=8,
+        gamma_init=0.1,
+    )
 
     # Dataset
     assert config.dataset == PLACEHOLDER
@@ -61,7 +62,7 @@ def get_config() -> ExperimentConfig:
         placement="random",
         with_mask=False,
         normalize_input=True,
-        colored_label=True,  # Output colored digit (RGB)
+        colored_label=True,
     )
 
     return config
