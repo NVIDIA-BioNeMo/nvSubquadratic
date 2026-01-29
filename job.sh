@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=nvsubq
-# #SBATCH --partition=performance
-#SBATCH --partition=capacity
+#SBATCH --partition=performance
+# #SBATCH --partition=capacity
 #SBATCH --time=48:00:00
-#SBATCH --gres=gpu:4
-#SBATCH --mem=120G
-#SBATCH --cpus-per-task=128
+#SBATCH --gres=gpu:2
+#SBATCH --mem=60G
+#SBATCH --cpus-per-task=64
 
 # Activate venv
 source ~/miniforge3/etc/profile.d/conda.sh
@@ -18,20 +18,7 @@ export PYTHONPATH=.
 
 # Language Experiment
 export TOKENIZERS_PARALLELISM=false    # Disable tokenizers parallelism to avoid segfaults
-# PYTHONPATH=. python experiments/run.py --config examples/text_pretraining/zyda_1d_hyena.py
-# PYTHONPATH=. python experiments/run.py --config examples/text_pretraining/zyda_1d_attention.py
-# python scripts/evaluate_with_lingua.py \
-#     --ckpt_path /home/dwessel/code/nvSubquadratic-private/runs/DW_examples_text_pretraining_zyda_1d_attention_2025-12-04-22-48-58/checkpoints/last.ckpt \
-#     --config_path examples/text_pretraining/zyda_1d_attention.py \
-#     --tasks arc_easy,hellaswag \
-#     --batch_size 8 \
-#     --device cuda
 
-PYTHONPATH=lingua_clone:. torchrun --nproc_per_node=4 lingua_clone/apps/main/train.py \
-    config=examples/text_pretraining/lingua_hyena_train.yaml \
-    dump_dir=results/hyena_fineweb10bt_lingua
-
-# ImageNet Experiment
-# python experiments/run.py --config examples/imagenet_classification/tiny_ccnn_7_512_hyena_circular.py
-# wandb agent equivariance/nvSubquadratic-private-experiments/9bt1u7le
-# PYTHONPATH=. python experiments/run.py --config examples/text_pretraining/zyda_1d_attention.py
+PYTHONPATH=lingua_clone:. torchrun --nproc_per_node=2 lingua_clone/apps/main/train.py \
+    config=examples/text_pretraining/lingua_hyena_train_balanced.yaml \
+    dump_dir=results/hyena_fineweb10bt_lingua_balanced

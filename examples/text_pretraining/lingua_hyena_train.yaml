@@ -19,7 +19,8 @@ distributed:
     tp_size: 1
 
 model:
-    # These will be overridden by the wrapper using the config file
+    # These will be overridden by the wrapper using the config file of
+    # the nvSubquadratic config.
     dim: 1024
     n_layers: 8
     n_heads: 8

@@ -45,10 +45,7 @@ FFT_FUNCTIONS = {
     },
     "causal": {
         1: (causal_fftconv1d_bhl_w_reshape, causal_fftconv1d_bhl),
-<<<<<<< HEAD
         # Causal is only supported for 1D (sequences)
-=======
->>>>>>> 9e70083 (Initial commit text pretraining)
     },
 }
 
@@ -63,12 +60,8 @@ class CKConvND(torch.nn.Module):
         kernel_cfg: LazyConfig,
         mask_cfg: LazyConfig,
         grid_type: Literal["double", "single"],
-<<<<<<< HEAD
-        fft_padding: Literal["zero", "circular"],
+        fft_padding: Literal["zero", "circular", "causal"] = "zero",
         is_causal: bool = False,
-=======
-        fft_padding: Literal["zero", "circular", "causal"],
->>>>>>> 9e70083 (Initial commit text pretraining)
     ):
         """Initialize the CKConvND.
 
@@ -81,21 +74,20 @@ class CKConvND(torch.nn.Module):
             fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
                 cropping (conventional FFT-based conv). 'circular' uses periodic
                 (wrap-around) convolution implemented via frequency-domain phase ramps.
-<<<<<<< HEAD
-                Must be 'zero' when is_causal=True.
+                'causal' uses causal convolution (1D only).
             is_causal: If True, use causal (left-only) convolution where output at position i
                 only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
-=======
-                'causal' uses causal convolution (1D only).
->>>>>>> 9e70083 (Initial commit text pretraining)
+                If fft_padding='causal', is_causal is implicitly set to True.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular", "causal"], (
             f"Invalid FFT padding: {fft_padding}. Must be 'zero', 'circular', or 'causal'."
         )
-        if is_causal:
+        # Consolidate causality
+        if fft_padding == "causal" or is_causal:
+            is_causal = True
+            fft_padding = "causal"
             assert data_dim == 1, f"Causal CKConvND only supports 1D inputs. Got {data_dim}D."
-            assert fft_padding == "zero", f"Causal CKConvND requires fft_padding='zero'. Got '{fft_padding}'."
         if fft_padding == "circular":
             # Circular (periodic) convolution only makes sense with kernel size == input size,
             # which corresponds to 'single' grid type in this CKConv setup.
