@@ -30,7 +30,7 @@ from typing import Literal
 import torch
 
 from experiments.callbacks.image_grid_val_visualization import ValidationVolumeGridCallback
-from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -182,9 +182,15 @@ def base_experiment_config(
 
     # Training config
     config.train = TrainConfig(
+        precision="bf16-mixed",  # Use bf16 mixed precision for 3D experiments
         batch_size="${dataset.base_datamodule_cfg.batch_size}",
         iterations=training_iterations,
         grad_clip=grad_clip,
+    )
+
+    # Trainer config - checkpoint every 2k steps to avoid losing progress on crashes
+    config.trainer = TrainerConfig(
+        checkpoint_every_n_steps=2000,
     )
 
     # Wandb config

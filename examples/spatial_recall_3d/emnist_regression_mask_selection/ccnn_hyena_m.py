@@ -10,12 +10,12 @@
 
 Model Size: M (Medium)
 - Hidden dim: 416
-- Params: ~4.5M-5M
+- Params: ~5.2M (similar to 2D version)
 
 Size Reference:
 - XS: ~160 channels (~700K-1M params)
 - S:  ~256 channels (~1.8M-2.2M params)
-- M:  ~416 channels (~4.5M-5M params)
+- M:  ~416 channels (~5M params)
 """
 
 import examples.spatial_recall_3d.mixer_defaults as spatial_recall_3d_mixer_defaults
@@ -30,7 +30,7 @@ from nvsubquadratic.lazy_config import PLACEHOLDER
 
 
 # Dataset-specific parameters
-BATCH_SIZE = 64
+BATCH_SIZE = 8  # Smaller batch due to larger model
 TARGET_SIZE = 16
 CANVAS_SIZE = 64  # H and W dimensions
 CANVAS_DEPTH = 8  # D dimension
@@ -43,7 +43,7 @@ HIDDEN_DIM = 416
 NUM_ITEMS = 4  # target + 3 distractors
 
 # Training parameters
-TRAINING_ITERATIONS = 20_000  # ~2 epochs @ BS=64
+TRAINING_ITERATIONS = 50_000
 
 
 def get_config() -> ExperimentConfig:
@@ -60,6 +60,9 @@ def get_config() -> ExperimentConfig:
     # Mixer: Hyena with SIREN kernel
     assert config.net.block_cfg.sequence_mixer_cfg == PLACEHOLDER
     config.net.block_cfg.sequence_mixer_cfg = spatial_recall_3d_mixer_defaults.get_hyena_mixer_cfg()
+
+    # Enable chunked FFT conv to reduce peak memory (trades compute for memory)
+    config.net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.use_chunked_fftconv = True
 
     # Dataset
     assert config.dataset == PLACEHOLDER

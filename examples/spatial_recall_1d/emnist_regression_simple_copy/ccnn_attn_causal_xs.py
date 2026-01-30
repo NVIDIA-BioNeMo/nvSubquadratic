@@ -53,7 +53,7 @@ def get_config() -> ExperimentConfig:
         out_channels=OUTPUT_CHANNELS,
         hidden_dim=HIDDEN_DIM,
         training_iterations=TRAINING_ITERATIONS,
-        wandb_job_group="spatial_recall_1d_emnist_regression_simple_copy_xs",
+        wandb_job_group="spatial_recall_1d_emnist_simple_copy_xs",
     )
 
     # Mixer: Multi-head self-attention

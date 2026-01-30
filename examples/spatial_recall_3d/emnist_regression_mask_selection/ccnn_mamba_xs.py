@@ -1,6 +1,6 @@
 # TODO: Add license header here
 
-"""EMNIST Spatial Recall 3D - Mask Selection - Hyena XS (Extra-Small).
+"""EMNIST Spatial Recall 3D - Mask Selection - Mamba XS (Extra-Small).
 
 3D Spatial Recall Task with Mask Selection:
 - Multiple 2D images placed on depth slices of a 3D volume [D, H, W]
@@ -9,12 +9,12 @@
 - Must recall target at back-bottom-right corner (last depth slice)
 
 Model Size: XS (Extra-Small)
-- Hidden dim: 160
-- Params: ~767K (similar to 2D version)
+- Hidden dim: 96 (smaller to match param count)
+- Params: ~0.78M (similar to 2D version)
 
 Size Reference:
-- XS: ~160 channels (~700K-1M params)
-- S:  ~256 channels (~1.8M-2.2M params)
+- XS: ~96 channels (~0.78M params for Mamba)
+- S:  ~160 channels (~1.8M-2.2M params)
 """
 
 import examples.spatial_recall_3d.mixer_defaults as spatial_recall_3d_mixer_defaults
@@ -34,10 +34,10 @@ TARGET_SIZE = 16
 CANVAS_SIZE = 64  # H and W dimensions
 CANVAS_DEPTH = 8  # D dimension
 
-# Network parameters - XS size
+# Network parameters - XS size (smaller hidden for Mamba to match params)
 INPUT_CHANNELS = 2  # Grayscale + Mask
 OUTPUT_CHANNELS = 1  # Grayscale target
-HIDDEN_DIM = 160
+HIDDEN_DIM = 96  # Smaller to match ~0.78M params
 
 NUM_ITEMS = 4  # target + 3 distractors
 
@@ -46,7 +46,7 @@ TRAINING_ITERATIONS = 20_000  # ~2 epochs @ BS=64
 
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for EMNIST spatial recall 3D mask selection with Hyena XS."""
+    """Get the configuration for EMNIST spatial recall 3D mask selection with Mamba XS."""
     config = spatial_recall_3d_base_experiment_config(
         in_channels=INPUT_CHANNELS,
         out_channels=OUTPUT_CHANNELS,
@@ -56,9 +56,12 @@ def get_config() -> ExperimentConfig:
         target_size=TARGET_SIZE,
     )
 
-    # Mixer: Hyena with SIREN kernel
+    # Mixer: Mamba (bidirectional)
     assert config.net.block_cfg.sequence_mixer_cfg == PLACEHOLDER
-    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_3d_mixer_defaults.get_hyena_mixer_cfg()
+    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_3d_mixer_defaults.get_mamba_mixer_cfg(
+        headdim=32,
+        bidirectional=True,
+    )
 
     # Dataset
     assert config.dataset == PLACEHOLDER

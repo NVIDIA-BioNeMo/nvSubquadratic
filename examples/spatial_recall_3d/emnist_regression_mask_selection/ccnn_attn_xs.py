@@ -1,6 +1,6 @@
 # TODO: Add license header here
 
-"""EMNIST Spatial Recall 3D - Mask Selection - Hyena XS (Extra-Small).
+"""EMNIST Spatial Recall 3D - Mask Selection - Attention XS (Extra-Small).
 
 3D Spatial Recall Task with Mask Selection:
 - Multiple 2D images placed on depth slices of a 3D volume [D, H, W]
@@ -10,10 +10,10 @@
 
 Model Size: XS (Extra-Small)
 - Hidden dim: 160
-- Params: ~767K (similar to 2D version)
+- Params: ~0.72M (similar to 2D version)
 
 Size Reference:
-- XS: ~160 channels (~700K-1M params)
+- XS: ~160 channels (~0.72M params for Attention)
 - S:  ~256 channels (~1.8M-2.2M params)
 """
 
@@ -38,6 +38,7 @@ CANVAS_DEPTH = 8  # D dimension
 INPUT_CHANNELS = 2  # Grayscale + Mask
 OUTPUT_CHANNELS = 1  # Grayscale target
 HIDDEN_DIM = 160
+NUM_HEADS = 8  # head_dim = 160/8 = 20
 
 NUM_ITEMS = 4  # target + 3 distractors
 
@@ -46,7 +47,7 @@ TRAINING_ITERATIONS = 20_000  # ~2 epochs @ BS=64
 
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for EMNIST spatial recall 3D mask selection with Hyena XS."""
+    """Get the configuration for EMNIST spatial recall 3D mask selection with Attention XS."""
     config = spatial_recall_3d_base_experiment_config(
         in_channels=INPUT_CHANNELS,
         out_channels=OUTPUT_CHANNELS,
@@ -56,9 +57,12 @@ def get_config() -> ExperimentConfig:
         target_size=TARGET_SIZE,
     )
 
-    # Mixer: Hyena with SIREN kernel
+    # Mixer: Attention (no RoPE for 3D - head_dim must be divisible by 6)
     assert config.net.block_cfg.sequence_mixer_cfg == PLACEHOLDER
-    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_3d_mixer_defaults.get_hyena_mixer_cfg()
+    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_3d_mixer_defaults.get_attention_mixer_cfg(
+        num_heads=NUM_HEADS,
+        use_rope=False,  # Disable RoPE for 3D (head_dim=20 not divisible by 6)
+    )
 
     # Dataset
     assert config.dataset == PLACEHOLDER

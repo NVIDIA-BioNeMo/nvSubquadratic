@@ -18,9 +18,20 @@ ______________________________________________________________________
 
 ### Baseline Experiments
 
-| Wandb ID | Model    | Hidden Dim | Val Loss | Notes            |
-| -------- | -------- | ---------- | -------- | ---------------- |
-| TBD      | Hyena XS | 160        | TBD      | Initial baseline |
+| Wandb ID | Model    | Hidden Dim | Batch Size | GPUs | Val Loss | Notes                           |
+| -------- | -------- | ---------- | ---------- | ---- | -------- | ------------------------------- |
+| eu3z4nwd | Hyena XS | 160        | 64 (16×4)  | 4    | 0.0487   | DDP, bf16-mixed, 50k iterations |
+| 835xlrmz | Hyena XS | 160        | 64 (16×4)  | 1    | running  | Resumed from 31k (grad accum)   |
+| n6k6b1u2 | Mamba XS | 96         | 64 (16×4)  | 4    | 0.522    | DDP, bf16-mixed, 50k iterations |
+| 0nbqdnkh | Attn XS  | 160        | 64 (16×4)  | 4    | 0.884    | DDP, bf16-mixed, 50k iterations |
+
+### Medium (M) Size Experiments
+
+| Wandb ID | Model   | Hidden Dim | Batch Size | GPUs | Val Loss | Notes                            |
+| -------- | ------- | ---------- | ---------- | ---- | -------- | -------------------------------- |
+| hqjb6zi7 | Attn M  | 384        | 64 (8×8)   | 8    | running  | DDP, bf16-mixed, 50k iterations  |
+| p45sg1q8 | Mamba M | 256        | 64 (8×8)   | 8    | running  | DDP, bf16-mixed, 50k iterations  |
+| j3e6p849 | Hyena M | 416        | 64 (8×8)   | 8    | running  | DDP, bf16-mixed, chunked_fftconv |
 
 ______________________________________________________________________
 
