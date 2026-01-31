@@ -91,6 +91,15 @@ class Hyena(torch.nn.Module):
             self._rope2d_cache = {}
             self._rope3d_cache = {}
 
+    def extra_repr(self) -> str:
+        """Return extra representation string for the module."""
+        # Get is_causal from global_conv if it has that attribute
+        is_causal = getattr(self.global_conv, "is_causal", None)
+        parts = [f"apply_qk_norm={self.apply_qk_norm}", f"use_rope={self.use_rope}"]
+        if is_causal is not None:
+            parts.append(f"is_causal={is_causal}")
+        return ", ".join(parts)
+
     def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
         """Precompute and cache 1D RoPE tables for input of length seq_len.
 
