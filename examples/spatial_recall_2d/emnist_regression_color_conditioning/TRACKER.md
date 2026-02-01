@@ -44,13 +44,13 @@ ______________________________________________________________________
 | ccnn_mamba_patchify_m  | Mamba        | Yes      | M    | p=4   | ✅ 0.0050     |
 | ccnn_attn_patchify_s   | Attention    | Yes      | S    | p=8   | ✅ 0.1256     |
 | ccnn_attn_patchify_m   | Attention    | Yes      | M    | p=8   | ✅ 0.0743     |
-| ccnn_delta_hyena_xs    | Delta-Hyena  | No       | XS   | -     | Running       |
-| ccnn_delta_hyena_s     | Delta-Hyena  | No       | S    | -     | Running       |
-| ccnn_delta_hyena_m     | Delta-Hyena  | No       | M    | -     | Running       |
-| ccnn_delta_hyena_patchify_xs | Delta-Hyena | Yes | XS | p=2 | Running |
-| ccnn_delta_hyena_patchify_s  | Delta-Hyena | Yes | S | p=2 | Running |
-| ccnn_delta_hyena_patchify_m  | Delta-Hyena | Yes | M | p=2 | Running |
-| ccnn_reasoning_delta_hyena_xs | Reasoning Delta | No | XS* | r=4 | Running |
+| ccnn_delta_hyena_xs    | Delta-Hyena  | No       | XS   | -     | ❌ OOM        |
+| ccnn_delta_hyena_s     | Delta-Hyena  | No       | S    | -     | ❌ OOM        |
+| ccnn_delta_hyena_m     | Delta-Hyena  | No       | M    | -     | ❌ OOM        |
+| ccnn_delta_hyena_patchify_xs | Delta-Hyena | Yes | XS | p=2 | 🔄 Running (0.045) |
+| ccnn_delta_hyena_patchify_s  | Delta-Hyena | Yes | S | p=2 | 🔄 Running |
+| ccnn_delta_hyena_patchify_m  | Delta-Hyena | Yes | M | p=2 | ❌ OOM |
+| ccnn_reasoning_delta_hyena_xs | Reasoning Delta | No | XS* | r=4 | Not started |
 
 ______________________________________________________________________
 
@@ -230,14 +230,23 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-01-29
-**Status**: 🚀 Benchmarking optimized Delta-Hyena and Reasoning Delta-Hyena on `geodude` partition (RTX A5000). Batch size reduced to 32 to fit 24GB VRAM.
+**Last Updated**: 2026-02-01
+**Status**: 🔄 Delta-Hyena experiments on `geodude` partition (RTX A5000, 24GB VRAM).
 
-**Active Jobs (Parallel Scan Optimized)**:
-- ccnn_delta_hyena_xs: 121209
-- ccnn_delta_hyena_s: 121210
-- ccnn_delta_hyena_m: 121211
-- ccnn_delta_hyena_patchify_xs: 121212
-- ccnn_delta_hyena_patchify_s: 121213
-- ccnn_delta_hyena_patchify_m: 121214
-- ccnn_reasoning_delta_hyena_xs: 121215
+### Delta-Hyena Experiment Log
+
+**Latest SLURM Job Run (122061-122066)**:
+
+| Config                       | SLURM ID | Status       | Val Loss  | Notes                           |
+| ---------------------------- | -------- | ------------ | --------- | ------------------------------- |
+| ccnn_delta_hyena_xs          | 122061   | ❌ OOM       | -         | Crashed in delta_rule_parallel  |
+| ccnn_delta_hyena_s           | 122062   | ❌ OOM       | -         | Crashed in delta_rule_parallel  |
+| ccnn_delta_hyena_m           | 122063   | ❌ OOM       | -         | Crashed in fftconv2d            |
+| ccnn_delta_hyena_patchify_xs | 122064   | 🔄 Running   | **0.045** | Epoch 3 @ 55%, v_num=xlg1       |
+| ccnn_delta_hyena_patchify_s  | 122065   | 🔄 Running   | ~0.010 train | Epoch 0 complete, v_num=xdw9 |
+| ccnn_delta_hyena_patchify_m  | 122066   | ❌ OOM       | -         | Crashed in delta_rule_parallel  |
+
+**Observations**:
+- Non-patchify Delta-Hyena models run out of memory on 24GB GPUs
+- Only patchify variants (XS/S) can train on RTX A5000
+- Patchify_m also OOM - may need smaller batch size or larger GPU

@@ -19,8 +19,8 @@ for CONFIG in "${CONFIGS[@]}"; do
     
     cat <<EOT > "$SBATCH_SCRIPT"
 #!/bin/bash
-#SBATCH --account=all6000users
-#SBATCH --partition=all6000
+#SBATCH --account=geodudeusers
+#SBATCH --partition=geodude
 #SBATCH --gpus=1
 #SBATCH --job-name=${NAME}
 #SBATCH --ntasks=1
