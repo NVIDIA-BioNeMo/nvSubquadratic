@@ -16,18 +16,17 @@ import os
 
 import torch
 
-from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
-from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 
 
 # Dataset parameters
@@ -94,9 +93,8 @@ def get_config() -> ExperimentConfig:
             mixup_mode="batch",
         ),
         augment_cfg=LazyConfig(AugmentConfig)(
-            use_three_augment=False,
-            color_jitter=0.0,
-            rand_augment="rand-m9-n3-mstd0.5",
+            use_three_augment=True,
+            color_jitter=0.4,
         ),
     )
 
