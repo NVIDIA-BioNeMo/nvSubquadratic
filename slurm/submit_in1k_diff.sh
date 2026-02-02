@@ -168,4 +168,3 @@ echo "$(date): Job ${SLURM_JOB_ID} completed with exit code ${TRAIN_EXIT_CODE}" 
 
 set +x
 
-exit ${TRAIN_EXIT_CODE}

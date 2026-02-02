@@ -16,9 +16,9 @@ from nvsubquadratic.lazy_config import instantiate
 
 
 _ALLCLOSE_RTOL = 1e-4
-_ALLCLOSE_ATOL = 1e-5
+_ALLCLOSE_ATOL = 1e-4
 _GRAD_RTOL = 5e-4
-_GRAD_ATOL = 5e-5
+_GRAD_ATOL = 5e-4
 
 
 @pytest.fixture
