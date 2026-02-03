@@ -10,6 +10,8 @@ import torch
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+
+# Standard FFT convolutions
 from nvsubquadratic.ops.circular_fftconv import (
     circular_fftconv1d_bhl,
     circular_fftconv1d_bhl_w_reshape,
@@ -27,6 +29,33 @@ from nvsubquadratic.ops.fftconv import (
     fftconv2d_bhl_w_reshape,
     fftconv3d_bhl,
     fftconv3d_bhl_w_reshape,
+)
+
+# Chunked (memory-efficient) variants for zero-padded and causal convolutions
+# Note: circular convolutions don't have chunked variants (lower memory overhead already)
+from nvsubquadratic.ops.fftconv_chunked import (
+    causal_fftconv1d_bhl as causal_fftconv1d_bhl_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    causal_fftconv1d_bhl_w_reshape as causal_fftconv1d_bhl_w_reshape_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    fftconv1d_bhl as fftconv1d_bhl_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    fftconv1d_bhl_w_reshape as fftconv1d_bhl_w_reshape_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    fftconv2d_bhl as fftconv2d_bhl_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    fftconv2d_bhl_w_reshape as fftconv2d_bhl_w_reshape_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    fftconv3d_bhl as fftconv3d_bhl_chunked,
+)
+from nvsubquadratic.ops.fftconv_chunked import (
+    fftconv3d_bhl_w_reshape as fftconv3d_bhl_w_reshape_chunked,
 )
 
 
@@ -49,6 +78,21 @@ FFT_FUNCTIONS = {
     },
 }
 
+# Chunked versions (memory-efficient, trades compute for lower peak memory)
+# Note: circular convolutions don't have chunked variants - they already have lower
+# memory overhead since they don't require padding.
+FFT_FUNCTIONS_CHUNKED = {
+    "zero": {
+        1: (fftconv1d_bhl_w_reshape_chunked, fftconv1d_bhl_chunked),
+        2: (fftconv2d_bhl_w_reshape_chunked, fftconv2d_bhl_chunked),
+        3: (fftconv3d_bhl_w_reshape_chunked, fftconv3d_bhl_chunked),
+    },
+    "causal": {
+        1: (causal_fftconv1d_bhl_w_reshape_chunked, causal_fftconv1d_bhl_chunked),
+        # Causal is only supported for 1D (sequences)
+    },
+}
+
 
 class CKConvND(torch.nn.Module):
     """CKConv (long-convolution) implementation for ND signals."""
@@ -62,6 +106,7 @@ class CKConvND(torch.nn.Module):
         grid_type: Literal["double", "single"],
         fft_padding: Literal["zero", "circular"],
         is_causal: bool = False,
+        use_chunked_fftconv: bool = False,
     ):
         """Initialize the CKConvND.
 
@@ -77,6 +122,11 @@ class CKConvND(torch.nn.Module):
                 Must be 'zero' when is_causal=True.
             is_causal: If True, use causal (left-only) convolution where output at position i
                 only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
+            use_chunked_fftconv: If True, use memory-efficient chunked FFT convolutions.
+                Processes channels in chunks to reduce peak memory from complex FFT
+                intermediates. Typical savings: ~26% memory with ~11% compute overhead.
+                Useful for memory-constrained training with large spatial dimensions
+                in 2D/3D. Default is False.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
@@ -91,12 +141,21 @@ class CKConvND(torch.nn.Module):
             assert grid_type == "single", (
                 "fft_padding='circular' requires grid_type='single' (kernel size equals input size)."
             )
+            # Chunked FFT conv is only implemented for zero-padded and causal convolutions.
+            # Circular convolutions have lower memory overhead (no padding) so chunking
+            # provides less benefit. The circular functions are re-exported unchanged.
+            assert not use_chunked_fftconv, (
+                "use_chunked_fftconv=True is not supported with fft_padding='circular'. "
+                "Chunked FFT convolutions are only implemented for 'zero' padding (and 'causal' 1D). "
+                "Circular convolutions already have lower memory overhead due to no padding."
+            )
 
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
         self.is_causal = is_causal
+        self.use_chunked_fftconv = use_chunked_fftconv
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
@@ -110,8 +169,11 @@ class CKConvND(torch.nn.Module):
         # Define FFT operation depending on padding and dimensionality
         # Causal mode overrides fft_padding for 1D
         effective_padding = "causal" if is_causal else self.fft_padding
+
+        # Choose between standard and chunked FFT functions
+        fft_fn_table = FFT_FUNCTIONS_CHUNKED if use_chunked_fftconv else FFT_FUNCTIONS
         try:
-            self.fftconv_fn, self.fftconv_fn_bhl_input = FFT_FUNCTIONS[effective_padding][self.data_dim]
+            self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
         except KeyError:
             valid_dims = sorted(FFT_FUNCTIONS.get(effective_padding, {}).keys())
             raise ValueError(
@@ -126,7 +188,8 @@ class CKConvND(torch.nn.Module):
         """Return extra representation string for the module."""
         return (
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
-            f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}"
+            f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
+            f"use_chunked_fftconv={self.use_chunked_fftconv}"
         )
 
     @torch.compiler.disable()

@@ -195,7 +195,8 @@ class TestDiscreteMode:
             vocab_size=100,
         )
 
-        batch = {"input": torch.randint(0, 100, (4, 10))}
+        input_tensor = torch.randint(0, 100, (4, 10))
+        batch = {"input": input_tensor, "label": input_tensor, "condition": None}
         loss = wrapper.training_step(batch, batch_idx=0)
 
         assert loss.ndim == 0, "Loss should be scalar"
@@ -259,7 +260,8 @@ class TestContinuousMode:
             loss_type="mae",
         )
 
-        batch = {"input": torch.randn(4, 10, 1)}
+        input_tensor = torch.randn(4, 10, 1)
+        batch = {"input": input_tensor, "label": input_tensor, "condition": None}
         loss = wrapper.training_step(batch, batch_idx=0)
 
         assert loss.ndim == 0, "Loss should be scalar"
@@ -415,7 +417,8 @@ class TestEdgeCases:
             vocab_size=100,
         )
 
-        batch = {"input": torch.randint(0, 100, (1, 10))}  # Batch size 1
+        input_tensor = torch.randint(0, 100, (1, 10))  # Batch size 1
+        batch = {"input": input_tensor, "label": input_tensor, "condition": None}
         loss = wrapper.training_step(batch, batch_idx=0)
 
         assert loss.ndim == 0
@@ -430,7 +433,8 @@ class TestEdgeCases:
             vocab_size=100,
         )
 
-        batch = {"input": torch.randint(0, 100, (4, 2))}  # Length 2 -> 1 after shift
+        input_tensor = torch.randint(0, 100, (4, 2))  # Length 2 -> 1 after shift
+        batch = {"input": input_tensor, "label": input_tensor, "condition": None}
         loss = wrapper.training_step(batch, batch_idx=0)
 
         assert loss.ndim == 0

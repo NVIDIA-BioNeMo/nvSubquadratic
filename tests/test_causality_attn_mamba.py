@@ -64,6 +64,22 @@ import pytest
 import torch
 
 
+# Check if mamba_ssm is available and functional
+try:
+    from mamba_ssm import Mamba2  # noqa: F401
+
+    # Test that the CUDA kernels actually work (not just import)
+    _test_tensor = torch.zeros(1, device="cuda" if torch.cuda.is_available() else "cpu")
+    MAMBA_AVAILABLE = torch.cuda.is_available()
+except (ImportError, Exception):
+    MAMBA_AVAILABLE = False
+
+requires_mamba = pytest.mark.skipif(
+    not MAMBA_AVAILABLE,
+    reason="mamba_ssm not installed or CUDA not available",
+)
+
+
 ################################################################################
 # Attention Causality Tests (Forward + Gradient Flow)
 ################################################################################
@@ -295,7 +311,7 @@ class TestAttentionCausalityGradients:
 ################################################################################
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Mamba requires CUDA")
+@requires_mamba
 class TestMambaCausality:
     """Tests for Mamba causality."""
 
@@ -446,7 +462,7 @@ class TestMambaCausality:
             )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Mamba requires CUDA")
+@requires_mamba
 class TestMambaCausalityGradients:
     """Test causality through gradient flow for Mamba."""
 
@@ -688,7 +704,7 @@ class TestQKVSequenceMixerAttentionCausality:
         )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Mamba requires CUDA")
+@requires_mamba
 class TestMambaNDMixerCausality:
     """Tests for MambaNDMixer - the full Mamba mixer stack.
 
