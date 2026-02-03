@@ -142,6 +142,9 @@ PYTHON_CMD="export HF_HOME=${CONTAINER_DATA}/.hf && \
 export HF_HUB_CACHE=${CONTAINER_DATA}/.hf/hub && \
 export HF_DATASETS_CACHE=${CONTAINER_DATA}/.hf/datasets && \
 export TRANSFORMERS_CACHE=${CONTAINER_DATA}/.hf/transformers && \
+export WANDB_DIR=${CONTAINER_RESULTS}/wandb && \
+export WANDB_CACHE_DIR=${CONTAINER_RESULTS}/.cache/wandb && \
+export WANDB_DATA_DIR=${CONTAINER_RESULTS}/.wandbstage && \
 cd ${WORK_DIR} && \
 python -m experiments.run \
     --config ${CONFIG_PATH} \
