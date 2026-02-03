@@ -60,6 +60,7 @@ class WandbConfig:
     entity: str = "dromeroguzma"
 
     job_group: str = ""
+    run_id: Optional[str] = None  # Explicit W&B run ID for resuming or linking runs
 
 
 @dataclass

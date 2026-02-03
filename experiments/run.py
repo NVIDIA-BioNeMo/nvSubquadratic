@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
 from rich.tree import Tree
 
-import wandb
 from experiments.trainer import construct_trainer
 from experiments.utils.checkpointing import (
     download_checkpoint,
@@ -202,7 +202,11 @@ def main() -> None:
 
     # Generate or reuse run ID
     run_id_file = experiment_dir / "run.id"
-    if attach_run_id is not None:
+    if config.wandb.run_id is not None:
+        # Explicit run_id provided via config override
+        attach_run_id = config.wandb.run_id
+        run_id_file.write_text(attach_run_id)
+    elif attach_run_id is not None:
         # Use the run ID from W&B and save it locally
         run_id_file.write_text(attach_run_id)
     elif run_id_file.exists():

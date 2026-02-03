@@ -6,10 +6,10 @@ import warnings
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-import wandb
 from experiments.default_cfg import (
     PLACEHOLDER,
     ExperimentConfig,
@@ -311,7 +311,9 @@ class LightningWrapperBase(pl.LightningModule):
         """Log the model architecture and parameter count to Weights & Biases once training starts."""
         super().on_fit_start()
 
-        if self.logger is not None:
+        # Only log to WandB from the main process (rank 0) to avoid AttributeError
+        # on non-rank-0 processes where logger.experiment is a dummy/function.
+        if self.logger is not None and self.global_rank == 0:
             model_repr = str(self.network)
             # Log as HTML wrapped in <pre> to preserve formatting in the UI.
             self.logger.experiment.log(
