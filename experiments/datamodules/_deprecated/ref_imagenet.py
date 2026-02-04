@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as tv_datasets
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
+from timm.data.auto_augment import rand_augment_transform
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -52,8 +53,6 @@ class AugmentConfig:
     use_three_augment: bool = False
     color_jitter: float = 0.4
     rand_augment: Optional[str] = None  # e.g., 'rand-m9-n3-mstd0.5'
-    random_erasing_prob: float = 0.0
-    random_erasing_mode: str = "pixel"
 
 
 class ThreeAugment(torch.nn.Module):
@@ -274,8 +273,11 @@ class ImageNetDataModule(pl.LightningDataModule):
                         saturation=self.augment_cfg.color_jitter,
                     )
                 )
+                # 3-Augment (Gray, Solar, Blur)
+                ops.append(ThreeAugment())
 
             if self.augment_cfg is not None and self.augment_cfg.rand_augment:
+                # RandAugment
                 ops.append(
                     rand_augment_transform(
                         config_str=self.augment_cfg.rand_augment,
