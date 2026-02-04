@@ -103,8 +103,9 @@ def get_config() -> ExperimentConfig:
             mixup_mode="batch",
         ),
         augment_cfg=LazyConfig(AugmentConfig)(
-            use_three_augment=True,
-            color_jitter=0.4,
+            use_three_augment=False,
+            color_jitter=0.0,
+            rand_augment="rand-m9-n3-mstd0.5",
         ),
     )
 
