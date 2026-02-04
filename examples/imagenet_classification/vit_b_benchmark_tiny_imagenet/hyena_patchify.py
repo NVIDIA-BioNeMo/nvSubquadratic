@@ -1,11 +1,11 @@
 # TODO: Add license header here
 
-"""TinyImageNet Classification - Hyena with Patchification (ViT-B scale).
+"""ImageNet Classification - Hyena with Patchification (ViT-B scale).
 
 Model Size: ViT-B
 - Hidden dim: 768
 - Num blocks: 12
-- Patchification: patch_size=4 (64/4 = 16x16 = 256 tokens)
+- Patchification: patch_size=16 (224/16 = 14x14 = 196 tokens)
 
 This config uses Hyena (continuous kernel convolution) as the sequence mixer,
 with ViT-style patchification to reduce sequence length.
@@ -15,22 +15,20 @@ import os
 
 import torch
 
-from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset parameters
@@ -52,8 +50,8 @@ NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double"  # "single"
-FFT_PADDING = "zero"  # "circular"
+GRID_TYPE = "double" # "single"
+FFT_PADDING = "zero" # "circular"
 
 # Patchification parameters
 PATCH_SIZE = 4  # 64/4 = 16x16 = 256 tokens
@@ -65,14 +63,14 @@ KERNEL_NUM_LAYERS = 3
 KERNEL_EMBEDDING_DIM = 64
 KERNEL_OMEGA_0 = 30.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
-L_CACHE = 16  # NOTE: Set to patchified spatial dim (64/4=16), not original image size
+L_CACHE = 64 
 
 # Optimisation parameters
 TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 0.0  # NOTE: Hyena is known to work better without weight decay
+WEIGHT_DECAY = 0.0
 GRAD_CLIP = 1.0
 
 
@@ -113,7 +111,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # L_cache for patchified sequence length
-    L_CACHE = FINAL_IMAGE_SIZE // PATCH_SIZE  # 224/16 = 14
+    patchified_size = FINAL_IMAGE_SIZE // PATCH_SIZE  # 224/16 = 14
 
     config.net = LazyConfig(ClassificationResNet)(
         in_channels=INPUT_CHANNELS,
@@ -150,15 +148,7 @@ def get_config() -> ExperimentConfig:
                             use_bias=True,
                             hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                         ),
-                        mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim="${net.data_dim}",
-                            num_channels="${net.hidden_dim}",
-                            min_std=0.02,
-                            max_std=1.5,
-                            init_std_low=0.05,
-                            init_std_high=1.2,
-                            parametrization="direct",
-                        ),
+                        mask_cfg=LazyConfig(torch.nn.Identity)(),
                         grid_type=GRID_TYPE,
                         fft_padding=FFT_PADDING,
                     ),
@@ -172,7 +162,7 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-                    qk_norm_cfg=LazyConfig(L2Norm)(),
+                    apply_qk_norm=True,
                     use_rope=False,
                     rope_base=10000.0,
                 ),

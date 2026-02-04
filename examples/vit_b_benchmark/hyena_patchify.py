@@ -103,14 +103,9 @@ def get_config() -> ExperimentConfig:
             mixup_mode="batch",
         ),
         augment_cfg=LazyConfig(AugmentConfig)(
-<<<<<<< HEAD
             use_three_augment=False,
             color_jitter=0.0,
             rand_augment="rand-m9-n3-mstd0.5",
-=======
-            use_three_augment=True,
-            color_jitter=0.4,
->>>>>>> 1af06a5 (Update vit_benchmark)
         ),
     )
 
@@ -166,11 +161,7 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-<<<<<<< HEAD
-                    qk_norm_cfg=LazyConfig(L2Norm)(),
-=======
                     apply_qk_norm=True,
->>>>>>> 1af06a5 (Update vit_benchmark)
                     use_rope=False,
                     rope_base=10000.0,
                 ),
