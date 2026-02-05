@@ -4,6 +4,8 @@
 
 """Simple implementation of a ResNet for general purpose tasks."""
 
+from typing import Sequence
+
 import torch
 import torch.nn as nn
 
@@ -30,6 +32,12 @@ class ResidualNetwork(nn.Module):
         condition_in_proj_cfg (LazyConfig | None): Configuration for the condition input projection or None if no condition is used.
             If provided, the condition tensor is of shape [B, * spatial_dims_condition, hidden_dim].
             If not provided, the condition tensor is None.
+        target_size (int | tuple | None): Size of the readout region. Can be:
+            - int: Same size for all spatial dimensions (e.g., 16 for 16x16 in 2D)
+            - tuple: Different size per dimension. For 3D spatial recall where the target
+              is a 2D image on the last depth slice, use (1, H, W) to extract only the
+              last depth slice with HxW spatial region.
+            - None: No readout extraction (return full output)
     """
 
     def __init__(
@@ -45,7 +53,7 @@ class ResidualNetwork(nn.Module):
         block_cfg: LazyConfig,
         dropout_in_cfg: LazyConfig,
         condition_in_proj_cfg: LazyConfig | None = None,
-        target_size: int | None = None,
+        target_size: int | Sequence[int] | None = None,
     ):
         """Initialize the ResidualNetwork."""
         super().__init__()
@@ -82,7 +90,13 @@ class ResidualNetwork(nn.Module):
         self.out_proj = instantiate(out_proj_cfg)
 
         # Target size for readout -- only used for spatial recall tasks for now.
-        self.target_size = target_size
+        # Convert to tuple for consistent handling
+        if target_size is None:
+            self.target_size = None
+        elif isinstance(target_size, int):
+            self.target_size = (target_size,) * data_dim
+        else:
+            self.target_size = tuple(target_size)
 
     def _get_readout_region(self, x: torch.Tensor) -> torch.Tensor:
         """Get the readout region (bottom-right target_size region) of the input tensor.
@@ -91,34 +105,32 @@ class ResidualNetwork(nn.Module):
             x: Input tensor of shape [batch_size, *spatial_dims, out_channels].
 
         Returns:
-            torch.Tensor: Readout region of shape [batch_size, *(target_size,)*spatial_dims, out_channels].
+            torch.Tensor: Readout region. Shape depends on target_size:
+                - For target_size=(L,): [batch_size, L, out_channels]
+                - For target_size=(H, W): [batch_size, H, W, out_channels]
+                - For target_size=(D, H, W): [batch_size, D, H, W, out_channels]
+                - For target_size=(1, H, W) on 3D input: [batch_size, H, W, out_channels] (squeezed)
         """
-        if x.ndim == 1 + 2:  # 1D input - [batch_size, seq_len, hidden_dim]
-            return x[:, -self.target_size :, :]
-        elif x.ndim == 1 + 3:  # 2D input - [batch_size, height, width, hidden_dim]
-            return x[:, -self.target_size :, -self.target_size :, :]
-        elif x.ndim == 1 + 4:  # 3D input - [batch_size, depth, height, width, hidden_dim]
-            return x[:, -self.target_size :, -self.target_size :, -self.target_size :, :]
-        else:
-            raise ValueError(f"Unexpected input dimension: {x.ndim}. Expected 1D, 2D or 3D spatial dimensions.")
+        spatial_ndim = x.ndim - 2  # Exclude batch and channel dims
 
-    def _get_readout_region(self, x: torch.Tensor) -> torch.Tensor:
-        """Get the readout region (bottom-right target_size region) of the input tensor.
+        if len(self.target_size) != spatial_ndim:
+            raise ValueError(
+                f"target_size has {len(self.target_size)} dimensions but input has {spatial_ndim} spatial dimensions. "
+                f"target_size={self.target_size}, input shape={x.shape}"
+            )
 
-        Args:
-            x: Input tensor of shape [batch_size, *spatial_dims, hidden_dim].
+        # Build slice/index for each spatial dimension
+        # x shape: [batch, *spatial_dims, channels]
+        # Using integer index (-1) auto-removes dimension, slice(-size, None) keeps it
+        slices = [slice(None)]  # batch dimension
+        for size in self.target_size:
+            if size == 1:
+                slices.append(-1)  # integer index removes dimension
+            else:
+                slices.append(slice(-size, None))
+        slices.append(slice(None))  # channel dimension
 
-        Returns:
-            torch.Tensor: Readout region of shape [batch_size, *(target_size,)*spatial_dims, out_channels].
-        """
-        if x.ndim == 1 + 2:  # 1D input - [batch_size, seq_len, hidden_dim]
-            return x[:, -self.target_size :, :]
-        elif x.ndim == 1 + 3:  # 2D input - [batch_size, height, width, hidden_dim]
-            return x[:, -self.target_size :, -self.target_size :, :]
-        elif x.ndim == 1 + 4:  # 3D input - [batch_size, depth, height, width, hidden_dim]
-            return x[:, -self.target_size :, -self.target_size :, -self.target_size :, :]
-        else:
-            raise ValueError(f"Unexpected input dimension: {x.ndim}. Expected 1D, 2D or 3D spatial dimensions.")
+        return x[tuple(slices)]
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Forward pass of the ResidualNetwork.

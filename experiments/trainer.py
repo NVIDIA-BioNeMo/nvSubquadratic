@@ -58,14 +58,19 @@ def construct_trainer(
     print(f"[checkpoint] Saving checkpoints to: {checkpoint_dir.resolve()}")
 
     # Callback for model checkpointing:
-    checkpoint_callback = pl_callbacks.ModelCheckpoint(
-        dirpath=str(checkpoint_dir),
-        monitor=monitor,
-        mode=cfg.scheduler.mode,  # Save on best validation accuracy
-        save_top_k=1,
-        save_last=True,  # Keep track of the model at the last epoch
-        verbose=True,
-    )
+    checkpoint_kwargs = {
+        "dirpath": str(checkpoint_dir),
+        "monitor": monitor,
+        "mode": cfg.scheduler.mode,  # Save on best validation accuracy
+        "save_top_k": 1,
+        "save_last": True,  # Keep track of the model at the last epoch
+        "verbose": True,
+    }
+    # Add step-based checkpointing if configured (useful for long runs to avoid losing progress)
+    if cfg.trainer.checkpoint_every_n_steps is not None:
+        checkpoint_kwargs["every_n_train_steps"] = cfg.trainer.checkpoint_every_n_steps
+        print(f"[checkpoint] Saving every {cfg.trainer.checkpoint_every_n_steps} steps")
+    checkpoint_callback = pl_callbacks.ModelCheckpoint(**checkpoint_kwargs)
 
     # Distributed training params
     assert cfg.device == "cuda", "Only CUDA training is supported."
