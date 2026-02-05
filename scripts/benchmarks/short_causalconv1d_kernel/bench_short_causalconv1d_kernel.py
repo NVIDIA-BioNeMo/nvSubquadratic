@@ -3,7 +3,7 @@
 
 By default runs three kernel sizes (short=7, medium=64, long=128), three
 sequence lengths (128, 4096, 16k), all three precisions (fp32, fp16, bf16), and:
-  - Plots speed: one subplot per seq length (128, 4096, 16k), CUDA vs PyTorch
+  - Plots speed: one subplot per seq length , CUDA vs PyTorch
   - Prints accuracy: max absolute diff vs reference for all precisions at each setting
 
 Example usage:
