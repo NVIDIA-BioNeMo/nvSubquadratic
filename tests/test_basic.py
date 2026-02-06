@@ -17,6 +17,13 @@ def test_package_import() -> None:
     assert nvsubquadratic is not None
 
 
+def test_nvsubq_import() -> None:
+    """Test that nvsubq can be imported successfully."""
+    import nvsubq
+
+    assert nvsubq is not None
+
+
 def test_torch_import() -> None:
     """Test that PyTorch is available (dependency check)."""
     import torch

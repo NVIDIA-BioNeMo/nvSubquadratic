@@ -27,6 +27,7 @@ dependencies = [
     "huggingface_hub",
     "subquadratic-ops-torch-cu12",
     "timm==1.0.22",
+    "nvsubq",
 ]
 
 [tool.setuptools.packages.find]
