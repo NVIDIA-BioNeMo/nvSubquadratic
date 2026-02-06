@@ -177,6 +177,8 @@ def plot_speed(
     seq_lens: list[int],
     dtypes: list[str],
     output_path: str | None,
+    batch: int,
+    channels: int,
 ) -> None:
     """Single plot: x = seq length, bar groups per kernel size (CUDA + PyTorch). fp32 only. Saves to script dir."""
     try:
@@ -248,10 +250,10 @@ def plot_speed(
     ax.set_xlabel("Sequence length")
     ax.set_xticks(x_pos)
     ax.set_xticklabels([str(s) for s in seq_lens])
-    ax.set_title("ShortCausalConv1dKernel (fp32): CUDA vs PyTorch by kernel size")
+    ax.set_title(f"ShortCausalConv1dKernel (fp32, batch={batch}, channels={channels}): CUDA vs PyTorch by kernel size")
+    ax.set_yscale("log")
     ax.legend(loc="upper right", ncol=2, fontsize=7)
     ax.grid(axis="y", alpha=0.3)
-    ax.set_ylim(bottom=0)
     fig.tight_layout()
 
     # Always save to script directory
@@ -271,8 +273,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Benchmark ShortCausalConv1dKernel: default = 3 kernel sizes (short/medium/long), plot speed, print accuracy"
     )
-    parser.add_argument("--batch", type=int, default=4, help="Batch size")
-    parser.add_argument("--channels", type=int, default=64, help="Channels")
+    parser.add_argument("--batch", type=int, default=256, help="Batch size")
+    parser.add_argument("--channels", type=int, default=128, help="Channels")
     parser.add_argument(
         "--seq-lens",
         type=int,
@@ -383,6 +385,8 @@ def main() -> None:
             seq_lens,
             list(args.dtypes),
             args.output,
+            args.batch,
+            args.channels,
         )
 
 
