@@ -3,8 +3,7 @@
 import pytest
 import torch
 import torch.nn.functional as F
-
-from nvsubquadratic.ops.short_causalconv1d_kernel import ShortCausalConv1dKernel, is_cuda_kernel_available
+from nvsubq.ops.short_causalconv1d_kernel import ShortCausalConv1dKernel, is_cuda_kernel_available
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
