@@ -3,11 +3,10 @@
 import pytest
 import torch
 import torch.nn.functional as F
-from nvsubq.ops.short_causalconv1d_kernel import ShortCausalConv1dKernel, is_cuda_kernel_available
+from nvsubq.ops.short_causalconv1d_kernel import ShortCausalConv1dKernel
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-@pytest.mark.skipif(not is_cuda_kernel_available(), reason="nvSubquadratic-ops kernel not available")
 class TestShortHyenaConv1d:
     """Test suite for ShortHyenaConv1d."""
 
@@ -245,9 +244,3 @@ class TestShortHyenaConv1d:
         assert y.shape == (batch_size, channels, seq_len)
         assert not torch.isnan(y).any()
         assert not torch.isinf(y).any()
-
-
-def test_cuda_kernel_availability() -> None:
-    """Test that we can check kernel availability."""
-    available = is_cuda_kernel_available()
-    assert isinstance(available, bool)
