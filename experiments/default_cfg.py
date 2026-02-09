@@ -53,7 +53,10 @@ class SchedulerConfig:
     warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
-    monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
+    monitor: Optional[str] = None
+    # WSD-specific parameters
+    decay_iterations_percentage: float = 0.1  # Fraction of training for decay phase
+    min_lr_ratio: float = 0.01  # Minimum LR as fraction of peak LR  # in case we'd like to track e.g. val/iou
 
 
 @dataclass
