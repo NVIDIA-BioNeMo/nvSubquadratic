@@ -51,18 +51,20 @@ ______________________________________________________________________
 
 ### Top 10 Results (50k iterations)
 
-| Rank | Architecture | Size | Patch | Val Loss   | WandB ID | Notes                     |
-| ---- | ------------ | ---- | ----- | ---------- | -------- | ------------------------- |
-| 1    | **Hyena**    | M    | none  | **0.0028** | tqbnoevm | ✅ **BEST!** Non-patchify |
-| 2    | Hyena        | M    | p=2   | 0.0043     | 8mm3bhl5 | ✅ Best patchify          |
-| 3    | Mamba        | M    | p=4   | 0.0050     | tnpmnw72 | ✅                        |
-| 4    | Hyena        | S    | p=2   | 0.0078     | vu5flsj1 | ✅                        |
-| 5    | Hyena        | XS   | p=2   | 0.0103     | hchvn3u7 | ✅ Best XS                |
-| 6    | Hyena        | S    | none  | 0.0139     | lxbrmb5e | ✅ Non-patchify (resumed) |
-| 7    | Mamba        | XS   | p=4   | 0.0159     | 103dn9dy | ✅                        |
-| 8    | Hyena        | XS   | none  | 0.0218     | pps0ivor | ✅ Non-patchify           |
-| 9    | Mamba        | S    | p=4   | 0.0231     | w0julwcz | ✅                        |
-| 10   | Mamba        | M    | none  | 0.0253     | y6k3jm36 | ✅ Non-patchify           |
+| Rank | Architecture    | Size | Patch | Val Loss      | WandB ID | Notes                      |
+| ---- | --------------- | ---- | ----- | ------------- | -------- | -------------------------- |
+| 1    | **Hyena GN(1)** | M    | none  | **0.0020** ⭐ | xhlhhvmf | ✅ **NEW BEST!** omega_0=1 |
+| 2    | Hyena           | M    | none  | 0.0023        | tvysdwo0 | ✅ omega_0=1               |
+| 3    | Hyena           | M    | none  | 0.0028        | tqbnoevm | ✅ Original baseline       |
+| 4    | Hyena           | M    | p=2   | 0.0043        | 8mm3bhl5 | ✅ Best patchify           |
+| 5    | Mamba           | M    | p=4   | 0.0050        | tnpmnw72 | ✅                         |
+| 6    | Hyena           | S    | p=2   | 0.0078        | vu5flsj1 | ✅                         |
+| 7    | Hyena           | XS   | p=2   | 0.0103        | hchvn3u7 | ✅ Best XS                 |
+| 8    | Hyena           | S    | none  | 0.0139        | lxbrmb5e | ✅ Non-patchify (resumed)  |
+| 9    | Mamba           | XS   | p=4   | 0.0159        | 103dn9dy | ✅                         |
+| 10   | Hyena           | XS   | none  | 0.0218        | pps0ivor | ✅ Non-patchify            |
+
+> **Note**: Multi-head experiments tracked separately in [TRACKER_MULTIHEAD.md](TRACKER_MULTIHEAD.md)
 
 ### S/M Results Comparison (50k iterations)
 
@@ -180,11 +182,12 @@ ______________________________________________________________________
 
 ## Key Findings
 
-1. **Hyena M non-patchify is BEST** (0.0028) - outperforms patchify p=2 (0.0043)!
+1. **Hyena GN(1) + omega_0=1 is NEW BEST** (0.0020) - 29% better than original baseline!
+1. **omega_0=1.0** produces smoother kernels → better performance
+1. **Hyena M non-patchify** outperforms patchify p=2 (0.0043) at M size
 1. **Patchify helps for smaller models** (XS/S), but not required at M size for Hyena
 1. **Mamba benefits from patchify** - p=4 patchify (0.005) beats non-patchify (0.025) at M
 1. **Attention struggles** with color conditioning regardless of configuration (best: 0.0743)
-1. **Scaling helps significantly** - M consistently beats S beats XS for all architectures
 1. **Architecture ranking**: Hyena >> Mamba >> Attention for color conditioning task
 
 ______________________________________________________________________
@@ -221,7 +224,17 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
+### Hyena Optimization Experiments
+
+| Config                 | omega_0 | Norm      | Val Loss      | WandB ID | Notes                      |
+| ---------------------- | ------- | --------- | ------------- | -------- | -------------------------- |
+| ccnn_hyena_m           | 10      | LayerNorm | 0.0028        | tqbnoevm | Original baseline          |
+| ccnn_hyena_m           | 1       | LayerNorm | 0.0023        | tvysdwo0 | omega_0=1.0                |
+| ccnn_hyena_m_groupnorm | 1       | GN(1)     | **0.0020** ⭐ | xhlhhvmf | **NEW BEST** GN(1)+omega=1 |
+
+**Key insight**: Lower omega_0 produces smoother SIREN kernels → better performance.
+
 ______________________________________________________________________
 
-**Last Updated**: 2026-01-26
-**Status**: ✅ All non-patchify S/M experiments completed!
+**Last Updated**: 2026-01-28
+**Status**: ✅ Complete. New SOTA: 0.0020 with GN(1) + omega_0=1.0

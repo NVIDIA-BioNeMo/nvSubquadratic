@@ -1,19 +1,8 @@
 # TODO: Add license header here
 
-"""EMNIST Spatial Recall 2D (Color Conditioning) - Hyena M (No Patchify).
+"""EMNIST Spatial Recall 2D (Color Conditioning) - Hyena M with GroupNorm.
 
-Model Size: M (Medium)
-- Hidden dim: 416
-- Params: ~5.2M
-
-Task: 4 items on canvas with colored frames, output digit in matching color.
-Input: 3-channel RGB with colored bounding boxes.
-Output: 3-channel RGB digit colored with frame color.
-
-Size Reference:
-- XS: ~160 channels (~700K-1M params)
-- S:  ~256 channels (~1.8M-2.2M params)
-- M:  ~416 channels (~5M params)
+Same as ccnn_hyena_m.py but uses GroupNorm instead of LayerNorm for pixelhyena_norm.
 """
 
 import examples.spatial_recall_2d.mixer_defaults as spatial_recall_2d_mixer_defaults
@@ -35,8 +24,8 @@ CANVAS_SIZE = 64
 NUM_ITEMS = 4
 
 # Network parameters - M size
-INPUT_CHANNELS = 3  # RGB with colored frames
-OUTPUT_CHANNELS = 3  # RGB output (digit in frame color)
+INPUT_CHANNELS = 3
+OUTPUT_CHANNELS = 3
 HIDDEN_DIM = 416
 
 # Training parameters
@@ -44,18 +33,20 @@ TRAINING_ITERATIONS = 50_000
 
 
 def get_config() -> ExperimentConfig:
-    """Get the configuration for EMNIST color conditioning with Hyena M (no patchify)."""
+    """Get config with GroupNorm instead of LayerNorm."""
     config = spatial_recall_2d_base_experiment_config(
         in_channels=INPUT_CHANNELS,
         out_channels=OUTPUT_CHANNELS,
         hidden_dim=HIDDEN_DIM,
         training_iterations=TRAINING_ITERATIONS,
-        wandb_job_group="spatial_recall_2d_emnist_color_conditioning_m",
+        wandb_job_group="spatial_recall_2d_emnist_color_conditioning_m_groupnorm",
     )
 
-    # Mixer: Hyena with SIREN kernel
+    # Mixer: Hyena with GroupNorm (per-group normalization)
     assert config.net.block_cfg.sequence_mixer_cfg == PLACEHOLDER
-    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_2d_mixer_defaults.get_hyena_mixer_cfg()
+    config.net.block_cfg.sequence_mixer_cfg = spatial_recall_2d_mixer_defaults.get_hyena_mixer_cfg(
+        norm_mode="groupnorm",
+    )
 
     # Dataset
     assert config.dataset == PLACEHOLDER
@@ -68,7 +59,7 @@ def get_config() -> ExperimentConfig:
         placement="random",
         with_mask=False,
         normalize_input=True,
-        colored_label=True,  # Output colored digit (RGB)
+        colored_label=True,
     )
 
     # Add LayerStatsCallback for debugging

@@ -300,6 +300,14 @@ class CKConvND(torch.nn.Module):
         else:
             shortcut = self.shortcut
 
+        # Cache kernel stats for debugging (only when enabled by LayerStatsCallback)
+        if getattr(self, "_cache_debug_stats", False):
+            with torch.no_grad():
+                self._debug_stats = {
+                    "norm": conv_kernel.norm().item(),
+                    "max_abs": conv_kernel.abs().max().item(),
+                }
+
         # Apply convolution
         out = self.apply_convolution(x, conv_kernel, shortcut, is_bhl_input)
 
