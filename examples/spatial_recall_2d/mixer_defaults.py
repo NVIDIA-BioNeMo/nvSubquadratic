@@ -27,6 +27,7 @@ import torch
 
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.ckconv_multihead_nd import CKConvMultiheadND
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -53,6 +54,8 @@ def get_hyena_mixer_cfg(
     apply_qk_norm: bool = True,
     use_rope: bool = False,
     rope_base: float = 10000.0,
+    # Normalization mode: "layernorm", "groupnorm", or "none"
+    norm_mode: str = "layernorm",
 ) -> LazyConfig:
     """Get Hyena mixer configuration with CKConvND and SIREN kernel.
 
@@ -87,7 +90,7 @@ def get_hyena_mixer_cfg(
                 bias=False,
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-            pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
+            pixelhyena_norm_cfg=pixelhyena_norm_cfg,  # GroupNorm or LayerNorm based on norm_groups
             apply_qk_norm=apply_qk_norm,
             use_rope=use_rope,
             rope_base=rope_base,
@@ -107,10 +110,24 @@ def get_hyena_mixer_cfg(
         apply_qk_norm: Whether to apply QK normalization.
         use_rope: Whether to use rotary position embeddings.
         rope_base: Base for rotary position embeddings.
+        norm_mode: Normalization mode - "layernorm" (default), "groupnorm" (per-head), or "none".
 
     Returns:
         LazyConfig for QKVSequenceMixer with Hyena.
     """
+    # Select normalization based on mode
+    if norm_mode == "layernorm":
+        pixelhyena_norm_cfg = LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}")
+    elif norm_mode == "groupnorm":
+        pixelhyena_norm_cfg = LazyConfig(torch.nn.GroupNorm)(
+            num_groups=1,
+            num_channels="${net.hidden_dim}",
+        )
+    elif norm_mode == "none":
+        pixelhyena_norm_cfg = LazyConfig(torch.nn.Identity)()
+    else:
+        raise ValueError(f"Unknown norm_mode: {norm_mode}. Use 'layernorm', 'groupnorm', or 'none'.")
+
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim="${net.hidden_dim}",
         mixer_cfg=LazyConfig(Hyena)(
@@ -141,7 +158,117 @@ def get_hyena_mixer_cfg(
                 bias=False,
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-            pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
+            pixelhyena_norm_cfg=pixelhyena_norm_cfg,
+            apply_qk_norm=apply_qk_norm,
+            use_rope=use_rope,
+            rope_base=rope_base,
+        ),
+        init_method_in=small_init,
+        init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
+    )
+
+
+# =============================================================================
+# Hyena Multi-Head Mixer (with dense within-head channel mixing)
+# =============================================================================
+
+
+def get_hyena_multihead_mixer_cfg(
+    # Multi-head params
+    num_heads: int = 8,
+    # SIREN kernel params
+    kernel_mlp_hidden_dim: int = 32,
+    kernel_num_layers: int = 3,
+    kernel_embedding_dim: int = 32,
+    kernel_omega_0: float = 10.0,
+    kernel_hidden_omega_0: float = 1.0,
+    # CKConv params
+    grid_type: str = "double",
+    fft_padding: str = "zero",
+    # Hyena params
+    apply_qk_norm: bool = True,
+    use_rope: bool = False,
+    rope_base: float = 10000.0,
+    # Normalization mode: "layernorm", "groupnorm", or "none"
+    norm_mode: str = "layernorm",
+) -> LazyConfig:
+    """Get Hyena Multi-Head mixer configuration with CKConvMultiheadND.
+
+    Unlike standard Hyena (depthwise conv), this uses dense within-head
+    channel mixing, similar to multi-head attention but for convolutions.
+
+    The kernel SIREN outputs [num_heads * head_dim * head_dim] values per
+    spatial position, enabling dense channel interaction within each head.
+
+    Args:
+        num_heads: Number of heads. head_dim = hidden_dim // num_heads.
+        kernel_mlp_hidden_dim: SIREN MLP hidden dimension.
+        kernel_num_layers: Number of SIREN MLP layers.
+        kernel_embedding_dim: SIREN embedding dimension.
+        kernel_omega_0: SIREN omega_0 for first layer.
+        kernel_hidden_omega_0: SIREN omega_0 for hidden layers.
+        grid_type: Grid type for CKConv ("single" or "double").
+        fft_padding: FFT padding mode ("zero" or "circular").
+        apply_qk_norm: Whether to apply QK normalization.
+        use_rope: Whether to use rotary position embeddings.
+        rope_base: Base for rotary position embeddings.
+        norm_mode: Normalization mode - "layernorm" (default), "groupnorm" (per-head), or "none".
+
+    Returns:
+        LazyConfig for QKVSequenceMixer with Multi-Head Hyena.
+    """
+    # For multi-head, SIREN out_dim = num_heads * head_dim * head_dim
+    # = num_heads * (hidden_dim / num_heads)² = hidden_dim² / num_heads
+    # We use interpolator to compute this at instantiation time
+
+    # Select normalization based on mode
+    if norm_mode == "layernorm":
+        pixelhyena_norm_cfg = LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}")
+    elif norm_mode == "groupnorm":
+        # GroupNorm with num_groups = num_heads for per-head normalization
+        pixelhyena_norm_cfg = LazyConfig(torch.nn.GroupNorm)(
+            num_groups=num_heads,
+            num_channels="${net.hidden_dim}",
+        )
+    elif norm_mode == "none":
+        pixelhyena_norm_cfg = LazyConfig(torch.nn.Identity)()
+    else:
+        raise ValueError(f"Unknown norm_mode: {norm_mode}. Use 'layernorm', 'groupnorm', or 'none'.")
+
+    return LazyConfig(QKVSequenceMixer)(
+        hidden_dim="${net.hidden_dim}",
+        mixer_cfg=LazyConfig(Hyena)(
+            global_conv_cfg=LazyConfig(CKConvMultiheadND)(
+                data_dim="${net.data_dim}",
+                hidden_dim="${net.hidden_dim}",
+                num_heads=num_heads,
+                kernel_cfg=LazyConfig(SIRENKernelND)(
+                    data_dim="${net.data_dim}",
+                    # out_dim = hidden_dim² / num_heads (for head_dim² per head)
+                    # Use interpolation to reference num_heads so overrides work correctly
+                    out_dim="${net.hidden_dim} * ${net.hidden_dim} // ${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.num_heads}",
+                    mlp_hidden_dim=kernel_mlp_hidden_dim,
+                    num_layers=kernel_num_layers,
+                    embedding_dim=kernel_embedding_dim,
+                    omega_0=kernel_omega_0,
+                    L_cache="${dataset.canvas_size}",
+                    use_bias=True,
+                    hidden_omega_0=kernel_hidden_omega_0,
+                ),
+                mask_cfg=LazyConfig(torch.nn.Identity)(),
+                grid_type=grid_type,
+                fft_padding=fft_padding,
+            ),
+            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                in_channels="3 * ${net.hidden_dim}",
+                out_channels="3 * ${net.hidden_dim}",
+                kernel_size=3,
+                groups="3 * ${net.hidden_dim}",
+                padding=1,
+                bias=False,
+            ),
+            gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
+            pixelhyena_norm_cfg=pixelhyena_norm_cfg,
             apply_qk_norm=apply_qk_norm,
             use_rope=use_rope,
             rope_base=rope_base,

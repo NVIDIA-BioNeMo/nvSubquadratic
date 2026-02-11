@@ -132,7 +132,8 @@ def construct_scheduler(
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
             T_max=total_iterations - warmup_iterations,
-            last_epoch=-warmup_iterations,
+            # Use -1 when no warmup (starting fresh), otherwise -warmup_iterations for chaining
+            last_epoch=-warmup_iterations if warmup_iterations > 0 else -1,
         )
     else:
         lr_scheduler = None
@@ -190,6 +191,7 @@ class LightningWrapperBase(pl.LightningModule):
         # Gradient tracking configuration
         self.should_track_grad_norm = cfg.train.track_grad_norm > 0
         self.grad_norm_interval = cfg.train.track_grad_norm
+        self.grad_clip_val = cfg.train.grad_clip
 
         # Placeholder for other outputs from the training and validation steps.
         self.other_outputs_train = []
@@ -303,9 +305,21 @@ class LightningWrapperBase(pl.LightningModule):
         return optim_dict
 
     def on_before_optimizer_step(self, optimizer):
-        """Log the gradient norm before the optimizer step every `grad_norm_interval` steps."""
+        """Log gradient norm and clipping stats before the optimizer step."""
         if self.should_track_grad_norm and self.global_step % self.grad_norm_interval == 0:
-            self.log_dict(grad_norm(self, norm_type=2))
+            # Compute gradient norm (before any clipping by trainer)
+            norms = grad_norm(self, norm_type=2)
+            self.log_dict(norms)
+
+            # Log gradient clipping stats if clipping is enabled
+            if self.grad_clip_val > 0:
+                total_norm = norms.get("grad_2.0_norm_total", 0.0)
+                if total_norm > 0:
+                    # Check if gradient would be clipped
+                    clip_coef = self.grad_clip_val / (total_norm + 1e-6)
+                    is_clipped = clip_coef < 1.0
+                    self.log("debug/grad_clip_ratio", min(clip_coef, 1.0), prog_bar=False, sync_dist=self.distributed)
+                    self.log("debug/grad_was_clipped", float(is_clipped), prog_bar=False, sync_dist=self.distributed)
 
     def on_fit_start(self):
         """Log the model architecture and parameter count to Weights & Biases once training starts."""

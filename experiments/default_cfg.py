@@ -22,7 +22,7 @@ class TrainConfig:
     iterations: int = -1
     batch_size: int = -1
     grad_clip: float = 0.0
-    track_grad_norm: int = -1  # -1 for no tracking
+    track_grad_norm: int = -1  # Log gradient norm every N steps (-1 to disable, try 100 for debugging)
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
     run_start_time: Optional[float] = None  # This is to keep track of the start time of the job
     run_time_limit_hours: Optional[float] = (
