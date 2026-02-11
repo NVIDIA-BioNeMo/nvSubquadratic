@@ -4,13 +4,13 @@ import warnings
 
 import torch
 
-from experiments.default_cfg import ExperimentConfig
-from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-
 
 # Suppress PyTorch Lightning warnings for cleaner output
 warnings.filterwarnings("ignore")
 sys.path.append(os.getcwd())
+
+from experiments.default_cfg import ExperimentConfig  # noqa: E402
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper  # noqa: E402
 
 
 # Mock Network
