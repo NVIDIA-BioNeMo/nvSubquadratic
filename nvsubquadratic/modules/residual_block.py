@@ -46,7 +46,9 @@ class ResidualBlock(torch.nn.Module):
             mlp_norm_cfg: LazyConfig for the MLP norm.
             dropout_cfg: LazyConfig for the dropout layer.
         """
-        if sequence_mixer_cfg.__target__ == torch.nn.Identity:
+        # sequence_mixer_cfg may be an already-instantiated module (e.g. from a factory)
+        _sm_target = getattr(sequence_mixer_cfg, "__target__", None)
+        if _sm_target is not None and _sm_target == torch.nn.Identity:
             assert sequence_mixer_norm_cfg.__target__ == torch.nn.Identity, (
                 "Sequence mixer norm must be Identity if sequence mixer is Identity"
             )
@@ -58,8 +60,11 @@ class ResidualBlock(torch.nn.Module):
             )
 
         super().__init__()
-        # Instantiate sequence mixer layer
-        self.sequence_mixer = instantiate(sequence_mixer_cfg)
+        # Instantiate sequence mixer layer (or use already-instantiated module)
+        if isinstance(sequence_mixer_cfg, torch.nn.Module):
+            self.sequence_mixer = sequence_mixer_cfg
+        else:
+            self.sequence_mixer = instantiate(sequence_mixer_cfg)
         # Instantiate input norm
         self.input_norm = instantiate(sequence_mixer_norm_cfg)
         # Exclude self.input_norm from the parameter group with weight decay
