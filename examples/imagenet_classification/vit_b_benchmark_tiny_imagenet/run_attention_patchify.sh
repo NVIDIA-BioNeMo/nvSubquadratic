@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=vit_b_hyena_patchify
+#SBATCH --job-name=vit_b_attention_patchify
 #SBATCH --partition=capacity
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
@@ -15,6 +15,6 @@ conda activate nvsubq
 cd /home/dwessel/code/nvSubquadratic-private
 export PYTHONPATH=.
 
-# Run training with Hyena + Patchify
+# Run training with Attention + Patchify
 python experiments/run.py \
-    --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/hyena_patchify.py
+    --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/attention_patchify.py

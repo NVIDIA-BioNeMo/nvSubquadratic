@@ -1,23 +1,12 @@
 # TODO: Add license header here
 
-"""TinyImageNet Classification - Attention (ViT-B scale, no patchification).
-
-Model Size: ViT-B
-- Hidden dim: 768
-- Num blocks: 12
-- Num heads: 12 (head_dim = 64)
-- No patchification (pixel-level, 64x64 = 4096 tokens)
-
-This config uses multi-head self-attention as the sequence mixer,
-operating on the full pixel sequence without any spatial downsampling.
-"""
+"""Config file for ImageNet classification using 2D Attention."""
 
 import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -31,22 +20,22 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 # Dataset parameters
 INPUT_CHANNELS = 3  # RGB images
-OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
+OUTPUT_CHANNELS = NUM_CLASSES = 1_000  # ImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 32
-IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", "data/tinyimagenet")
-HF_DATASET_NAME = "zh-plus/tiny-imagenet"
+BATCH_SIZE = 64
+IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
+HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 HF_DATASET_CONFIG = None
-IMAGE_SIZE = 64
+IMAGE_SIZE = 256
 FINAL_IMAGE_SIZE = 64
-PRECISION = "bf16-mixed"
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
 
-# Model parameters - ViT-B scale
-NUM_HIDDEN_CHANNELS = 768
-NUM_BLOCKS = 12
-NUM_HEADS = 12  # head_dim = 768/12 = 64
+# Model parameters
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 7
+NUM_HEADS = 8  # head_dim = 512/8 = 64
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 
@@ -54,19 +43,19 @@ DROPOUT_RATE = 0.1
 TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 
 
 def get_config() -> ExperimentConfig:
-    """Return the TinyImageNet classification configuration with Attention (no patchify)."""
+    """Return the ImageNet classification configuration using Attention."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(TinyImageNetDataModule)(
+    config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -74,24 +63,24 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=False,
+        center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
         hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
         task="classification",
+        # Enable Augmentations
         mixup_cfg=LazyConfig(MixupConfig)(
             mixup=0.8,
-            cutmix=1.0,
+            cutmix=1.0,  # Enable both mixup and cutmix
             mixup_prob=1.0,
             mixup_switch_prob=0.5,
             mixup_mode="batch",
         ),
         augment_cfg=LazyConfig(AugmentConfig)(
-            use_three_augment=False,
-            color_jitter=0.0,
-            rand_augment="rand-m9-n3-mstd0.5",
+            use_three_augment=True,
+            color_jitter=0.4,
         ),
     )
 
@@ -112,9 +101,9 @@ def get_config() -> ExperimentConfig:
                     num_heads=NUM_HEADS,
                     apply_qk_norm=True,
                     use_rope=True,
-                    is_causal=False,
-                    rope_base=10000.0,
+                    is_causal=False,  # Non-causal for image classification
                     attn_dropout=0.0,
+                    rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
@@ -145,10 +134,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.train = TrainConfig(
-        batch_size="${dataset.batch_size}",
-        iterations=TRAINING_ITERATIONS,
-        grad_clip=GRAD_CLIP,
-        precision=PRECISION,
+        batch_size="${dataset.batch_size}", iterations=TRAINING_ITERATIONS, grad_clip=GRAD_CLIP, precision=PRECISION
     )
 
     config.scheduler = SchedulerConfig(
@@ -159,7 +145,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.wandb = WandbConfig(
-        job_group="tinyimagenet_vit_b_benchmark",
+        job_group="imagenet_classification_attention",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )
