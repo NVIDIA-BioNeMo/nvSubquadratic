@@ -1,12 +1,12 @@
 # TODO: Add license header here
 
-"""ImageNet Classification - Attention (ViT-B scale, no patchification).
+"""TinyImageNet Classification - Attention (ViT-B scale, no patchification).
 
 Model Size: ViT-B
 - Hidden dim: 768
 - Num blocks: 12
 - Num heads: 12 (head_dim = 64)
-- No patchification (pixel-level, 224x224 = 50176 tokens)
+- No patchification (pixel-level, 64x64 = 4096 tokens)
 
 This config uses multi-head self-attention as the sequence mixer,
 operating on the full pixel sequence without any spatial downsampling.
@@ -16,8 +16,8 @@ import os
 
 import torch
 
-from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -35,7 +35,7 @@ OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", "data/tinyimagenet")
 HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None

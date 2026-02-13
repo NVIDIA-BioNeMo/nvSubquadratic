@@ -1,11 +1,11 @@
 # TODO: Add license header here
 
-"""ImageNet Classification - Hyena (ViT-B scale, no patchification).
+"""TinyImageNet Classification - Hyena (ViT-B scale, no patchification).
 
 Model Size: ViT-B
 - Hidden dim: 768
 - Num blocks: 12
-- No patchification (pixel-level, 224x224 = 50176 tokens)
+- No patchification (pixel-level, 64x64 = 4096 tokens)
 
 This config uses Hyena (continuous kernel convolution) as the sequence mixer,
 operating on the full pixel sequence without any spatial downsampling.
@@ -15,8 +15,8 @@ import os
 
 import torch
 
-from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -24,6 +24,7 @@ from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
@@ -36,7 +37,7 @@ OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", "data/tinyimagenet")
 HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None
@@ -49,8 +50,8 @@ NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double" # "single"
-FFT_PADDING = "zero" # "circular"
+GRID_TYPE = "double"  # "single"
+FFT_PADDING = "zero"  # "circular"
 
 # SIREN kernel parameters
 KERNEL_MLP_HIDDEN_DIM = 64
@@ -58,14 +59,14 @@ KERNEL_NUM_LAYERS = 3
 KERNEL_EMBEDDING_DIM = 64
 KERNEL_OMEGA_0 = 30.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
-L_CACHE = 64 
+L_CACHE = 64
 
 # Optimisation parameters
 TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 0.0
+WEIGHT_DECAY = 0.0  # NOTE: Hyena is known to work better without weight decay
 GRAD_CLIP = 1.0
 
 
@@ -132,7 +133,15 @@ def get_config() -> ExperimentConfig:
                             use_bias=True,
                             hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                         ),
-                        mask_cfg=LazyConfig(torch.nn.Identity)(),
+                        mask_cfg=LazyConfig(GaussianModulationND)(
+                            data_dim="${net.data_dim}",
+                            num_channels="${net.hidden_dim}",
+                            min_std=0.02,
+                            max_std=1.5,
+                            init_std_low=0.05,
+                            init_std_high=1.2,
+                            parametrization="direct",
+                        ),
                         grid_type=GRID_TYPE,
                         fft_padding=FFT_PADDING,
                     ),

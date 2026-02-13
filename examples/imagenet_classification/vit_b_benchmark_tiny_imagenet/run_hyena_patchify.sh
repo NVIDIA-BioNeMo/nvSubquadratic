@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=vit_b_hyena_patchify
-#SBATCH --account=all6000users
-#SBATCH --partition=all6000
+#SBATCH --partition=capacity
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
@@ -16,8 +15,6 @@ conda activate nvsubq
 cd /home/dwessel/code/nvSubquadratic-private
 export PYTHONPATH=.
 
-# Run training with Hyena + Patchify (most efficient config)
+# Run training with Hyena + Patchify
 python experiments/run.py \
-    --config examples/imagenet_classification/vit_b_benchmark/hyena_patchify.py \
-    dataset.batch_size=16 \
-    train.iterations=100000
+    --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/hyena_patchify.py
