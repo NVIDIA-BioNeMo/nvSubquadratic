@@ -1,7 +1,6 @@
 """Tier 3 — Medium: Attention causal LM on WikiText-103.
 
 ~125M params, 4x A6000, ~8-12 hours.
-Effective batch size: 16 (per GPU) × 4 GPUs × 2 accum = 128.
 """
 
 from examples.language_modeling.base_config import lm_experiment_config

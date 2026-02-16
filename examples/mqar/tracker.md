@@ -6,18 +6,15 @@
 ## Planned Experiments
 
 ### 1. Scaling `num_kv_pairs` (Primary)
-
 **Why**: This is the core diagnostic. Attention should maintain perfect recall as pairs increase (up to context limit), while Hyena/SSMs typically degrade.
 **Config**: `seq_len=256`, `vocab=8192`.
 **Variations**: `num_kv_pairs` ∈ {4, 8, 16, 32, 64}
 
 ### 2. Scaling `seq_len`
-
 **Why**: Test recall over longer distances.
 **Variations**: `seq_len` ∈ {256, 512, 1024, 2048} (with fixed `num_kv_pairs=8` or proportional)
 
 ### 3. Power Law Distribution (`power_a`)
-
 **Why**: Test robustness to query distribution shifts (clustered vs uniform).
 **Variations**: `power_a` ∈ {0.01 (default), 0.1, 1.0 (uniform)}
 
@@ -33,7 +30,6 @@
 **Variations**: `hidden_dim` ∈ {128 (baseline), 256, 512}
 
 #### 4b. Increasing MLP Expansion Factor
-
 **Why**: Creates a larger "internal scratchpad" for gating without increasing `d_model` across all layers.
 **Parameter**: `expansion_factor` in `base_config.py → block_cfg → mlp_cfg`
 **Variations**: `expansion_factor` ∈ {2.0 (baseline), 4.0, 8.0}
