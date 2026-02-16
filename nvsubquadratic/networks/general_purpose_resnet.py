@@ -54,6 +54,7 @@ class ResidualNetwork(nn.Module):
         dropout_in_cfg: LazyConfig,
         condition_in_proj_cfg: LazyConfig | None = None,
         target_size: int | Sequence[int] | None = None,
+        tie_weights: bool = False,
     ):
         """Initialize the ResidualNetwork."""
         super().__init__()
@@ -88,6 +89,18 @@ class ResidualNetwork(nn.Module):
 
         # Instantiate output projection
         self.out_proj = instantiate(out_proj_cfg)
+
+        # Weight tying: share embedding weights with output projection
+        # Standard practice for language models (Press & Wolf, 2017)
+        if tie_weights:
+            assert hasattr(self.in_proj, "weight") and hasattr(self.out_proj, "weight"), (
+                "tie_weights requires both in_proj and out_proj to have a 'weight' attribute"
+            )
+            assert self.in_proj.weight.shape == self.out_proj.weight.shape, (
+                f"Weight shapes must match for tying: in_proj={self.in_proj.weight.shape}, "
+                f"out_proj={self.out_proj.weight.shape}"
+            )
+            self.out_proj.weight = self.in_proj.weight
 
         # Target size for readout -- only used for spatial recall tasks for now.
         # Convert to tuple for consistent handling

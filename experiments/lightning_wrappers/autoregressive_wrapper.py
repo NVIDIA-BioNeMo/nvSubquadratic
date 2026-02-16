@@ -86,27 +86,39 @@ class AutoregressiveWrapper(LightningWrapperBase):
     def _prepare_batch(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Prepare input and target tensors for autoregressive training.
 
-        For autoregressive tasks:
-        - Input: all positions except the last
-        - Target: all positions except the first (shifted by 1)
+        Supports two modes:
+        1. Standard autoregressive shift: when label == input (or label is None),
+           input is x[:, :-1] and target is x[:, 1:].
+        2. Custom labels: when label is a separate tensor (e.g., MQAR with -100 masking),
+           input is still x[:, :-1] but target comes from the provided labels.
 
         Args:
-            batch: Dictionary with "input" key containing the full sequence.
+            batch: Dictionary with "input" key and optional "label" key.
 
         Returns:
             Tuple of (input_tensor, target_tensor).
         """
         x = batch["input"]  # [B, L, C] or [B, L]
+        label = batch.get("label")
 
-        # Shift: input is x[:, :-1], target is x[:, 1:]
-        if x.ndim == 3:
-            # [B, L, C] -> input: [B, L-1, C], target: [B, L-1, C]
-            input_seq = x[:, :-1, :]
-            target_seq = x[:, 1:, :]
+        # Check if custom labels are provided (different from input)
+        has_custom_labels = label is not None and not (label.shape == x.shape and torch.equal(label, x))
+
+        if has_custom_labels:
+            # Custom labels mode (e.g., MQAR): input and label are already aligned
+            # input_seq: [B, L] or [B, L, C], target_seq: [B, L] (with -100 for ignored positions)
+            input_seq = x
+            target_seq = label
         else:
-            # [B, L] -> input: [B, L-1], target: [B, L-1]
-            input_seq = x[:, :-1]
-            target_seq = x[:, 1:]
+            # Standard autoregressive shift: input[:, :-1], target[:, 1:]
+            if x.ndim == 3:
+                # [B, L, C] -> input: [B, L-1, C], target: [B, L-1, C]
+                input_seq = x[:, :-1, :]
+                target_seq = x[:, 1:, :]
+            else:
+                # [B, L] -> input: [B, L-1], target: [B, L-1]
+                input_seq = x[:, :-1]
+                target_seq = x[:, 1:]
 
         return input_seq, target_seq
 
