@@ -52,9 +52,11 @@ class ResidualBlock(torch.nn.Module):
             assert sequence_mixer_norm_cfg.__target__ == torch.nn.Identity, (
                 "Sequence mixer norm must be Identity if sequence mixer is Identity"
             )
-        if mlp_cfg.__target__ == torch.nn.Identity:
+        _mlp_target = getattr(mlp_cfg, "__target__", None)
+        if _mlp_target is not None and _mlp_target == torch.nn.Identity:
             assert mlp_norm_cfg.__target__ == torch.nn.Identity, "MLP norm must be Identity if MLP is Identity"
-        if condition_mixer_cfg.__target__ == torch.nn.Identity:
+        _cm_target = getattr(condition_mixer_cfg, "__target__", None)
+        if _cm_target is not None and _cm_target == torch.nn.Identity:
             assert condition_mixer_norm_cfg.__target__ == torch.nn.Identity, (
                 "Condition mixer norm must be Identity if condition mixer is Identity"
             )
@@ -71,16 +73,22 @@ class ResidualBlock(torch.nn.Module):
         for param in self.input_norm.parameters():
             param._no_weight_decay = True
 
-        # Instantiate cross attention layer
-        self.condition_mixer = instantiate(condition_mixer_cfg)
+        # Instantiate cross attention layer (or use already-instantiated module)
+        if isinstance(condition_mixer_cfg, torch.nn.Module):
+            self.condition_mixer = condition_mixer_cfg
+        else:
+            self.condition_mixer = instantiate(condition_mixer_cfg)
         # Instantiate cross attention norm
         self.condition_mixer_norm = instantiate(condition_mixer_norm_cfg)
         # Exclude self.condition_mixer_norm from the parameter group with weight decay
         for param in self.condition_mixer_norm.parameters():
             param._no_weight_decay = True
 
-        # Instantiate MLP layer
-        self.mlp = instantiate(mlp_cfg)
+        # Instantiate MLP layer (or use already-instantiated module)
+        if isinstance(mlp_cfg, torch.nn.Module):
+            self.mlp = mlp_cfg
+        else:
+            self.mlp = instantiate(mlp_cfg)
         # Instantiate MLP norm
         self.mlp_norm = instantiate(mlp_norm_cfg)
         # Exclude self.mlp_norm from the parameter group with weight decay

@@ -29,7 +29,6 @@ import torch
 import torch.nn.functional as F
 from nvsubq.ops.short_causalconv1d_kernel import (
     ShortCausalConv1dKernel,
-    is_cuda_kernel_available,
 )
 
 
@@ -322,8 +321,6 @@ def main() -> None:
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA not available.")
-    if not is_cuda_kernel_available():
-        raise SystemExit("CUDA kernel not available. Install subquadratic-ops-torch-cu12.")
 
     kernel_sizes = args.kernel_sizes
     if args.kernel_labels is not None:

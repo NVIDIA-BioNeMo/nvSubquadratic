@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Factory functions for creating sequence mixers.
+"""Factory functions for creating sequence mixers and MLPs.
 
 These factories are needed to ensure each residual block gets its own
-mixer instance when using migrated dataclass configs.
+mixer/MLP instance when using migrated dataclass configs.
 """
 
-from nvsubq import Hyena, HyenaConfig, QKVSequenceMixer, QKVSequenceMixerConfig
+from nvsubq import MLP, Hyena, HyenaConfig, MLPConfig, QKVSequenceMixer, QKVSequenceMixerConfig
 
 
 def create_hyena_sequence_mixer(hyena_config: HyenaConfig, qkv_config: QKVSequenceMixerConfig) -> QKVSequenceMixer:
@@ -21,3 +21,15 @@ def create_hyena_sequence_mixer(hyena_config: HyenaConfig, qkv_config: QKVSequen
         A new QKVSequenceMixer instance with a new Hyena instance
     """
     return QKVSequenceMixer(qkv_config, mixer=Hyena(hyena_config))
+
+
+def create_mlp(mlp_config: MLPConfig) -> MLP:
+    """Factory: create a new MLP.
+
+    Args:
+        mlp_config: Configuration for MLP
+
+    Returns:
+        A new MLP instance
+    """
+    return MLP(mlp_config)

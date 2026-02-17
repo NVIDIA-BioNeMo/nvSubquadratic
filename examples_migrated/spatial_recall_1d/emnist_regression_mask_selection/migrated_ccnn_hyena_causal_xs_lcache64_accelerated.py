@@ -3,6 +3,9 @@
 
 """EMNIST Spatial Recall 1D (Mask Selection) - Hyena XS Causal with L_cache=64 (FULLY MIGRATED).
 
+This is the fully migrated version using dataclass configs for all modules.
+
+
 Model Size: XS (Extra-Small)
 - Hidden dim: 160
 - SIREN kernel with 3 layers
@@ -47,7 +50,7 @@ KERNEL_EMBEDDING_DIM = 32
 KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 SHORT_CONV_KERNEL_SIZE = 3
-SHORT_CONV_ACCELERATED = False
+SHORT_CONV_ACCELERATED = True
 
 
 def get_config() -> ExperimentConfig:
@@ -91,7 +94,7 @@ def get_config() -> ExperimentConfig:
         kernel_embedding_dim=KERNEL_EMBEDDING_DIM,
         kernel_omega_0=KERNEL_OMEGA_0,
         kernel_hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
-        kernel_L_cache=CANVAS_SIZE,  # Key: Use 64 instead of 4096!
+        kernel_L_cache=CANVAS_SIZE,
     )
 
     # Create QKVSequenceMixerConfig
