@@ -339,7 +339,7 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-## 📊 Observations & Insights
+## Model Architecture (ViT-B Scale — TinyImageNet Ablations)
 
 - **2026-02-19 19:20**: **Phase 0.2 (Hyena baseline) completed!**
   - Final validation accuracy: **70.67%**.

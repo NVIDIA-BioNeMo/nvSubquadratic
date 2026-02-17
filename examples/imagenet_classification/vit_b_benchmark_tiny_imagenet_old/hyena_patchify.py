@@ -163,7 +163,11 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
+<<<<<<< HEAD
                     qk_norm_cfg=LazyConfig(L2Norm)(),
+=======
+                    apply_qk_norm=True,
+>>>>>>> 7096ba8 (Imagenet experimentation setup)
                     use_rope=False,
                     rope_base=10000.0,
                 ),
