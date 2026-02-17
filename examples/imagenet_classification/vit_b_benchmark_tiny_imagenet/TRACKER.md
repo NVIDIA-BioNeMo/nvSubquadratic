@@ -1,65 +1,326 @@
-# Hyena Vision Research Tracker
+# Pixel-Hyena vs ViT — TinyImageNet Ablation & Benchmark Tracker
 
-**Objective**: Benchmark Hyena against ViT on vision tasks, focusing on **patchification scaling** and **operator diagnostics**.
+Systematic ablation study of the Pixel-Hyena operator on TinyImageNet (200 classes, 64×64), followed by full-scale comparison against standard ViT on ImageNet.
 
-## 🔬 Research Phases
+## Task Description
 
-### Phase 1: Hyena Diagnostics (Imagenette 160px)
-**Goal**: Optimize the Hyena operator for 2D vision signals.
+- **Dataset (ablations)**: TinyImageNet (200 classes, 64×64 RGB)
+- **Dataset (final)**: ImageNet-1K (1000 classes, 224×224 RGB)
+- **Task**: Multi-class classification
+- **Objective**: (1) Ablate Hyena operator components on TinyImageNet, (2) compare Pixel-Hyena vs ViT at S/B/L scale on ImageNet
 
-| Experiment | ID | WandB | Config | Status | Val Acc | Notes |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Baseline (Hyena)** | `134927` | `3i7rino1` | `imagenette_hyena_patchify.py` | ⏱️ Timeout | 94.4% | Epoch 417/~680, killed at 12h time limit |
-| **Baseline (Attn)** | `134889` | `ym5m6fmv` | `imagenette_attention_patchify.py` | ❌ OOM | 90.1% | OOM'd at Epoch 252 |
-| Split WD | `134924` | `0vrk` | `imagenette_hyena_split_wd.py` | ❌ OOM | 92.6% | OOM'd at Epoch 312 |
-| Hi-Freq | `134925` | `uh92` | `imagenette_hyena_omega_60.py` | ❌ OOM | 93.6% | OOM'd at Epoch 347, ω₀=60 |
-| Deep Filter | `134906` | TBD | `imagenette_hyena_deep_filter.py` | ❌ Failed | - | MLP Depth=5 |
-| **Baseline (Attn) v2** | `136444` | TBD | `imagenette_attention_patchify.py` | 🔄 Running | - | Re-run with OOM fix (W&B upload disabled) |
-| Split WD v2 | `136442` | TBD | `imagenette_hyena_split_wd.py` | 🔄 Running | - | Re-run with OOM fix (W&B upload disabled) |
-| Hi-Freq v2 | `136443` | TBD | `imagenette_hyena_omega_60.py` | 🔄 Running | - | Re-run with OOM fix (W&B upload disabled) |
+## Compute Resources
 
-### Phase 2: Pixel vs Patch Wars (Imagenette 160px)
-**Goal**: Push patch size to 1x1 (pixels) to demonstrate Hyena's long-context advantage.
-
-| Patch Size | Seq Len | Hyena Job | Attn Job | Hyena Acc | Attn Acc | Speedup |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **16x16** (Std) | 100 | `135521` | `135520` | 91.7% | 88.8% | - |
-| **10x10** (Current) | 256 | `134888` | `134889` | - | 90.1% | Hyena failed, Attn OOM'd |
-| **4x4** | 1,600 | - | - | - | - | - |
-| **2x2** | 6,400 | - | - | - | - | - |
-| **1x1** | 25,600 | - | ❌ OOM | - | - | - |
-
-### Phase 3: Generalization (Tiny-ImageNet 64px)
-**Goal**: Verify "Gold" config on 200 classes.
-
-| Model | Config | Status | Val Acc | Notes |
+| Partition | GPUs | Type | Max Time | Account |
 | :--- | :--- | :--- | :--- | :--- |
-| Hyena (Pixel) | `hyena_pixel.py` | 📅 Planned | - | 64x64 resolution (Seq 4096) |
-| ViT (Patch 4) | `attention_patchify.py` | 📅 Planned | - | Comparison point |
+| `geodude` | 4 × RTX A5000 (24 GB) | Training | 7 days | `geodudeusers` |
+| `all6000` | 8 × RTX 6000 (24 GB) | Training | 7 days | `all6000users` |
 
----
+> [!IMPORTANT]
+> **Fixed batch-size rule**: All experiments use the **same effective batch size** (e.g. 128). When running on fewer GPUs, use gradient accumulation to match. Example: 1 GPU × bs 32 × accum 4 = 128, 4 GPUs × bs 32 × accum 1 = 128.
 
-## 📊 Observations & Insights
+## Model Architecture (ViT-B Scale — TinyImageNet Ablations)
 
-*   **2026-02-17**: Re-submitted 3 OOM'd runs (Attn=136441, Split WD=136442, Hi-Freq=136443) with W&B checkpoint upload disabled.
-*   **2026-02-17**: Phase 2 (16x16) completed! Hyena 91.7% vs Attn 88.8%. Hyena wins at low resolution.
-*   **2026-02-17**: Phase 1 results finalized. Hyena Baseline 94.4% (timeout), Hi-Freq 93.6%, Split WD 92.6% (both OOM).
-*   **2026-02-16**: Launched baselines (Jobs 134888, 134889) on Imagenette after fixing dataset path issues.
+All ablation runs share ViT-B architecture:
 
----
+- **Hidden dimension**: 768
+- **Blocks**: 12
+- **MLP**: GELU (expansion 4.0) for both Hyena and Attention
+- **Precision**: bf16-mixed
+- **Iterations**: 300,000 (shorter than 600k; sufficient for 64×64 ablations — reassess after first runs)
+- **Scheduler**: Cosine with 5% warmup
+- **Optimizer**: AdamW, grad_clip=1.0
 
-## 🛠️ Model Configurations (ViT-B Scale)
+### Parameter Comparison (ViT-B scale, patch-4)
+
+| Component | ViT-B (Attention) | Pixel-Hyena | Notes |
+| :--- | :--- | :--- | :--- |
+| Input projection (Patchify) | 37K | 37K | Conv2d(3, 768, k=4, s=4) |
+| QKV projection (per block) | 1.77M | 1.77M | Linear(768 → 2304) |
+| Mixer (per block) | 0 (softmax) | ~80K | SIREN kernel (~58K) + short conv (~21K) + Gaussian mask (~1.5K) |
+| Output projection (per block) | 590K | 590K | Linear(768 → 768) |
+| MLP (per block) | 4.72M | 4.72M | GELU, 768 → 3072 → 768 |
+| LayerNorms (per block) | 3K | 4.5K | Hyena has extra pixelhyena_norm |
+| Classification head | 154K | 154K | Linear(768 → 200) |
+| **Total (12 blocks)** | **~85.2M** | **~86.2M** | Hyena adds ~1M from SIREN kernels |
+
+> [!NOTE]
+> Parameter counts are approximate — verify with `model.parameters()` after first run. The ~1% overhead from SIREN kernels makes this a fair comparison.
+
+| Config Variant | Mixer | Patchify | Patch Size | Seq Length | Mask | Grid | Padding | RoPE |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Hyena (pixel) | Hyena | No | — | 4,096 | Gaussian | double | zero | No |
+| Hyena (patch-4) | Hyena | Yes | 4 | 256 | Gaussian | double | zero | No |
+| ViT (pixel) | Attention | No | — | 4,096 | — | — | — | Yes |
+| ViT (patch-4) | Attention | Yes | 4 | 256 | — | — | — | Yes |
+
+### Data Augmentation (all configs)
+
+- Mixup (α=0.8) + Cutmix (α=1.0), switch_prob=0.5
+- RandAugment `rand-m9-n3-mstd0.5`
+- Random crop (64×64, pad=4) + Horizontal flip
+
+### Default Hyena Kernel Config
 
 | Parameter | Value |
 | :--- | :--- |
-| Hidden Dim | 768 |
-| Layers | 12 |
-| Heads | 12 (Attendance only) |
-| Expansion | 4.0 (GELU) |
-| Precision | bf16-mixed |
+| Kernel | `SIRENKernelND` |
+| `omega_0` | 30.0 |
+| `hidden_omega_0` | 1.0 |
+| `mlp_hidden_dim` | 64 |
+| `num_layers` | 3 |
+| `embedding_dim` | 64 |
+| `L_cache` | 64 (pixel) / 16 (patch=4) |
+
+______________________________________________________________________
+
+## 🔬 Experimental Phases
+
+### Phase 0: Pipeline Validation ⭐ HIGHEST PRIORITY
+
+**Goal**: Confirm the TinyImageNet training pipeline works end-to-end with a standard ViT-B + patchify baseline. This is our sanity check and reference point.
+
+| # | Experiment | Config | Partition | GPUs | BS/GPU | Accum | Eff. BS | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 0.1 | **ViT-B + patch-4 baseline** | `attention_patchify.py` | geodude | 4 | 32 | 1 | 128 | 📅 Planned | — | — | — | First run; validates data loading, augmentation, logging |
+| 0.2 | Hyena + patch-4 baseline | `hyena_patchify.py` | geodude | 4 | 32 | 1 | 128 | 📅 Planned | — | — | — | Sanity check Hyena pipeline |
+
+**Success criteria**: ViT-B patch-4 converges to ≥ 55% val acc within ~100k iterations (DeiT-B on TinyImageNet literature range: 55–65%).
 
 ---
 
-## 📂 Quick Links
-*   **WandB Project**: `nvsubquadratic`
-*   **Entity**: `implicit-long-convs`
+### Phase 1: Kernel Ablation (Hyena + patch-4)
+
+**Goal**: Validate SIREN superiority over RFF. Run on **Hyena + patch-4** (fast, 256 tokens).
+
+| # | Experiment | Variable | Config Change | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1.1 | SIREN baseline | — | base `hyena_patchify.py` | geodude | 4 | 📅 Planned | — | — | — | = Phase 0.2 |
+| 1.2 | RFF kernel | kernel_type | `RandomFourierKernelND` | geodude | 4 | 📅 Planned | — | — | — | Expect ↓ acc vs SIREN |
+
+**Hypothesis**: RFF lacks the expressiveness of SIREN's sine-based representation for vision, resulting in lower accuracy.
+
+---
+
+### Phase 2: SIREN ω₀ Sweep (Hyena + patch-4)
+
+**Goal**: Find the optimal ω₀ that controls frequency expressiveness of the SIREN kernel!
+
+| # | Experiment | ω₀ | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 2.1 | ω₀ = 10 | 10 | geodude | 1 | 📅 Planned | — | — | — | Under-expressive |
+| 2.2 | ω₀ = 20 | 20 | geodude | 1 | 📅 Planned | — | — | — | |
+| 2.3 | **ω₀ = 30 (default)** | 30 | geodude | 1 | 📅 Planned | — | — | — | = Phase 1.1 reference |
+| 2.4 | ω₀ = 60 | 60 | geodude | 1 | 📅 Planned | — | — | — | From Imagenette: 93.6% |
+| 2.5 | ω₀ = 100 | 100 | geodude | 1 | 📅 Planned | — | — | — | Over-expressive? |
+
+> [!TIP]
+> **Efficiency**: Run 2.1–2.5 in parallel on 1 GPU each (4 on geodude + 1 on all6000), or use 1 GPU on geodude sequentially, gradient-accumulating to match effective batch size. With 4 GPUs on geodude we can run 4 of these in parallel.
+
+**Hypothesis**: Optimal ω₀ is in [20, 60] range; too-high values cause oscillations, too-low lose detail.
+
+---
+
+### Phase 3: Kernel Hidden-Dim Sweep (Hyena + patch-4)
+
+**Goal**: Find optimal SIREN MLP hidden dimension (expressiveness vs parameters tradeoff).
+
+| # | Experiment | Hidden Dim | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 3.1 | hdim = 32 | 32 | geodude | 1 | 📅 Planned | — | — | — | Lean kernel |
+| 3.2 | **hdim = 64 (default)** | 64 | geodude | 1 | 📅 Planned | — | — | — | Reference |
+| 3.3 | hdim = 128 | 128 | geodude | 1 | 📅 Planned | — | — | — | |
+| 3.4 | hdim = 256 | 256 | geodude | 1 | 📅 Planned | — | — | — | Expensive kernel |
+
+> [!NOTE]
+> Should be run with optimal ω₀ from Phase 2.
+
+**Hypothesis**: Diminishing returns beyond 64–128; the kernel is a small MLP so going wider should help mildly but it adds parameters.
+
+---
+
+### Phase 4: Mask Ablation (Hyena + pixel — no patchify)
+
+**Goal**: Evaluate the impact of the modulation mask on classification. Tested on full 4096-token pixel input where ringing artifacts are most pronounced.
+
+| # | Experiment | Mask | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 4.1 | **Gaussian mask (default)** | `GaussianModulationND` | all6000 | 4 | 📅 Planned | — | — | — | Current default for pixel |
+| 4.2 | No mask | `Identity` | all6000 | 4 | 📅 Planned | — | — | — | Does mask matter? |
+| 4.3 | Exponential mask | `ExponentialModulationND` | all6000 | 4 | 📅 Planned | — | — | — | Alternative decay |
+
+> [!NOTE]
+> Full-res pixel Hyena (4096 tokens) is expensive. Use all6000 (8×RTX 6000) to speed up, or geodude with longer walltime. Running fewer parallel experiments here.
+
+**Hypothesis**: Gaussian mask critical at pixel resolution (suppresses SIREN ringing at filter boundaries), less important with patchify.
+
+---
+
+### Phase 5: Positional Encoding / Grid / Padding Ablation (Hyena + patch-4)
+
+**Goal**: Determine whether RoPE + circular convolution can match the double-grid + zero-padding baseline.
+
+| # | Experiment | RoPE | Grid | Padding | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 5.1 | **Default (no-rope + double + zero)** | No | double | zero | geodude | 1 | 📅 Planned | — | — | — | Baseline |
+| 5.2 | rope + double + zero | Yes | double | zero | geodude | 1 | 📅 Planned | — | — | — | Does RoPE help even with double grid? |
+| 5.3 | rope + circular + single | Yes | single | circular | geodude | 1 | 📅 Planned | — | — | — | Can RoPE compensate for aliased circular conv? |
+| 5.4 | no-rope + single + zero | No | single | zero | geodude | 1 | 📅 Planned | — | — | — | Cheap single grid but no pos info |
+
+**Hypothesis**: Double-grid + zero-pad is the most principled (no aliasing). RoPE may help with circular+single by providing explicit positional information, but is unlikely to fully close the gap.
+
+---
+
+### Phase 6: Learning-Rate & Weight-Decay Sweep (Final Hyena Config)
+
+**Goal**: Fine-tune optimisation HPs *after all architectural ablations are settled*.
+
+> [!CAUTION]
+> Only begin Phase 6 after Phases 1–5 are complete and the "Gold" Hyena config is locked.
+
+| # | Experiment | LR | WD | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 6.1 | lr=1e-3, wd=0.0 | 1e-3 | 0.0 | geodude | 1 | 📅 Planned | — | — | — | Conservative |
+| 6.2 | lr=3e-3, wd=0.0 | 3e-3 | 0.0 | geodude | 1 | 📅 Planned | — | — | — | |
+| 6.3 | lr=8e-3, wd=0.0 | 8e-3 | 0.0 | geodude | 1 | 📅 Planned | — | — | — | Previous hyena_patchify LR |
+| 6.4 | lr=1e-2, wd=0.0 | 1e-2 | 0.0 | geodude | 1 | 📅 Planned | — | — | — | Aggressive |
+| 6.5 | lr=best, wd=0.01 | best | 0.01 | geodude | 1 | 📅 Planned | — | — | — | Some regularization |
+| 6.6 | lr=best, wd=0.05 | best | 0.05 | geodude | 1 | 📅 Planned | — | — | — | ViT-standard WD |
+
+---
+
+### Phase 7: Patchification Showdown (Best Configs)
+
+**Goal**: After ablations, compare the best Hyena config against best ViT config, both with and without patchification, on TinyImageNet.
+
+| # | Experiment | Mixer | Patchify | Partition | GPUs | Status | Val Acc | Job ID | WandB | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 7.1 | Hyena (pixel) — Gold | Hyena | No | all6000 | 8 | 📅 Planned | — | — | — | Best config from Phases 1–6 |
+| 7.2 | Hyena (patch-4) — Gold | Hyena | Yes (p=4) | geodude | 4 | 📅 Planned | — | — | — | Best config from Phases 1–6 |
+| 7.3 | ViT (pixel) | Attention | No | all6000 | 8 | 📅 Planned | — | — | — | 4096 tokens, O(n²) |
+| 7.4 | ViT (patch-4) | Attention | Yes (p=4) | geodude | 4 | 📅 Planned | — | — | — | 256 tokens |
+
+**Key question**: How much does patchification hurt each architecture? Hyena should degrade less since it can handle long sequences natively.
+
+---
+
+### Phase 8: ImageNet at Scale (S/B/L) — FUTURE
+
+**Goal**: Full ViT vs Pixel-Hyena comparison at standard ViT scales on ImageNet-1K.
+
+| Size | Hidden | Blocks | Heads | Params (~Attn) | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| ViT-S | 384 | 12 | 6 | ~22M | 📅 Planned |
+| ViT-B | 768 | 12 | 12 | ~86M | 📅 Planned |
+| ViT-L | 1024 | 24 | 16 | ~307M | 📅 Planned |
+
+> [!IMPORTANT]
+> Phase 8 requires significant compute and should only be started after the TinyImageNet ablation story (Phases 1–7) is solid.
+
+______________________________________________________________________
+
+## 📋 Scheduling Strategy
+
+Given limited compute (4× A5000 on geodude, 8× RTX 6000 on all6000), we optimise for parallelism:
+
+```
+WEEK 1 (immediate):
+├─ Phase 0.1: ViT-B baseline (4 GPU geodude) ← FIRST PRIORITY
+├─ Phase 0.2: Hyena baseline (4 GPU geodude, after 0.1 finishes)
+└─ Phase 1.2: RFF ablation (can run on all6000 in parallel)
+
+WEEK 1–2 (after Phase 0 validated):
+├─ Phase 2: ω₀ sweep (4 jobs × 1 GPU on geodude, parallel)
+├─ Phase 3: hidden-dim sweep (4 jobs × 1 GPU, after Phase 2 or on all6000)
+└─ Phase 4: mask ablation (3 jobs on all6000, 4 GPU each — run 2 in parallel)
+
+WEEK 2–3:
+├─ Phase 5: pos-encoding ablation (4 jobs × 1 GPU on geodude)
+└─ Phase 6: LR/WD sweep (depends on Phases 1—5 results)
+
+WEEK 3–4:
+└─ Phase 7: final patchification showdown (4 runs)
+
+THEN:
+└─ Phase 8: ImageNet scale-up (separate planning)
+```
+
+> [!TIP]
+> **Parallel 1-GPU runs on geodude**: Since geodude has 4 GPUs, you can run up to 4 single-GPU jobs simultaneously (e.g. ω₀ sweep). Use `--gres=gpu:1 --exclusive=user` to avoid contention. Use `accumulate_grad_steps=4` to match effective batch size 128 (= 1 GPU × 32 × 4).
+
+______________________________________________________________________
+
+## Running Experiments
+
+```bash
+# Activate environment
+conda activate nvsubq
+source .env  # WandB API key + HF_TOKEN
+export PYTHONPATH=.
+
+# Single-GPU with gradient accumulation (effective BS=128)
+srun --gres=gpu:1 -c 16 --mem=32G --partition=geodude --account=geodudeusers \
+    python experiments/run.py \
+    --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/<config>.py \
+    train.accumulate_grad_steps=4
+
+# 4-GPU on geodude (effective BS=128 = 4×32)
+sbatch examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/run_<config>.sh
+
+# SLURM script template for 1-GPU ablation:
+# --partition=geodude --account=geodudeusers --gres=gpu:1
+# --cpus-per-task=8 --mem=32G --time=48:00:00
+# python experiments/run.py --config ... train.accumulate_grad_steps=4
+```
+
+______________________________________________________________________
+
+## 🏆 Results
+
+### Leaderboard (Best Results Per Architecture — TinyImageNet)
+
+| Rank | Architecture | Config | Patchify | Val Acc | Val Loss | WandB |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| — | — | — | — | — | — | — |
+
+### Patchification Impact
+
+| Architecture | No Patch (4096 tok) | Patch-4 (256 tok) | Δ Acc | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| Hyena | — | — | — | — |
+| Attention | — | — | — | — |
+
+### Ablation Summary
+
+| Ablation | Best Setting | Δ vs Default | Notes |
+| :--- | :--- | :--- | :--- |
+| Kernel type | — | — | — |
+| ω₀ | — | — | — |
+| Kernel hidden-dim | — | — | — |
+| Mask | — | — | — |
+| Pos-encoding | — | — | — |
+| LR | — | — | — |
+| Weight decay | — | — | — |
+
+______________________________________________________________________
+
+## Job Submission Log
+
+> [!IMPORTANT]
+> **Always update this log when submitting a job.** Record the job ID, config, and phase so we can trace results back to specific runs.
+
+| Date | Job ID | Phase | Config | Partition | GPUs | Status | Val Acc | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 2026-02-17 | `137108` | 0.1 | `attention_patchify.py` | geodude | 4 | 🔄 Running | — | ViT-B baseline pipeline validation |
+
+______________________________________________________________________
+
+## 📊 Observations & Insights
+
+*   **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
+*   **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
+
+______________________________________________________________________
+
+**Last Updated**: 2026-02-17
+**Status**: 📝 Plan created — Phase 0 ready to launch

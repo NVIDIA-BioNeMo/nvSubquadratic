@@ -56,7 +56,7 @@ PATCH_SIZE = 4  # 64/4 = 16x16 = 256 tokens
 STRIDE = 4  # Non-overlapping patches (ViT-style)
 
 # Optimisation parameters
-TRAINING_ITERATIONS = 600_000
+TRAINING_ITERATIONS = 300_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
 LEARNING_RATE = 1e-3
