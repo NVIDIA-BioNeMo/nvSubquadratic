@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=phase0_hyena_patch4
+#SBATCH --job-name=phase0_vit_b_attn_patch4
 #SBATCH --account=geodudeusers
 #SBATCH --partition=geodude
 #SBATCH --gres=gpu:4
@@ -8,7 +8,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --output=slurm/%x_%j.out
 
-# Phase 0.2: Hyena + patch-4 baseline (pipeline validation)
+# Phase 0.1: ViT-B + patch-4 baseline (pipeline validation)
 # Effective batch size: 4 GPUs × 32 = 128
 
 # Activate environment
@@ -27,4 +27,4 @@ export HF_HUB_CACHE='/ivi/zfs/s0/original_homes/dwessel/data/.hf/hub'
 
 # Run training
 python experiments/run.py \
-    --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/hyena_patchify.py
+    --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/attention_patchify.py
