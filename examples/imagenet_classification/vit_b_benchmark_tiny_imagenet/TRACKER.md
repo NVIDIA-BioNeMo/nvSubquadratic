@@ -1,108 +1,65 @@
-# TinyImageNet Classification - ViT-B Benchmark
+# Hyena Vision Research Tracker
 
-Benchmark configs comparing Hyena vs Attention sequence mixers at ViT-B scale, with and without patchification.
+**Objective**: Benchmark Hyena against ViT on vision tasks, focusing on **patchification scaling** and **operator diagnostics**.
 
-## Task Description
+## 🔬 Research Phases
 
-- **Dataset**: TinyImageNet (200 classes, 64×64 RGB images)
-- **Task**: Multi-class classification
-- **Objective**: Compare Hyena vs Attention at ViT-B scale, ablating over patchification
+### Phase 1: Hyena Diagnostics (Imagenette 160px)
+**Goal**: Optimize the Hyena operator for 2D vision signals.
 
-## Model Architecture (ViT-B Scale)
+| Experiment | ID | WandB | Config | Status | Val Acc | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Baseline (Hyena)** | `134927` | `3i7rino1` | `imagenette_hyena_patchify.py` | ⏱️ Timeout | 94.4% | Epoch 417/~680, killed at 12h time limit |
+| **Baseline (Attn)** | `134889` | `ym5m6fmv` | `imagenette_attention_patchify.py` | ❌ OOM | 90.1% | OOM'd at Epoch 252 |
+| Split WD | `134924` | `0vrk` | `imagenette_hyena_split_wd.py` | ❌ OOM | 92.6% | OOM'd at Epoch 312 |
+| Hi-Freq | `134925` | `uh92` | `imagenette_hyena_omega_60.py` | ❌ OOM | 93.6% | OOM'd at Epoch 347, ω₀=60 |
+| Deep Filter | `134906` | TBD | `imagenette_hyena_deep_filter.py` | ❌ Failed | - | MLP Depth=5 |
+| **Baseline (Attn) v2** | `136444` | TBD | `imagenette_attention_patchify.py` | 🔄 Running | - | Re-run with OOM fix (W&B upload disabled) |
+| Split WD v2 | `136442` | TBD | `imagenette_hyena_split_wd.py` | 🔄 Running | - | Re-run with OOM fix (W&B upload disabled) |
+| Hi-Freq v2 | `136443` | TBD | `imagenette_hyena_omega_60.py` | 🔄 Running | - | Re-run with OOM fix (W&B upload disabled) |
 
-All models match ViT-B architecture size:
+### Phase 2: Pixel vs Patch Wars (Imagenette 160px)
+**Goal**: Push patch size to 1x1 (pixels) to demonstrate Hyena's long-context advantage.
 
-- **Hidden dimension**: 768
-- **Number of blocks**: 12
-- **MLP expansion**: 2.0 (GLU activation)
-- **Precision**: bf16-mixed
+| Patch Size | Seq Len | Hyena Job | Attn Job | Hyena Acc | Attn Acc | Speedup |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **16x16** (Std) | 100 | `135521` | `135520` | 91.7% | 88.8% | - |
+| **10x10** (Current) | 256 | `134888` | `134889` | - | 90.1% | Hyena failed, Attn OOM'd |
+| **4x4** | 1,600 | - | - | - | - | - |
+| **2x2** | 6,400 | - | - | - | - | - |
+| **1x1** | 25,600 | - | ❌ OOM | - | - | - |
 
-| Config                  | Mixer     | Patchify | Hidden | Blocks | Heads | Patch Size | Seq Length |
-| ----------------------- | --------- | -------- | ------ | ------ | ----- | ---------- | ---------- |
-| `hyena.py`              | Hyena     | No       | 768    | 12     | -     | -          | 4,096      |
-| `hyena_patchify.py`     | Hyena     | Yes      | 768    | 12     | -     | 4          | 256        |
-| `attention.py`          | Attention | No       | 768    | 12     | 12    | -          | 4,096      |
-| `attention_patchify.py` | Attention | Yes      | 768    | 12     | 12    | 4          | 256        |
+### Phase 3: Generalization (Tiny-ImageNet 64px)
+**Goal**: Verify "Gold" config on 200 classes.
 
-### Sequence Lengths
+| Model | Config | Status | Val Acc | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| Hyena (Pixel) | `hyena_pixel.py` | 📅 Planned | - | 64x64 resolution (Seq 4096) |
+| ViT (Patch 4) | `attention_patchify.py` | 📅 Planned | - | Comparison point |
 
-With 64×64 images:
+---
 
-- **No patchify**: 64×64 = 4,096 tokens
-- **Patchify (p=4)**: 16×16 = 256 tokens
+## 📊 Observations & Insights
 
-### Data Augmentation
+*   **2026-02-17**: Re-submitted 3 OOM'd runs (Attn=136441, Split WD=136442, Hi-Freq=136443) with W&B checkpoint upload disabled.
+*   **2026-02-17**: Phase 2 (16x16) completed! Hyena 91.7% vs Attn 88.8%. Hyena wins at low resolution.
+*   **2026-02-17**: Phase 1 results finalized. Hyena Baseline 94.4% (timeout), Hi-Freq 93.6%, Split WD 92.6% (both OOM).
+*   **2026-02-16**: Launched baselines (Jobs 134888, 134889) on Imagenette after fixing dataset path issues.
 
-All configs use:
+---
 
-- **Mixup** (α=0.8) + **Cutmix** (α=1.0)
-- **RandAugment**: rand-m9-n3-mstd0.5
-- Random crop (64×64 with padding=4) + Horizontal flip
+## 🛠️ Model Configurations (ViT-B Scale)
 
-### Design Notes
+| Parameter | Value |
+| :--- | :--- |
+| Hidden Dim | 768 |
+| Layers | 12 |
+| Heads | 12 (Attendance only) |
+| Expansion | 4.0 (GELU) |
+| Precision | bf16-mixed |
 
-- **Weight decay**: Attention uses 0.05; Hyena uses 0.0 (known to work better without weight decay).
-- **Modulation mask**: Hyena uses `GaussianModulationND` on the SIREN kernel to prevent ringing artifacts.
-- **L_cache**: Set to match spatial resolution seen by the kernel — 64 for non-patchified, 16 for patchified (p=4).
-- **Kernel**: Uses `SIRENKernelND` (implicit neural representation) for continuous convolution kernels.
-- **RoPE**: Enabled for Attention, disabled for Hyena (Hyena uses its own positional encoding via the SIREN kernel).
+---
 
-______________________________________________________________________
-
-## Running Experiments
-
-```bash
-# Activate environment
-conda activate nvsubq
-source .env  # For WandB API key and HF_TOKEN
-export PYTHONPATH=.
-
-# Run individual configs
-srun --gres=gpu:1 -c 16 --partition capacity \
-    python experiments/run.py --config examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/hyena.py
-
-# Or submit all via SLURM
-sbatch examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/run_hyena.sh
-sbatch examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/run_hyena_patchify.sh
-sbatch examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/run_attention.sh
-sbatch examples/imagenet_classification/vit_b_benchmark_tiny_imagenet/run_attention_patchify.sh
-```
-
-______________________________________________________________________
-
-## 🏆 Results
-
-### Leaderboard (Best Results Per Architecture)
-
-| Rank | Architecture | Config | Val Acc | Val Loss | WandB Link |
-| ---- | ------------ | ------ | ------- | -------- | ---------- |
-| -    | -            | -      | -       | -        | -          |
-
-### Patchification Impact
-
-| Architecture | No Patch | With Patch (p=4) | Notes |
-| ------------ | -------- | ---------------- | ----- |
-| Hyena        | -        | -                | -     |
-| Attention    | -        | -                | -     |
-
-______________________________________________________________________
-
-## Job Submission Log
-
-| Date | Job ID | Config | Status | Val Acc | Notes |
-| ---- | ------ | ------ | ------ | ------- | ----- |
-| -    | -      | -      | -      | -       | -     |
-
-______________________________________________________________________
-
-## Notes
-
-- All models use TinyImageNet (200 classes, 64×64 images)
-- Training uses AdamW optimizer with cosine LR schedule and 5% warmup
-- Default training: 600,000 iterations
-- Batch size: 32 (consistent across all configs)
-
-______________________________________________________________________
-
-**Last Updated**: 2026-02-13
-**Status**: ⏳ Configs reviewed and fixed, ready for training
+## 📂 Quick Links
+*   **WandB Project**: `nvsubquadratic`
+*   **Entity**: `implicit-long-convs`

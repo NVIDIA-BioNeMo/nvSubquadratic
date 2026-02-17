@@ -44,6 +44,11 @@ class TrainerConfig:
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None
 
+    # Whether to upload checkpoints to W&B and run cache cleanup.
+    # Set to False to disable WandbSelectiveCheckpointUploader and WandbCacheCleanupCallback.
+    # Local ModelCheckpoint saving is unaffected by this flag.
+    wandb_checkpoint_upload: bool = True
+
 
 @dataclass
 class SchedulerConfig:

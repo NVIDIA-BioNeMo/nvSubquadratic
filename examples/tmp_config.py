@@ -1,12 +1,12 @@
 # TODO: Add license header here
 
-"""TinyImageNet Classification - Attention (ViT-B scale, no patchification).
+"""ImageNet Classification - Attention (ViT-B scale, no patchification).
 
 Model Size: ViT-B
 - Hidden dim: 768
 - Num blocks: 12
 - Num heads: 12 (head_dim = 64)
-- No patchification (pixel-level, 64x64 = 4096 tokens)
+- No patchification (pixel-level, 224x224 = 50176 tokens)
 
 This config uses multi-head self-attention as the sequence mixer,
 operating on the full pixel sequence without any spatial downsampling.
@@ -16,14 +16,15 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.patchify import Patchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
@@ -31,11 +32,11 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 # Dataset parameters
 INPUT_CHANNELS = 3  # RGB images
-OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
+OUTPUT_CHANNELS = NUM_CLASSES = 1000  # TinyImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", "data/tinyimagenet")
 HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None
@@ -101,7 +102,12 @@ def get_config() -> ExperimentConfig:
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        in_proj_cfg=LazyConfig(Patchify)(
+            in_features="${net.in_channels}",
+            out_features="${net.hidden_dim}",
+            data_dim=DATA_DIM,
+            patch_size=16,
+        ),
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
@@ -122,8 +128,8 @@ def get_config() -> ExperimentConfig:
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
-                activation="gelu",
-                expansion_factor=4.0,
+                activation="glu",
+                expansion_factor=2.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),

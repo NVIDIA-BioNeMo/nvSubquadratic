@@ -1,29 +1,28 @@
 # TODO: Add license header here
 
-"""TinyImageNet Classification - Attention (ViT-B scale, no patchification).
+"""ImageNet Classification - Hyena with Patchification (ViT-B scale) on Imagenette.
 
 Model Size: ViT-B
 - Hidden dim: 768
 - Num blocks: 12
-- Num heads: 12 (head_dim = 64)
-- No patchification (pixel-level, 64x64 = 4096 tokens)
-
-This config uses multi-head self-attention as the sequence mixer,
-operating on the full pixel sequence without any spatial downsampling.
+- Patchification: patch_size=16 (224/16 = 14x14 = 196 tokens) or configured for 160px.
 """
 
 import os
 
 import torch
 
+from experiments.datamodules.imagenette_datamodule import ImagenetteDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.patchify import Patchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
@@ -31,27 +30,40 @@ from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 # Dataset parameters
 INPUT_CHANNELS = 3  # RGB images
-OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
+OUTPUT_CHANNELS = NUM_CLASSES = 10  # Imagenette classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 32
-IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", "data/tinyimagenet")
-HF_DATASET_NAME = "zh-plus/tiny-imagenet"
+BATCH_SIZE = 64
+IMAGENET_PATH = os.environ.get("IMAGENETTE_CACHE", "data/imagenette")
+HF_DATASET_NAME = "Sijuade/ImageNette"
 HF_DATASET_CONFIG = None
-IMAGE_SIZE = 64
-FINAL_IMAGE_SIZE = 64
+IMAGE_SIZE = 160
+FINAL_IMAGE_SIZE = 160
 PRECISION = "bf16-mixed"
 
 # Model parameters - ViT-B scale
 NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
-NUM_HEADS = 12  # head_dim = 768/12 = 64
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
+GRID_TYPE = "double"
+FFT_PADDING = "zero"
+
+# Patchification parameters
+PATCH_SIZE = 10  # 160/10 = 16x16 = 256 tokens
+STRIDE = 10
+
+# SIREN kernel parameters
+KERNEL_MLP_HIDDEN_DIM = 64
+KERNEL_NUM_LAYERS = 3
+KERNEL_EMBEDDING_DIM = 64
+KERNEL_OMEGA_0 = 30.0
+KERNEL_HIDDEN_OMEGA_0 = 1.0
+L_CACHE = 16
 
 # Optimisation parameters
-TRAINING_ITERATIONS = 600_000
+TRAINING_ITERATIONS = 100_000  # Smaller dataset, fewer iterations
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
 LEARNING_RATE = 1e-3
@@ -60,13 +72,13 @@ GRAD_CLIP = 1.0
 
 
 def get_config() -> ExperimentConfig:
-    """Return the TinyImageNet classification configuration with Attention (no patchify)."""
+    """Return the Imagenette classification configuration with Hyena + Patchify."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(TinyImageNetDataModule)(
+    config.dataset = LazyConfig(ImagenetteDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -74,7 +86,7 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=False,
+        center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
@@ -101,20 +113,50 @@ def get_config() -> ExperimentConfig:
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        in_proj_cfg=LazyConfig(Patchify)(
+            in_features="${net.in_channels}",
+            out_features="${net.hidden_dim}",
+            data_dim="${net.data_dim}",
+            patch_size=PATCH_SIZE,
+            stride=STRIDE,
+        ),
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
-                mixer_cfg=LazyConfig(Attention)(
-                    hidden_dim="${net.hidden_dim}",
-                    num_heads=NUM_HEADS,
+                mixer_cfg=LazyConfig(Hyena)(
+                    global_conv_cfg=LazyConfig(CKConvND)(
+                        data_dim="${net.data_dim}",
+                        hidden_dim="${net.hidden_dim}",
+                        kernel_cfg=LazyConfig(SIRENKernelND)(
+                            data_dim="${net.data_dim}",
+                            out_dim="${net.hidden_dim}",
+                            mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+                            num_layers=KERNEL_NUM_LAYERS,
+                            embedding_dim=KERNEL_EMBEDDING_DIM,
+                            omega_0=KERNEL_OMEGA_0,
+                            L_cache=L_CACHE,
+                            use_bias=True,
+                            hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                        ),
+                        mask_cfg=LazyConfig(torch.nn.Identity)(),
+                        grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
+                    ),
+                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                        in_channels="3 * ${net.hidden_dim}",
+                        out_channels="3 * ${net.hidden_dim}",
+                        kernel_size=3,
+                        groups="3 * ${net.hidden_dim}",
+                        padding=1,
+                        bias=False,
+                    ),
+                    gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
+                    pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
                     apply_qk_norm=True,
-                    use_rope=True,
-                    is_causal=False,
+                    use_rope=False,
                     rope_base=10000.0,
-                    attn_dropout=0.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
@@ -122,8 +164,8 @@ def get_config() -> ExperimentConfig:
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
-                activation="gelu",
-                expansion_factor=4.0,
+                activation="glu",
+                expansion_factor=2.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
@@ -159,7 +201,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.wandb = WandbConfig(
-        job_group="tinyimagenet_vit_b_benchmark",
+        job_group="imagenette_vit_b_benchmark",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )

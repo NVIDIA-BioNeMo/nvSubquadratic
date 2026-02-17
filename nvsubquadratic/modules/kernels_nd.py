@@ -419,6 +419,7 @@ class SIRENKernelND(torch.nn.Module):
         L_cache: int,
         use_bias: bool,
         hidden_omega_0: float = 1.0,
+        no_weight_decay_on_output: bool = False,
     ):
         """Initialize the SIRENKernelND class.
 
@@ -432,6 +433,7 @@ class SIRENKernelND(torch.nn.Module):
             L_cache: Cache extent controlling the maximum supported grid size before cache growth.
             use_bias: Whether to include biases in linear layers.
             hidden_omega_0: Frequency scaling for subsequent SIREN layers.
+            no_weight_decay_on_output: Whether to disable weight decay on the output layer.
         """
         super().__init__()
 
@@ -443,6 +445,7 @@ class SIRENKernelND(torch.nn.Module):
         self.omega_0 = float(omega_0)
         self.hidden_omega_0 = float(hidden_omega_0)
         self.L_cache = L_cache
+        self.no_weight_decay_on_output = no_weight_decay_on_output
 
         # Construct positional embedding
         self.positional_embedding = SIRENPositionalEmbeddingND(
@@ -478,6 +481,10 @@ class SIRENKernelND(torch.nn.Module):
         # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.
         for param in self.kernel_network.parameters():
             param._no_weight_decay = True
+        
+        if self.no_weight_decay_on_output:
+            for param in self.out_linear.parameters():
+                param._no_weight_decay = True
 
     def forward(self, seq_lens: tuple[int, ...]) -> torch.Tensor:
         """Computes the random Fourier kernel for a given grid of spatial dimensions.

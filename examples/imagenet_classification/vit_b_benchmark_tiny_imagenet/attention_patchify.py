@@ -135,8 +135,8 @@ def get_config() -> ExperimentConfig:
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             mlp_cfg=LazyConfig(MLP)(
                 dim="${net.hidden_dim}",
-                activation="glu",
-                expansion_factor=2.0,
+                activation="gelu",
+                expansion_factor=4.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),

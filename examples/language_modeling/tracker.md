@@ -33,25 +33,32 @@
 
 ### 1. Perplexity by Tier
 
-| Tier | Hyena PPL | Attention PPL | Hyena Run ID | Attention Run ID | Notes |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Debug** | 367.48 | 494.06 | 132739 | 132740 | Completed (valid PPL) |
-| **Medium** | 27.97 | 36.21 | 134307 | 134716 | Hyena significantly outperforms Attention at this scale |
-| **Small** | - | - | 134868 | 134869 | Baseline sweep |
-| **Small (Abl)** | - | - | 134870-72 | 134873-74 | RoPE and LR ablations |
-| **Scale** | - | - | | | |
+| Tier | Hyena PPL | Attention PPL | Hyena Run ID | Attention Run ID | Status | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Debug** | 367.48 | 494.06 | 132739 | 132740 | ✅ Done | |
+| **Small** | 37.06 | 52.50 | 134930 | 134931 | ✅ Done | 2 GPU, all6000, ~3h each |
+| **Medium** | 27.97 | 36.21 | 134307 | 134716 | ✅ Done | |
+| **Scale** | - | - | - | - | 📅 Planned | Requires 32 GPUs (4 nodes × 8), not feasible on all6000 |
 
-### 2. Ablations (Small Tier)
+### 2. Ablations (Small Tier) — all6000
 
-| Experiment | Hyena PPL | Attention PPL | Run IDs |
-| :--- | :--- | :--- | :--- |
-| **Baseline** (RoPE=F, LR=3e-4) | - | - | Hy: 134868, At: 134869 |
-| **Hyena + RoPE** | - | N/A | 134870 |
-| **LR=1e-4** | - | - | Hy: 134872, At: 134874 |
-| **LR=1e-3** | - | - | Hy: 134871, At: 134873 |
+| Experiment | Hyena PPL | Attention PPL | Run IDs | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Baseline** (RoPE=F, LR=3e-4) | 37.06 | 52.50 | Hy: 134930, At: 134931 | ✅ Done |
+| **Hyena + RoPE** | - | N/A | Hy: 136569 | � Running |
+| **LR=1e-4** | - | - | Hy: 136570, At: 136571 | � Running |
+| **LR=1e-3** | - | - | Hy: 136572, At: 136573 | � Running |
 
 ---
 
 ## Technical Notes
 - **Weight Tying**: Enabled by default (`tie_weights=True`). `out_proj` bias disabled.
 - **Dropout**: `dropout_in` set to 0.0 (applied before embedding), dropout inside blocks remains active.
+- **Effective Batch Sizes** (important for fair comparisons):
+  - Debug: 64 × 1 GPU × 1 accum = **64**
+  - Small: 32 × 2 GPU × 2 accum = **128**
+  - Medium: 16 × 1 GPU × 1 accum = **16** ⚠️
+  - Scale: 8 × 32 GPU × 4 accum = **1024**
+
+> [!WARNING]
+> Batch size affects LM performance (larger → more stable gradients → often better PPL). Within-tier comparisons (Hyena vs Attention) are fair since both use the same effective batch size. Cross-tier comparisons are confounded. When running new model variants, **always match the effective batch size** of the tier baseline.
