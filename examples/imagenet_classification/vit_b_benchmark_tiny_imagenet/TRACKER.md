@@ -322,8 +322,8 @@ ______________________________________________________________________
 
 ## 📊 Observations & Insights
 
-- **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
+- **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
 - **2026-02-17 23:00**: Submitted Phase 0.2 (Hyena patchify) → Job `174875` on hipster/performance (4× RTX 6000 Ada).
 - **2026-02-17 23:00**: Initially submitted Phase 2 ω₀ sweep on performance partition — **moved to capacity (L4)** at 23:07 to avoid competing with Phase 0.2 for performance GPUs.
 - **2026-02-17 23:07**: Resubmitted Phase 2 ω₀ sweep on hipster/capacity (L4, 1 GPU each, accum=4):
@@ -335,5 +335,5 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-17
+**Last Updated**: 2026-02-18
 **Status**: 🔄 Phase 0.1 running on IVI, Phase 0.2 pending on hipster/perf, Phase 2 ω₀ sweep running on hipster/capacity

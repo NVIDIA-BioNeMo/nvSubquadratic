@@ -1,6 +1,7 @@
 """Tier 3 — Medium: Hyena causal LM on WikiText-103.
 
 ~125M params, 4x A6000, ~8-12 hours.
+Effective batch size: 16 (per GPU) × 4 GPUs × 2 accum = 128.
 """
 
 from examples.language_modeling.base_config import lm_experiment_config
@@ -14,6 +15,7 @@ def get_config():
         dropout_rate=0.1,
         seq_len=1024,
         batch_size=16,
+        accumulate_grad_steps=2,
         training_iterations=100_000,
         learning_rate=3e-4,
         weight_decay=0.1,
