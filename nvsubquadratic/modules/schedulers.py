@@ -9,7 +9,6 @@ This allows chaining multiple learning rate schedulers, e.g., LinearWarmupLR and
 import torch
 
 
-
 class WSDScheduler(torch.optim.lr_scheduler._LRScheduler):
     """Warmup-Stable-Decay Learning Rate Scheduler.
 
@@ -31,6 +30,16 @@ class WSDScheduler(torch.optim.lr_scheduler._LRScheduler):
         min_lr_ratio: float = 0.01,
         last_epoch: int = -1,
     ):
+        """Initialize WSDScheduler.
+
+        Args:
+            optimizer: Wrapped optimizer.
+            total_iterations: Total number of training iterations.
+            warmup_iterations: Number of warmup steps.
+            decay_iterations_percentage: Fraction of total iterations used for decay.
+            min_lr_ratio: Minimum LR as a fraction of the peak LR.
+            last_epoch: The index of the last epoch.
+        """
         self.total_iterations = total_iterations
         self.warmup_iterations = warmup_iterations
         self.decay_iterations = int(total_iterations * decay_iterations_percentage)
@@ -39,17 +48,18 @@ class WSDScheduler(torch.optim.lr_scheduler._LRScheduler):
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
+        """Compute learning rates for each parameter group."""
         step = self.last_epoch
-        
+
         if step < self.warmup_iterations:
-             # Warmup phase: linear increase from 0 (or very small) to peak
-             # We use max(1, ...) to avoid division by zero
-             alpha = step / max(1, self.warmup_iterations)
-             return [base_lr * alpha for base_lr in self.base_lrs]
-        
+            # Warmup phase: linear increase from 0 (or very small) to peak
+            # We use max(1, ...) to avoid division by zero
+            alpha = step / max(1, self.warmup_iterations)
+            return [base_lr * alpha for base_lr in self.base_lrs]
+
         elif step < self.stable_iterations:
             # Stable phase: maintain peak LR
-            return [base_lr for base_lr in self.base_lrs]
+            return list(self.base_lrs)
         else:
             # Decay phase: linear decay to min_lr_ratio
             decay_step = step - self.stable_iterations

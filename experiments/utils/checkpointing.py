@@ -14,7 +14,6 @@ from typing import Dict, Literal
 import pytorch_lightning as pl
 import pytorch_lightning.callbacks as pl_callbacks
 import torch
-
 import wandb
 
 
@@ -289,14 +288,12 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         # Structure: {alias: last_sha256_hex}
         self._uploaded_hashes: dict[str, str] = {}
 
-
     def _file_sha256(self, path: str, chunk_size: int = 1024 * 1024) -> str:
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(chunk_size), b""):
                 h.update(chunk)
         return h.hexdigest()
-
 
     def _maybe_upload(self, run: "wandb.sdk.wandb_run.Run", path: str, alias: str):
         if not path:

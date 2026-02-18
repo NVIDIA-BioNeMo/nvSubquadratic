@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
 from rich.tree import Tree
 
-import wandb
 from experiments.trainer import construct_trainer
 from experiments.utils.checkpointing import (
     download_checkpoint,
