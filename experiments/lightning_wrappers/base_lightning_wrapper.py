@@ -97,8 +97,8 @@ def construct_scheduler(
     Returns:
         torch.optim.lr_scheduler.LRScheduler: The constructed scheduler.
     """
-    assert scheduler_cfg.name in [PLACEHOLDER, "cosine"], (
-        f"scheduler_cfg.name must be either {PLACEHOLDER} or 'cosine'. Got {scheduler_cfg.name}"
+    assert scheduler_cfg.name in [PLACEHOLDER, "cosine", "wsd"], (
+        f"scheduler_cfg.name must be one of [{PLACEHOLDER}, 'cosine', 'wsd']. Got {scheduler_cfg.name}"
     )
     if scheduler_cfg.name != PLACEHOLDER:
         assert scheduler_cfg.total_iterations != PLACEHOLDER, (
@@ -116,7 +116,19 @@ def construct_scheduler(
     )
     warmup_iterations = int(total_iterations * warmup_iterations_percentage)
 
-    # Create warm_up scheduler
+    # Create WSD scheduler (handles its own warmup)
+    if scheduler_type == "wsd":
+         lr_scheduler = schedulers.WSDScheduler(
+            optimizer=optimizer,
+            total_iterations=total_iterations,
+            warmup_iterations=warmup_iterations,
+            decay_iterations_percentage=scheduler_cfg.decay_iterations_percentage,
+            min_lr_ratio=scheduler_cfg.min_lr_ratio,
+         )
+         # Return immediately as WSD handles everything
+         return lr_scheduler
+
+    # Create warm_up scheduler for other types
     if warmup_iterations != 0:
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
