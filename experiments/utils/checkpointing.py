@@ -289,12 +289,14 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         # Structure: {alias: last_sha256_hex}
         self._uploaded_hashes: dict[str, str] = {}
 
+
     def _file_sha256(self, path: str, chunk_size: int = 1024 * 1024) -> str:
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(chunk_size), b""):
                 h.update(chunk)
         return h.hexdigest()
+
 
     def _maybe_upload(self, run: "wandb.sdk.wandb_run.Run", path: str, alias: str):
         if not path:
@@ -432,6 +434,12 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         except Exception as e:
             # Report errors explicitly but do not crash training
             print(f"[checkpoint/prune][error] {type(e).__name__}: {e}")
+        finally:
+            # Explicitly release the API client to free HTTP sessions/caches
+            try:
+                del api
+            except UnboundLocalError:
+                pass
 
     def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         """Upload selected checkpoints at the end of validation if appropriate."""
