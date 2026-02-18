@@ -69,9 +69,9 @@ def get_config() -> ExperimentConfig:
     # =========================================================================
 
     # Create HyenaConfig with nested CKConvND and SIREN parameters
-    hyena_config = HyenaConfig(
-        hidden_dim=HIDDEN_DIM,
-        data_dim=1,  # 1D sequence
+    hyena_config = LazyConfig(HyenaConfig)(
+        hidden_dim="${net.hidden_dim}",
+        data_dim="${net.data_dim}",  # 1D sequence
         short_conv_kernel_size=SHORT_CONV_KERNEL_SIZE,
         is_causal=True,  # Causal mode!
         short_conv_accelerated=SHORT_CONV_ACCELERATED,
@@ -95,8 +95,8 @@ def get_config() -> ExperimentConfig:
     )
 
     # Create QKVSequenceMixerConfig
-    qkv_config = QKVSequenceMixerConfig(
-        hidden_dim=HIDDEN_DIM,
+    qkv_config = LazyConfig(QKVSequenceMixerConfig)(
+        hidden_dim="${net.hidden_dim}",
         init_method_in="small",
         init_method_out="wang",
         num_layers=NUM_BLOCKS,  # Required for wang_init
