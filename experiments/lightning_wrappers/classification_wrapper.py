@@ -114,6 +114,8 @@ class ClassificationWrapper(LightningWrapperBase):
 
     def training_step(self, batch, batch_idx):
         """Perform a training step and log the training loss & accuracy."""
+        # Start timing (CUDA events) - same as RegressionWrapper for timing/forward_ms, etc. in wandb to check for acceleration
+        self._start_timing()
         # Perform step
         predictions, loss, other_outputs = self._step(batch, self.train_acc)
         # Log and return loss (Required in training step)

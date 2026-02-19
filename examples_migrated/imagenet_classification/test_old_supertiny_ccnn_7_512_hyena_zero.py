@@ -27,7 +27,7 @@ OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 32  # 32
+BATCH_SIZE = 16  # 32
 # Cache dir for TinyImageNet
 IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", os.path.expanduser("~/.cache/tinyimagenet"))
 HF_DATASET_NAME = "zh-plus/tiny-imagenet"
@@ -42,7 +42,7 @@ NUM_BLOCKS = 4  # 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
-FFT_PADDING = "circular"
+FFT_PADDING = "zero"
 
 # Optimisation parameters
 TRAINING_ITERATIONS = 600_000

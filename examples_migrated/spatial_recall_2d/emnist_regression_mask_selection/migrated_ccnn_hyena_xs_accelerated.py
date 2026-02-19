@@ -41,7 +41,6 @@ KERNEL_EMBEDDING_DIM = 32
 KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 SHORT_CONV_KERNEL_SIZE = 3
-SHORT_CONV_ACCELERATED = True
 
 
 def get_config() -> ExperimentConfig:
@@ -56,11 +55,11 @@ def get_config() -> ExperimentConfig:
     )
 
     hyena_config = HyenaConfig(
+        accelerated=True,
         hidden_dim=HIDDEN_DIM,
         data_dim=2,
         short_conv_kernel_size=SHORT_CONV_KERNEL_SIZE,
         is_causal=False,
-        short_conv_accelerated=SHORT_CONV_ACCELERATED,
         use_pixelhyena_norm=True,
         use_output_norm=False,
         apply_qk_norm=True,

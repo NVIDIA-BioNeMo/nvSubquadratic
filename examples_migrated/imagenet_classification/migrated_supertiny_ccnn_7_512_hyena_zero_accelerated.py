@@ -36,7 +36,7 @@ OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", os.path.expanduser("~/.cache/tinyimagenet"))
 HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None
@@ -63,7 +63,7 @@ SHORT_CONV_KERNEL_SIZE = 3
 KERNEL_TYPE = "random_fourier"  # Use RandomFourier (not SIREN) to match test_old
 MASK_TYPE = "gaussian"  # Use Gaussian mask to match test_old
 GRID_TYPE = "single"
-FFT_PADDING = "circular"
+FFT_PADDING = "zero"
 KERNEL_MLP_HIDDEN_DIM = 64
 KERNEL_NUM_LAYERS = 3
 KERNEL_EMBEDDING_DIM = 64
@@ -118,6 +118,7 @@ def get_config() -> ExperimentConfig:
     # Create HyenaConfig with RandomFourier kernel and Gaussian mask
     # This matches the test_old config exactly!
     hyena_config = HyenaConfig(
+        accelerated=True,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,
         short_conv_kernel_size=SHORT_CONV_KERNEL_SIZE,
@@ -133,7 +134,7 @@ def get_config() -> ExperimentConfig:
         global_conv_kernel_type=KERNEL_TYPE,  # "random_fourier"
         global_conv_mask_type=MASK_TYPE,  # "gaussian"
         global_conv_grid_type=GRID_TYPE,  # "single"
-        global_conv_fft_padding=FFT_PADDING,  # "circular"
+        global_conv_fft_padding=FFT_PADDING,  # "zero"
         global_conv_use_chunked_fftconv=False,
         # RandomFourier kernel parameters (matches test_old)
         kernel_mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,  # 64
