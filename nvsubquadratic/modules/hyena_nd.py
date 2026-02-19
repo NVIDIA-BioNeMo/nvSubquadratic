@@ -91,6 +91,15 @@ class Hyena(torch.nn.Module):
             self._rope2d_cache = {}
             self._rope3d_cache = {}
 
+    def extra_repr(self) -> str:
+        """Return extra representation string for the module."""
+        # Get is_causal from global_conv if it has that attribute
+        is_causal = getattr(self.global_conv, "is_causal", None)
+        parts = [f"apply_qk_norm={self.apply_qk_norm}", f"use_rope={self.use_rope}"]
+        if is_causal is not None:
+            parts.append(f"is_causal={is_causal}")
+        return ", ".join(parts)
+
     def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
         """Precompute and cache 1D RoPE tables for input of length seq_len.
 
@@ -291,8 +300,8 @@ class Hyena(torch.nn.Module):
             query, key = qk_norm.apply_qk_norm(query, key, dim=1)
 
         # First gate
-        # z = query * key in-place. We remove the nonlinearity here to align more with the Mamba defition.
-        query.mul_(key)
+        # z = query * key. We remove the nonlinearity here to align more with the Mamba defition.
+        query = query * key
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
@@ -315,8 +324,7 @@ class Hyena(torch.nn.Module):
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
         # Second gate
-        # y = y * self.gate_nonlinear(value) in-place.
-        y.mul_(self.gate_nonlinear(value))
+        y = y * self.gate_nonlinear(value)
 
         # Optional value normalization before applying the second gate.
         # We add a normalization layer at the end of the second gate to align more with the Mamba defition.

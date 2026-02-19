@@ -351,3 +351,4 @@ runs/
 
 # Profiler results
 profile_results/
+slurm/

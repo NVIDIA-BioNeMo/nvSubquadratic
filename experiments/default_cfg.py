@@ -24,6 +24,10 @@ class TrainConfig:
     grad_clip: float = 0.0
     track_grad_norm: int = -1  # -1 for no tracking
     accumulate_grad_steps: int = 1  # Accumulate gradient over different batches
+    run_start_time: Optional[float] = None  # This is to keep track of the start time of the job
+    run_time_limit_hours: Optional[float] = (
+        None  # If both run_start_time and run_time_limit_hours are set, the WalltimeCheckpointer will stop training when the time limit is reached. If either is None, no walltime limit is enforced.
+    )
 
 
 @dataclass
@@ -36,6 +40,15 @@ class TrainerConfig:
     # Run through all validation batches every epoch by default.
     limit_val_batches: Union[int, float] = 1.0
 
+    # Checkpoint saving frequency (in training steps). If None, only save after validation.
+    # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
+    checkpoint_every_n_steps: Optional[int] = None
+
+    # Whether to upload checkpoints to W&B and run cache cleanup.
+    # Set to False to disable WandbSelectiveCheckpointUploader and WandbCacheCleanupCallback.
+    # Local ModelCheckpoint saving is unaffected by this flag.
+    wandb_checkpoint_upload: bool = True
+
 
 @dataclass
 class SchedulerConfig:
@@ -45,7 +58,10 @@ class SchedulerConfig:
     warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
-    monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
+    monitor: Optional[str] = None
+    # WSD-specific parameters
+    decay_iterations_percentage: float = 0.1  # Fraction of training for decay phase
+    min_lr_ratio: float = 0.01  # Minimum LR as fraction of peak LR  # in case we'd like to track e.g. val/iou
 
 
 @dataclass
@@ -75,15 +91,15 @@ class AutoResumeConfig:
 
 
 @dataclass
-class ResumeFromCheckpointConfig:
-    """Configuration to specify whether to start training from a previously saved checkpoint."""
+class StartFromCheckpointConfig:
+    """Configuration to start training from weights of a previously saved checkpoint (weights only, no optimizer/scheduler state)."""
 
     load: bool = False
     alias: Literal["best", "latest"] = "latest"
     strict: bool = True
     partial_load: bool = False
     run_path: str = ""
-    output_dir: str = ".artifacts/{run_id}/{alias}"
+    callbacks: list = field(default_factory=list)  # List of LazyConfig callbacks to process state_dict before loading
 
 
 @dataclass
@@ -96,6 +112,8 @@ class ExperimentConfig:
     seed: int = 0
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
+    experiment_dir: Optional[str] = None
+    num_nodes: int = 1
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
@@ -107,7 +125,7 @@ class ExperimentConfig:
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
 
-    resume_from_checkpoint: ResumeFromCheckpointConfig = field(default_factory=ResumeFromCheckpointConfig)
+    start_from_checkpoint: StartFromCheckpointConfig = field(default_factory=StartFromCheckpointConfig)
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
     callbacks: list[LazyConfig] = field(default_factory=list)
 

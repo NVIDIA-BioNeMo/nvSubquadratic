@@ -6,10 +6,10 @@ import warnings
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-import wandb
 from experiments.default_cfg import (
     PLACEHOLDER,
     ExperimentConfig,
@@ -97,8 +97,8 @@ def construct_scheduler(
     Returns:
         torch.optim.lr_scheduler.LRScheduler: The constructed scheduler.
     """
-    assert scheduler_cfg.name in [PLACEHOLDER, "cosine"], (
-        f"scheduler_cfg.name must be either {PLACEHOLDER} or 'cosine'. Got {scheduler_cfg.name}"
+    assert scheduler_cfg.name in [PLACEHOLDER, "cosine", "wsd"], (
+        f"scheduler_cfg.name must be one of [{PLACEHOLDER}, 'cosine', 'wsd']. Got {scheduler_cfg.name}"
     )
     if scheduler_cfg.name != PLACEHOLDER:
         assert scheduler_cfg.total_iterations != PLACEHOLDER, (
@@ -116,7 +116,19 @@ def construct_scheduler(
     )
     warmup_iterations = int(total_iterations * warmup_iterations_percentage)
 
-    # Create warm_up scheduler
+    # Create WSD scheduler (handles its own warmup)
+    if scheduler_type == "wsd":
+        lr_scheduler = schedulers.WSDScheduler(
+            optimizer=optimizer,
+            total_iterations=total_iterations,
+            warmup_iterations=warmup_iterations,
+            decay_iterations_percentage=scheduler_cfg.decay_iterations_percentage,
+            min_lr_ratio=scheduler_cfg.min_lr_ratio,
+        )
+        # Return immediately as WSD handles everything
+        return lr_scheduler
+
+    # Create warm_up scheduler for other types
     if warmup_iterations != 0:
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
@@ -195,6 +207,15 @@ class LightningWrapperBase(pl.LightningModule):
         self.other_outputs_train = []
         self.other_outputs_validation = []
 
+        # Timing tracking - uses CUDA events for accurate GPU timing
+        self.timing_log_interval = 100  # Log every N steps
+        self._timing_forward_accum = 0.0
+        self._timing_backward_accum = 0.0
+        self._timing_step_count = 0
+        self._cuda_start_event = None
+        self._cuda_forward_end_event = None
+        self._cuda_backward_end_event = None
+
     def forward(self, input_and_condition: dict[str, torch.Tensor]):
         """Forward pass of the network.
 
@@ -206,6 +227,71 @@ class LightningWrapperBase(pl.LightningModule):
             The output of the network.
         """
         return self.network(input_and_condition)
+
+    # =========================================================================
+    # Timing utilities for forward/backward pass measurement
+    # =========================================================================
+    def _start_timing(self):
+        """Start timing for forward pass using CUDA events."""
+        if self.training and torch.cuda.is_available():
+            self._cuda_start_event = torch.cuda.Event(enable_timing=True)
+            self._cuda_forward_end_event = torch.cuda.Event(enable_timing=True)
+            self._cuda_start_event.record()
+
+    def _record_forward_end(self):
+        """Record the end of forward pass."""
+        if self._cuda_start_event is not None:
+            self._cuda_forward_end_event.record()
+
+    def _record_backward_end_and_accumulate(self):
+        """Record backward end time and accumulate timing stats."""
+        if self._cuda_start_event is not None:
+            self._cuda_backward_end_event = torch.cuda.Event(enable_timing=True)
+            self._cuda_backward_end_event.record()
+            torch.cuda.synchronize()
+
+            # Calculate times in milliseconds
+            forward_time_ms = self._cuda_start_event.elapsed_time(self._cuda_forward_end_event)
+            backward_time_ms = self._cuda_forward_end_event.elapsed_time(self._cuda_backward_end_event)
+
+            self._timing_forward_accum += forward_time_ms
+            self._timing_backward_accum += backward_time_ms
+            self._timing_step_count += 1
+
+            # Reset events
+            self._cuda_start_event = None
+
+    def _log_timing_if_needed(self):
+        """Log accumulated timing stats every N steps."""
+        if (
+            self._timing_step_count > 0
+            and self._timing_step_count % self.timing_log_interval == 0
+            and self.logger is not None
+        ):
+            avg_forward_ms = self._timing_forward_accum / self._timing_step_count
+            avg_backward_ms = self._timing_backward_accum / self._timing_step_count
+            avg_total_ms = avg_forward_ms + avg_backward_ms
+
+            self.log("timing/forward_ms", avg_forward_ms, prog_bar=False, sync_dist=self.distributed)
+            self.log("timing/backward_ms", avg_backward_ms, prog_bar=False, sync_dist=self.distributed)
+            self.log("timing/step_total_ms", avg_total_ms, prog_bar=False, sync_dist=self.distributed)
+            self.log(
+                "timing/throughput_steps_per_sec", 1000.0 / avg_total_ms, prog_bar=False, sync_dist=self.distributed
+            )
+
+            # Reset accumulators after logging
+            self._timing_forward_accum = 0.0
+            self._timing_backward_accum = 0.0
+            self._timing_step_count = 0
+
+    def on_before_backward(self, loss: torch.Tensor) -> None:
+        """Called before backward pass - record forward end time."""
+        self._record_forward_end()
+
+    def on_after_backward(self) -> None:
+        """Called after backward pass - record timing and log."""
+        self._record_backward_end_and_accumulate()
+        self._log_timing_if_needed()
 
     def configure_optimizers(self):
         """Configure the optimizer and scheduler for training."""
@@ -234,10 +320,11 @@ class LightningWrapperBase(pl.LightningModule):
             self.log_dict(grad_norm(self, norm_type=2))
 
     def on_fit_start(self):
-        """Log the model architecture to Weights & Biases once training starts."""
+        """Log the model architecture and parameter count to Weights & Biases once training starts."""
         super().on_fit_start()
 
-        if self.logger is not None:
+        # Only log on rank 0 to avoid DDP issues with WandB
+        if self.logger is not None and self.global_rank == 0:
             model_repr = str(self.network)
             # Log as HTML wrapped in <pre> to preserve formatting in the UI.
             self.logger.experiment.log(
@@ -247,9 +334,17 @@ class LightningWrapperBase(pl.LightningModule):
                 }
             )
 
+            # Log parameter count to WandB config (appears in summary/overview)
+            self.logger.experiment.config.update(
+                {"model/num_params": self.num_params},
+                allow_val_change=True,
+            )
+
             # Also send to raw logs (stdout captured by W&B) and W&B terminal log
             self.print(f"Model architecture:\n{model_repr}")
+            self.print(f"Total parameters: {self.num_params:,}")
             wandb.termlog(f"Model architecture:\n{model_repr}")
+            wandb.termlog(f"Total parameters: {self.num_params:,}")
 
             # # Optionally watch the model to track gradients/parameters.
             # if hasattr(self.logger, "watch"):

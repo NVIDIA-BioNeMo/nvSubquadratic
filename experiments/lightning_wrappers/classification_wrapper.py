@@ -4,8 +4,8 @@
 
 import torch
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -17,12 +17,14 @@ class ClassificationWrapper(LightningWrapperBase):
         self,
         network: torch.nn.Module,
         cfg: ExperimentConfig,
+        use_bce_loss: bool = False,
     ):
         """Initialize the ClassificationWrapper.
 
         Args:
             network: Network to wrap.
             cfg: Configuration.
+            use_bce_loss: Whether to use BCEWithLogitsLoss for classification.
         """
         super().__init__(
             network=network,
@@ -32,18 +34,25 @@ class ClassificationWrapper(LightningWrapperBase):
         self.train_acc = torchmetrics.Accuracy(task="multiclass", num_classes=network.out_proj.out_features)
         self.val_acc = torchmetrics.Accuracy(task="multiclass", num_classes=network.out_proj.out_features)
         self.test_acc = torchmetrics.Accuracy(task="multiclass", num_classes=network.out_proj.out_features)
+
         # Binary problem?
         self.multiclass = network.out_proj.out_features != 1
+
         # Loss metric
-        if self.multiclass:
+        # DeitIII proposes to use BCEWithLogitsLoss for multiclass classification
+        self.use_bce_loss = use_bce_loss
+        if self.multiclass and not self.use_bce_loss:
             self.loss_metric = torch.nn.CrossEntropyLoss()
         else:
-            self.loss_metric = torch.nn.BCEWithLogitsLoss()  # TODO: Required?
+            # Binary classification or Multiclass with BCE (DeiT III style)
+            self.loss_metric = torch.nn.BCEWithLogitsLoss()
+
         # Function to get predictions:
         if self.multiclass:
             self.get_predictions = self.multiclass_prediction
         else:
             self.get_predictions = self.binary_prediction
+
         # Placeholders for logging of best train & validation values
         self.best_train_acc = 0.0
         self.best_val_acc = 0.0
@@ -64,8 +73,6 @@ class ClassificationWrapper(LightningWrapperBase):
         # Extract the label from the batch
         labels = batch.pop("label")
 
-        # Validate the structure of the batch and pass to the model
-        assert len(batch) == 2, "Batch must contain exactly 2 keys: 'input' and 'condition'"
         output = self(input_and_condition=batch)  # Pass {input: x, condition: condition}
 
         assert isinstance(output, dict), "Output must be a dictionary"
@@ -73,14 +80,22 @@ class ClassificationWrapper(LightningWrapperBase):
 
         logits = output["logits"].contiguous()  # [B, T, C]
         logits = logits.reshape(-1, logits.shape[-1])  # [B * seq_len, out_channels]
-        labels = labels.reshape(-1)  # [B * seq_len]
+
+        # Handle labels based on their shape (hard indices vs soft probabilities)
+        if labels.ndim > 1 and labels.shape[-1] == logits.shape[-1]:
+            # Soft labels: [B, C] or [B, T, C] -> [B * T, C]
+            labels = labels.reshape(-1, labels.shape[-1])
+        else:
+            # Hard labels: [B] or [B, T] -> [B * T]
+            labels = labels.reshape(-1)
 
         # Predictions
         predictions = self.get_predictions(logits)
+
         # For multi-class classification, if the labels are float, we need to convert them to long for the accuracy calculator.
         # This is a workaround used during training to have accuracy calculations for training steps / epochs as well.
         if self.multiclass:
-            if labels.dtype == torch.float:
+            if labels.dtype == torch.float and labels.ndim > 1:
                 accuracy_calculator(predictions, torch.argmax(labels, dim=1))
             else:
                 accuracy_calculator(predictions, labels)
@@ -91,7 +106,8 @@ class ClassificationWrapper(LightningWrapperBase):
         # Calculate the loss
         loss = self.loss_metric(logits, labels)
 
-        other_outputs = {}  # Not adding anything here for now, but we could add things to track per epoch, etc.
+        # Not adding anything here for now, but we could add things to track per epoch, etc.
+        other_outputs = {}
 
         # Return predictions and loss
         return predictions, loss, other_outputs

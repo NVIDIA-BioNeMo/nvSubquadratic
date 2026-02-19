@@ -12,6 +12,7 @@ dependencies = [
     "torchvision>=0.15.0",
     "einops>=0.6.0",
     "numpy>=1.21.0",
+    "pyarrow>=14.0.0,<20.0.0",     # Constrained to be compatible with cudf/pylibcudf in NGC containers
     "datasets>=2.14.0",
     "diffusers>=0.25.0",
     "clean-fid>=0.1.35",
@@ -19,7 +20,13 @@ dependencies = [
     "pytorch-lightning>=2.0.0",
     "omegaconf>=2.3.0",
     "wandb>=0.15.0",
+    "protobuf>=4.23.0,<6.0.0",     # Required for wandb gRPC transport provider
+    "grpcio>=1.50.0",              # Required for wandb Connect transport provider
     "rich>=13.0.0",
+    "Pillow",
+    "huggingface_hub",
+    "subquadratic-ops-torch-cu12",
+    "timm==1.0.22",
 ]
 
 [tool.setuptools.packages.find]
@@ -30,7 +37,17 @@ include = ["nvsubquadratic*"]
 line-length = 119
 
 [tool.ruff.lint]
-ignore = ["C901", "D100", "E501", "E741", "RUF005", "RUF010"]
+ignore = [
+    "C901",
+    "D100",
+    "E501",
+    "E741",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "RUF005",
+    "RUF010",
+]
 select = [
     "C",   # Pylint conventions
     "D",   # Documentation formatting

@@ -9,8 +9,8 @@ import torch
 
 from experiments.datamodules.ucf101 import UCF101DataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from experiments.lightning_wrappers import ClassificationWrapper
-from nvsubquadratic.lazy_config import LazyConfig
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -22,23 +22,28 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 
-PLACEHOLDER = None
-
+# Dataset parameters
+INPUT_CHANNELS = 3  # RGB video frames
+OUTPUT_CHANNELS = 101  # UCF101 action classes
 DATA_TYPE = "video"
 DATA_DIM = 3
 
-# Model parameters
+# Training parameters
 BATCH_SIZE = 1
+PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
+
+# Model parameters
 NUM_HIDDEN_CHANNELS = 156  # Must be divisible by 6
 NUM_BLOCKS = 4
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
+FFT_PADDING = "zero"
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 100_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
-NUM_WORKERS = os.cpu_count() // torch.cuda.device_count()
+NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
 GRAD_CLIP = 10.0
 
 WEIGHT_DECAY = 0.01
@@ -80,22 +85,23 @@ def get_config() -> ExperimentConfig:
 
     # Add net config
     config.net = LazyConfig(ClassificationResNet)(
-        in_channels=PLACEHOLDER,
-        out_channels=PLACEHOLDER,
+        in_channels=INPUT_CHANNELS,
+        out_channels=OUTPUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        data_dim=DATA_DIM,
+        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(Hyena)(
                     global_conv_cfg=LazyConfig(CKConvND)(
-                        data_dim=DATA_DIM,
+                        data_dim="${net.data_dim}",
                         hidden_dim="${net.hidden_dim}",
                         kernel_cfg=LazyConfig(SIRENKernelND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                            data_dim="${net.data_dim}",
                             out_dim="${net.hidden_dim}",
                             mlp_hidden_dim=32,
                             num_layers=3,
@@ -106,7 +112,7 @@ def get_config() -> ExperimentConfig:
                             hidden_omega_0=1.0,
                         ),
                         mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim="${net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+                            data_dim="${net.data_dim}",
                             num_channels="${net.hidden_dim}",
                             min_std=0.025,
                             max_std=1.25,
@@ -115,6 +121,7 @@ def get_config() -> ExperimentConfig:
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
+                        fft_padding=FFT_PADDING,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv3d)(
                         in_channels="3 * ${net.hidden_dim}",
@@ -131,7 +138,7 @@ def get_config() -> ExperimentConfig:
                     rope_base=10000.0,
                 ),
                 init_method_in=small_init,
-                init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
+                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
             ),
             sequence_mixer_norm_cfg="${net.norm_cfg}",
             # Condition mixer
@@ -144,7 +151,7 @@ def get_config() -> ExperimentConfig:
                 expansion_factor=1.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p="${net.block_cfg.dropout_cfg.p}"),
                 init_method_in=small_init,
-                init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
+                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
             ),
             mlp_norm_cfg="${net.norm_cfg}",
             # Dropout
@@ -178,6 +185,10 @@ def get_config() -> ExperimentConfig:
     )
 
     # Add wandb group
-    config.wandb = WandbConfig(job_group="ucf101_classification")
+    config.wandb = WandbConfig(
+        job_group="ucf101_classification",
+        entity="implicit-long-convs",
+        project="nvsubquadratic",
+    )
 
     return config

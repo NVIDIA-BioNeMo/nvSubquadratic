@@ -1,20 +1,14 @@
 # TODO: Add license header here
 
-"""Config file for ImageNet diffusion using the shared ResNet backbone."""
+"""Config file for TinyImageNet classification using the shared ResNet backbone."""
 
 import os
 
 import torch
 
-from experiments.datamodules.imagenet import ImageNetDataModule
-from experiments.default_cfg import (
-    DiffusionConfig,
-    DiffusionExperimentConfig,
-    SchedulerConfig,
-    TrainConfig,
-    WandbConfig,
-)
-from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
+from experiments.datamodules.tinyimagenet import AugmentConfig, MixupConfig, TinyImageNetDataModule
+from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -22,67 +16,52 @@ from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_
 from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock
+from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 
 PLACEHOLDER = None
-WANDB_ENTITY = "davidmknigge"
+WANDB_ENTITY = "dafidofff"
 DATA_DIM = 2
 
 # Dataset
-BATCH_SIZE = 42
-MAX_WORKERS = 16
-IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/home/dknigge/project_dir/huggingface/imagenet")
-HF_DATASET_NAME = "imagenet-1k"
+BATCH_SIZE = 16
+MAX_WORKERS = 8
+# Cache dir for TinyImageNet
+IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", os.path.expanduser("~/.cache/tinyimagenet"))
+HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None
-IMAGE_SIZE = 256
+IMAGE_SIZE = 64
 FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"  # Tested options: "32-true", "bf16-mixed"
 NUM_WORKERS = min(MAX_WORKERS, os.cpu_count() - 1 or MAX_WORKERS)
 
 # Model
-NUM_HIDDEN_CHANNELS = 768
-NUM_BLOCKS = 12
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 7
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
 FFT_PADDING = "circular"
-NUM_CLASSES = 1_000
+NUM_CLASSES = 200
 
 # Optimisation
-TRAINING_ITERATIONS = 800_000
-WARMUP_ITERATIONS_PERCENTAGE = 0.02
-WEIGHT_DECAY = 1e-3
-LEARNING_RATE = 2e-4
+TRAINING_ITERATIONS = 600_000
+WARMUP_ITERATIONS_PERCENTAGE = 0.05
+LEARNING_RATE = 3e-4
+WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
-ACCUMULATE_GRAD_STEPS = 1
-
-# Diffusion parameters
-NUM_TRAIN_TIMESTEPS = 1_000
-BETA_START = 1e-4
-BETA_END = 2e-2
-BETA_SCHEDULE = "cosine_interpolated"
-TIME_EMBED_DIM = NUM_HIDDEN_CHANNELS
-MAX_PERIOD = 10_000.0
-LOG_SAMPLES = True
-
-# Classifier-free guidance
-CFG_ENABLED = True
-GUIDANCE_SCALE = 3.5
-CONDITION_DROPOUT_PROB = 0.25
 
 
-def get_config() -> DiffusionExperimentConfig:
-    """Return the ImageNet diffusion configuration."""
-    config = DiffusionExperimentConfig()
+def get_config() -> ExperimentConfig:
+    """Return the TinyImageNet classification configuration."""
+    config = ExperimentConfig()
     config.debug = False
     config.seed = 42
-
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    config.dataset = LazyConfig(TinyImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -90,15 +69,28 @@ def get_config() -> DiffusionExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True,
+        center_crop=False,  # TinyImageNet is already 64x64
+        num_classes=NUM_CLASSES,
         drop_labels=False,
-        hf_dataset_name="imagenet-1k",
-        hf_dataset_config=None,
+        hf_dataset_name=HF_DATASET_NAME,
+        hf_dataset_config=HF_DATASET_CONFIG,
         hf_auth_token=hf_token,
-        task="generation",
+        task="classification",
+        # Enable Augmentations
+        mixup_cfg=LazyConfig(MixupConfig)(
+            mixup=0.8,
+            cutmix=1.0,  # Enable both mixup and cutmix
+            mixup_prob=1.0,
+            mixup_switch_prob=0.5,
+            mixup_mode="batch",
+        ),
+        augment_cfg=LazyConfig(AugmentConfig)(
+            use_three_augment=True,
+            color_jitter=0.4,
+        ),
     )
 
-    config.net = LazyConfig(ResidualNetwork)(
+    config.net = LazyConfig(ClassificationResNet)(
         in_channels=PLACEHOLDER,
         out_channels=PLACEHOLDER,
         num_blocks=NUM_BLOCKS,
@@ -106,7 +98,7 @@ def get_config() -> DiffusionExperimentConfig:
         in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-        block_cfg=LazyConfig(AdaLNZeroResidualBlock)(
+        block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim="${net.hidden_dim}",
                 mixer_cfg=LazyConfig(Hyena)(
@@ -150,8 +142,8 @@ def get_config() -> DiffusionExperimentConfig:
                         num_channels="${net.hidden_dim}",
                     ),
                     apply_qk_norm=True,
-                    use_rope=False,
-                    rope_base=10_000.0,
+                    use_rope=True,
+                    rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
@@ -166,15 +158,14 @@ def get_config() -> DiffusionExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             mlp_norm_cfg="${net.norm_cfg}",
+            condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
+            condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
-            condition_norm_cfg="${net.norm_cfg}",
-            hidden_dim="${net.hidden_dim}",
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-        condition_in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
     )
 
-    config.lightning_wrapper_class = LazyConfig(DiffusionWrapper)()
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)()
 
     config.optimizer = LazyConfig(torch.optim.AdamW)(
         params=PLACEHOLDER,
@@ -186,36 +177,18 @@ def get_config() -> DiffusionExperimentConfig:
         batch_size="${dataset.batch_size}",
         iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
-        accumulate_grad_steps=ACCUMULATE_GRAD_STEPS,
-        precision="bf16-mixed",
+        precision=PRECISION,
     )
 
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
-        mode="min",
-    )
-
-    config.diffusion = DiffusionConfig(
-        num_train_timesteps=NUM_TRAIN_TIMESTEPS,
-        beta_start=BETA_START,
-        beta_end=BETA_END,
-        beta_schedule=BETA_SCHEDULE,
-        cosine_schedule_image_resolution=FINAL_IMAGE_SIZE,
-        cosine_schedule_noise_res_high=FINAL_IMAGE_SIZE,
-        cosine_schedule_noise_res_low=max(32, FINAL_IMAGE_SIZE // 2),
-        time_embed_dim=TIME_EMBED_DIM,
-        max_period=MAX_PERIOD,
-        num_classes=1_000,
-        use_classifier_free_guidance=CFG_ENABLED,
-        guidance_scale=GUIDANCE_SCALE,
-        condition_dropout_prob=CONDITION_DROPOUT_PROB,
-        fid_enabled=False,
+        mode="max",
     )
 
     config.wandb = WandbConfig(
-        job_group="imagenet-diffusion",
+        job_group="tinyimagenet_classification",
         entity=WANDB_ENTITY,
     )
 

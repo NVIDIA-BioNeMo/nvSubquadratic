@@ -6,8 +6,8 @@ from typing import Literal
 
 import torch
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -63,8 +63,6 @@ class RegressionWrapper(LightningWrapperBase):
         # Extract the label from the batch
         labels = batch.pop("label")
 
-        # Validate the structure of the batch and pass to the model
-        assert len(batch) == 2, "Batch must contain exactly 2 keys: 'input' and 'condition'"
         output = self(input_and_condition=batch)  # Pass {input: x, condition: condition}
 
         assert isinstance(output, dict), "Output must be a dictionary"
@@ -73,20 +71,22 @@ class RegressionWrapper(LightningWrapperBase):
         logits = output["logits"].contiguous()
         prediction = logits  # In regression, predictions are the logits
 
-        # Calculate metric
-        metric_calculator(prediction.view(-1), labels.view(-1))
+        # Calculate metric (use reshape instead of view for non-contiguous tensors)
+        metric_calculator(prediction.reshape(-1), labels.reshape(-1))
 
         # Other outputs
         other_outputs = {}  # Not adding anything here for now, but we could add things to track per epoch, etc.
 
         # Calculate loss
-        loss = self.loss_metric(prediction.view(-1), labels.view(-1))
+        loss = self.loss_metric(prediction.reshape(-1), labels.reshape(-1))
 
         # Return predictions, loss and other outputs (contains logits and possibly other outputs such as token stats)
         return prediction, loss, other_outputs
 
     def training_step(self, batch, batch_idx):
         """Perform training step and log the training loss."""
+        # Start timing (CUDA events)
+        self._start_timing()
         # Perform step
         predictions, loss, other_outputs = self._step(batch, self.train_metric)
         # Log loss

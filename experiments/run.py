@@ -10,16 +10,16 @@ Usage:
 """
 
 import argparse
-import dataclasses
 import os
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 from rich import print as rprint
 from rich.tree import Tree
 
-import wandb
 from experiments.trainer import construct_trainer
 from experiments.utils.checkpointing import (
     download_checkpoint,
@@ -30,7 +30,7 @@ from experiments.utils.checkpointing import (
 from experiments.utils.cli import (
     add_to_tree,
     apply_config_overrides,
-    config_to_dict_for_rich,
+    config_to_dict,
     get_deterministic_run_name,
     load_config_from_file,
     verify_no_interpolator_overwrites,
@@ -67,7 +67,20 @@ def parse_args() -> argparse.Namespace:
         help="Configuration overrides, e.g., dataset.batch_size=64",
     )
 
-    return parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+    # Support --key=value format (common in wandb sweeps)
+    for arg in unknown:
+        if arg.startswith("--"):
+            # Strip the leading --
+            # This turns --dataset.batch_size=32 into dataset.batch_size=32
+            args.overrides.append(arg[2:])
+        else:
+            # If it doesn't start with -- but wasn't caught by positional, keep it.
+            # (Though effectively 'overrides' nargs='*' should catch non-dashed args)
+            args.overrides.append(arg)
+
+    return args
 
 
 def main() -> None:
@@ -79,7 +92,7 @@ def main() -> None:
     3.  Setting up the environment, including seeding for reproducibility and configuring torch settings.
     4.  Instantiating the data module, network model, and the Lightning wrapper.
     5.  Setting up the Weights & Biases logger, with support for auto-resuming runs.
-    6.  Handling checkpoint loading for resuming training or fine-tuning.
+    6.  Handling checkpoint loading for starting from pretrained weights or fine-tuning.
     7.  Constructing the PyTorch Lightning trainer with appropriate callbacks.
     8.  Executing the training, validation, and testing phases of the experiment.
     """
@@ -92,6 +105,9 @@ def main() -> None:
     # Validate that overrides do not target interpolated fields, then apply
     verify_no_interpolator_overwrites(config, args.overrides)
     config = apply_config_overrides(config, args.overrides)
+
+    num_nodes = config.num_nodes
+    experiment_dir = config.experiment_dir
 
     # Set seed
     pl.seed_everything(config.seed, workers=True)
@@ -109,7 +125,7 @@ def main() -> None:
     datamodule.setup()
 
     # Construct model
-    network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
+    network = instantiate(config.net)
 
     # Compile the model if specified
     if config.compile:
@@ -139,50 +155,90 @@ def main() -> None:
         # Use the deterministic run name with timestamp
         run_name = get_deterministic_run_name(args.config, args.overrides, use_timestamp=True)
 
+    experiment_dir = Path(experiment_dir) if experiment_dir is not None else Path("runs") / run_name
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+
     # Determine if we should attach to an existing run by name (autoresume)
     autoresume_ckpt_path = None
     attach_run_id = None
+
+    # If autoresume is enabled, search W&B for existing run and download checkpoint
     if config.autoresume.enabled and not offline:
         api = wandb.Api()
-        runs = api.runs(path=f"{config.wandb.entity}/{config.wandb.project}", filters={"display_name": run_name})
+        runs = api.runs(
+            path=f"{config.wandb.entity}/{config.wandb.project}",
+            filters={"display_name": run_name},
+        )
         if len(runs) > 1:
             raise RuntimeError(
                 f"[autoresume] Multiple runs found with name '{run_name}'. Refusing to resume. Count={len(runs)}"
             )
-        if len(runs) == 0:
-            raise RuntimeError(
-                f"[autoresume] No run found with name '{run_name}' in {config.wandb.entity}/{config.wandb.project}."
-            )
-        # Exactly one run found
-        target_run = runs[0]
-        attach_run_id = target_run.id
-        target_run_path = f"{target_run.entity}/{target_run.project}/{target_run.id}"
-        ckpt_alias = config.autoresume.alias
-        autoresume_ckpt_path = download_checkpoint(run_path=target_run_path, alias=ckpt_alias)
-        print(f"[autoresume] Found existing run '{target_run_path}', downloaded ckpt: {autoresume_ckpt_path}")
+        if len(runs) == 1:
+            # Exactly one run found - download checkpoint and attach to it
+            target_run = runs[0]
+            attach_run_id = target_run.id
+            target_run_path = f"{target_run.entity}/{target_run.project}/{target_run.id}"
+            ckpt_alias = config.autoresume.alias
+            print(f"[autoresume] Found existing run '{run_name}' ({target_run_path}), downloading checkpoint...")
+            try:
+                autoresume_ckpt_path = download_checkpoint(run_path=target_run_path, alias=ckpt_alias)
+                print(f"[autoresume] Checkpoint downloaded to: {autoresume_ckpt_path}")
+            except Exception as e:
+                print(f"[autoresume] Failed to download checkpoint: {e}")
+                print("[autoresume] Will check for local checkpoint instead.")
+        else:
+            print(f"[autoresume] No existing run found with name '{run_name}', starting fresh.")
 
-    # Create logger, attaching to existing run if applicable
-    if attach_run_id is not None and not offline:
+    # If autoresume enabled but no W&B checkpoint found, check for local checkpoint
+    if config.autoresume.enabled and autoresume_ckpt_path is None:
+        ckpt_dir = experiment_dir / "checkpoints"
+        if ckpt_dir.exists():
+            last_path = ckpt_dir / "last.ckpt"
+            if last_path.exists():
+                autoresume_ckpt_path = last_path
+                print(f"[autoresume] Found local checkpoint: {autoresume_ckpt_path}")
+            else:
+                print(f"[autoresume] No last.ckpt found in {ckpt_dir}, starting from scratch.")
+
+    # Generate or reuse run ID
+    run_id_file = experiment_dir / "run.id"
+    if attach_run_id is not None:
+        # Use the run ID from W&B and save it locally
+        run_id_file.write_text(attach_run_id)
+    elif run_id_file.exists():
+        # Resume existing local run
+        attach_run_id = run_id_file.read_text().strip()
+    else:
+        # Fresh run - generate new run ID
+        attach_run_id = wandb.util.generate_id()
+        run_id_file.write_text(attach_run_id)
+
+    # Serialize config once for both WandB and tree printing
+    config_dict = config_to_dict(config)
+
+    if config.autoresume.enabled:
         wandb_logger = WandbLogger(
             project=config.wandb.project,
             entity=config.wandb.entity,
+            save_dir=experiment_dir,
             id=attach_run_id,
             resume="allow",
-            name=None,
-            # config=dataclasses.asdict(config),
+            name=run_name,
             log_model=log_model,
             offline=offline,
             save_code=True,
             group=config.wandb.job_group,
         )
     else:
-        # Start a fresh run otherwise
         wandb_logger = WandbLogger(
             project=config.wandb.project,
             entity=config.wandb.entity,
+            save_dir=experiment_dir,
+            id=attach_run_id,
+            resume="allow",
             name=run_name,
-            config=dataclasses.asdict(config),  # Convert dataclass config to dict
-            log_model=log_model,  # used to save models to wandb during training
+            config=config_dict,
+            log_model=log_model,
             offline=offline,
             save_code=True,
             group=config.wandb.job_group,
@@ -194,48 +250,68 @@ def main() -> None:
         if args.overrides:
             command += " " + " ".join(args.overrides)
         # Log the command.
-        wandb_logger.experiment.config.update({"command": command})
+        wandb_logger.experiment.config.update({"command": command}, allow_val_change=True)
 
-    # Print the config files prior to training
-    config_dict = config_to_dict_for_rich(config)
+    # Print the config tree
     tree = Tree("Configuration")
     add_to_tree(tree, config_dict)
     rprint(tree)
 
-    # If we are not autoresuming and we are starting training from a given checkpoint, check whether we are starting training
-    # from a predefined checkpoint.
-    if autoresume_ckpt_path is None:
-        if config.resume_from_checkpoint.load:
+    # If we are not autoresuming and we want to start training from pretrained weights,
+    # download and load the checkpoint (weights only, no optimizer/scheduler state).
+    # Note: start_from_checkpoint is skipped when autoresume is enabled (they are mutually exclusive).
+    if autoresume_ckpt_path is None and not config.autoresume.enabled:
+        if config.start_from_checkpoint.load:
+            # Validate run_path is set
+            if not config.start_from_checkpoint.run_path:
+                raise ValueError(
+                    "[start] start_from_checkpoint.run_path must be set when start_from_checkpoint.load=True. "
+                    "Example: start_from_checkpoint.run_path=entity/project/run_id"
+                )
             print(
-                f"[resume] Starting checkpoint resume: run_path={config.resume_from_checkpoint.run_path}, "
-                f"alias={config.resume_from_checkpoint.alias}, strict={config.resume_from_checkpoint.strict}, "
-                f"partial_load={config.resume_from_checkpoint.partial_load}"
+                f"[start] Loading pretrained weights: run_path={config.start_from_checkpoint.run_path}, "
+                f"alias={config.start_from_checkpoint.alias}, strict={config.start_from_checkpoint.strict}, "
+                f"partial_load={config.start_from_checkpoint.partial_load}"
             )
             # Download checkpoint from W&B run and load state dict.
-            resume_ckpt_path = download_checkpoint(
-                run_path=config.resume_from_checkpoint.run_path,
-                # output_dir=config.resume_from_checkpoint.output_dir,
-                alias=config.resume_from_checkpoint.alias,
+            start_ckpt_path = download_checkpoint(
+                run_path=config.start_from_checkpoint.run_path,
+                alias=config.start_from_checkpoint.alias,
             )
-            print(f"[resume] Checkpoint downloaded to: {resume_ckpt_path}")
-            state_dict = load_checkpoint_state_dict(resume_ckpt_path)
+            print(f"[start] Checkpoint downloaded to: {start_ckpt_path}")
+            state_dict = load_checkpoint_state_dict(start_ckpt_path)
+
+            # Process callbacks if configured
+            if hasattr(config.start_from_checkpoint, "callbacks") and config.start_from_checkpoint.callbacks:
+                for cb_cfg in config.start_from_checkpoint.callbacks:
+                    callback = instantiate(cb_cfg)
+                    result = callback(
+                        state_dict=state_dict,
+                        model=model,
+                        config=config,
+                        datamodule=datamodule,
+                        checkpoint_path=start_ckpt_path,
+                    )
+                    if result is not None:
+                        state_dict = result
+
             # Preview detailed compatibility before loading
             try:
                 preview_state_dict_compatibility(model, state_dict)
             except Exception as e:
-                print(f"[resume] Compatibility preview failed: {e}")
+                print(f"[start] Compatibility preview failed: {e}")
 
-            print("[resume] Loading weights into model...")
-            if config.resume_from_checkpoint.strict:
+            print("[start] Loading weights into model...")
+            if config.start_from_checkpoint.strict:
                 res = model.load_state_dict(state_dict, strict=True)
                 if hasattr(res, "missing_keys") and hasattr(res, "unexpected_keys"):
-                    print(f"[resume/strict] missing={len(res.missing_keys)} unexpected={len(res.unexpected_keys)}")
+                    print(f"[start/strict] missing={len(res.missing_keys)} unexpected={len(res.unexpected_keys)}")
                     for k in res.missing_keys:
                         print(f"  [missing] {k}")
                     for k in res.unexpected_keys:
                         print(f"  [unexpected] {k}")
             else:
-                if config.resume_from_checkpoint.partial_load:
+                if config.start_from_checkpoint.partial_load:
                     # Perform tolerant partial parameter loading (overlapping slices)
                     load_state_dict_partially(model, state_dict)
                 else:
@@ -243,26 +319,22 @@ def main() -> None:
                     res = model.load_state_dict(state_dict, strict=False)
                     if hasattr(res, "missing_keys") and hasattr(res, "unexpected_keys"):
                         print(
-                            f"[resume/non-strict] missing={len(res.missing_keys)} unexpected={len(res.unexpected_keys)}"
+                            f"[start/non-strict] missing={len(res.missing_keys)} unexpected={len(res.unexpected_keys)}"
                         )
                         for k in res.missing_keys:
                             print(f"  [missing] {k}")
                         for k in res.unexpected_keys:
                             print(f"  [unexpected] {k}")
-            print("[resume] Weight loading completed.")
+            print("[start] Weight loading completed.")
 
     # Create trainer
-    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name)
+    trainer, checkpoint_callback = construct_trainer(config, wandb_logger, run_name, experiment_dir, num_nodes)
 
-    # Validate that the checkpoint has been correctly loaded before training (for no autoresume)
-    if autoresume_ckpt_path is None and config.resume_from_checkpoint.load:
-        print("[resume] Running validation to verify loaded checkpoint...")
+    # Validate that the checkpoint has been correctly loaded before training (for start_from_checkpoint)
+    if autoresume_ckpt_path is None and not config.autoresume.enabled and config.start_from_checkpoint.load:
+        print("[start] Running validation to verify loaded weights...")
         trainer.validate(model, datamodule=datamodule)
-        print("[resume] Validation after resume completed.")
-
-    # # register hooks
-    # if config.hooks_enabled:
-    #     model.configure_callbacks = partial(register_hooks, config, model)
+        print("[start] Validation completed.")
 
     # Train
     if config.train.do:
@@ -277,15 +349,9 @@ def main() -> None:
         else:
             print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 
-    # Validate and test before finishing
-    trainer.validate(
-        model,
-        datamodule=datamodule,
-    )
-    trainer.test(
-        model,
-        datamodule=datamodule,
-    )
+    # Validate and test after training before finishing
+    trainer.validate(model, datamodule=datamodule)
+    trainer.test(model, datamodule=datamodule)
 
 
 if __name__ == "__main__":

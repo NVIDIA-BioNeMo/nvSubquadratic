@@ -6,10 +6,7 @@
 	],
 	"build": {
 		"context": "${localWorkspaceFolder}",
-		"dockerfile": "${localWorkspaceFolder}/Dockerfile",
-		"args": {
-			"GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
-		}
+		"dockerfile": "${localWorkspaceFolder}/Dockerfile"
 	},
 	"mounts": [
 		// Mount the local ~/.aws config to pass along AWS credentials for PBSS.
@@ -22,9 +19,7 @@
 		"source=${localEnv:HOME}/.bash_history_devcontainer,target=/home/ubuntu/.bash_history,type=bind,consistency=cached"
 	],
 	"containerEnv": {
-		"TMPDIR": "/tmp",
-		"NUMBA_CACHE_DIR": "/tmp/",
-		"GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
+		"TMPDIR": "/tmp"
 	},
 	"postCreateCommand": "./.devcontainer/postCreateCommand.sh",
 	"initializeCommand": "./.devcontainer/initializeCommand.sh",

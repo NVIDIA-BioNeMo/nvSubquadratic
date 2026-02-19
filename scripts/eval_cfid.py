@@ -20,6 +20,10 @@ from nvsubquadratic.lazy_config import instantiate
 from nvsubquadratic.metrics.cleanfid import compute_folder_fid
 
 
+# Set high precision for matrix multiplication (tensor cores)
+torch.set_float32_matmul_precision("high")
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Offline CleanFID evaluation helper.")
     parser.add_argument("--config", required=True, help="Path to the experiment config.")
@@ -146,6 +150,10 @@ def main() -> None:
     if getattr(config, "diffusion", None) is None:
         raise ValueError("Selected config does not define diffusion settings.")
 
+    # Override batch size to match the requested sample batch size for efficiency
+    if hasattr(config.dataset, "batch_size"):
+        config.dataset.batch_size = args.sample_batch_size
+
     datamodule = instantiate(config.dataset)
     example_shape = _extract_example_shape(datamodule)
     if hasattr(datamodule, "teardown"):
@@ -158,6 +166,11 @@ def main() -> None:
     )
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
     _set_example_shape(model, example_shape)
+
+    # Optional compilation
+    if getattr(config, "compile", False):
+        print("[fid] Compiling model with torch.compile...")
+        model.network = torch.compile(model.network)
 
     state_dict = load_checkpoint_state_dict(ckpt_path)
     load_msg = model.load_state_dict(state_dict, strict=False)
@@ -183,10 +196,56 @@ def main() -> None:
         raise ValueError("Unable to determine num_inference_steps for sampling.")
 
     print(f"[fid] Generating {args.num_samples} samples into {output_dir} ...")
-    with torch.inference_mode():
+
+    # Determine precision for autocast
+    precision_str = getattr(config.train, "precision", "32-true")
+    if precision_str in ["bf16-mixed", "bf16"]:
+        autocast_dtype = torch.bfloat16
+    elif precision_str in ["16-mixed", "fp16"]:
+        autocast_dtype = torch.float16
+    else:
+        autocast_dtype = torch.float32
+
+    # Use the training dataloader to ensure we sample labels from the correct distribution
+    datamodule.prepare_data()
+    datamodule.setup(stage="fit")
+    loader = datamodule.train_dataloader()
+    iterator = iter(loader)
+
+    with torch.inference_mode(), torch.autocast("cuda", dtype=autocast_dtype, enabled=autocast_dtype != torch.float32):
         while total < args.num_samples:
-            current = min(args.sample_batch_size, args.num_samples - total)
-            samples = model.sample(num_samples=current, num_inference_steps=inference_steps)
+            try:
+                batch = next(iterator)
+            except StopIteration:
+                iterator = iter(loader)
+                batch = next(iterator)
+
+            # Handle different batch structures
+            if isinstance(batch, dict):
+                # We consume as many labels as we need to fill the batch or finish the quota
+                current_labels = batch.get("label")
+                if current_labels is not None:
+                    current_labels = current_labels.to(device)
+            elif isinstance(batch, (list, tuple)) and len(batch) > 1:
+                # Assumption: (data, label) tuple
+                current_labels = batch[1].to(device)
+            else:
+                current_labels = None
+
+            # Determine how many samples to generate in this pass
+            remaining = args.num_samples - total
+
+            # If we have labels, use their batch size (capped by remaining)
+            # If no labels, use sample-batch-size (capped by remaining)
+            if current_labels is not None:
+                current = min(current_labels.shape[0], remaining)
+                # Slice labels to match the number of samples we are generating
+                batch_labels = current_labels[:current]
+            else:
+                current = min(args.sample_batch_size, remaining)
+                batch_labels = None
+
+            samples = model.sample(num_samples=current, num_inference_steps=inference_steps, labels=batch_labels)
             _save_sample_batch(samples, output_dir, total)
             total += current
             print(f"\r[sampling] {total}/{args.num_samples} images complete", end="")
