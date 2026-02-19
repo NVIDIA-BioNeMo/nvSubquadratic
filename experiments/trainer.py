@@ -104,24 +104,26 @@ def construct_trainer(
 
     # Optionally add W&B checkpoint upload and cache cleanup callbacks
     if cfg.trainer.wandb_checkpoint_upload:
-        callbacks_list.extend([
-            # Wandb selective checkpoint uploader
-            WandbSelectiveCheckpointUploader(
-                upload_best=True,
-                upload_last=True,
-                remove_local_after_upload=False,
-                keep_last_k_versions=2,
-            ),
-            # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
-            WandbCacheCleanupCallback(
-                max_cache_size="5GB",
-                every_n_epochs=2,
-                executable="wandb",
-                run_on_fit_start=True,
-                background=True,
-                timeout=60,
-            ),
-        ])
+        callbacks_list.extend(
+            [
+                # Wandb selective checkpoint uploader
+                WandbSelectiveCheckpointUploader(
+                    upload_best=True,
+                    upload_last=True,
+                    remove_local_after_upload=False,
+                    keep_last_k_versions=2,
+                ),
+                # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
+                WandbCacheCleanupCallback(
+                    max_cache_size="5GB",
+                    every_n_epochs=2,
+                    executable="wandb",
+                    run_on_fit_start=True,
+                    background=True,
+                    timeout=60,
+                ),
+            ]
+        )
 
     if cfg.train.run_start_time is not None and cfg.train.run_time_limit_hours is not None:
         callbacks_list.append(
