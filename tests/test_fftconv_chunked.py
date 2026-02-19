@@ -12,19 +12,19 @@ These tests verify that:
 import pytest
 import torch
 
-from nvsubquadratic.ops.fftconv import (
+from nvsubq_paper.ops.fftconv import (
     causal_fftconv1d_bhl as causal_fftconv1d_std,
 )
-from nvsubquadratic.ops.fftconv import (
+from nvsubq_paper.ops.fftconv import (
     fftconv1d_bhl as fftconv1d_std,
 )
-from nvsubquadratic.ops.fftconv import (
+from nvsubq_paper.ops.fftconv import (
     fftconv2d_bhl as fftconv2d_std,
 )
-from nvsubquadratic.ops.fftconv import (
+from nvsubq_paper.ops.fftconv import (
     fftconv3d_bhl as fftconv3d_std,
 )
-from nvsubquadratic.ops.fftconv_chunked import (
+from nvsubq_paper.ops.fftconv_chunked import (
     # Explicit chunked functions
     causal_fftconv1d_bhl_chunked,
     chunking_enabled,
@@ -37,14 +37,14 @@ from nvsubquadratic.ops.fftconv_chunked import (
     set_chunking_enabled,
     set_default_chunk_size,
 )
-from nvsubquadratic.ops.fftconv_chunked import (
+from nvsubq_paper.ops.fftconv_chunked import (
     # Drop-in replacements (auto-select based on global flag)
     fftconv1d_bhl as fftconv1d_bhl_dropin,
 )
-from nvsubquadratic.ops.fftconv_chunked import (
+from nvsubq_paper.ops.fftconv_chunked import (
     fftconv2d_bhl as fftconv2d_bhl_dropin,
 )
-from nvsubquadratic.ops.fftconv_chunked import (
+from nvsubq_paper.ops.fftconv_chunked import (
     fftconv3d_bhl as fftconv3d_bhl_dropin,
 )
 

@@ -26,8 +26,8 @@ from examples.spatial_recall_2d.base_config import (
     base_experiment_config as spatial_recall_2d_base_experiment_config,
 )
 from experiments.default_cfg import ExperimentConfig
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.patchify import Patchify, Unpatchify
+from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubq_paper.modules.patchify import Patchify, Unpatchify
 
 
 # Dataset-specific parameters

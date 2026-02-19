@@ -26,8 +26,8 @@ from experiments.default_cfg import (
     WandbConfig,
 )
 from experiments.lightning_wrappers import DiffusionWrapper
-from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.networks.huggingface_diffusers import DiffusersUVitWrapper, HuggingFaceUVitConfig
+from nvsubq_paper.lazy_config import LazyConfig
+from nvsubq_paper.networks.huggingface_diffusers import DiffusersUVitWrapper, HuggingFaceUVitConfig
 
 
 PLACEHOLDER = None

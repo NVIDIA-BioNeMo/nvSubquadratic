@@ -6,7 +6,7 @@
 
 Usage:
     # MNIST classification
-    PYTHONPATH=. python nvsubquadratic/examples/run.py --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
+    PYTHONPATH=. python nvsubq_paper/examples/run.py --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
 """
 
 import argparse
@@ -35,7 +35,7 @@ from experiments.utils.cli import (
     load_config_from_file,
     verify_no_interpolator_overwrites,
 )
-from nvsubquadratic.lazy_config import instantiate
+from nvsubq_paper.lazy_config import instantiate
 
 
 torch._dynamo.config.cache_size_limit = 32

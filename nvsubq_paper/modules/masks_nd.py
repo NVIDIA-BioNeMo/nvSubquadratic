@@ -6,7 +6,7 @@
 These masks are used to modulate the input features of a convolutional kernel.
 
 For testing:
-    PYTHONPATH=. python nvsubquadratic/modules/masks_nd.py
+    PYTHONPATH=. python nvsubq_paper/modules/masks_nd.py
 """
 
 import math

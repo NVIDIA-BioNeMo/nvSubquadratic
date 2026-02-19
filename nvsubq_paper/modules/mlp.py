@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
 
 
 class MLP(nn.Module):

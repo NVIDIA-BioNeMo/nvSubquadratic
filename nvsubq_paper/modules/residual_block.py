@@ -19,7 +19,7 @@ from typing import Union
 
 import torch
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
 
 
 class ResidualBlock(torch.nn.Module):

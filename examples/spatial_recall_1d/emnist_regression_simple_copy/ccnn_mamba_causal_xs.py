@@ -28,7 +28,7 @@ from examples.spatial_recall_1d.base_config import (
     base_experiment_config as spatial_recall_1d_base_experiment_config,
 )
 from experiments.default_cfg import ExperimentConfig
-from nvsubquadratic.lazy_config import PLACEHOLDER
+from nvsubq_paper.lazy_config import PLACEHOLDER
 
 
 # Dataset-specific parameters

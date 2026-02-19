@@ -10,13 +10,13 @@ import torch
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.attention import Attention
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.residual_block import ResidualBlock
-from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.networks.classification_resnet import ClassificationResNet
+from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubq_paper.modules.attention import Attention
+from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubq_paper.modules.mlp import MLP
+from nvsubq_paper.modules.residual_block import ResidualBlock
+from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
+from nvsubq_paper.networks.classification_resnet import ClassificationResNet
 
 
 # Dataset parameters
@@ -141,7 +141,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         job_group="mnist_classification",
         entity="implicit-long-convs",
-        project="nvsubquadratic",
+        project="nvsubq_paper",
     )
 
     return config

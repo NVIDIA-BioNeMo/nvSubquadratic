@@ -4,7 +4,7 @@
 """Test the 2D circular FFT convolution against reference circular padded conv2d.
 
 Usage:
-    PYTHONPATH=. python nvsubquadratic/ops/test_circular_fftconv.py
+    PYTHONPATH=. python nvsubq_paper/ops/test_circular_fftconv.py
 """
 
 import time
@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 
-from nvsubquadratic.ops.circular_fftconv import (
+from nvsubq_paper.ops.circular_fftconv import (
     circular_fftconv1d_bhl,
     circular_fftconv2d_bhl,
     circular_fftconv3d_bhl,

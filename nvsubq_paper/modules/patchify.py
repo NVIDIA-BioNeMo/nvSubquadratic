@@ -3,7 +3,7 @@
 """Patchify and Unpatchify layers as ConvND and ConvTransposeND layers.
 
 Usage test:
-    PYTHONPATH=. python nvsubquadratic/modules/patchify.py
+    PYTHONPATH=. python nvsubq_paper/modules/patchify.py
 """
 
 from typing import Tuple

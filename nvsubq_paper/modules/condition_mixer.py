@@ -21,7 +21,7 @@ from typing import Callable
 
 import torch
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
 
 
 class QKVConditionMixer(torch.nn.Module):

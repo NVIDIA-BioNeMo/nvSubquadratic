@@ -2,7 +2,7 @@
 
 """Wrappers around the custom CUDA FFT convolution kernels.
 
-This module mirrors the API of :mod:`nvsubquadratic.ops.fftconv` for the 2D
+This module mirrors the API of :mod:`nvsubq_paper.ops.fftconv` for the 2D
 operators while delegating the heavy lifting to the optimized kernel provided
 by :mod:`subquadratic_ops_torch`. The intent is to be a drop-in replacement
 that preserves shapes, dtype checks, and shortcut semantics.
@@ -87,5 +87,5 @@ def fftconv2d_blh(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Alias for fftconv2d_bhl_w_reshape to match nvsubquadratic.ops.fftconv API."""
+    """Alias for fftconv2d_bhl_w_reshape to match nvsubq_paper.ops.fftconv API."""
     return fftconv2d_bhl_w_reshape(x, kernel, shortcut)

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from nvsubquadratic.modules.schedulers import WSDScheduler
+from nvsubq_paper.modules.schedulers import WSDScheduler
 
 
 class TestWSDScheduler:

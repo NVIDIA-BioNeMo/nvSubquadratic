@@ -39,7 +39,7 @@ Usage
 -----
 Explicit chunked functions::
 
-    from nvsubquadratic.ops.fftconv_chunked import fftconv2d_bhl_chunked
+    from nvsubq_paper.ops.fftconv_chunked import fftconv2d_bhl_chunked
 
     # Process in chunks of 128 channels (default)
     y = fftconv2d_bhl_chunked(x, kernel, shortcut)
@@ -49,14 +49,14 @@ Explicit chunked functions::
 
 Drop-in replacements that automatically use chunking when enabled::
 
-    from nvsubquadratic.ops.fftconv_chunked import fftconv2d_bhl, set_chunking_enabled
+    from nvsubq_paper.ops.fftconv_chunked import fftconv2d_bhl, set_chunking_enabled
 
     set_chunking_enabled(True)   # Enable chunked processing
     y = fftconv2d_bhl(x, kernel, shortcut)  # Uses chunking
 
 Control chunking via global flags::
 
-    from nvsubquadratic.ops.fftconv_chunked import (
+    from nvsubq_paper.ops.fftconv_chunked import (
         set_chunking_enabled,
         set_default_chunk_size,
     )
@@ -154,7 +154,7 @@ def chunking_enabled(enabled: bool = True, chunk_size: int | None = None):
 
     Example::
 
-        from nvsubquadratic.ops.fftconv_chunked import (
+        from nvsubq_paper.ops.fftconv_chunked import (
             fftconv2d_bhl,
             chunking_enabled,
         )
@@ -247,7 +247,7 @@ def fftconv1d_bhl_chunked(
     Returns:
         Output tensor [B, H, L]
     """
-    from nvsubquadratic.ops.fftconv import fftconv1d_bhl as _fftconv1d_bhl_std
+    from nvsubq_paper.ops.fftconv import fftconv1d_bhl as _fftconv1d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
@@ -287,7 +287,7 @@ def causal_fftconv1d_bhl_chunked(
     Returns:
         Output tensor [B, H, L]
     """
-    from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl as _causal_fftconv1d_bhl_std
+    from nvsubq_paper.ops.fftconv import causal_fftconv1d_bhl as _causal_fftconv1d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
@@ -330,7 +330,7 @@ def fftconv2d_bhl_chunked(
     Returns:
         Output tensor [B, H, X, Y]
     """
-    from nvsubquadratic.ops.fftconv import fftconv2d_bhl as _fftconv2d_bhl_std
+    from nvsubq_paper.ops.fftconv import fftconv2d_bhl as _fftconv2d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
@@ -376,7 +376,7 @@ def fftconv3d_bhl_chunked(
     Returns:
         Output tensor [B, H, X, Y, Z]
     """
-    from nvsubquadratic.ops.fftconv import fftconv3d_bhl as _fftconv3d_bhl_std
+    from nvsubq_paper.ops.fftconv import fftconv3d_bhl as _fftconv3d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
@@ -425,7 +425,7 @@ def fftconv1d_bhl(
     if _CHUNKING_ENABLED:
         return fftconv1d_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import fftconv1d_bhl as _std
+        from nvsubq_paper.ops.fftconv import fftconv1d_bhl as _std
 
         return _std(x, kernel, shortcut)
 
@@ -451,7 +451,7 @@ def causal_fftconv1d_bhl(
     if _CHUNKING_ENABLED:
         return causal_fftconv1d_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl as _std
+        from nvsubq_paper.ops.fftconv import causal_fftconv1d_bhl as _std
 
         return _std(x, kernel, shortcut)
 
@@ -477,7 +477,7 @@ def fftconv2d_bhl(
     if _CHUNKING_ENABLED:
         return fftconv2d_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import fftconv2d_bhl as _std
+        from nvsubq_paper.ops.fftconv import fftconv2d_bhl as _std
 
         return _std(x, kernel, shortcut)
 
@@ -503,7 +503,7 @@ def fftconv3d_bhl(
     if _CHUNKING_ENABLED:
         return fftconv3d_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import fftconv3d_bhl as _std
+        from nvsubq_paper.ops.fftconv import fftconv3d_bhl as _std
 
         return _std(x, kernel, shortcut)
 
@@ -594,7 +594,7 @@ def fftconv3d_blh(
 
 
 # w_reshape aliases: BLH input → internal BHL conv → BLH output
-# These match the naming convention in nvsubquadratic.ops.fftconv
+# These match the naming convention in nvsubq_paper.ops.fftconv
 fftconv1d_bhl_w_reshape = fftconv1d_blh
 fftconv2d_bhl_w_reshape = fftconv2d_blh
 fftconv3d_bhl_w_reshape = fftconv3d_blh
@@ -622,7 +622,7 @@ if __name__ == "__main__":
     shortcut = torch.randn(H, device=device, dtype=torch.float32, requires_grad=True)
 
     # Reference
-    from nvsubquadratic.ops.fftconv import fftconv2d_bhl as fftconv2d_bhl_std
+    from nvsubq_paper.ops.fftconv import fftconv2d_bhl as fftconv2d_bhl_std
 
     y_std = fftconv2d_bhl_std(x, kernel, shortcut)
     loss_std = y_std.sum()
@@ -693,7 +693,7 @@ if __name__ == "__main__":
     x = torch.randn(B, H, X, Y, Z, device=device, dtype=torch.float32, requires_grad=True)
     kernel = torch.randn(1, H, K, K, K, device=device, dtype=torch.float32, requires_grad=True)
 
-    from nvsubquadratic.ops.fftconv import fftconv3d_bhl as fftconv3d_bhl_std
+    from nvsubq_paper.ops.fftconv import fftconv3d_bhl as fftconv3d_bhl_std
 
     y_std = fftconv3d_bhl_std(x, kernel, None)
     y_std.sum().backward()

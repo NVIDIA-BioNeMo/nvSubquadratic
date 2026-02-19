@@ -5,7 +5,7 @@
 import pytest
 import torch
 
-from nvsubquadratic.modules.patchify import Patchify, Unpatchify
+from nvsubq_paper.modules.patchify import Patchify, Unpatchify
 
 
 @pytest.mark.parametrize(

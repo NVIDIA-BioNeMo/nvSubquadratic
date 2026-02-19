@@ -6,7 +6,7 @@ Test module for all-to-all communication functions with zigzag splitting.
 
 import torch
 
-from nvsubquadratic.parallel.a2a_comms import (
+from nvsubq_paper.parallel.a2a_comms import (
     _get_inverse_zigzag_indices,
     _get_zigzag_indices,
 )
