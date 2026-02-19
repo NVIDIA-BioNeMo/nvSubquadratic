@@ -323,7 +323,9 @@ ______________________________________________________________________
 | 2026-02-17      | `174888` | 2.2   | `hyena_patchify.py` + ω₀=20           | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
 | 2026-02-17      | `174889` | 2.4   | `hyena_patchify.py` + ω₀=60           | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
 | 2026-02-17      | `174890` | 2.5   | `hyena_patchify.py` + ω₀=100          | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
-| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py`    | IVI      | cees         | 8    | 🔄 Running | —       | ViT-B/16 ImageNet-1K sanity check  |
+| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py`    | IVI      | cees         | 8    | ❌ Stopped  | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs. |
+| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py`    | IVI      | cees         | 8    | ⏳ Pending | —       | v2: LR=1e-3, DropPath=0.1, EMA=0.9999, dropout=0.0 |
+| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py`    | IVI      | cees6000     | 8    | ⏳ Pending | —       | v2: same config as `140271`, submitted to cees6000 for faster scheduling |
 
 ______________________________________________________________________
 

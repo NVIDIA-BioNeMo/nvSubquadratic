@@ -349,7 +349,7 @@ def main() -> None:
         if best_ckpt_path:
             best_ckpt_path = str(best_ckpt_path)
         if best_ckpt_path and os.path.isfile(best_ckpt_path):
-            model.load_state_dict(torch.load(best_ckpt_path)["state_dict"])
+            model.load_state_dict(torch.load(best_ckpt_path, map_location="cpu")["state_dict"])
         else:
             print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 

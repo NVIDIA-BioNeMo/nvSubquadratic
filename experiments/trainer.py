@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
 
+from experiments.callbacks.ema import EMACallback
 from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
@@ -122,6 +123,17 @@ def construct_trainer(
                 timeout=60,
             ),
         ])
+
+    # EMA callback (if configured)
+    if hasattr(cfg, "ema") and cfg.ema.enabled:
+        callbacks_list.append(
+            EMACallback(
+                decay=cfg.ema.decay,
+                update_every=cfg.ema.update_every,
+                warmup_steps=cfg.ema.warmup_steps,
+            )
+        )
+        print(f"[EMA] Enabled with decay={cfg.ema.decay}, warmup={cfg.ema.warmup_steps} steps")
 
     if cfg.train.run_start_time is not None and cfg.train.run_time_limit_hours is not None:
         callbacks_list.append(

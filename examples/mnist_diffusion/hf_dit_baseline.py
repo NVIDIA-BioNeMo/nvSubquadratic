@@ -8,6 +8,7 @@ from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,
+    EMAConfig,
     SchedulerConfig,
     TrainConfig,
     WandbConfig,
@@ -53,7 +54,6 @@ DDIM_ETA = 0.0
 EMA_ENABLED = False
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 0
-EMA_UPDATE_EVERY = 1
 CFG_ENABLED = True
 GUIDANCE_SCALE = 3.0
 CONDITION_DROPOUT_PROB = 0.1
@@ -133,10 +133,6 @@ def get_config() -> DiffusionExperimentConfig:
         num_samples=NUM_SAMPLES,
         log_samples=LOG_SAMPLES,
         ddim_eta=DDIM_ETA,
-        ema_enabled=EMA_ENABLED,
-        ema_decay=EMA_DECAY,
-        ema_update_every=EMA_UPDATE_EVERY,
-        ema_warmup_steps=EMA_WARMUP_STEPS,
         use_sigmoid_loss_weighting=USE_SIGMOID_LOSS_WEIGHTING,
         sigmoid_loss_bias=SIGMOID_LOSS_BIAS,
         num_classes=NUM_CLASSES,
@@ -146,6 +142,12 @@ def get_config() -> DiffusionExperimentConfig:
         fid_enabled=FID_ENABLED,
         fid_num_batches=FID_NUM_BATCHES,
         fid_num_inference_steps=FID_NUM_INFERENCE_STEPS,
+    )
+
+    config.ema = EMAConfig(
+        enabled=EMA_ENABLED,
+        decay=EMA_DECAY,
+        warmup_steps=EMA_WARMUP_STEPS,
     )
 
     config.wandb = WandbConfig(

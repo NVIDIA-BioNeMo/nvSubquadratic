@@ -19,7 +19,7 @@ import os
 import torch
 
 from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
-from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
+from experiments.default_cfg import EMAConfig, ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.attention import Attention
@@ -41,8 +41,8 @@ BATCH_SIZE = 128  # per GPU; 8 GPUs × 128 = 1024 effective BS (DeiT standard)
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "data/imagenet")
 HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 HF_DATASET_CONFIG = None
-IMAGE_SIZE = 256           # resize shortest edge to 256 before crop
-FINAL_IMAGE_SIZE = 224     # standard ViT input resolution
+IMAGE_SIZE = 224           # standard ViT input resolution (Resize(256) -> Crop(224))
+FINAL_IMAGE_SIZE = 224     # same as IMAGE_SIZE to avoid double-resize
 PRECISION = "bf16-mixed"
 
 # Model parameters — ViT-B scale (identical to TinyImageNet ablation runs)
@@ -50,7 +50,7 @@ NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
 NUM_HEADS = 12  # head_dim = 768/12 = 64
 DROPOUT_IN_RATE = 0.0
-DROPOUT_RATE = 0.1
+DROPOUT_RATE = 0.0  # DeiT-B uses 0.0 dropout; regularization via DropPath + Mixup/CutMix
 
 # Patchification parameters — ViT-B/16
 PATCH_SIZE = 16   # 224/16 = 14×14 = 196 tokens
@@ -60,9 +60,10 @@ STRIDE = 16       # non-overlapping (ViT-style)
 TRAINING_ITERATIONS = 300_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
-LEARNING_RATE = 3e-3   # DeiT-B standard for BS=1024 (linear scaling from 1e-3 @ BS=256)
+LEARNING_RATE = 1e-3   # DeiT-B standard for BS=1024
 WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
+DROP_PATH_RATE = 0.1  # Stochastic depth rate (linearly increasing across blocks)
 
 
 def get_config() -> ExperimentConfig:
@@ -153,6 +154,7 @@ def get_config() -> ExperimentConfig:
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
+        drop_path_rate=DROP_PATH_RATE,
     )
 
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)()
@@ -175,6 +177,12 @@ def get_config() -> ExperimentConfig:
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
         mode="max",
+    )
+
+    config.ema = EMAConfig(
+        enabled=True,
+        decay=0.9999,
+        warmup_steps=5_000,
     )
 
     config.wandb = WandbConfig(

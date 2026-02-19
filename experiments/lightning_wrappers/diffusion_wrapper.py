@@ -2,7 +2,6 @@
 
 """Lightning wrappers for the Classification and Regression experiments."""
 
-import copy
 import math
 import warnings
 from typing import Optional
@@ -193,22 +192,6 @@ class DiffusionWrapper(LightningWrapperBase):
         else:
             self.null_label_index = None
             self.label_embed = None
-
-        # Exponential moving average (EMA) tracking mirrors the previous implementation; we only
-        # modernise the diffusion math, not the stabilisation tricks that already work well.
-        self.ema_enabled = bool(diffusion_cfg.ema_enabled)
-        self.ema_decay = float(diffusion_cfg.ema_decay)
-        self.ema_update_every = int(diffusion_cfg.ema_update_every)
-        self.ema_warmup_steps = int(diffusion_cfg.ema_warmup_steps)
-        self._ema_model: Optional[torch.nn.Module] = None
-        self._ema_has_been_updated = False
-        if self.ema_enabled:
-            # Create an EMA shadow copy that never receives gradients so we can use it for evaluation
-            # time sampling without polluting the main optimiser state.
-            self._ema_model = copy.deepcopy(self.network)
-            for p in self._ema_model.parameters():
-                p.detach_()
-                p.requires_grad_(False)
 
         # Allow Hugging Face-backed models to register themselves for callbacks.
         register_fn = getattr(network, "hf_register_diffusion_wrapper", None)
@@ -639,11 +622,11 @@ class DiffusionWrapper(LightningWrapperBase):
         # Prepare the scheduler timesteps on the current device - this mirrors the standard diffusers pipeline.
         self.scheduler.set_timesteps(num_inference_steps, device=device)
 
-        use_ema = self.ema_enabled and self._ema_model is not None and self._ema_has_been_updated
-        inference_model = self._ema_model if use_ema else self.network
+        # During validation the EMACallback (if active) has already swapped
+        # self.network to the EMA shadow model, so we always use self.network.
+        inference_model = self.network
         was_training = inference_model.training
         inference_model.eval()
-        inference_model = inference_model.to(device)
 
         for timestep in self.scheduler.timesteps:
             # Broadcast the scalar timestep to a batch so we can embed it and feed the denoiser.
@@ -691,33 +674,6 @@ class DiffusionWrapper(LightningWrapperBase):
 
         sample_hwc = self._channels_first_to_last(sample_bchw)
         return torch.clamp(sample_hwc, -1.0, 1.0)
-
-    def on_fit_start(self) -> None:
-        """Move EMA weights to device before training begins."""
-        super().on_fit_start()
-        if self.ema_enabled and self._ema_model is not None:
-            self._ema_model.to(self.device)
-            self._ema_model.eval()
-
-    def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
-        """Update EMA parameters at the configured interval."""
-        super().on_train_batch_end(outputs, batch, batch_idx)
-
-        if (
-            self.ema_enabled
-            and self._ema_model is not None
-            and self.global_step >= self.ema_warmup_steps
-            and (self.global_step % self.ema_update_every == 0)
-        ):
-            with torch.no_grad():
-                decay = self.ema_decay
-                for ema_param, param in zip(self._ema_model.parameters(), self.network.parameters()):
-                    ema_param.mul_(decay).add_(param, alpha=1.0 - decay)
-                for ema_buffer, buffer in zip(self._ema_model.buffers(), self.network.buffers()):
-                    if ema_buffer.shape != buffer.shape:
-                        ema_buffer.resize_as_(buffer)
-                    ema_buffer.copy_(buffer)
-                self._ema_has_been_updated = True
 
     def on_validation_epoch_end(self, outputs=None):
         """Compute and log validation summary metrics and sample grids."""

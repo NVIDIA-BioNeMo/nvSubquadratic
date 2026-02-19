@@ -21,6 +21,7 @@ from experiments.datamodules.imagenet import ImageNetDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,
+    EMAConfig,
     SchedulerConfig,
     TrainConfig,
     WandbConfig,
@@ -75,7 +76,6 @@ LOG_SAMPLES = True
 EMA_ENABLED = True
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
-EMA_UPDATE_EVERY = 1
 
 
 def get_config() -> DiffusionExperimentConfig:
@@ -148,10 +148,12 @@ def get_config() -> DiffusionExperimentConfig:
         num_inference_steps=NUM_INFERENCE_STEPS,
         num_samples=NUM_SAMPLES,
         log_samples=LOG_SAMPLES,
-        ema_enabled=EMA_ENABLED,
-        ema_decay=EMA_DECAY,
-        ema_update_every=EMA_UPDATE_EVERY,
-        ema_warmup_steps=EMA_WARMUP_STEPS,
+    )
+
+    config.ema = EMAConfig(
+        enabled=EMA_ENABLED,
+        decay=EMA_DECAY,
+        warmup_steps=EMA_WARMUP_STEPS,
     )
 
     config.wandb = WandbConfig(

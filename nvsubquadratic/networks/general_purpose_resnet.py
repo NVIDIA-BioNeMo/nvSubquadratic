@@ -55,6 +55,7 @@ class ResidualNetwork(nn.Module):
         condition_in_proj_cfg: LazyConfig | None = None,
         target_size: int | Sequence[int] | None = None,
         tie_weights: bool = False,
+        drop_path_rate: float = 0.0,
     ):
         """Initialize the ResidualNetwork."""
         super().__init__()
@@ -80,6 +81,13 @@ class ResidualNetwork(nn.Module):
 
         # Create residual blocks
         self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
+
+        # Apply linearly increasing stochastic depth (DropPath) rates across blocks
+        if drop_path_rate > 0.0:
+            drop_rates = [drop_path_rate * i / max(num_blocks - 1, 1) for i in range(num_blocks)]
+            for block, rate in zip(self.blocks, drop_rates):
+                if hasattr(block, "set_drop_path_rate"):
+                    block.set_drop_path_rate(rate)
 
         # Instantiate output norm
         self.out_norm = instantiate(norm_cfg)

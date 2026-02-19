@@ -10,6 +10,7 @@ from experiments.datamodules.imagenet import ImageNetDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,
+    EMAConfig,
     SchedulerConfig,
     TrainConfig,
     WandbConfig,
@@ -77,7 +78,6 @@ DDIM_ETA = 0.0
 EMA_ENABLED = True
 EMA_DECAY = 0.999
 EMA_WARMUP_STEPS = 1_000
-EMA_UPDATE_EVERY = 1
 GUIDANCE_SCALE = 3.5
 CONDITION_DROPOUT_PROB = 0.1
 USE_SIGMOID_LOSS_WEIGHTING = True
@@ -230,10 +230,6 @@ def get_config() -> DiffusionExperimentConfig:
         num_samples=NUM_SAMPLES,
         log_samples=LOG_SAMPLES,
         ddim_eta=DDIM_ETA,
-        ema_enabled=EMA_ENABLED,
-        ema_decay=EMA_DECAY,
-        ema_update_every=EMA_UPDATE_EVERY,
-        ema_warmup_steps=EMA_WARMUP_STEPS,
         use_sigmoid_loss_weighting=USE_SIGMOID_LOSS_WEIGHTING,
         sigmoid_loss_bias=SIGMOID_LOSS_BIAS,
         use_classifier_free_guidance=CLASSIFIER_FREE_GUIDANCE,
@@ -243,6 +239,12 @@ def get_config() -> DiffusionExperimentConfig:
         fid_enabled=FID_ENABLED,
         fid_num_batches=FID_NUM_BATCHES,
         fid_num_inference_steps=FID_NUM_INFERENCE_STEPS,
+    )
+
+    config.ema = EMAConfig(
+        enabled=EMA_ENABLED,
+        decay=EMA_DECAY,
+        warmup_steps=EMA_WARMUP_STEPS,
     )
 
     config.wandb = WandbConfig(

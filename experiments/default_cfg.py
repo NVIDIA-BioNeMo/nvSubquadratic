@@ -101,6 +101,16 @@ class StartFromCheckpointConfig:
 
 
 @dataclass
+class EMAConfig:
+    """Exponential Moving Average configuration for classification models."""
+
+    enabled: bool = False
+    decay: float = 0.9999
+    update_every: int = 1
+    warmup_steps: int = 5_000
+
+
+@dataclass
 class ExperimentConfig:
     """Default configuration for experiments with nvSubQuadratic."""
 
@@ -122,6 +132,7 @@ class ExperimentConfig:
     train: TrainConfig = field(default_factory=TrainConfig)
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
+    ema: EMAConfig = field(default_factory=EMAConfig)
 
     start_from_checkpoint: StartFromCheckpointConfig = field(default_factory=StartFromCheckpointConfig)
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
@@ -152,11 +163,6 @@ class DiffusionConfig:
 
     use_sigmoid_loss_weighting: bool = True
     sigmoid_loss_bias: float = -1.0
-
-    ema_enabled: bool = True
-    ema_decay: float = 0.9995
-    ema_update_every: int = 1
-    ema_warmup_steps: int = 5_000
 
     # Classifier-free guidance settings, enabled by default.
     use_classifier_free_guidance: bool = True

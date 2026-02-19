@@ -85,6 +85,16 @@ class ResidualBlock(torch.nn.Module):
         # Instantiate dropout
         self.dropout = instantiate(dropout_cfg)
 
+        # DropPath (stochastic depth) — initialized as Identity; the network
+        # sets per-block drop rates after construction via set_drop_path_rate().
+        self.drop_path = torch.nn.Identity()
+
+    def set_drop_path_rate(self, rate: float) -> None:
+        """Replace the drop_path module with a DropPath at the given rate."""
+        from timm.layers import DropPath
+
+        self.drop_path = DropPath(rate) if rate > 0.0 else torch.nn.Identity()
+
     def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
         """Forward pass of the residual block.
 
@@ -100,7 +110,7 @@ class ResidualBlock(torch.nn.Module):
             residual = x
             x = self.input_norm(x)
             x = self.sequence_mixer(x)
-            x = self.dropout(x)
+            x = self.drop_path(self.dropout(x))
             x = x + residual
 
         # Cross attention branch
@@ -109,7 +119,7 @@ class ResidualBlock(torch.nn.Module):
             residual = x
             x = self.condition_mixer_norm(x)
             x = self.condition_mixer(x, condition)
-            x = self.dropout(x)
+            x = self.drop_path(self.dropout(x))
             x = x + residual
 
         # MLP branch
@@ -117,7 +127,7 @@ class ResidualBlock(torch.nn.Module):
             residual = x
             x = self.mlp_norm(x)
             x = self.mlp(x)
-            x = self.dropout(x)
+            x = self.drop_path(self.dropout(x))
             x = x + residual
         return x
 

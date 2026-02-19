@@ -63,7 +63,6 @@ def _make_wrapper(
     diff_cfg.num_samples = 2
     diff_cfg.log_samples = False
     diff_cfg.ddim_eta = 0.0
-    diff_cfg.ema_enabled = False
     diff_cfg.use_classifier_free_guidance = use_cfg
     diff_cfg.guidance_scale = guidance_scale
     diff_cfg.condition_dropout_prob = condition_dropout_prob
