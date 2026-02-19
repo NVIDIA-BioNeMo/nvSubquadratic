@@ -82,11 +82,11 @@ ______________________________________________________________________
 
 **Goal**: Confirm the TinyImageNet training pipeline works end-to-end with a standard ViT-B + patchify baseline. This is our sanity check and reference point.
 
-| #   | Experiment                               | Config                             | Partition    | GPUs | BS/GPU | Accum | Eff. BS | Status     | Val Acc | Job ID   | WandB | Notes                                                                  |
-| :-- | :--------------------------------------- | :--------------------------------- | :----------- | :--- | :----- | :---- | :------ | :--------- | :------ | :------- | :---- | :--------------------------------------------------------------------- |
-| 0.1 | **ViT-B + patch-4 baseline**             | `attention_patchify.py`            | geodude      | 4    | 32     | 1     | 128     | ✅ Done    | 54.3%   | `137108` | —     | Reached 300k steps; stable convergence.                                |
-| 0.2 | Hyena + patch-4 baseline                 | `hyena_patchify.py`                | hipster/perf | 4    | 32     | 1     | 128     | 🔄 Running | —       | `174875` | —     | Sanity check Hyena pipeline (hipster)                                  |
-| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py` | cees         | 8    | 128    | 1     | 1024    | 🔄 Running | —       | `139226` | —     | Pipeline sanity check on full IN-1K; patch=16 → 196 tokens; ≥70% top-1 |
+| #   | Experiment                               | Config                             | Partition    | GPUs | BS/GPU | Accum | Eff. BS | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                                                                  |
+| :-- | :--------------------------------------- | :--------------------------------- | :----------- | :--- | :----- | :---- | :------ | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------------------------------------------------- |
+| 0.1 | **ViT-B + patch-4 baseline**             | `attention_patchify.py`            | geodude      | 4    | 32     | 1     | 128     | ✅ Done      | 54.3%   | `137108` | —                                                                             | Reached 300k steps; stable convergence.                                |
+| 0.2 | Hyena + patch-4 baseline                 | `hyena_patchify.py`                | hipster/perf | 4    | 32     | 1     | 128     | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | Sanity check Hyena pipeline (hipster)                                  |
+| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py` | cees         | 8    | 128    | 1     | 1024    | 🔄 Running   | —       | `139226` | —                                                                             | Pipeline sanity check on full IN-1K; patch=16 → 196 tokens; ≥70% top-1 |
 
 **Success criteria**:
 
@@ -99,10 +99,10 @@ ______________________________________________________________________
 
 **Goal**: Validate SIREN superiority over RFF. Run on **Hyena + patch-4** (fast, 256 tokens).
 
-| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status     | Val Acc | Job ID   | WandB                                                                         | Notes                 |
-| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :--------- | :------ | :------- | :---------------------------------------------------------------------------- | :-------------------- |
-| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | 🔄 Running | —       | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | = Phase 0.2           |
-| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | ⏳ Pending | —       | `140281` | —                                                                             | Expect ↓ acc vs SIREN |
+| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                 |
+| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :-------------------- |
+| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2           |
+| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | ⏳ Pending   | —       | `140281` | —                                                                             | Expect ↓ acc vs SIREN |
 
 **Hypothesis**: RFF lacks the expressiveness of SIREN's sine-based representation for vision, resulting in lower accuracy.
 
@@ -112,13 +112,13 @@ ______________________________________________________________________
 
 **Goal**: Find the optimal ω₀ that controls frequency expressiveness of the SIREN kernel!
 
-| #   | Experiment            | ω₀  | Partition    | GPUs | Status     | Val Acc | Job ID   | WandB | Notes                       |
-| :-- | :-------------------- | :-- | :----------- | :--- | :--------- | :------ | :------- | :---- | :-------------------------- |
-| 2.1 | ω₀ = 10               | 10  | hipster/cap  | 1    | 🔄 Running | —       | `174887` | —     | Under-expressive (L4)       |
-| 2.2 | ω₀ = 20               | 20  | hipster/cap  | 1    | 🔄 Running | —       | `174888` | —     | (L4)                        |
-| 2.3 | **ω₀ = 30 (default)** | 30  | hipster/perf | 4    | ⏳ Pending | —       | `174875` | —     | = Phase 0.2 (same run)      |
-| 2.4 | ω₀ = 60               | 60  | hipster/cap  | 1    | 🔄 Running | —       | `174889` | —     | From Imagenette: 93.6% (L4) |
-| 2.5 | ω₀ = 100              | 100 | hipster/cap  | 1    | 🔄 Running | —       | `174890` | —     | Over-expressive? (L4)       |
+| #   | Experiment            | ω₀  | Partition    | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                  |
+| :-- | :-------------------- | :-- | :----------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------- |
+| 2.1 | ω₀ = 10               | 10  | hipster/cap  | 2    | 🔄 Running   | 68.2%   | `174895` | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) | Step ~200k/300k (L4)   |
+| 2.2 | ω₀ = 20               | 20  | hipster/cap  | 2    | 🔄 Running   | 63.9%   | `174896` | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) | Step ~180k/300k (L4)   |
+| 2.3 | **ω₀ = 30 (default)** | 30  | hipster/perf | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run) |
+| 2.4 | ω₀ = 60               | 60  | hipster/cap  | 2    | 🔄 Running   | 61.8%   | `174897` | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) | Step ~160k/300k (L4)   |
+| 2.5 | ω₀ = 100              | 100 | hipster/cap  | 2    | 🔄 Running   | 22.9%   | `174898` | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) | Step ~140k/300k (L4)   |
 
 > \[!TIP\]
 > **Efficiency**: Run 2.1–2.5 in parallel on 1 GPU each (4 on geodude + 1 on all6000), or use 1 GPU on geodude sequentially, gradient-accumulating to match effective batch size. With 4 GPUs on geodude we can run 4 of these in parallel.
@@ -316,25 +316,31 @@ ______________________________________________________________________
 > \[!IMPORTANT\]
 > **Always update this log when submitting a job.** Record the job ID, config, and phase so we can trace results back to specific runs.
 
-| Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status     | Val Acc | Notes                                                                    |
-| :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :--------- | :------ | :----------------------------------------------------------------------- |
-| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | 🔄 Running | —       | SIREN baseline (ablation ref)                                            |
-| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ⏳ Pending | —       | RFF kernel ablation                                                      |
-| 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done    | 54.3%   | ViT-B baseline pipeline validation                                       |
-| 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ⏳ Pending | —       | Hyena baseline (4× RTX 6000 Ada)                                         |
-| 2026-02-17       | `174887` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)                                                   |
-| 2026-02-17       | `174888` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)                                                   |
-| 2026-02-17       | `174889` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)                                                   |
-| 2026-02-17       | `174890` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)                                                   |
-| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                    |
-| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ⏳ Pending | —       | v2: LR=1e-3, DropPath=0.1, EMA=0.9999, dropout=0.0                       |
-| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ⏳ Pending | —       | v2: same config as `140271`, submitted to cees6000 for faster scheduling |
+| Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status       | Val Acc | Notes                                                                         |
+| :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :----------- | :------ | :---------------------------------------------------------------------------- |
+| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | 🔄 Running   | —       | SIREN baseline (ablation ref)                                                 |
+| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ⏳ Pending   | —       | RFF kernel ablation                                                           |
+| 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done      | 54.3%   | ViT-B baseline pipeline validation                                            |
+| 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ✅ Completed | 70.67%  | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) |
+| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | 🔄 Running   | 68.2%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) |
+| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | 🔄 Running   | 63.9%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) |
+| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | 🔄 Running   | 61.8%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
+| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | 🔄 Running   | 22.9%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
+| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped   | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
+| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ⏳ Pending   | —       | v2: LR=1e-3, DropPath=0.1, EMA=0.9999, dropout=0.0                            |
+| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ⏳ Pending   | —       | v2: same config as `140271`, submitted to cees6000 for faster scheduling      |
 
 ______________________________________________________________________
 
 ## 📊 Observations & Insights
 
-- **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**. Stable convergence; success criteria (≥55%) nearly met.
+- **2026-02-19 19:20**: **Phase 0.2 (Hyena baseline) completed!**
+  - Final validation accuracy: **70.67%**.
+  - This is a massive improvement over the ViT-B (54.3%) and RFF baselines.
+- **2026-02-19 23:10**: Status update on Phase 2 sweep:
+  - Phase 2.1 (ω₀=10) is leading with **68.2%** accuracy at step ~200k.
+  - All jobs are approaching completion on hipster/capacity.
+- **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
 - **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
 - **2026-02-17 23:00**: Submitted Phase 0.2 (Hyena patchify) → Job `174875` on hipster/performance (4× RTX 6000 Ada).
@@ -357,5 +363,5 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-19 01:05
-**Status**: 🔄 Phase 0.1 running on IVI/geodude, Phase 0.2 pending on hipster/perf, Phase 0.3 running on IVI/cees (Job `139226`), Phase 2 ω₀ sweep running on hipster/capacity
+**Last Updated**: 2026-02-19 23:15
+**Status**: 🔄 Phase 0.1 Completed (54.3%), Phase 0.2 Completed (70.67%), Phase 2 ω₀ sweep (2-GPU) near completion
