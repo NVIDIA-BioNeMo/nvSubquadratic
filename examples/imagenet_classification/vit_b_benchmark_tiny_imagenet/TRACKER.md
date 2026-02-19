@@ -99,10 +99,10 @@ ______________________________________________________________________
 
 **Goal**: Validate SIREN superiority over RFF. Run on **Hyena + patch-4** (fast, 256 tokens).
 
-| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status     | Val Acc | Job ID | WandB | Notes                 |
-| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :--------- | :------ | :----- | :---- | :-------------------- |
-| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | 📅 Planned | —       | —      | —     | = Phase 0.2           |
-| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | 📅 Planned | —       | —      | —     | Expect ↓ acc vs SIREN |
+| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status     | Val Acc | Job ID   | WandB                                                                         | Notes                 |
+| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :--------- | :------ | :------- | :---------------------------------------------------------------------------- | :-------------------- |
+| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | 🔄 Running | —       | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | = Phase 0.2           |
+| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | ⏳ Pending | —       | `140281` | —                                                                             | Expect ↓ acc vs SIREN |
 
 **Hypothesis**: RFF lacks the expressiveness of SIREN's sine-based representation for vision, resulting in lower accuracy.
 
@@ -318,6 +318,8 @@ ______________________________________________________________________
 
 | Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status     | Val Acc | Notes                                                                    |
 | :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :--------- | :------ | :----------------------------------------------------------------------- |
+| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | 🔄 Running | —       | SIREN baseline (ablation ref)                                            |
+| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ⏳ Pending | —       | RFF kernel ablation                                                      |
 | 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done    | 54.3%   | ViT-B baseline pipeline validation                                       |
 | 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ⏳ Pending | —       | Hyena baseline (4× RTX 6000 Ada)                                         |
 | 2026-02-17       | `174887` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)                                                   |
