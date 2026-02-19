@@ -48,6 +48,7 @@ KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 SHORT_CONV_KERNEL_SIZE = 3
 SHORT_CONV_ACCELERATED = False
+FFT_CONV_ACCELERATED = False
 
 
 def get_config() -> ExperimentConfig:
@@ -85,6 +86,7 @@ def get_config() -> ExperimentConfig:
         global_conv_grid_type="double",
         global_conv_fft_padding="zero",
         global_conv_use_chunked_fftconv=False,
+        global_conv_fft_conv_accelerated=FFT_CONV_ACCELERATED,
         # SIREN kernel config
         kernel_mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
         kernel_num_layers=KERNEL_NUM_LAYERS,

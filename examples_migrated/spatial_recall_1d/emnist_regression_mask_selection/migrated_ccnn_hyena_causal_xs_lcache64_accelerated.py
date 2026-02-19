@@ -51,6 +51,7 @@ KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 SHORT_CONV_KERNEL_SIZE = 3
 SHORT_CONV_ACCELERATED = True
+FFT_CONV_ACCELERATED = True
 
 
 def get_config() -> ExperimentConfig:
@@ -73,8 +74,8 @@ def get_config() -> ExperimentConfig:
 
     # Create HyenaConfig with nested CKConvND and SIREN parameters
     hyena_config = HyenaConfig(
-        hidden_dim=HIDDEN_DIM,
-        data_dim=1,  # 1D sequence
+        hidden_dim="${net.hidden_dim}",
+        data_dim="${net.data_dim}",  # 1D sequence
         short_conv_kernel_size=SHORT_CONV_KERNEL_SIZE,
         is_causal=True,  # Causal mode!
         short_conv_accelerated=SHORT_CONV_ACCELERATED,
@@ -88,6 +89,7 @@ def get_config() -> ExperimentConfig:
         global_conv_grid_type="double",
         global_conv_fft_padding="zero",
         global_conv_use_chunked_fftconv=False,
+        global_conv_fft_conv_accelerated=FFT_CONV_ACCELERATED,
         # SIREN kernel config
         kernel_mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
         kernel_num_layers=KERNEL_NUM_LAYERS,
@@ -99,7 +101,7 @@ def get_config() -> ExperimentConfig:
 
     # Create QKVSequenceMixerConfig
     qkv_config = QKVSequenceMixerConfig(
-        hidden_dim=HIDDEN_DIM,
+        hidden_dim="${net.hidden_dim}",
         init_method_in="small",
         init_method_out="wang",
         num_layers=NUM_BLOCKS,  # Required for wang_init

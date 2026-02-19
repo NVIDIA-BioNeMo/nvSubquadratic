@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Install nvsubq first (if it exists)
+if [ -d "/workspaces/nvSubquadratic" ]; then
+    echo "Installing nvSubquadtratic in editable mode..."
+    cd /workspaces/nvSubquadratic
+    pip install --no-build-isolation --editable .
+    git config --global --add safe.directory /workspaces/nvSubquadratic
+    cd /workspaces/nvSubquadratic-private
+fi
+
 # Install the project in editable mode (with dependencies)
 pip install --no-build-isolation --editable .
 

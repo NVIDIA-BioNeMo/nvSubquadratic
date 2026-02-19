@@ -9,6 +9,8 @@
 		"dockerfile": "${localWorkspaceFolder}/Dockerfile"
 	},
 	"mounts": [
+		// Mount the nvsubquadratic package for development
+		"source=${localEnv:HOME}/nvSubquadratic,target=/workspaces/nvSubquadratic,type=bind,consistency=cached",
 		// Mount the local ~/.aws config to pass along AWS credentials for PBSS.
 		"source=${localEnv:HOME}/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
 		"source=${localEnv:HOME}/.ngc,target=/home/ubuntu/.ngc,type=bind,consistency=cached",
