@@ -15,8 +15,8 @@ import os
 
 import torch
 
-from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -50,8 +50,8 @@ NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "double" # "single"
-FFT_PADDING = "zero" # "circular"
+GRID_TYPE = "double"  # "single"
+FFT_PADDING = "zero"  # "circular"
 
 # Patchification parameters
 PATCH_SIZE = 4  # 64/4 = 16x16 = 256 tokens
@@ -63,7 +63,7 @@ KERNEL_NUM_LAYERS = 3
 KERNEL_EMBEDDING_DIM = 64
 KERNEL_OMEGA_0 = 30.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
-L_CACHE = 64 
+L_CACHE = 64
 
 # Optimisation parameters
 TRAINING_ITERATIONS = 600_000
@@ -111,9 +111,6 @@ def get_config() -> ExperimentConfig:
             rand_augment="rand-m9-n3-mstd0.5",
         ),
     )
-
-    # L_cache for patchified sequence length
-    patchified_size = FINAL_IMAGE_SIZE // PATCH_SIZE  # 224/16 = 14
 
     config.net = LazyConfig(ClassificationResNet)(
         in_channels=INPUT_CHANNELS,

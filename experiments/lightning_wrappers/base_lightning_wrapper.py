@@ -6,10 +6,10 @@ import warnings
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-import wandb
 from experiments.default_cfg import (
     PLACEHOLDER,
     ExperimentConfig,
@@ -118,15 +118,15 @@ def construct_scheduler(
 
     # Create WSD scheduler (handles its own warmup)
     if scheduler_type == "wsd":
-         lr_scheduler = schedulers.WSDScheduler(
+        lr_scheduler = schedulers.WSDScheduler(
             optimizer=optimizer,
             total_iterations=total_iterations,
             warmup_iterations=warmup_iterations,
             decay_iterations_percentage=scheduler_cfg.decay_iterations_percentage,
             min_lr_ratio=scheduler_cfg.min_lr_ratio,
-         )
-         # Return immediately as WSD handles everything
-         return lr_scheduler
+        )
+        # Return immediately as WSD handles everything
+        return lr_scheduler
 
     # Create warm_up scheduler for other types
     if warmup_iterations != 0:
