@@ -14,6 +14,8 @@ wandb = ">=0.15.0"
 protobuf = ">=4.23.0,<6.0.0"
 grpcio = ">=1.50.0"
 rich = ">=13.0.0"
+datasets = "*"
+timm = "*"
 
 [dev-packages]
 pytest = ">=6.0"

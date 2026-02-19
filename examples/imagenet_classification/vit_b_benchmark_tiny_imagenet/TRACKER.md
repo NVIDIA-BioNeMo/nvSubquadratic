@@ -11,10 +11,12 @@ Systematic ablation study of the Pixel-Hyena operator on TinyImageNet (200 class
 
 ## Compute Resources
 
-| Partition | GPUs                  | Type     | Max Time | Account        |
-| :-------- | :-------------------- | :------- | :------- | :------------- |
-| `geodude` | 4 × RTX A5000 (24 GB) | Training | 7 days   | `geodudeusers` |
-| `all6000` | 8 × RTX 6000 (24 GB)  | Training | 7 days   | `all6000users` |
+| Partition  | GPUs                                           | Max GPUs/user | Max Time | Account        |  User                | Notes                     |
+| :--------- | :--------------------------------------------- | :------------ | :------- | :------------- | :------------------- | :------------------------ |
+| `geodude`  | 4 × RTX A5000 (24 GB)                          | 4             | 7 days   | `geodudeusers` | `dwessel`            |                           |
+| `all6000`  | 8 × RTX 6000 (24 GB)                           | 2             | 7 days   | `all6000users` | `dwessel`, `dknigge` |                           |
+| `cees`     | 8 × RTX A5000 (24 GB) per node (7 nodes total) | 8             | 7 days   | `ceesusers`    | `dknigge`            | **dknigge account only**  |
+| `cees6000` | 8 × RTX 6000 (24 GB) per node (2 nodes total)  | 8             | 4 days   | `ceesusers`    | `dknigge`            | **dknigge account only**  |
 
 > \[!IMPORTANT\]
 > **Fixed batch-size rule**: All experiments use the **same effective batch size** (e.g. 128). When running on fewer GPUs, use gradient accumulation to match. Example: 1 GPU × bs 32 × accum 4 = 128, 4 GPUs × bs 32 × accum 1 = 128.
@@ -80,12 +82,15 @@ ______________________________________________________________________
 
 **Goal**: Confirm the TinyImageNet training pipeline works end-to-end with a standard ViT-B + patchify baseline. This is our sanity check and reference point.
 
-| #   | Experiment                   | Config                  | Partition    | GPUs | BS/GPU | Accum | Eff. BS | Status     | Val Acc | Job ID   | WandB | Notes                                                    |
-| :-- | :--------------------------- | :---------------------- | :----------- | :--- | :----- | :---- | :------ | :--------- | :------ | :------- | :---- | :------------------------------------------------------- |
-| 0.1 | **ViT-B + patch-4 baseline** | `attention_patchify.py` | geodude      | 4    | 32     | 1     | 128     | 📅 Planned | —       | —        | —     | First run; validates data loading, augmentation, logging |
-| 0.2 | Hyena + patch-4 baseline     | `hyena_patchify.py`     | hipster/perf | 4    | 32     | 1     | 128     | 🔄 Running | —       | `174875` | —     | Sanity check Hyena pipeline (hipster)                    |
+| #   | Experiment                              | Config                                    | Partition    | GPUs | BS/GPU | Accum | Eff. BS | Status     | Val Acc | Job ID   | WandB | Notes                                                              |
+| :-- | :-------------------------------------- | :---------------------------------------- | :----------- | :--- | :----- | :---- | :------ | :--------- | :------ | :------- | :---- | :----------------------------------------------------------------- |
+| 0.1 | **ViT-B + patch-4 baseline**            | `attention_patchify.py`                   | geodude      | 4    | 32     | 1     | 128     | 📅 Planned | —       | —        | —     | First run; validates data loading, augmentation, logging           |
+| 0.2 | Hyena + patch-4 baseline                | `hyena_patchify.py`                       | hipster/perf | 4    | 32     | 1     | 128     | 🔄 Running | —       | `174875` | —     | Sanity check Hyena pipeline (hipster)                              |
+| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py`        | cees         | 8    | 128    | 1     | 1024    | 🔄 Running | —       | `139226` | —     | Pipeline sanity check on full IN-1K; patch=16 → 196 tokens; ≥70% top-1 |
 
-**Success criteria**: ViT-B patch-4 converges to ≥ 55% val acc within ~100k iterations (DeiT-B on TinyImageNet literature range: 55–65%).
+**Success criteria**:
+- **0.1/0.2** (TinyImageNet): ViT-B patch-4 converges to ≥ 55% val acc within ~100k iterations (DeiT-B on TinyImageNet literature range: 55–65%).
+- **0.3** (ImageNet-1K): ViT-B/16 reaches ≥ 70% top-1 val acc within 300k iterations (~240 epochs at BS=1024).
 
 ______________________________________________________________________
 
@@ -225,8 +230,9 @@ Given limited compute (4× A5000 on geodude, 8× RTX 6000 on all6000), we optimi
 
 ```
 WEEK 1 (immediate):
-├─ Phase 0.1: ViT-B baseline (4 GPU geodude) ← FIRST PRIORITY
-├─ Phase 0.2: Hyena baseline (4 GPU geodude, after 0.1 finishes)
+├─ Phase 0.1: ViT-B baseline TinyImageNet (4 GPU geodude) ← FIRST PRIORITY
+├─ Phase 0.2: Hyena baseline TinyImageNet (4 GPU geodude, after 0.1 finishes)
+├─ Phase 0.3: ViT-B/16 ImageNet-1K (8 GPU cees) ← CAN RUN IN PARALLEL, independent dataset
 └─ Phase 1.2: RFF ablation (can run on all6000 in parallel)
 
 WEEK 1–2 (after Phase 0 validated):
@@ -309,14 +315,15 @@ ______________________________________________________________________
 > \[!IMPORTANT\]
 > **Always update this log when submitting a job.** Record the job ID, config, and phase so we can trace results back to specific runs.
 
-| Date       | Job ID   | Phase | Config                       | Partition    | GPUs | Status     | Val Acc | Notes                              |
-| :--------- | :------- | :---- | :--------------------------- | :----------- | :--- | :--------- | :------ | :--------------------------------- |
-| 2026-02-17 | `137108` | 0.1   | `attention_patchify.py`      | geodude      | 4    | 🔄 Running | —       | ViT-B baseline pipeline validation |
-| 2026-02-17 | `174875` | 0.2   | `hyena_patchify.py`          | hipster/perf | 4    | ⏳ Pending | —       | Hyena baseline (4× RTX 6000 Ada)   |
-| 2026-02-17 | `174887` | 2.1   | `hyena_patchify.py` + ω₀=10  | hipster/cap  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
-| 2026-02-17 | `174888` | 2.2   | `hyena_patchify.py` + ω₀=20  | hipster/cap  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
-| 2026-02-17 | `174889` | 2.4   | `hyena_patchify.py` + ω₀=60  | hipster/cap  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
-| 2026-02-17 | `174890` | 2.5   | `hyena_patchify.py` + ω₀=100 | hipster/cap  | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
+| Date            | Job ID   | Phase | Config                                | Cluster  | Partition    | GPUs | Status     | Val Acc | Notes                              |
+| :-------------- | :------- | :---- | :------------------------------------ | :------- | :----------- | :--- | :--------- | :------ | :--------------------------------- |
+| 2026-02-17      | `137108` | 0.1   | `attention_patchify.py`               | IVI      | geodude      | 4    | 🔄 Running | —       | ViT-B baseline pipeline validation |
+| 2026-02-17      | `174875` | 0.2   | `hyena_patchify.py`                   | hipster  | perf         | 4    | ⏳ Pending | —       | Hyena baseline (4× RTX 6000 Ada)   |
+| 2026-02-17      | `174887` | 2.1   | `hyena_patchify.py` + ω₀=10           | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
+| 2026-02-17      | `174888` | 2.2   | `hyena_patchify.py` + ω₀=20           | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
+| 2026-02-17      | `174889` | 2.4   | `hyena_patchify.py` + ω₀=60           | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
+| 2026-02-17      | `174890` | 2.5   | `hyena_patchify.py` + ω₀=100          | hipster  | capacity     | 1    | 🔄 Running | —       | ω₀ sweep, accum=4 (L4)             |
+| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py`    | IVI      | cees         | 8    | 🔄 Running | —       | ViT-B/16 ImageNet-1K sanity check  |
 
 ______________________________________________________________________
 
@@ -332,8 +339,17 @@ ______________________________________________________________________
   - 2.4 ω₀=60 → Job `174889` (RUNNING on hipster-cn012)
   - 2.5 ω₀=100 → Job `174890` (RUNNING on hipster-cn013)
   - 2.3 ω₀=30 = Phase 0.2 (Job `174875`), no separate run needed.
+- **2026-02-19 00:06**: Added Phase 0.3 — ViT-B/16 attention patchify on full ImageNet-1K as pipeline sanity check. Config: `attention_patchify_imagenet1k.py`. Script: `run_attention_patchify_imagenet1k_cees.sh`. Target: cees (8× A5000, ceesusers). Key changes vs TinyImageNet baseline: `patch_size=16` (196 tokens), `image_size=224`, `BATCH_SIZE=128/GPU` (eff. BS=1024), `LR=3e-3`, `use_three_augment=True`. Dataset cached under `data/imagenet` (symlink → ZFS). Can run in parallel with 0.1/0.2.
+- **2026-02-19 00:12**: Submitted Phase 0.3 → Job `139175` on IVI/cees (8× RTX A5000, partition `cees`, account `ceesusers`). First run will download ILSVRC/imagenet-1k into `data/imagenet` (~140 GB).
+- **2026-02-19 01:00**: Phase 0.3 resubmitted several times due to environment issues:
+  - `139191`: Failed due to `torch` 2.10.0-dev / `torchvision` mismatch. Downgraded to stable 2.5.1.
+  - `139193`: Failed due to missing `datasets` and `timm`. Fixed conda environment.
+  - `139208`: Failed due to `PLACEHOLDER=None` bug in `lazy_config.py` causing `ImageNetDataModule` to receive a `DictConfig` instead of an object. Fixed `lazy_config.py`.
+  - `139211`, `139218`: Failed due to `HF_TOKEN` not being exported from `.env`. Fixed Slurm script export logic.
+  - `139226`: **Currently RUNNING** and downloading data successfully.
+- **2026-02-19 01:02**: Synced augmentation strategy in `attention_patchify_imagenet1k.py` to match TinyImageNet (`RandAugment`).
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-18
-**Status**: 🔄 Phase 0.1 running on IVI, Phase 0.2 pending on hipster/perf, Phase 2 ω₀ sweep running on hipster/capacity
+**Last Updated**: 2026-02-19 01:05
+**Status**: 🔄 Phase 0.1 running on IVI/geodude, Phase 0.2 pending on hipster/perf, Phase 0.3 running on IVI/cees (Job `139226`), Phase 2 ω₀ sweep running on hipster/capacity
