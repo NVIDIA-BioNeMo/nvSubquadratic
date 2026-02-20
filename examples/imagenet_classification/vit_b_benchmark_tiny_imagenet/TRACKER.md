@@ -112,13 +112,13 @@ ______________________________________________________________________
 
 **Goal**: Find the optimal ω₀ that controls frequency expressiveness of the SIREN kernel!
 
-| #   | Experiment            | ω₀  | Partition    | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                  |
-| :-- | :-------------------- | :-- | :----------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------- |
-| 2.1 | ω₀ = 10               | 10  | hipster/cap  | 2    | 🔄 Running   | 68.2%   | `174895` | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) | Step ~200k/300k (L4)   |
-| 2.2 | ω₀ = 20               | 20  | hipster/cap  | 2    | 🔄 Running   | 63.9%   | `174896` | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) | Step ~180k/300k (L4)   |
-| 2.3 | **ω₀ = 30 (default)** | 30  | hipster/perf | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run) |
-| 2.4 | ω₀ = 60               | 60  | hipster/cap  | 2    | 🔄 Running   | 61.8%   | `174897` | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) | Step ~160k/300k (L4)   |
-| 2.5 | ω₀ = 100              | 100 | hipster/cap  | 2    | 🔄 Running   | 22.9%   | `174898` | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) | Step ~140k/300k (L4)   |
+| #   | Experiment            | ω₀  | Partition    | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                        |
+| :-- | :-------------------- | :-- | :----------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------- |
+| 2.1 | ω₀ = 10               | 10  | hipster/cap  | 2    | 🔄 Running   | 69.9%   | `174895` | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) | Ep 242, ~189k/300k, ETA ~37h |
+| 2.2 | ω₀ = 20               | 20  | hipster/cap  | 2    | 🔄 Running   | 70.5%   | `174896` | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) | Ep 228, ~178k/300k, ETA ~41h |
+| 2.3 | **ω₀ = 30 (default)** | 30  | hipster/perf | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run)       |
+| 2.4 | ω₀ = 60               | 60  | hipster/cap  | 2    | 🔄 Running   | 69.2%   | `174897` | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) | Ep 216, ~169k/300k, ETA ~44h |
+| 2.5 | ω₀ = 100              | 100 | hipster/cap  | 2    | 🔄 Running   | 70.1%   | `174898` | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) | Ep 183, ~143k/300k, ETA ~52h |
 
 > \[!TIP\]
 > **Efficiency**: Run 2.1–2.5 in parallel on 1 GPU each (4 on geodude + 1 on all6000), or use 1 GPU on geodude sequentially, gradient-accumulating to match effective batch size. With 4 GPUs on geodude we can run 4 of these in parallel.
@@ -340,6 +340,11 @@ ______________________________________________________________________
 - **2026-02-19 23:10**: Status update on Phase 2 sweep:
   - Phase 2.1 (ω₀=10) is leading with **68.2%** accuracy at step ~200k.
   - All jobs are approaching completion on hipster/capacity.
+- **2026-02-20 14:40**: Progress update on Phase 2 sweep:
+  - All 4 ω₀ values converging to similar range (**69–70.5%** val acc), very close to Phase 0.2 (70.67%).
+  - ω₀=20 currently leads at **70.5%** — may match or exceed the default ω₀=30.
+  - ω₀=100 has recovered dramatically from earlier (22.9% → **70.1%**).
+  - ETA: ω₀=10 finishes ~Feb 21 evening, ω₀=100 finishes ~Feb 22 evening.
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
 - **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
@@ -363,5 +368,5 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-19 23:15
-**Status**: 🔄 Phase 0.1 Completed (54.3%), Phase 0.2 Completed (70.67%), Phase 2 ω₀ sweep (2-GPU) near completion
+**Last Updated**: 2026-02-20 14:40
+**Status**: 🔄 Phase 0.2 Completed (70.67%), Phase 2 ω₀ sweep (2-GPU) ~50–65% done, ETA Feb 21–22
