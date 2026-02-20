@@ -19,6 +19,7 @@ import os
 import torch
 
 from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules.imagenet_wds import ImageNetWebDataModule
 from experiments.default_cfg import EMAConfig, ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -39,8 +40,13 @@ DATA_DIM = 2
 # Training parameters
 BATCH_SIZE = 128  # per GPU; 8 GPUs × 128 = 1024 effective BS (DeiT standard)
 IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "data/imagenet")
+IMAGENET_WDS_PATH = os.environ.get("IMAGENET_WDS_CACHE", "data/imagenet-wds")
 HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 HF_DATASET_CONFIG = None
+
+# Set to True to use WebDataset TAR shards instead of HuggingFace Arrow.
+# Requires running scripts/convert_imagenet_to_webdataset.py first.
+USE_WEBDATASET = True
 IMAGE_SIZE = 224           # standard ViT input resolution (Resize(256) -> Crop(224))
 FINAL_IMAGE_SIZE = 224     # same as IMAGE_SIZE to avoid double-resize
 PRECISION = "bf16-mixed"
@@ -73,8 +79,11 @@ def get_config() -> ExperimentConfig:
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(ImageNetDataModule)(
-        data_dir=IMAGENET_PATH,
+    DataModuleClass = ImageNetWebDataModule if USE_WEBDATASET else ImageNetDataModule
+    data_dir = IMAGENET_WDS_PATH if USE_WEBDATASET else IMAGENET_PATH
+
+    config.dataset = LazyConfig(DataModuleClass)(
+        data_dir=data_dir,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",

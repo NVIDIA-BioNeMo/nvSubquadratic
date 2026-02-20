@@ -86,7 +86,7 @@ ______________________________________________________________________
 | :-- | :--------------------------------------- | :--------------------------------- | :----------- | :--- | :----- | :---- | :------ | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------------------------------------------------- |
 | 0.1 | **ViT-B + patch-4 baseline**             | `attention_patchify.py`            | geodude      | 4    | 32     | 1     | 128     | ✅ Done      | 54.3%   | `137108` | —                                                                             | Reached 300k steps; stable convergence.                                |
 | 0.2 | Hyena + patch-4 baseline                 | `hyena_patchify.py`                | hipster/perf | 4    | 32     | 1     | 128     | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | Sanity check Hyena pipeline (hipster)                                  |
-| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py` | cees         | 8    | 128    | 1     | 1024    | 🔄 Running   | —       | `139226` | —                                                                             | Pipeline sanity check on full IN-1K; patch=16 → 196 tokens; ≥70% top-1 |
+| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py` | cees         | 8    | 128    | 1     | 1024    | ⏳ Awaiting WDS | —       | `140516` | —                                                                             | Converting to WebDataset; will resubmit once done. Target ≥70% top-1    |
 
 **Success criteria**:
 
@@ -327,8 +327,10 @@ ______________________________________________________________________
 | 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | 🔄 Running   | 61.8%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
 | 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | 🔄 Running   | 22.9%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
 | 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped   | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
-| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ⏳ Pending   | —       | v2: LR=1e-3, DropPath=0.1, EMA=0.9999, dropout=0.0                            |
-| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ⏳ Pending   | —       | v2: same config as `140271`, submitted to cees6000 for faster scheduling      |
+| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.   |
+| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
+| 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.   |
+| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | 🔄 Running   | —       | Converting HF Arrow → WebDataset TAR shards. ETA ~1–2h. CPU-only job.         |
 
 ______________________________________________________________________
 
@@ -345,6 +347,20 @@ ______________________________________________________________________
   - ω₀=20 currently leads at **70.5%** — may match or exceed the default ω₀=30.
   - ω₀=100 has recovered dramatically from earlier (22.9% → **70.1%**).
   - ETA: ω₀=10 finishes ~Feb 21 evening, ω₀=100 finishes ~Feb 22 evening.
+- **2026-02-20 15:00**: Identified NFS I/O as root cause of 0.10 it/s throughput (40x slower than expected). HuggingFace Arrow cache (157 GB, 267 shards) on ZFS NFS causes massive random read latency with 112 data loader workers (14/GPU × 8 GPUs).
+- **2026-02-20 17:10**: SSD staging approach abandoned — `rsync` at 3.4 MB/s would take 12+ hours. Pivoted to **WebDataset** (sequential TAR shard reads, no local copy needed).
+- **2026-02-20 17:40**: WebDataset migration:
+  - Created `experiments/datamodules/imagenet_wds.py` — drop-in `ImageNetWebDataModule` with same API.
+  - Created `scripts/convert_imagenet_to_webdataset.py` — one-time converter (HF Arrow → TAR shards).
+  - Added `USE_WEBDATASET = True` toggle in `attention_patchify_imagenet1k.py`.
+  - Submitted conversion job `140516` (CPU-only, `ivi-cn020`). Output: `data/imagenet-wds/`.
+  - Cancelled jobs `140500` (SSD staging) and `140271` (slow NFS).
+  - **Next**: resubmit Phase 0.3 training once conversion finishes.
+- **2026-02-20**: Cancelled job `140272` on cees6000. Root cause analysis:
+  - **GrpTRES per-user limit on `ceesusers`**: `cpu=128, gres/gpu=8, mem=750G`
+  - The run script requests `--cpus-per-task=96`. With job `140271` already consuming 96 CPUs on cees, the combined total (192) exceeds the 128 CPU group limit.
+  - Both cees6000 nodes (`ivi-cn030`, `ivi-cn031`) were also fully occupied by other users.
+  - **Fix for future cees6000 runs**: reduce `--cpus-per-task` to ≤32 (128 − 96 = 32 remaining), or wait until the cees job finishes. Alternatively, lower cees `--cpus-per-task` to free up headroom.
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
 - **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
@@ -363,10 +379,10 @@ ______________________________________________________________________
   - `139193`: Failed due to missing `datasets` and `timm`. Fixed conda environment.
   - `139208`: Failed due to `PLACEHOLDER=None` bug in `lazy_config.py` causing `ImageNetDataModule` to receive a `DictConfig` instead of an object. Fixed `lazy_config.py`.
   - `139211`, `139218`: Failed due to `HF_TOKEN` not being exported from `.env`. Fixed Slurm script export logic.
-  - `139226`: **Currently RUNNING** and downloading data successfully.
+  - `139226`: Ran ~2 epochs before disk quota exceeded (home storage full). Fixed by symlinking `runs/` to ZFS.
 - **2026-02-19 01:02**: Synced augmentation strategy in `attention_patchify_imagenet1k.py` to match TinyImageNet (`RandAugment`).
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-20 14:40
-**Status**: 🔄 Phase 0.2 Completed (70.67%), Phase 2 ω₀ sweep (2-GPU) ~50–65% done, ETA Feb 21–22
+**Last Updated**: 2026-02-20 18:09
+**Status**: WebDataset conversion running (`140516`). Phase 2 ω₀ sweep ~50–65% done on hipster. Phase 0.3 will be resubmitted once WDS conversion completes.
