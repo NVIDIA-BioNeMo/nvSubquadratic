@@ -31,14 +31,6 @@ class ViT5ClassificationNet(nn.Module):
         block_cfg: LazyConfig for ViT5ResidualBlock.
         norm_cfg: LazyConfig for the normalization layer (RMSNorm).
         dropout_rate: Dropout rate applied to the CLS token before head.
-        use_cls_token: If True (default), prepend a learnable CLS token and read it
-            out for classification. If False, skip the CLS token and use global
-            average pooling over patch tokens instead.
-        prepend_registers: If True, register tokens are placed between the CLS token
-            and patch tokens ([CLS, regs, patches]) instead of after patches
-            ([CLS, patches, regs]). This allows the full sequence to be reshaped to a
-            contiguous 2D grid for spatial mixers like Hyena. Only takes effect when
-            both use_cls_token and num_registers > 0.
     """
 
     def __init__(
@@ -53,18 +45,13 @@ class ViT5ClassificationNet(nn.Module):
         block_cfg: LazyConfig,
         norm_cfg: LazyConfig,
         dropout_rate: float = 0.0,
-        use_cls_token: bool = True,
-        prepend_registers: bool = False,
     ):
-        """Initialize ViT-5 classification network (see class docstring for args)."""
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
         self.num_registers = num_registers
         self.patch_size = patch_size
         self.image_size = image_size
-        self.use_cls_token = use_cls_token
-        self.prepend_registers = prepend_registers
 
         num_patches_h = image_size // patch_size
         num_patches_w = image_size // patch_size
@@ -72,19 +59,13 @@ class ViT5ClassificationNet(nn.Module):
 
         # Patch embedding (non-overlapping Conv2d)
         self.patch_embed = nn.Conv2d(
-            in_channels,
-            hidden_dim,
-            kernel_size=patch_size,
-            stride=patch_size,
-            padding=0,
+            in_channels, hidden_dim,
+            kernel_size=patch_size, stride=patch_size, padding=0,
         )
 
         # Learnable tokens
-        if use_cls_token:
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_dim))
-            self.cls_token._no_weight_decay = True
-        else:
-            self.cls_token = None
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_dim))
+        self.cls_token._no_weight_decay = True
 
         # Absolute positional embeddings for patch tokens only (not cls, not registers)
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_dim))
@@ -112,8 +93,7 @@ class ViT5ClassificationNet(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        if self.cls_token is not None:
-            nn.init.trunc_normal_(self.cls_token, std=0.02)
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         if self.reg_token is not None:
             nn.init.trunc_normal_(self.reg_token, std=0.02)
@@ -147,37 +127,23 @@ class ViT5ClassificationNet(nn.Module):
 
         B = x.shape[0]
 
-        # Prepend CLS token (when enabled)
-        if self.cls_token is not None:
-            cls_tokens = self.cls_token.expand(B, -1, -1)
-            x = torch.cat([cls_tokens, x], dim=1)  # [B, 1 + num_patches, C]
+        # Prepend CLS token
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat([cls_tokens, x], dim=1)  # [B, 1 + num_patches, C]
 
-        # Insert register tokens
+        # Append register tokens
         if self.reg_token is not None:
             reg_tokens = self.reg_token.expand(B, -1, -1)
-            if self.prepend_registers and self.cls_token is not None:
-                # [CLS, regs, patches] — enables direct 2D reshape for spatial mixers
-                x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
-            else:
-                x = torch.cat([x, reg_tokens], dim=1)
+            x = torch.cat([x, reg_tokens], dim=1)  # [B, 1 + num_patches + num_registers, C]
 
         # Apply transformer blocks
         for block in self.blocks:
             x = block(x)
 
-        if self.use_cls_token:
-            out = x[:, 0]
-        else:
-            # Global average pool over patch tokens, excluding register tokens
-            if self.prepend_registers and self.num_registers > 0 and self.cls_token is not None:
-                out = x[:, self.num_registers :].mean(dim=1)
-            elif self.num_registers > 0:
-                out = x[:, : -self.num_registers].mean(dim=1)
-            else:
-                out = x.mean(dim=1)
-
-        out = self.out_norm(out)
-        out = self.dropout(out)
-        logits = self.out_proj(out)
+        # Extract CLS token, apply norm and head
+        cls_out = x[:, 0]
+        cls_out = self.out_norm(cls_out)
+        cls_out = self.dropout(cls_out)
+        logits = self.out_proj(cls_out)
 
         return {"logits": logits}

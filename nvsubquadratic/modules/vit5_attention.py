@@ -13,7 +13,7 @@ Optimizations vs naive implementation:
 - No redundant dtype casts around SDPA (autocast handles precision).
 """
 
-from typing import Callable, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -23,10 +23,7 @@ from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 def _build_2d_rope_flat(
-    height: int,
-    width: int,
-    head_dim: int,
-    rope_base: float,
+    height: int, width: int, head_dim: int, rope_base: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Precompute flattened 2D RoPE cos/sin for a (height x width) grid.
 
@@ -64,13 +61,10 @@ def _build_2d_rope_flat(
     angles_x = angles_x.repeat_interleave(2, dim=-1)  # [W, dim_half]
 
     # Broadcast to [H, W, dim_half] each, then cat to [H, W, head_dim]
-    angles_2d = torch.cat(
-        [
-            angles_y[:, None, :].expand(height, width, dim_half),
-            angles_x[None, :, :].expand(height, width, dim_half),
-        ],
-        dim=-1,
-    )
+    angles_2d = torch.cat([
+        angles_y[:, None, :].expand(height, width, dim_half),
+        angles_x[None, :, :].expand(height, width, dim_half),
+    ], dim=-1)
 
     flat = angles_2d.reshape(height * width, head_dim)
     return flat.cos(), flat.sin()
@@ -96,8 +90,8 @@ def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
     d_quarter = d // 4
     x_y1 = x[..., :d_quarter]
     x_y2 = x[..., d_quarter:d_half]
-    x_x1 = x[..., d_half : d_half + d_quarter]
-    x_x2 = x[..., d_half + d_quarter :]
+    x_x1 = x[..., d_half:d_half + d_quarter]
+    x_x2 = x[..., d_half + d_quarter:]
     return torch.cat([-x_y2, x_y1, -x_x2, x_x1], dim=-1)
 
 
@@ -120,15 +114,9 @@ class ViT5Attention(nn.Module):
         attn_dropout: Attention dropout rate.
         proj_dropout: Output projection dropout rate.
         qkv_bias: Whether to use bias in QKV projection.
-        out_proj_bias: Whether to use bias in the output projection.
-        scale: Attention scaling factor. When None, defaults to ``head_dim ** -0.5``.
-        init_fn_qkv_proj: Optional callable ``fn(tensor) -> None`` applied to the
-            QKV projection weights. When None, weights keep PyTorch's default init.
-        init_fn_out_proj: Optional callable ``fn(tensor) -> None`` applied to the
-            output projection weights. When None, weights keep PyTorch's default init.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         hidden_dim: int,
         num_heads: int,
@@ -141,34 +129,21 @@ class ViT5Attention(nn.Module):
         attn_dropout: float = 0.0,
         proj_dropout: float = 0.0,
         qkv_bias: bool = False,
-        out_proj_bias: bool = False,
-        scale: Optional[float] = None,
-        init_fn_qkv_proj: Optional[Callable[[torch.Tensor], None]] = None,
-        init_fn_out_proj: Optional[Callable[[torch.Tensor], None]] = None,
     ):
         super().__init__()
         assert hidden_dim % num_heads == 0
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
-        self.scale = scale if scale is not None else self.head_dim**-0.5
+        self.scale = self.head_dim ** -0.5
         self.num_patches_h = num_patches_h
         self.num_patches_w = num_patches_w
         self.num_registers = num_registers
         self.attn_dropout = attn_dropout
 
         self.qkv = nn.Linear(hidden_dim, 3 * hidden_dim, bias=qkv_bias)
-        self.proj = nn.Linear(hidden_dim, hidden_dim, bias=out_proj_bias)
+        self.proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.proj_drop = nn.Dropout(proj_dropout) if proj_dropout > 0 else nn.Identity()
-
-        if init_fn_qkv_proj is not None:
-            init_fn_qkv_proj(self.qkv.weight)
-            if self.qkv.bias is not None:
-                nn.init.zeros_(self.qkv.bias)
-        if init_fn_out_proj is not None:
-            init_fn_out_proj(self.proj.weight)
-            if self.proj.bias is not None:
-                nn.init.zeros_(self.proj.bias)
 
         if qk_norm is not None:
             self.q_norm = instantiate(qk_norm)
@@ -179,8 +154,8 @@ class ViT5Attention(nn.Module):
 
         self.rope_base = rope_base
         self.reg_rope_base = reg_rope_base
-        self.reg_rope_h = int(num_registers**0.5)
-        self.reg_rope_w = int(num_registers**0.5)
+        self.reg_rope_h = int(num_registers ** 0.5)
+        self.reg_rope_w = int(num_registers ** 0.5)
 
         # ── Precomputed RoPE cos/sin buffers ──────────────────────────────
         #
@@ -194,23 +169,17 @@ class ViT5Attention(nn.Module):
         # CLS token gets cos=1, sin=0 (identity — no positional bias).
         # Register tokens get their own high-frequency RoPE (theta=100).
         patch_cos, patch_sin = _build_2d_rope_flat(
-            num_patches_h,
-            num_patches_w,
-            self.head_dim,
-            rope_base,
+            num_patches_h, num_patches_w, self.head_dim, rope_base,
         )
 
-        parts_cos = [torch.ones(1, self.head_dim)]  # cls: cos=1 (no rotation)
-        parts_sin = [torch.zeros(1, self.head_dim)]  # cls: sin=0 (no rotation)
+        parts_cos = [torch.ones(1, self.head_dim)]   # cls: cos=1 (no rotation)
+        parts_sin = [torch.zeros(1, self.head_dim)]   # cls: sin=0 (no rotation)
         parts_cos.append(patch_cos)
         parts_sin.append(patch_sin)
 
         if num_registers > 0:
             reg_cos, reg_sin = _build_2d_rope_flat(
-                self.reg_rope_h,
-                self.reg_rope_w,
-                self.head_dim,
-                reg_rope_base,
+                self.reg_rope_h, self.reg_rope_w, self.head_dim, reg_rope_base,
             )
             parts_cos.append(reg_cos)
             parts_sin.append(reg_sin)
@@ -252,12 +221,10 @@ class ViT5Attention(nn.Module):
         v = v.transpose(1, 2)
 
         out = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
+            q, k, v,
             dropout_p=self.attn_dropout if self.training else 0.0,
             is_causal=False,
-            scale=self.scale,
+            scale=1.0 if self.qk_norm else self.scale,
         )
 
         out = out.transpose(1, 2).reshape(B, T, C)
@@ -265,7 +232,7 @@ class ViT5Attention(nn.Module):
         out = self.proj_drop(out)
         return out
 
-    def extra_repr(self) -> str:  # noqa: D102
+    def extra_repr(self) -> str:
         return (
             f"hidden_dim={self.hidden_dim}, num_heads={self.num_heads}, "
             f"qk_norm={self.qk_norm}, num_registers={self.num_registers}, "

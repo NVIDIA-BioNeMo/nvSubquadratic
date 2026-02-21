@@ -20,11 +20,9 @@ class LayerScale(nn.Module):
     """
 
     def __init__(self, dim: int, init_value: float = 1e-4):
-        """Initialize learnable scale vector to init_value."""
         super().__init__()
         self.gamma = nn.Parameter(init_value * torch.ones(dim))
         self.gamma._no_weight_decay = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Scale input by per-channel gamma."""
         return x * self.gamma
