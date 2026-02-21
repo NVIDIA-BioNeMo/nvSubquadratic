@@ -3,11 +3,25 @@
 """Lightning wrappers for the Classification and Regression experiments."""
 
 import torch
+import torch.nn.functional as F
 import torchmetrics
 
 import wandb
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
+
+
+class SoftTargetCrossEntropy(torch.nn.Module):
+    """Cross-entropy loss with soft targets (from DeiT III / timm).
+
+    Works with Mixup/CutMix soft labels by computing -sum(target * log_softmax(logits))
+    per sample, then averaging over the batch. Avoids the multi-class gradient dilution
+    issue that occurs with BCEWithLogitsLoss(reduction='mean').
+    """
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        loss = torch.sum(-targets * F.log_softmax(logits, dim=-1), dim=-1)
+        return loss.mean()
 
 
 class ClassificationWrapper(LightningWrapperBase):
@@ -39,12 +53,12 @@ class ClassificationWrapper(LightningWrapperBase):
         self.multiclass = network.out_proj.out_features != 1
 
         # Loss metric
-        # DeitIII proposes to use BCEWithLogitsLoss for multiclass classification
         self.use_bce_loss = use_bce_loss
         if self.multiclass and not self.use_bce_loss:
             self.loss_metric = torch.nn.CrossEntropyLoss()
+        elif self.multiclass and self.use_bce_loss:
+            self.loss_metric = SoftTargetCrossEntropy()
         else:
-            # Binary classification or Multiclass with BCE (DeiT III style)
             self.loss_metric = torch.nn.BCEWithLogitsLoss()
 
         # Function to get predictions:
@@ -102,6 +116,12 @@ class ClassificationWrapper(LightningWrapperBase):
         else:  # Binary classification
             accuracy_calculator(predictions, labels)
             labels = labels.float()
+
+        # SoftTargetCrossEntropy requires soft probability targets [B, C].
+        # During training, Mixup/CutMix already provides soft labels.
+        # During validation/test, labels are integer indices and need one-hot conversion.
+        if self.use_bce_loss and labels.ndim == 1:
+            labels = torch.nn.functional.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
 
         # Calculate the loss
         loss = self.loss_metric(logits, labels)

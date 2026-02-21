@@ -129,8 +129,11 @@ def main() -> None:
 
     # Compile the model if specified
     if config.compile:
-        print("Compiling model with torch.compile...")
-        network = torch.compile(network)
+        mode = getattr(config, "compile_mode", None)
+        mode_str = f" (mode={mode})" if mode else ""
+        print(f"Compiling model with torch.compile{mode_str}...")
+        compile_kwargs = {"mode": mode} if mode else {}
+        network = torch.compile(network, **compile_kwargs)
 
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
