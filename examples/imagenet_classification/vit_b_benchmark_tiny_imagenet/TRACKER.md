@@ -82,11 +82,11 @@ ______________________________________________________________________
 
 **Goal**: Confirm the TinyImageNet training pipeline works end-to-end with a standard ViT-B + patchify baseline. This is our sanity check and reference point.
 
-| #   | Experiment                               | Config                             | Partition    | GPUs | BS/GPU | Accum | Eff. BS | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                                                                  |
-| :-- | :--------------------------------------- | :--------------------------------- | :----------- | :--- | :----- | :---- | :------ | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------------------------------------------------- |
-| 0.1 | **ViT-B + patch-4 baseline**             | `attention_patchify.py`            | geodude      | 4    | 32     | 1     | 128     | ✅ Done      | 54.3%   | `137108` | —                                                                             | Reached 300k steps; stable convergence.                                |
-| 0.2 | Hyena + patch-4 baseline                 | `hyena_patchify.py`                | hipster/perf | 4    | 32     | 1     | 128     | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | Sanity check Hyena pipeline (hipster)                                  |
-| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py` | cees         | 8    | 128    | 1     | 1024    | ⏳ Awaiting WDS | —       | `140516` | —                                                                             | Converting to WebDataset; will resubmit once done. Target ≥70% top-1    |
+| #   | Experiment                               | Config                             | Partition    | GPUs | BS/GPU | Accum | Eff. BS | Status          | Val Acc | Job ID   | WandB                                                                         | Notes                                                                |
+| :-- | :--------------------------------------- | :--------------------------------- | :----------- | :--- | :----- | :---- | :------ | :-------------- | :------ | :------- | :---------------------------------------------------------------------------- | :------------------------------------------------------------------- |
+| 0.1 | **ViT-B + patch-4 baseline**             | `attention_patchify.py`            | geodude      | 4    | 32     | 1     | 128     | ✅ Done         | 54.3%   | `137108` | —                                                                             | Reached 300k steps; stable convergence.                              |
+| 0.2 | Hyena + patch-4 baseline                 | `hyena_patchify.py`                | hipster/perf | 4    | 32     | 1     | 128     | ✅ Completed    | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | Sanity check Hyena pipeline (hipster)                                |
+| 0.3 | **ViT-B/16 attention on ImageNet-1K** ⭐ | `attention_patchify_imagenet1k.py` | cees         | 8    | 128    | 1     | 1024    | ⏳ Awaiting WDS | —       | `140516` | —                                                                             | Converting to WebDataset; will resubmit once done. Target ≥70% top-1 |
 
 **Success criteria**:
 
@@ -101,7 +101,7 @@ ______________________________________________________________________
 
 | #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                 |
 | :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :-------------------- |
-| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2           |
+| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | 🔄 Finishing | 70.3%   | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | Step ~289k/300k.      |
 | 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | ⏳ Pending   | —       | `140281` | —                                                                             | Expect ↓ acc vs SIREN |
 
 **Hypothesis**: RFF lacks the expressiveness of SIREN's sine-based representation for vision, resulting in lower accuracy.
@@ -327,7 +327,7 @@ ______________________________________________________________________
 | 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | 🔄 Running   | 61.8%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
 | 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | 🔄 Running   | 22.9%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
 | 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped   | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
-| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.   |
+| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.    |
 | 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
 | 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.   |
 | 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | 🔄 Running   | —       | Converting HF Arrow → WebDataset TAR shards. ETA ~1–2h. CPU-only job.         |
@@ -362,6 +362,8 @@ ______________________________________________________________________
   - Both cees6000 nodes (`ivi-cn030`, `ivi-cn031`) were also fully occupied by other users.
   - **Fix for future cees6000 runs**: reduce `--cpus-per-task` to ≤32 (128 − 96 = 32 remaining), or wait until the cees job finishes. Alternatively, lower cees `--cpus-per-task` to free up headroom.
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**.
+- **2026-02-21**: Phase 1.1 (Hyena SIREN baseline) is nearly complete. Current val accuracy is **70.3%** at step 288k. Accuracy is significantly higher than the Attention baseline.
+- **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**. Stable convergence; success criteria (≥55%) nearly met.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
 - **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
 - **2026-02-17 23:00**: Submitted Phase 0.2 (Hyena patchify) → Job `174875` on hipster/performance (4× RTX 6000 Ada).
@@ -384,5 +386,5 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-20 18:09
-**Status**: WebDataset conversion running (`140516`). Phase 2 ω₀ sweep ~50–65% done on hipster. Phase 0.3 will be resubmitted once WDS conversion completes.
+**Last Updated**: 2026-02-21 23:35
+**Status**: 🔄 Phase 1.1 finishing on IVI/geodude (Job `140280`), Phase 0.1 Done, Phase 1.2 Pending.
