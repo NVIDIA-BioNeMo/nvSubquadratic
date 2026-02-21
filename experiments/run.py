@@ -119,6 +119,12 @@ def main() -> None:
     # Set float32 matmul precision
     torch.set_float32_matmul_precision("high")
 
+    # Isolate Triton cache per DDP rank to prevent file-lock races during
+    # concurrent compilation (all ranks compile the same kernels in parallel).
+    local_rank = os.environ.get("LOCAL_RANK", "0")
+    base_triton_dir = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
+    os.environ["TRITON_CACHE_DIR"] = os.path.join(base_triton_dir, f"rank_{local_rank}")
+
     # Construct data_module, prepare and setup
     datamodule = instantiate(config.dataset)
     datamodule.prepare_data()
