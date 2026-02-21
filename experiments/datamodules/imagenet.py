@@ -4,11 +4,10 @@ from typing import Literal, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
-from datasets import load_dataset
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
 from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
+from torchvision import datasets as tv_datasets, transforms
 from torchvision.transforms import InterpolationMode
 from timm.data.auto_augment import rand_augment_transform
 
@@ -98,6 +97,7 @@ class _ImageNetDataset(Dataset):
         self.transform = transform
         self.drop_labels = drop_labels
 
+        from datasets import load_dataset
         self.dataset = load_dataset(
             path=dataset_name,
             name=dataset_config,
@@ -126,7 +126,16 @@ class _ImageNetDataset(Dataset):
 
 
 class ImageNetDataModule(pl.LightningDataModule):
-    """Lightning DataModule that outputs MNIST-style dict batches."""
+    """Lightning DataModule for ImageNet.
+
+    Supports two backends:
+    - **ImageFolder** (preferred): set ``imagefolder_dir`` to a directory
+      containing ``train/`` and ``val/`` subdirectories in the standard
+      torchvision ImageFolder layout.  Much faster than HF datasets.
+    - **HuggingFace datasets** (fallback): uses Arrow-backed storage via
+      ``data_dir``.  Slower due to per-sample Arrow deserialization + PIL
+      decode overhead.
+    """
 
     def __init__(
         self,
@@ -145,6 +154,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         hf_auth_token: Optional[str] = None,
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
+        imagefolder_dir: Optional[str] = None,
+        prefetch_factor: int = 4,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
         augment_cfg: Optional[AugmentConfig] = None,
@@ -152,6 +163,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         """Initialize the ImageNet datamodule and cache configuration values."""
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
+        self.imagefolder_dir = Path(imagefolder_dir) if imagefolder_dir else None
+        self.prefetch_factor = prefetch_factor
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
@@ -210,8 +223,8 @@ class ImageNetDataModule(pl.LightningDataModule):
                 num_classes=num_classes,
             )
 
-        self.train_dataset: Optional[_ImageNetDataset] = None
-        self.val_dataset: Optional[_ImageNetDataset] = None
+        self.train_dataset: Optional[Dataset] = None
+        self.val_dataset: Optional[Dataset] = None
 
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
@@ -282,6 +295,10 @@ class ImageNetDataModule(pl.LightningDataModule):
 
     def prepare_data(self) -> None:
         """Download the train/validation splits if they are not already cached locally."""
+        if self.imagefolder_dir is not None:
+            return
+
+        from datasets import load_dataset
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,
@@ -300,52 +317,41 @@ class ImageNetDataModule(pl.LightningDataModule):
             token=self.hf_auth_token,
         )
 
+    def _make_folder_dataset(self, split: str, train: bool) -> Dataset:
+        folder = "train" if split == "train" else "val"
+        root = self.imagefolder_dir / folder
+        return tv_datasets.ImageFolder(root, transform=self._build_transform(train=train))
+
+    def _make_hf_dataset(self, split: str, train: bool) -> Dataset:
+        return _ImageNetDataset(
+            split=split,
+            dataset_name=self.hf_dataset_name,
+            dataset_config=self.hf_dataset_config,
+            cache_dir=self.data_dir,
+            hf_token=self.hf_auth_token,
+            transform=self._build_transform(train=train),
+            drop_labels=self.drop_labels,
+        )
+
     def setup(self, stage: Optional[str] = None) -> None:
         """Construct the datasets for the requested stage."""
+        use_folder = self.imagefolder_dir is not None
+
         if stage in ("fit", None):
-            self.train_dataset = _ImageNetDataset(
-                split="train",
-                dataset_name=self.hf_dataset_name,
-                dataset_config=self.hf_dataset_config,
-                cache_dir=self.data_dir,
-                hf_token=self.hf_auth_token,
-                transform=self._build_transform(train=True),
-                drop_labels=self.drop_labels,
-            )
+            if use_folder:
+                self.train_dataset = self._make_folder_dataset("train", train=True)
+                self.val_dataset = self._make_folder_dataset("validation", train=False)
+            else:
+                self.train_dataset = self._make_hf_dataset("train", train=True)
+                self.val_dataset = self._make_hf_dataset("validation", train=False)
 
-            self.val_dataset = _ImageNetDataset(
-                split="validation",
-                dataset_name=self.hf_dataset_name,
-                dataset_config=self.hf_dataset_config,
-                cache_dir=self.data_dir,
-                hf_token=self.hf_auth_token,
-                transform=self._build_transform(train=False),
-                drop_labels=self.drop_labels,
-            )
+        elif stage in ("validate", "test"):
+            if use_folder:
+                self.val_dataset = self._make_folder_dataset("validation", train=False)
+            else:
+                self.val_dataset = self._make_hf_dataset("validation", train=False)
 
-        elif stage == "validate":
-            self.val_dataset = _ImageNetDataset(
-                split="validation",
-                dataset_name=self.hf_dataset_name,
-                dataset_config=self.hf_dataset_config,
-                cache_dir=self.data_dir,
-                hf_token=self.hf_auth_token,
-                transform=self._build_transform(train=False),
-                drop_labels=self.drop_labels,
-            )
-
-        elif stage == "test":
-            self.val_dataset = _ImageNetDataset(
-                split="validation",
-                dataset_name=self.hf_dataset_name,
-                dataset_config=self.hf_dataset_config,
-                cache_dir=self.data_dir,
-                hf_token=self.hf_auth_token,
-                transform=self._build_transform(train=False),
-                drop_labels=self.drop_labels,
-            )
-
-    def _build_loader(self, dataset: _ImageNetDataset, shuffle: bool, drop_last: bool) -> DataLoader:
+    def _build_loader(self, dataset: Dataset, shuffle: bool, drop_last: bool) -> DataLoader:
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -354,6 +360,7 @@ class ImageNetDataModule(pl.LightningDataModule):
             pin_memory=self.pin_memory,
             drop_last=drop_last,
             persistent_workers=self.num_workers > 0,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def train_dataloader(self) -> DataLoader:

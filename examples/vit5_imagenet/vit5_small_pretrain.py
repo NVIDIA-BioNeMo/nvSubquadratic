@@ -52,6 +52,7 @@ NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
 IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
+IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 
 # ─── Model (ViT-5-Small) ────────────────────────────────────────────────────────
@@ -96,6 +97,8 @@ def get_config() -> ExperimentConfig:
     # ─── Dataset ────────────────────────────────────────────────────────────
     config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
+        imagefolder_dir=IMAGENET_FOLDER_PATH,
+        prefetch_factor=2,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
