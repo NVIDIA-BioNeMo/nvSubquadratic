@@ -1,5 +1,3 @@
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Tuple
@@ -8,12 +6,8 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
-from timm.data.auto_augment import rand_augment_transform
-from timm.data.random_erasing import RandomErasing
-from timm.data.transforms import RandomResizedCropAndInterpolation
 from torch.utils.data import DataLoader, Dataset
-from torchvision import datasets as tv_datasets
-from torchvision import transforms
+from torchvision import datasets as tv_datasets, transforms
 from torchvision.transforms import InterpolationMode
 from timm.data.auto_augment import rand_augment_transform
 
@@ -104,7 +98,6 @@ class _ImageNetDataset(Dataset):
         self.drop_labels = drop_labels
 
         from datasets import load_dataset
-
         self.dataset = load_dataset(
             path=dataset_name,
             name=dataset_config,
@@ -162,9 +155,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
         imagefolder_dir: Optional[str] = None,
-        prefetch_factor: int = 2,
-        eval_crop_ratio: float = 1.0,
-        local_staging_dir: Optional[str] = None,
+        prefetch_factor: int = 4,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
         augment_cfg: Optional[AugmentConfig] = None,
@@ -173,9 +164,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
         self.imagefolder_dir = Path(imagefolder_dir) if imagefolder_dir else None
-        self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
         self.prefetch_factor = prefetch_factor
-        self.eval_crop_ratio = eval_crop_ratio
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
@@ -249,23 +238,23 @@ class ImageNetDataModule(pl.LightningDataModule):
             mean = self.normalization_mean
             std = self.normalization_std
 
+        # Initialize ops with Simple Random Crop logic: Resize -> RandomCrop
+        # For SRC, we typically resize to slightly larger than crop size (e.g. 256 for 224 crop) or
+        # resize shortest edge to target size.
+        # Original code used Resize(image_size + 32). This is standard SRC.
         ops: list[transforms.Transform] = []
 
         if train:
-            ops.append(
-                RandomResizedCropAndInterpolation(
-                    self.image_size,
-                    scale=(0.08, 1.0),
-                    interpolation="bicubic",
-                )
-            )
+            # Simple Random Crop
+            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
+            ops.append(transforms.RandomCrop(self.image_size))
 
+            # Manual augmentation pipeline matching DeiT III / User request
+            # "ColorJitter Grayscale Gaussian Blur Solarization"
             ops.append(transforms.RandomHorizontalFlip())
 
             if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
-                ops.append(ThreeAugment())
-
-            if self.augment_cfg is not None and self.augment_cfg.color_jitter > 0:
+                # Standard Color Jitter
                 ops.append(
                     transforms.ColorJitter(
                         brightness=self.augment_cfg.color_jitter,
@@ -285,9 +274,12 @@ class ImageNetDataModule(pl.LightningDataModule):
                     )
                 )
         else:
-            eval_size = int(self.image_size / self.eval_crop_ratio)
-            ops.append(transforms.Resize(eval_size, interpolation=InterpolationMode.BICUBIC))
-            ops.append(transforms.CenterCrop(self.image_size))
+            # Validation: Resize + CenterCrop or Resize
+            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
+            if self.center_crop:
+                ops.append(transforms.CenterCrop(self.image_size))
+            else:
+                ops.append(transforms.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC))
 
         if self.final_image_size != self.image_size:
             ops.append(
@@ -299,72 +291,14 @@ class ImageNetDataModule(pl.LightningDataModule):
 
         ops.append(transforms.ToTensor())
         ops.append(transforms.Normalize(mean=mean, std=std))
-
-        if train and self.augment_cfg is not None and self.augment_cfg.random_erasing_prob > 0:
-            ops.append(
-                RandomErasing(
-                    probability=self.augment_cfg.random_erasing_prob,
-                    mode=self.augment_cfg.random_erasing_mode,
-                    device="cpu",
-                )
-            )
-
         return transforms.Compose(ops)
 
-    def _stage_to_local(self) -> None:
-        """Copy ImageFolder data to fast local storage (e.g. NVMe).
-
-        Idempotent: uses a ``.staging_complete`` sentinel so partial copies
-        are retried and completed copies are skipped.  Raises on failure.
-        """
-        src = self.imagefolder_dir
-        dst = self._local_staging_dir
-
-        print(f"[data-staging] local_staging_dir={dst}, checking ...", flush=True)
-
-        try:
-            dst.mkdir(parents=True, exist_ok=True)
-            free_bytes = shutil.disk_usage(dst).free
-            min_bytes = 160 * (1024**3)
-            if free_bytes < min_bytes:
-                raise RuntimeError(
-                    f"[data-staging] {dst} has only "
-                    f"{free_bytes / (1024**3):.1f} GB free (need {min_bytes / (1024**3):.0f} GB)"
-                )
-        except OSError as exc:
-            raise RuntimeError(f"[data-staging] Cannot access {dst}: {exc}") from exc
-
-        sentinel = dst / ".staging_complete"
-        if sentinel.is_file():
-            print(f"[data-staging] {dst} already staged (sentinel found), skipping copy.", flush=True)
-            self.imagefolder_dir = dst
-            return
-
-        print(f"[data-staging] Copying {src} -> {dst} (this may take 10-20 min) ...", flush=True)
-        subprocess.run(
-            ["cp", "-a", "--no-clobber", "-r", str(src / "train"), str(src / "val"), str(dst)],
-            check=True,
-            timeout=3600,
-        )
-        sentinel.write_text("ok\n")
-        self.imagefolder_dir = dst
-        print(f"[data-staging] Done. Using local path: {dst}", flush=True)
-
     def prepare_data(self) -> None:
-        """Download / stage data before training.
-
-        When ``local_staging_dir`` is set and ``imagefolder_dir`` points to a
-        network path, stage data to fast local storage first.
-        """
-        if self._local_staging_dir is not None and self.imagefolder_dir is not None:
-            self._stage_to_local()
-            return
-
+        """Download the train/validation splits if they are not already cached locally."""
         if self.imagefolder_dir is not None:
             return
 
         from datasets import load_dataset
-
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,
