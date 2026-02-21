@@ -120,6 +120,7 @@ class ExperimentConfig:
     seed: int = 0
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
+    compile_mode: Optional[str] = None  # torch.compile mode: None (default), "reduce-overhead", "max-autotune"
     experiment_dir: Optional[str] = None
     num_nodes: int = 1
 

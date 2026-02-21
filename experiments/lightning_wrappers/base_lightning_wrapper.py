@@ -204,6 +204,74 @@ class LightningWrapperBase(pl.LightningModule):
         self._cuda_forward_end_event = None
         self._cuda_backward_end_event = None
 
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """Patch checkpoint for cross-optimizer and compiled/non-compiled resume.
+
+        Handles two mismatch scenarios:
+
+        1. **state_dict key prefixes** — ``torch.compile`` wraps modules under
+           ``_orig_mod``, so checkpoint keys may differ from the live model.
+
+        2. **optimizer param-group keys** — resuming with a different optimizer
+           (e.g. Apex FusedLAMB vs torch_optimizer.Lamb) may require injecting
+           default values for keys the new optimizer expects but the old
+           checkpoint lacks (like ``bias_correction``, ``adam_w_mode``, etc.).
+        """
+        # --- 1. state_dict key remapping ----------------------------------
+        state_dict = checkpoint.get("state_dict")
+        if state_dict is not None:
+            model_keys = set(self.state_dict().keys())
+            ckpt_keys = set(state_dict.keys())
+            if model_keys != ckpt_keys:
+                def _strip(key: str) -> str:
+                    return key.replace("._orig_mod.", ".")
+
+                model_stripped = {_strip(k): k for k in model_keys}
+                remapped: dict[str, torch.Tensor] = {}
+                for ckpt_key, value in state_dict.items():
+                    target = model_stripped.get(_strip(ckpt_key), ckpt_key)
+                    remapped[target] = value
+                checkpoint["state_dict"] = remapped
+
+        # --- 2. optimizer param-group patching ----------------------------
+        #
+        # When resuming with a different optimizer (e.g. Apex FusedLAMB from
+        # a torch_optimizer.Lamb checkpoint), the checkpoint's param groups
+        # may be missing keys the new optimizer expects in its step().
+        #
+        # Strategy: construct a throwaway optimizer with the current config to
+        # obtain its param groups with all keys correctly set, then inject any
+        # missing keys into the checkpoint's groups.  This uses the *configured*
+        # values (not just constructor defaults), so keys like max_grad_norm
+        # that were explicitly overridden in the config are respected.
+        #
+        # Example: torch_optimizer.Lamb -> Apex FusedLAMB
+        #
+        #   Key              Injected value  Why correct
+        #   ──────────────── ─────────────── ──────────────────────────────────
+        #   bias_correction  True            Lamb applies it implicitly
+        #   adam_w_mode      True            Both use decoupled weight decay
+        #   max_grad_norm    0.0 (from cfg)  Avoids double-clipping with
+        #                                    Lightning's grad_clip
+        #   grad_averaging   True            FusedLAMB default (configured)
+        #   set_grad_none    True            Memory opt, no semantic change
+        #   use_nvlamb       False           Standard LAMB, not NVLAMB variant
+        optimizer_states = checkpoint.get("optimizer_states")
+        if optimizer_states is None:
+            return
+
+        try:
+            reference_optim_dict = construct_optimizer(self, self.optimizer_cfg)
+            ref_group = reference_optim_dict.param_groups[0]
+        except Exception:
+            return
+
+        for opt_state in optimizer_states:
+            for group in opt_state.get("param_groups", []):
+                for key, val in ref_group.items():
+                    if key not in group and key != "params":
+                        group[key] = val
+
     def forward(self, input_and_condition: dict[str, torch.Tensor]):
         """Forward pass of the network.
 
