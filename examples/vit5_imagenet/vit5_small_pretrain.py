@@ -98,6 +98,7 @@ def get_config() -> ExperimentConfig:
     config.dataset = LazyConfig(ImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         imagefolder_dir=IMAGENET_FOLDER_PATH,
+        gpu_decode=True,
         prefetch_factor=2,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
