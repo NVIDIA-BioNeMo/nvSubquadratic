@@ -330,7 +330,8 @@ ______________________________________________________________________
 | 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.    |
 | 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
 | 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.   |
-| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | 🔄 Running   | —       | Converting HF Arrow → WebDataset TAR shards. ETA ~1–2h. CPU-only job.         |
+| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | ❌ Timeout   | —       | Timed out at 4h. Resubmitted with resume logic as `141076`.                   |
+| 2026-02-21       | `141076` | infra | WebDataset conversion (Resumed)    | IVI     | cees      | 0    | 🔄 Running   | —       | Resumed from shard 65 after fix. 24h limit.                                   |
 
 ______________________________________________________________________
 

@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:0
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=04:00:00
+#SBATCH --time=36:00:00
 #SBATCH --output=slurm/%x_%j.out
 
 # Convert HuggingFace Arrow ImageNet cache to WebDataset TAR shards.

@@ -75,16 +75,52 @@ def convert_split(
     shard_dir = Path(dst_dir) / split
     shard_dir.mkdir(parents=True, exist_ok=True)
 
-    # Shard pattern: imagenet-train-000000.tar, imagenet-train-000001.tar, ...
+    # --- Resume logic: count existing complete shards and skip samples ---
+    existing_tars = sorted(shard_dir.glob("*.tar"))
+    samples_already_written = 0
+    start_shard_id = 0
+
+    if existing_tars:
+        import tarfile
+
+        for tar_path in existing_tars:
+            try:
+                with tarfile.open(tar_path, "r") as tf:
+                    # Each sample has multiple files (e.g. 00000042.jpg, 00000042.cls)
+                    # Count unique keys (samples) by looking at .jpg entries
+                    n = sum(1 for m in tf.getmembers() if m.name.endswith(".jpg"))
+                    samples_already_written += n
+            except Exception as e:
+                print(f"  WARNING: Could not read {tar_path.name}: {e}")
+                print(f"  Removing incomplete shard: {tar_path.name}")
+                tar_path.unlink()
+                continue
+
+        # Recount after removing bad shards
+        existing_tars = sorted(shard_dir.glob("*.tar"))
+        start_shard_id = len(existing_tars)
+        print(f"  Resuming: {samples_already_written:,} samples in {len(existing_tars)} existing shards")
+
+    if samples_already_written >= num_samples:
+        print(f"  Split already fully converted ({samples_already_written:,} samples). Skipping.")
+        return
+
+    # Shard pattern with start index for resume
     shard_pattern = str(shard_dir / f"imagenet-{split}-%06d.tar")
     print(f"Writing shards to: {shard_pattern}")
+    print(f"  Starting from sample {samples_already_written:,}, shard {start_shard_id}")
 
     # Write shards
     t_start = time.time()
     written = 0
+    to_write = num_samples - samples_already_written
 
-    with wds.ShardWriter(shard_pattern, maxsize=max_shard_size) as sink:
-        for idx in range(num_samples):
+    with wds.ShardWriter(
+        shard_pattern,
+        maxsize=max_shard_size,
+        start_shard=start_shard_id,
+    ) as sink:
+        for idx in range(samples_already_written, num_samples):
             example = ds[idx]
             image = example["image"]
             label = example["label"]
@@ -110,11 +146,12 @@ def convert_split(
             if written % 10_000 == 0:
                 elapsed = time.time() - t_start
                 rate = written / elapsed
-                eta = (num_samples - written) / rate if rate > 0 else 0
+                eta = (to_write - written) / rate if rate > 0 else 0
                 print(
-                    f"  [{written:>8,}/{num_samples:,}] "
+                    f"  [{samples_already_written + written:>8,}/{num_samples:,}] "
                     f"{rate:.0f} samples/s, "
-                    f"ETA: {eta/60:.1f} min"
+                    f"ETA: {eta/60:.1f} min",
+                    flush=True,
                 )
 
     elapsed = time.time() - t_start
