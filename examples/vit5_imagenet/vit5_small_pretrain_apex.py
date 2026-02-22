@@ -1,18 +1,8 @@
-"""ViT-5-Small ImageNet-1k Pretraining Configuration.
+"""ViT-5-Small ImageNet-1k — Apex FusedLAMB variant.
 
-Architecture (from ViT-5 paper, Table 4):
-- 12 layers, dim 384, 6 heads, 4 registers, ~22M params
-- RMSNorm, LayerScale (init 1e-4), QK-Norm (RMSNorm)
-- APE + 2D RoPE, register tokens with high-frequency RoPE (theta=100)
-- GeLU MLP (ratio 4), no QKV bias
-- Patch size 16 -> 224/16 = 14x14 = 196 tokens
-
-Pretraining recipe (from ViT-5 paper, Table 12):
-- LAMB optimizer, lr 4e-3, weight decay 0.05, grad clip 1.0
-- Batch 2048, 800 epochs, cosine schedule, 5 warmup epochs
-- 3-Augment, Color Jitter 0.3, Mixup 0.8, CutMix 1.0
-- BCE loss, no label smoothing, stochastic depth 0.05
-- Input 224x224
+Identical to vit5_small_pretrain.py except:
+- Apex FusedLAMB optimizer (fused multi-tensor LAMB, faster optimizer step)
+- Fresh run (no auto-resume) to avoid checkpoint state incompatibility
 """
 
 import os
@@ -24,22 +14,17 @@ from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, Schedule
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-# NOTE: Apex FusedLAMB is faster but its optimizer state is incompatible with
-# torch_optimizer.Lamb for checkpoint resume.  Use Lamb for runs that need to
-# resume from a Lamb checkpoint; switch to FusedLAMB only for fresh runs.
-#
-# try:
-#     from apex.optimizers import FusedLAMB as Lamb
-# except ImportError:
-#     import warnings
-#     warnings.warn(
-#         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
-#         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
-#         stacklevel=2,
-#     )
-#     from torch_optimizer import Lamb
+try:
+    from apex.optimizers import FusedLAMB as Lamb
+except ImportError:
+    import warnings
+    warnings.warn(
+        "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
+        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
+        stacklevel=2,
+    )
+    from torch_optimizer import Lamb
 
-from torch_optimizer import Lamb
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
@@ -64,18 +49,18 @@ NUM_REGISTERS = 4
 LAYER_SCALE_INIT = 1e-4
 DROP_PATH_RATE = 0.05
 MLP_RATIO = 4
-NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
-NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
+NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
+NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
 
 # ─── Training recipe ────────────────────────────────────────────────────────────
-BATCH_SIZE = 256  # per-GPU; 256 * 8 GPUs = 2048 effective
+BATCH_SIZE = 256
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
 EFFECTIVE_BATCH_SIZE = 2048
 ITERS_PER_EPOCH = IMAGENET_TRAIN_SIZE // EFFECTIVE_BATCH_SIZE
-TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH  # ~500,000
+TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH
 WARMUP_EPOCHS = 5
-WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS  # 5/800 ≈ 0.00625
+WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS
 
 LEARNING_RATE = 4e-3
 WEIGHT_DECAY = 0.05
@@ -86,7 +71,7 @@ NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_avail
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small ImageNet-1k pretraining configuration."""
+    """Return the ViT-5-Small config with Apex FusedLAMB."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
@@ -168,7 +153,7 @@ def get_config() -> ExperimentConfig:
     # ─── Lightning wrapper ──────────────────────────────────────────────────
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
 
-    # ─── Optimizer ────────────────────────────────────────────────────────
+    # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
@@ -203,7 +188,7 @@ def get_config() -> ExperimentConfig:
         project="nvsubquadratic",
     )
 
-    # ─── Auto-resume ─────────────────────────────────────────────────────────
+    # ─── Auto-resume (fresh run — no run_name) ──────────────────────────────
     config.autoresume = AutoResumeConfig(
         enabled=True,
     )

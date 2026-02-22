@@ -8,9 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as tv_datasets, transforms
-from torchvision.io import decode_jpeg, read_file
 from torchvision.transforms import InterpolationMode
-from torchvision.transforms import v2 as transforms_v2
 from timm.data.auto_augment import rand_augment_transform
 
 
@@ -79,31 +77,6 @@ class ThreeAugment(torch.nn.Module):
             return transforms.GaussianBlur(kernel_size=5, sigma=sigma)(img)
 
         return self.transforms[idx](img)
-
-
-class _ImageNetRawBytesDataset(Dataset):
-    """Reads raw JPEG bytes from an ImageFolder layout for GPU-side decoding."""
-
-    def __init__(self, root: Path, split: str) -> None:
-        super().__init__()
-        folder = "train" if split == "train" else "val"
-        ds = tv_datasets.ImageFolder(root / folder)
-        self.samples = ds.samples  # list of (path, class_idx)
-
-    def __len__(self) -> int:
-        return len(self.samples)
-
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
-        path, label = self.samples[index]
-        raw_bytes = read_file(path)
-        return raw_bytes, label
-
-
-def _raw_bytes_collate(batch):
-    """Collate that keeps variable-length byte tensors as a list."""
-    bytes_list = [b for b, _ in batch]
-    labels = torch.tensor([l for _, l in batch], dtype=torch.long)
-    return bytes_list, labels
 
 
 class _ImageNetDataset(Dataset):
@@ -182,7 +155,6 @@ class ImageNetDataModule(pl.LightningDataModule):
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
         imagefolder_dir: Optional[str] = None,
-        gpu_decode: bool = False,
         prefetch_factor: int = 4,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
@@ -192,7 +164,6 @@ class ImageNetDataModule(pl.LightningDataModule):
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
         self.imagefolder_dir = Path(imagefolder_dir) if imagefolder_dir else None
-        self.gpu_decode = gpu_decode
         self.prefetch_factor = prefetch_factor
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -254,63 +225,6 @@ class ImageNetDataModule(pl.LightningDataModule):
 
         self.train_dataset: Optional[Dataset] = None
         self.val_dataset: Optional[Dataset] = None
-
-        if self.gpu_decode:
-            self._gpu_train_per_img, self._gpu_train_batch = self._build_gpu_transforms(train=True)
-            self._gpu_val_per_img, self._gpu_val_batch = self._build_gpu_transforms(train=False)
-
-    def _build_gpu_transforms(self, *, train: bool):
-        """Build split GPU transform pipelines.
-
-        Returns (per_image_ops, batch_ops) where per_image_ops handles
-        variable-size inputs (decode → resize → crop) and batch_ops handles
-        augmentations on a stacked [B,C,H,W] tensor for better GPU utilisation.
-        """
-        mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
-            self.final_image_size,
-            (DEFAULT_IMAGENET_MEAN, DEFAULT_IMAGENET_STD),
-        )
-        if self.task == "generation":
-            mean = self.normalization_mean
-            std = self.normalization_std
-
-        per_img: list = []
-        batch: list = []
-
-        if train:
-            per_img.append(transforms_v2.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC, antialias=True))
-            per_img.append(transforms_v2.RandomCrop(self.image_size))
-
-            batch.append(transforms_v2.RandomHorizontalFlip())
-
-            if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
-                batch.append(transforms_v2.ColorJitter(
-                    brightness=self.augment_cfg.color_jitter,
-                    contrast=self.augment_cfg.color_jitter,
-                    saturation=self.augment_cfg.color_jitter,
-                ))
-                batch.append(transforms_v2.RandomChoice([
-                    transforms_v2.RandomGrayscale(p=1.0),
-                    transforms_v2.RandomSolarize(threshold=128, p=1.0),
-                    transforms_v2.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0)),
-                ]))
-
-            if self.augment_cfg is not None and self.augment_cfg.rand_augment:
-                batch.append(transforms_v2.RandAugment())
-        else:
-            per_img.append(transforms_v2.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC, antialias=True))
-            if self.center_crop:
-                per_img.append(transforms_v2.CenterCrop(self.image_size))
-            else:
-                per_img.append(transforms_v2.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC, antialias=True))
-
-        if self.final_image_size != self.image_size:
-            per_img.append(transforms_v2.Resize(self.final_image_size, interpolation=InterpolationMode.BICUBIC, antialias=True))
-
-        batch.append(transforms_v2.ToDtype(torch.float32, scale=True))
-        batch.append(transforms_v2.Normalize(mean=mean, std=std))
-
-        return transforms_v2.Compose(per_img), transforms_v2.Compose(batch)
 
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
@@ -419,18 +333,12 @@ class ImageNetDataModule(pl.LightningDataModule):
             drop_labels=self.drop_labels,
         )
 
-    def _make_raw_bytes_dataset(self, split: str) -> Dataset:
-        return _ImageNetRawBytesDataset(self.imagefolder_dir, split)
-
     def setup(self, stage: Optional[str] = None) -> None:
         """Construct the datasets for the requested stage."""
         use_folder = self.imagefolder_dir is not None
 
         if stage in ("fit", None):
-            if self.gpu_decode:
-                self.train_dataset = self._make_raw_bytes_dataset("train")
-                self.val_dataset = self._make_raw_bytes_dataset("validation")
-            elif use_folder:
+            if use_folder:
                 self.train_dataset = self._make_folder_dataset("train", train=True)
                 self.val_dataset = self._make_folder_dataset("validation", train=False)
             else:
@@ -438,26 +346,22 @@ class ImageNetDataModule(pl.LightningDataModule):
                 self.val_dataset = self._make_hf_dataset("validation", train=False)
 
         elif stage in ("validate", "test"):
-            if self.gpu_decode:
-                self.val_dataset = self._make_raw_bytes_dataset("validation")
-            elif use_folder:
+            if use_folder:
                 self.val_dataset = self._make_folder_dataset("validation", train=False)
             else:
                 self.val_dataset = self._make_hf_dataset("validation", train=False)
 
     def _build_loader(self, dataset: Dataset, shuffle: bool, drop_last: bool) -> DataLoader:
-        kwargs = dict(
+        return DataLoader(
+            dataset,
             batch_size=self.batch_size,
             shuffle=shuffle,
             num_workers=self.num_workers,
-            pin_memory=self.pin_memory if not self.gpu_decode else False,
+            pin_memory=self.pin_memory,
             drop_last=drop_last,
             persistent_workers=self.num_workers > 0,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
-        if self.gpu_decode:
-            kwargs["collate_fn"] = _raw_bytes_collate
-        return DataLoader(dataset, **kwargs)
 
     def train_dataloader(self) -> DataLoader:
         """Return the training dataloader."""
@@ -509,83 +413,25 @@ class ImageNetDataModule(pl.LightningDataModule):
 
     def on_before_batch_transfer(
         self,
-        batch,
+        batch: Tuple[torch.Tensor, torch.Tensor],
         dataloader_idx: int,
     ) -> dict[str, torch.Tensor]:
-        """Convert tuple batches to dict batches expected by the diffusion wrappers.
-
-        When gpu_decode is active, raw JPEG bytes arrive here; we decode on
-        GPU, apply augmentations, then continue with the usual Mixup / permute.
-        """
-        if self.gpu_decode:
-            return batch
-
+        """Convert tuple batches to dict batches expected by the diffusion wrappers."""
         images, labels = batch
 
         if self.mixup_fn is not None and self.trainer.training:
             images, labels = self.mixup_fn(images, labels)
 
-        images = images.permute(0, 2, 3, 1).contiguous()
+        images = images.permute(0, 2, 3, 1).contiguous()  # (bsize, height, width, num_channels)
 
         if len(labels.shape) == 1:
-            labels = labels.view(-1)
+            labels = labels.view(-1)  # (bsize,)
 
         return {
             "input": images,
             "label": labels,
             "condition": None,
         }
-
-    def on_after_batch_transfer(
-        self,
-        batch,
-        dataloader_idx: int,
-    ) -> dict[str, torch.Tensor]:
-        """GPU-side decode + transform when gpu_decode is active.
-
-        Uses a split pipeline: per-image ops (decode → resize → crop) produce
-        uniform-size tensors that are stacked, then batch ops (augmentation,
-        dtype conversion, normalisation) run on the full [B,C,H,W] tensor for
-        much better GPU utilisation (~2x faster than per-image augmentation).
-        """
-        if not self.gpu_decode:
-            return batch
-
-        bytes_list, labels = batch
-        device = labels.device if isinstance(labels, torch.Tensor) else torch.device("cuda")
-
-        if self.trainer.training:
-            per_img_ops, batch_ops = self._gpu_train_per_img, self._gpu_train_batch
-        else:
-            per_img_ops, batch_ops = self._gpu_val_per_img, self._gpu_val_batch
-
-        cropped = []
-        for raw in bytes_list:
-            img = decode_jpeg(raw, device=device)
-            cropped.append(per_img_ops(img))
-        images = batch_ops(torch.stack(cropped))
-
-        if self.mixup_fn is not None and self.trainer.training:
-            images, labels = self.mixup_fn(images, labels)
-
-        images = images.permute(0, 2, 3, 1).contiguous()
-
-        if len(labels.shape) == 1:
-            labels = labels.view(-1)
-
-        return {
-            "input": images,
-            "label": labels,
-            "condition": None,
-        }
-
-    def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        """Only move labels to GPU; raw byte tensors stay on CPU for nvJPEG decode."""
-        if self.gpu_decode and isinstance(batch, (list, tuple)) and len(batch) == 2:
-            bytes_list, labels = batch
-            if isinstance(bytes_list, list):
-                return bytes_list, labels.to(device)
-        return super().transfer_batch_to_device(batch, device, dataloader_idx)
 
     @staticmethod
     def _uniform_dequantize(tensor: torch.Tensor) -> torch.Tensor:

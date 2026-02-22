@@ -8,7 +8,7 @@
 #SBATCH --container-image=/shared/images/nvsubquadratic_cuda129.sqsh
 #SBATCH --container-name=nv-subq
 #SBATCH --container-writable
-#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch"
+#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared"
 #SBATCH --container-workdir=/home/dwromero/projects/nvSubquadratic-private
 #SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.out
 #SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.err
@@ -37,16 +37,6 @@ export SLURM_JOB_NAME=bash
 
 export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export TRITON_CACHE_DIR=/home/dwromero/.triton/cache
-export DALI_NO_MMAP=1
 
 cd /home/dwromero/projects/nvSubquadratic-private
-
-# Triton calls /sbin/ldconfig to find libcuda — bypass entirely via env knob
-if [ -z "$TRITON_LIBCUDA_PATH" ]; then
-    _libcuda=$(find /usr/lib /usr/local/lib /usr/lib64 /lib /lib64 -name "libcuda.so.1" 2>/dev/null | head -1 || true)
-    if [ -n "$_libcuda" ]; then
-        export TRITON_LIBCUDA_PATH="$(dirname "$_libcuda")"
-    fi
-fi
-
 PYTHONPATH=. python experiments/run.py --config "$CONFIG" "$@"
