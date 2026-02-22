@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as tv_datasets, transforms
 from torchvision.transforms import InterpolationMode
 from timm.data.auto_augment import rand_augment_transform
+from timm.data.transforms import RandomResizedCropAndInterpolation
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -47,6 +48,7 @@ class AugmentConfig:
     use_three_augment: bool = False
     color_jitter: float = 0.4
     rand_augment: Optional[str] = None  # e.g., 'rand-m9-n3-mstd0.5'
+    use_src: bool = False  # Simple Random Crop; False = RandomResizedCrop (reference default)
 
 
 class ThreeAugment(torch.nn.Module):
@@ -155,7 +157,8 @@ class ImageNetDataModule(pl.LightningDataModule):
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
         imagefolder_dir: Optional[str] = None,
-        prefetch_factor: int = 2,
+        prefetch_factor: int = 4,
+        eval_crop_ratio: float = 1.0,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
         augment_cfg: Optional[AugmentConfig] = None,
@@ -165,6 +168,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.data_dir = Path(data_dir).expanduser()
         self.imagefolder_dir = Path(imagefolder_dir) if imagefolder_dir else None
         self.prefetch_factor = prefetch_factor
+        self.eval_crop_ratio = eval_crop_ratio
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
@@ -244,17 +248,21 @@ class ImageNetDataModule(pl.LightningDataModule):
         # Original code used Resize(image_size + 32). This is standard SRC.
         ops: list[transforms.Transform] = []
 
-        if train:
-            # Simple Random Crop
-            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
-            ops.append(transforms.RandomCrop(self.image_size))
+        use_src = self.augment_cfg is not None and self.augment_cfg.use_src
 
-            # Manual augmentation pipeline matching DeiT III / User request
-            # "ColorJitter Grayscale Gaussian Blur Solarization"
+        if train:
+            if use_src:
+                ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
+                ops.append(transforms.RandomCrop(self.image_size))
+            else:
+                ops.append(RandomResizedCropAndInterpolation(
+                    self.image_size, scale=(0.08, 1.0), interpolation="bicubic",
+                ))
+
             ops.append(transforms.RandomHorizontalFlip())
 
             if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
-                # Standard Color Jitter
+                ops.append(ThreeAugment())
                 ops.append(
                     transforms.ColorJitter(
                         brightness=self.augment_cfg.color_jitter,
@@ -262,11 +270,8 @@ class ImageNetDataModule(pl.LightningDataModule):
                         saturation=self.augment_cfg.color_jitter,
                     )
                 )
-                # 3-Augment (Gray, Solar, Blur)
-                ops.append(ThreeAugment())
 
             if self.augment_cfg is not None and self.augment_cfg.rand_augment:
-                # RandAugment
                 ops.append(
                     rand_augment_transform(
                         config_str=self.augment_cfg.rand_augment,
@@ -274,12 +279,9 @@ class ImageNetDataModule(pl.LightningDataModule):
                     )
                 )
         else:
-            # Validation: Resize + CenterCrop or Resize
-            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
-            if self.center_crop:
-                ops.append(transforms.CenterCrop(self.image_size))
-            else:
-                ops.append(transforms.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC))
+            eval_size = int(self.image_size / self.eval_crop_ratio)
+            ops.append(transforms.Resize(eval_size, interpolation=InterpolationMode.BICUBIC))
+            ops.append(transforms.CenterCrop(self.image_size))
 
         if self.final_image_size != self.image_size:
             ops.append(
