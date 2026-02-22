@@ -188,7 +188,7 @@ def get_config() -> ExperimentConfig:
         project="nvsubquadratic",
     )
 
-    # ─── Auto-resume (fresh run — no run_name) ──────────────────────────────
+    # ─── Auto-resume ──────────────────────────────────────────────────────
     config.autoresume = AutoResumeConfig(
         enabled=False,
     )
