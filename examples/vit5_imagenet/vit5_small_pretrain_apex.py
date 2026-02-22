@@ -190,7 +190,7 @@ def get_config() -> ExperimentConfig:
 
     # ─── Auto-resume (fresh run — no run_name) ──────────────────────────────
     config.autoresume = AutoResumeConfig(
-        enabled=True,
+        enabled=False,
     )
 
     return config

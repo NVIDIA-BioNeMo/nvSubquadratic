@@ -307,10 +307,11 @@ class Hyena(torch.nn.Module):
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
             if isinstance(self.pixelhyena_norm, torch.nn.GroupNorm):
                 query = self.pixelhyena_norm(query)
-            else:  # torch.nn.LayerNorm
-                query = rearrange(query, "b c ... -> b ... c")
+            else:
+                shape = query.shape  # [B, C, *spatial]
+                query = query.movedim(1, -1).reshape(-1, shape[1])
                 query = self.pixelhyena_norm(query)
-                query = rearrange(query, "b ... c -> b c ...")
+                query = query.view(shape[0], *shape[2:], shape[1]).movedim(-1, 1)
 
         # CP communication - gather along first spatial dimension while splitting across channels/hidden dimension
         if cp_group is not None and cp_group.size() > 1:
@@ -333,10 +334,11 @@ class Hyena(torch.nn.Module):
         if not isinstance(self.output_norm, torch.nn.Identity):
             if isinstance(self.output_norm, torch.nn.GroupNorm):
                 y = self.output_norm(y)
-            else:  # torch.nn.LayerNorm / torch.nn.RMSNorm expect last-dim
-                output_tmp = rearrange(y, "b c ... -> b ... c")
-                output_tmp = self.output_norm(output_tmp)
-                y = rearrange(output_tmp, "b ... c -> b c ...")
+            else:
+                shape = y.shape  # [B, C, *spatial]
+                y = y.movedim(1, -1).reshape(-1, shape[1])
+                y = self.output_norm(y)
+                y = y.view(shape[0], *shape[2:], shape[1]).movedim(-1, 1)
 
         # Reshape back to [B, * spatial_dims, C]
         return rearrange(y, "b c ... -> b ... c")
