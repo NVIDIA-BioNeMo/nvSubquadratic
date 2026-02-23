@@ -99,10 +99,10 @@ ______________________________________________________________________
 
 **Goal**: Validate SIREN superiority over RFF. Run on **Hyena + patch-4** (fast, 256 tokens).
 
-| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                 |
-| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :-------------------- |
-| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | 🔄 Finishing | 70.3%   | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | Step ~289k/300k.      |
-| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | ⏳ Pending   | —       | `140281` | —                                                                             | Expect ↓ acc vs SIREN |
+| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status        | Val Acc | Job ID   | WandB                                                                         | Notes                        |
+| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :------------ | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------- |
+| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | ❌ OOM Killed | 70.3%   | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | Step ~289k/300k, OOM Killed. |
+| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | 🔄 Running    | 69.4%   | `140281` | [6iy5z1g5](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/6iy5z1g5) | Epoch ~313 (step ~244k).     |
 
 **Hypothesis**: RFF lacks the expressiveness of SIREN's sine-based representation for vision, resulting in lower accuracy.
 
@@ -364,6 +364,7 @@ ______________________________________________________________________
   - **Fix for future cees6000 runs**: reduce `--cpus-per-task` to ≤32 (128 − 96 = 32 remaining), or wait until the cees job finishes. Alternatively, lower cees `--cpus-per-task` to free up headroom.
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**.
 - **2026-02-21**: Phase 1.1 (Hyena SIREN baseline) is nearly complete. Current val accuracy is **70.3%** at step 288k. Accuracy is significantly higher than the Attention baseline.
+- **2026-02-22**: Phase 1.1 (Hyena SIREN baseline, job `140280`) was OOM Killed at epoch 373 (~289k steps). Best val acc remains **70.3%**. Phase 1.2 (RFF ablation, job `140281`) is running and currently at **69.4%** val acc (epoch ~313), trailing behind the SIREN kernel.
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**. Stable convergence; success criteria (≥55%) nearly met.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
 - **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
