@@ -143,7 +143,10 @@ def get_config() -> ExperimentConfig:
                     num_layers=KERNEL_NUM_LAYERS,
                     embedding_dim=KERNEL_EMBEDDING_DIM,
                     omega_0=KERNEL_OMEGA_0,
-                    L_cache=NUM_PATCHES_H,
+                    L_cache=NUM_PATCHES_H + 1,  # 15: grid is (H'+1)×W' due to the extra CLS row.
+                    # L_cache must not be modified during training for torch.compile(mode="max-autotune") to work.
+                    # With 14, the grid cache would be constructed for 14×14 grids instead of 15×14, which 
+                    # would trigger a modification of the grid_cache number of elements, leading to errors.
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                 ),
