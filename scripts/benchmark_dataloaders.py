@@ -89,23 +89,23 @@ def main():
     results = {}
     
     # 1. ImageFolder
-    # print("\n" + "="*50)
-    # print("Testing ImageFolder")
-    # print("="*50)
-    # try:
-    #     if_dataset = ImageFolder("data/imagenet_folder/train", transform=transform)
-    #     if_loader = DataLoader(
-    #         if_dataset, 
-    #         batch_size=args.batch_size, 
-    #         shuffle=True, 
-    #         num_workers=args.num_workers, 
-    #         pin_memory=True,
-    #         drop_last=True,
-    #         persistent_workers=args.num_workers > 0
-    #     )
-    #     results["ImageFolder"] = benchmark_loader(if_loader, "ImageFolder", args.num_batches, device)
-    # except Exception as e:
-    #     print(f"Error testing ImageFolder: {e}")
+    print("\n" + "="*50)
+    print("Testing ImageFolder")
+    print("="*50)
+    try:
+        if_dataset = ImageFolder("data/imagenet_folder/train", transform=transform)
+        if_loader = DataLoader(
+            if_dataset, 
+            batch_size=args.batch_size, 
+            shuffle=True, 
+            num_workers=args.num_workers, 
+            pin_memory=True,
+            drop_last=True,
+            persistent_workers=args.num_workers > 0
+        )
+        results["ImageFolder"] = benchmark_loader(if_loader, "ImageFolder", args.num_batches, device)
+    except Exception as e:
+        print(f"Error testing ImageFolder: {e}")
         
     # 2. WebDataset
     print("\n" + "="*50)
