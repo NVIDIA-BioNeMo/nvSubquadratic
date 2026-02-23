@@ -2,7 +2,7 @@
 
 """Testing utilities for distributed training validation."""
 
-from nvsubquadratic.testing.utils import compute_relative_error
+from nvsubq_paper.testing.utils import compute_relative_error
 
 
 __all__ = ["compute_relative_error"]

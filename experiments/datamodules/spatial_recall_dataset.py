@@ -29,7 +29,7 @@ from einops import rearrange
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
 
 
 class SpatialRecallDataset(Dataset):
@@ -1779,7 +1779,7 @@ if __name__ == "__main__":
 
     from experiments.datamodules.emnist import EMNISTDataModule
     from experiments.datamodules.mnist import MNISTDataModule
-    from nvsubquadratic.lazy_config import LazyConfig
+    from nvsubq_paper.lazy_config import LazyConfig
 
     parser = argparse.ArgumentParser(description="Visualize Spatial Recall samples")
     parser.add_argument(

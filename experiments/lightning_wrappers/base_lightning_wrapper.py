@@ -15,8 +15,8 @@ from experiments.default_cfg import (
     ExperimentConfig,
     SchedulerConfig,
 )
-from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules import schedulers
+from nvsubq_paper.lazy_config import LazyConfig
+from nvsubq_paper.modules import schedulers
 
 
 def construct_optimizer(

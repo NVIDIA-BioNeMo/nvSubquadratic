@@ -4,7 +4,7 @@
 """Performance and memory comparison: circular vs conventional FFT conv2d (BHL).
 
 Usage:
-    PYTHONPATH=. python nvsubquadratic/ops/test_circular_vs_fftconv_perf.py
+    PYTHONPATH=. python nvsubq_paper/ops/test_circular_vs_fftconv_perf.py
 """
 
 import time
@@ -12,12 +12,12 @@ import time
 import torch
 from einops import rearrange
 
-from nvsubquadratic.ops.circular_fftconv import (
+from nvsubq_paper.ops.circular_fftconv import (
     circular_fftconv1d_bhl,
     circular_fftconv2d_bhl,
     circular_fftconv3d_bhl,
 )
-from nvsubquadratic.ops.fftconv import (
+from nvsubq_paper.ops.fftconv import (
     fftconv1d_bhl,
     fftconv2d_bhl,
     fftconv3d_bhl,

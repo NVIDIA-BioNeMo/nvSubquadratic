@@ -37,11 +37,11 @@ from experiments.default_cfg import (
     WandbConfig,
 )
 from experiments.lightning_wrappers.autoregressive_wrapper import AutoregressiveWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.residual_block import ResidualBlock
-from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubq_paper.modules.mlp import MLP
+from nvsubq_paper.modules.residual_block import ResidualBlock
+from nvsubq_paper.networks.general_purpose_resnet import ResidualNetwork
 
 
 # Dataset-specific parameters
@@ -148,7 +148,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         job_group="spatial_recall_1d_emnist_simple_copy_pretrain_xs",
         entity="implicit-long-convs",
-        project="nvsubquadratic",
+        project="nvsubq_paper",
     )
 
     # =========================================================================

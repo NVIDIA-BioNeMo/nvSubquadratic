@@ -7,13 +7,13 @@ import math
 import pytest
 import torch
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv1d,
     DistributedDepthwiseConv2d,
     DistributedDepthwiseConv3d,
 )
-from nvsubquadratic.testing import compute_relative_error
+from nvsubq_paper.testing import compute_relative_error
 
 
 def depthwise_conv_config(data_dim: int = 1) -> LazyConfig:

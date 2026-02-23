@@ -91,7 +91,7 @@ class TestAttentionCausality:
     @pytest.fixture
     def attention_causal(self):
         """Create a causal Attention module."""
-        from nvsubquadratic.modules.attention import Attention
+        from nvsubq_paper.modules.attention import Attention
 
         return Attention(
             hidden_dim=64,
@@ -105,7 +105,7 @@ class TestAttentionCausality:
     @pytest.fixture
     def attention_non_causal(self):
         """Create a non-causal Attention module."""
-        from nvsubquadratic.modules.attention import Attention
+        from nvsubq_paper.modules.attention import Attention
 
         return Attention(
             hidden_dim=64,
@@ -233,7 +233,7 @@ class TestAttentionCausalityGradients:
 
     def test_attention_causal_gradient_flow(self):
         """Test that gradients don't flow from future to past in causal attention."""
-        from nvsubquadratic.modules.attention import Attention
+        from nvsubq_paper.modules.attention import Attention
 
         attention = Attention(
             hidden_dim=64,
@@ -272,7 +272,7 @@ class TestAttentionCausalityGradients:
 
     def test_attention_non_causal_gradient_flow(self):
         """Test that gradients DO flow from future to past in non-causal attention."""
-        from nvsubquadratic.modules.attention import Attention
+        from nvsubq_paper.modules.attention import Attention
 
         attention = Attention(
             hidden_dim=64,
@@ -320,8 +320,8 @@ class TestMambaCausality:
         """Create a causal (unidirectional) Mamba module."""
         from mamba_ssm import Mamba2
 
-        from nvsubquadratic.lazy_config import LazyConfig
-        from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
+        from nvsubq_paper.lazy_config import LazyConfig
+        from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
 
         mamba_layer_cfg = LazyConfig(Mamba2)(
             d_model=64,
@@ -338,8 +338,8 @@ class TestMambaCausality:
         """Create a bidirectional (non-causal) Mamba module."""
         from mamba_ssm import Mamba2
 
-        from nvsubquadratic.lazy_config import LazyConfig
-        from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
+        from nvsubq_paper.lazy_config import LazyConfig
+        from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
 
         mamba_layer_cfg = LazyConfig(Mamba2)(
             d_model=64,
@@ -470,8 +470,8 @@ class TestMambaCausalityGradients:
         """Test that gradients don't flow from future to past in causal Mamba."""
         from mamba_ssm import Mamba2
 
-        from nvsubquadratic.lazy_config import LazyConfig
-        from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
+        from nvsubq_paper.lazy_config import LazyConfig
+        from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
 
         mamba_layer_cfg = LazyConfig(Mamba2)(
             d_model=64,
@@ -511,8 +511,8 @@ class TestMambaCausalityGradients:
         """Test that gradients DO flow from future to past in bidirectional Mamba."""
         from mamba_ssm import Mamba2
 
-        from nvsubquadratic.lazy_config import LazyConfig
-        from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
+        from nvsubq_paper.lazy_config import LazyConfig
+        from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
 
         mamba_layer_cfg = LazyConfig(Mamba2)(
             d_model=64,
@@ -566,9 +566,9 @@ class TestQKVSequenceMixerAttentionCausality:
     @pytest.fixture
     def mixer_causal(self):
         """Create a causal QKVSequenceMixer with Attention."""
-        from nvsubquadratic.lazy_config import LazyConfig, instantiate
-        from nvsubquadratic.modules.attention import Attention
-        from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+        from nvsubq_paper.lazy_config import LazyConfig, instantiate
+        from nvsubq_paper.modules.attention import Attention
+        from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
 
         hidden_dim = 64
         mixer_cfg = LazyConfig(QKVSequenceMixer)(
@@ -587,9 +587,9 @@ class TestQKVSequenceMixerAttentionCausality:
     @pytest.fixture
     def mixer_non_causal(self):
         """Create a non-causal QKVSequenceMixer with Attention."""
-        from nvsubquadratic.lazy_config import LazyConfig, instantiate
-        from nvsubquadratic.modules.attention import Attention
-        from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+        from nvsubq_paper.lazy_config import LazyConfig, instantiate
+        from nvsubq_paper.modules.attention import Attention
+        from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
 
         hidden_dim = 64
         mixer_cfg = LazyConfig(QKVSequenceMixer)(
@@ -721,8 +721,8 @@ class TestMambaNDMixerCausality:
         """Create a causal MambaNDMixer (bidirectional=False)."""
         from mamba_ssm import Mamba2
 
-        from nvsubquadratic.lazy_config import LazyConfig, instantiate
-        from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
+        from nvsubq_paper.lazy_config import LazyConfig, instantiate
+        from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
 
         hidden_dim = 64
         mixer_cfg = LazyConfig(MambaNDMixer)(
@@ -740,8 +740,8 @@ class TestMambaNDMixerCausality:
         """Create a bidirectional MambaNDMixer (non-causal)."""
         from mamba_ssm import Mamba2
 
-        from nvsubquadratic.lazy_config import LazyConfig, instantiate
-        from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
+        from nvsubq_paper.lazy_config import LazyConfig, instantiate
+        from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
 
         hidden_dim = 64
         mixer_cfg = LazyConfig(MambaNDMixer)(
