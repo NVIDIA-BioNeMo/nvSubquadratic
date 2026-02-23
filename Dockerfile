@@ -1,7 +1,7 @@
-# Development Dockerfile for nvSubquadratic
+# Development Dockerfile for nvsubq_paper
 #
 # Build instructions:
-#   docker build -t nvsubquadratic:dev .
+#   docker build -t nvsubq_paper:dev .
 
 FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
 
