@@ -19,16 +19,16 @@ from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.patchify import Patchify
-from nvsubquadratic.modules.residual_block import ResidualBlock
-from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.networks.classification_resnet import ClassificationResNet
+from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubq_paper.modules.ckconv_nd import CKConvND
+from nvsubq_paper.modules.hyena_nd import Hyena
+from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubq_paper.modules.kernels_nd import SIRENKernelND
+from nvsubq_paper.modules.mlp import MLP
+from nvsubq_paper.modules.patchify import Patchify
+from nvsubq_paper.modules.residual_block import ResidualBlock
+from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
+from nvsubq_paper.networks.classification_resnet import ClassificationResNet
 
 
 # Dataset parameters
@@ -211,7 +211,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         job_group="tinyimagenet_vit_b_benchmark_wsd",
         entity="implicit-long-convs",
-        project="nvsubquadratic",
+        project="nvsubq_paper",
     )
 
     return config

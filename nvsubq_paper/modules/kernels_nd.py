@@ -4,7 +4,7 @@
 """Implicit Kernel Implementations for ND signals (based on Random Fourier Feature Networks).
 
 For test, please run:
-    PYTHONPATH=. python nvsubquadratic/modules/kernels_nd.py
+    PYTHONPATH=. python nvsubq_paper/modules/kernels_nd.py
 
 """
 
@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as torch_F
 from einops import rearrange
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
 
 
 class RandomFourierPositionalEmbeddingND(torch.nn.Module):

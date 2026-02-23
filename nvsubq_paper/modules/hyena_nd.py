@@ -6,14 +6,14 @@
 import torch
 from einops import rearrange
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv1d,
     DistributedDepthwiseConv2d,
     DistributedDepthwiseConv3d,
 )
-from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
-from nvsubquadratic.utils import qk_norm, rope
+from nvsubq_paper.parallel.a2a_comms import AllToAllSingleFunction
+from nvsubq_paper.utils import qk_norm, rope
 
 
 class Hyena(torch.nn.Module):

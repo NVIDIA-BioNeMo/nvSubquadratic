@@ -21,25 +21,25 @@ import torch.distributed as dist
 from megatron.core import parallel_state
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.modules.attention import Attention as SelfAttention
-from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
+from nvsubq_paper.lazy_config import LazyConfig, instantiate
+from nvsubq_paper.modules.attention import Attention as SelfAttention
+from nvsubq_paper.modules.ckconv_nd import CKConvND
+from nvsubq_paper.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv1d,
     DistributedDepthwiseConv2d,
     DistributedDepthwiseConv3d,
 )
-from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
-from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from nvsubquadratic.parallel.utils import (
+from nvsubq_paper.modules.hyena_nd import Hyena
+from nvsubq_paper.modules.kernels_nd import SIRENKernelND
+from nvsubq_paper.modules.masks_nd import GaussianModulationND
+from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
+from nvsubq_paper.parallel.utils import (
     init_parallel_state,
     setup_rank0_logging,
     zigzag_gather_from_group_ranks,
     zigzag_split_across_group_ranks,
 )
-from nvsubquadratic.testing import compute_relative_error
+from nvsubq_paper.testing import compute_relative_error
 
 
 def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
@@ -390,7 +390,7 @@ def main() -> int:
     parser.add_argument(
         "--log_dir",
         type=str,
-        default="/tmp/nvsubquadratic_cp_results",
+        default="/tmp/nvsubq_paper_cp_results",
         help="Directory for logs",
     )
     args = parser.parse_args()
