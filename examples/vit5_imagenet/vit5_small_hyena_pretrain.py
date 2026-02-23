@@ -1,0 +1,232 @@
+"""Hyena-ViT-5-Small ImageNet-1k Pretraining Configuration.
+
+Architecture (adapted from ViT-5 paper, Table 4, but using Hyena):
+- 12 layers, dim 384, 4 registers, ~22M params
+- RMSNorm, LayerScale (init 1e-4)
+- Hyena sequence mixer (replacing Attention) with SIREN kernels
+- GeLU MLP (ratio 4)
+- Patch size 16 -> 224/16 = 14x14 = 196 tokens
+
+Pretraining recipe (from ViT-5 paper, Table 12):
+- LAMB optimizer, lr 4e-3, weight decay 0.0, grad clip 1.0 (WD 0.0 preferred for Hyena)
+- Batch 2048 (256/GPU x 8 GPUs), 800 epochs, cosine schedule, 5 warmup epochs
+- 3-Augment, Color Jitter 0.3, Mixup 0.8, CutMix 1.0
+- BCE loss, no label smoothing, stochastic depth 0.05
+- Input 224x224
+- USING: ImageNetWebDataModule
+"""
+
+import os
+import torch
+from torch_optimizer import Lamb
+
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.imagenet_wds import ImageNetWebDataModule
+from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.rms_norm import RMSNorm
+from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
+from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND
+
+# ─── Dataset ────────────────────────────────────────────────────────────────────
+INPUT_CHANNELS = 3
+NUM_CLASSES = 1000
+IMAGE_SIZE = 224
+FINAL_IMAGE_SIZE = 224
+IMAGENET_WDS_PATH = os.environ.get("IMAGENET_WDS_PATH", "data/imagenet-wds")
+HF_DATASET_NAME = "ILSVRC/imagenet-1k"
+
+# ─── Model (Hyena-ViT-5-Small) ────────────────────────────────────────────────────────
+HIDDEN_DIM = 384
+NUM_BLOCKS = 12
+PATCH_SIZE = 16
+NUM_REGISTERS = 4
+LAYER_SCALE_INIT = 1e-4
+DROP_PATH_RATE = 0.05
+MLP_RATIO = 4
+NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
+NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
+DATA_DIM = 2
+
+# SIREN kernel parameters
+KERNEL_MLP_HIDDEN_DIM = 64
+KERNEL_NUM_LAYERS = 3
+KERNEL_EMBEDDING_DIM = 64
+KERNEL_OMEGA_0 = 30.0
+KERNEL_HIDDEN_OMEGA_0 = 1.0
+L_CACHE = 14  # Patchified ImageNet (224/16 = 14)
+
+# ─── Training recipe ────────────────────────────────────────────────────────────
+BATCH_SIZE = 256  # per-GPU; 256 * 8 GPUs = 2048 effective
+EPOCHS = 800
+IMAGENET_TRAIN_SIZE = 1_281_167
+EFFECTIVE_BATCH_SIZE = 2048
+ITERS_PER_EPOCH = IMAGENET_TRAIN_SIZE // EFFECTIVE_BATCH_SIZE
+TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH
+WARMUP_EPOCHS = 5
+WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS
+
+LEARNING_RATE = 4e-3
+WEIGHT_DECAY = 0.00  # Hyena usually performs better without weight decay
+GRAD_CLIP = 1.0
+PRECISION = "bf16-mixed"
+
+NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
+
+
+def get_config() -> ExperimentConfig:
+    """Return the Hyena-ViT-5-Small ImageNet-1k pretraining configuration."""
+    config = ExperimentConfig()
+    config.debug = False
+    config.seed = 42
+    config.compile = True
+    config.compile_mode = "max-autotune"
+    hf_token = os.environ.get("HF_TOKEN")
+
+    # ─── Dataset (WebDataset backend) ───────────────────────────────────────
+    config.dataset = LazyConfig(ImageNetWebDataModule)(
+        data_dir=IMAGENET_WDS_PATH,
+        gpu_decode=True,
+        prefetch_factor=2,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=torch.cuda.is_available() and config.device == "cuda",
+        seed=config.seed,
+        image_size=IMAGE_SIZE,
+        final_image_size=FINAL_IMAGE_SIZE,
+        center_crop=True,
+        num_classes=NUM_CLASSES,
+        task="classification",
+        mixup_cfg=LazyConfig(MixupConfig)(
+            mixup=0.8,
+            cutmix=1.0,
+            mixup_prob=1.0,
+            mixup_switch_prob=0.5,
+            mixup_mode="batch",
+            smoothing=0.0,
+        ),
+        augment_cfg=LazyConfig(AugmentConfig)(
+            use_three_augment=True,
+            color_jitter=0.3,
+        ),
+    )
+
+    # ─── Network ────────────────────────────────────────────────────────────
+    config.net = LazyConfig(ViT5ClassificationNet)(
+        in_channels=INPUT_CHANNELS,
+        num_classes=NUM_CLASSES,
+        hidden_dim=HIDDEN_DIM,
+        num_blocks=NUM_BLOCKS,
+        patch_size=PATCH_SIZE,
+        image_size=FINAL_IMAGE_SIZE,
+        num_registers=NUM_REGISTERS,
+        dropout_rate=0.0,
+        norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+        block_cfg=LazyConfig(ViT5ResidualBlock)(
+            sequence_mixer_cfg=LazyConfig(Hyena)(
+                global_conv_cfg=LazyConfig(CKConvND)(
+                    data_dim=DATA_DIM,
+                    hidden_dim=HIDDEN_DIM,
+                    kernel_cfg=LazyConfig(SIRENKernelND)(
+                        data_dim=DATA_DIM,
+                        out_dim=HIDDEN_DIM,
+                        mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+                        num_layers=KERNEL_NUM_LAYERS,
+                        embedding_dim=KERNEL_EMBEDDING_DIM,
+                        omega_0=KERNEL_OMEGA_0,
+                        L_cache=L_CACHE,
+                        use_bias=True,
+                        hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                    ),
+                    mask_cfg=LazyConfig(GaussianModulationND)(
+                        data_dim=DATA_DIM,
+                        num_channels=HIDDEN_DIM,
+                        min_std=0.02,
+                        max_std=1.5,
+                        init_std_low=0.05,
+                        init_std_high=1.2,
+                        parametrization="direct",
+                    ),
+                    grid_type="double",
+                    fft_padding="zero",
+                ),
+                short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                    in_channels=3 * HIDDEN_DIM,
+                    out_channels=3 * HIDDEN_DIM,
+                    kernel_size=3,
+                    groups=3 * HIDDEN_DIM,
+                    padding=1,
+                    bias=False,
+                ),
+                gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
+                pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+                apply_qk_norm=True,
+                use_rope=False,  # Hyena kernel handles positional info natively
+            ),
+            sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            mlp_cfg=LazyConfig(MLP)(
+                dim=HIDDEN_DIM,
+                activation="gelu",
+                expansion_factor=float(MLP_RATIO),
+                dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+            ),
+            mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            hidden_dim=HIDDEN_DIM,
+            layer_scale_init=LAYER_SCALE_INIT,
+            drop_path_rate=DROP_PATH_RATE,
+        ),
+    )
+
+    # ─── Lightning wrapper ──────────────────────────────────────────────────
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
+
+    # ─── Optimizer ────────────────────────────────────────────────────────
+    config.optimizer = LazyConfig(Lamb)(
+        params=PLACEHOLDER,
+        lr=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
+    )
+
+    # ─── Training ───────────────────────────────────────────────────────────
+    config.train = TrainConfig(
+        batch_size="${dataset.batch_size}",
+        iterations=TOTAL_ITERATIONS,
+        grad_clip=GRAD_CLIP,
+        precision=PRECISION,
+    )
+
+    config.trainer = TrainerConfig(
+        val_check_interval=1.0,
+        checkpoint_every_n_steps=5000,
+    )
+
+    # ─── Scheduler ──────────────────────────────────────────────────────────
+    config.scheduler = SchedulerConfig(
+        name="cosine",
+        warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
+        total_iterations="${train.iterations}",
+        mode="max",
+    )
+
+    # ─── Wandb ──────────────────────────────────────────────────────────────
+    config.wandb = WandbConfig(
+        job_group="hyena_vit5_imagenet_pretrain",
+        entity="implicit-long-convs",
+        project="nvsubquadratic",
+    )
+
+    # ─── Auto-resume ─────────────────────────────────────────────────────────
+    config.autoresume = AutoResumeConfig(
+        enabled=True,
+        run_name="DW_examples_vit5_imagenet_hyena_vit5_small_pretrain_2026-02-22",
+    )
+
+    return config

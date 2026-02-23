@@ -293,9 +293,8 @@ class ImageNetWebDataModule(pl.LightningDataModule):
             drop_last=True,
             persistent_workers=self.num_workers > 0,
         )
-        # Set epoch length for Lightning
-        loader = wds.WebLoader(loader, length=num_batches)
-        return loader
+        # Set epoch length for Lightning by returning a WebLoader
+        return wds.WebLoader(loader, batch_size=None, shuffle=False).with_epoch(num_batches)
 
     def val_dataloader(self) -> DataLoader:
         """Return the validation dataloader."""
@@ -309,8 +308,7 @@ class ImageNetWebDataModule(pl.LightningDataModule):
             drop_last=False,
             persistent_workers=self.num_workers > 0,
         )
-        loader = wds.WebLoader(loader, length=num_batches)
-        return loader
+        return wds.WebLoader(loader, batch_size=None, shuffle=False).with_epoch(num_batches)
 
     def test_dataloader(self) -> DataLoader:
         """Return the test dataloader."""

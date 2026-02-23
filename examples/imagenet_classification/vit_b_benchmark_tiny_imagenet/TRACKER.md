@@ -361,7 +361,9 @@ ______________________________________________________________________
   - Submitted conversion job `140516` (CPU-only, `ivi-cn020`). Output: `data/imagenet-wds/`.
   - Cancelled jobs `140500` (SSD staging) and `140271` (slow NFS).
   - **Next**: resubmit Phase 0.3 training once conversion finishes.
-- **2026-02-20**: Cancelled job `140272` on cees6000. Root cause analysis:
+- **2026-02-22**: WebDataset conversion (`141076`) and ImageFolder extraction (`141118`) both completed successfully.
+  - WebDataset took ~5 hours total (~4 hours for the first 65 shards before timeout, ~1 hour to resume and finish). Output is in `data/imagenet-wds`.
+  - ImageFolder extraction took 4h 14m. Pixels and labels verified as matching HF dataset perfectly. Output is in `data/imagenet_folder`.
   - **GrpTRES per-user limit on `ceesusers`**: `cpu=128, gres/gpu=8, mem=750G`
   - The run script requests `--cpus-per-task=96`. With job `140271` already consuming 96 CPUs on cees, the combined total (192) exceeds the 128 CPU group limit.
   - Both cees6000 nodes (`ivi-cn030`, `ivi-cn031`) were also fully occupied by other users.
