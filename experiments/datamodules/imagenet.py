@@ -155,7 +155,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
         imagefolder_dir: Optional[str] = None,
-        prefetch_factor: int = 4,
+        prefetch_factor: int = 2,
         eval_crop_ratio: float = 1.0,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
