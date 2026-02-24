@@ -99,10 +99,10 @@ ______________________________________________________________________
 
 **Goal**: Validate SIREN superiority over RFF. Run on **Hyena + patch-4** (fast, 256 tokens).
 
-| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status        | Val Acc | Job ID   | WandB                                                                         | Notes                        |
-| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :------------ | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------- |
-| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | ❌ OOM Killed | 70.3%   | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | Step ~289k/300k, OOM Killed. |
-| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | 🔄 Running    | 69.4%   | `140281` | [6iy5z1g5](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/6iy5z1g5) | Epoch ~313 (step ~244k).     |
+| #   | Experiment     | Variable    | Config Change            | Partition | GPUs | Status        | Val Acc | Job ID   | WandB                                                                         | Notes                          |
+| :-- | :------------- | :---------- | :----------------------- | :-------- | :--- | :------------ | :------ | :------- | :---------------------------------------------------------------------------- | :----------------------------- |
+| 1.1 | SIREN baseline | —           | base `hyena_patchify.py` | geodude   | 4    | ⚠️ OOM (289k) | 70.6%   | `140280` | [06hpkzo4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/06hpkzo4) | OOM Killed at step ~289k/300k. |
+| 1.2 | RFF kernel     | kernel_type | `RandomFourierKernelND`  | geodude   | 4    | ✅ Completed  | 70.1%   | `140281` | [6iy5z1g5](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/6iy5z1g5) | Reached 300k, OOM on exit.     |
 
 **Hypothesis**: RFF lacks the expressiveness of SIREN's sine-based representation for vision, resulting in lower accuracy.
 
@@ -299,15 +299,15 @@ ______________________________________________________________________
 
 ### Ablation Summary
 
-| Ablation          | Best Setting | Δ vs Default | Notes |
-| :---------------- | :----------- | :----------- | :---- |
-| Kernel type       | —            | —            | —     |
-| ω₀                | —            | —            | —     |
-| Kernel hidden-dim | —            | —            | —     |
-| Mask              | —            | —            | —     |
-| Pos-encoding      | —            | —            | —     |
-| LR                | —            | —            | —     |
-| Weight decay      | —            | —            | —     |
+| Ablation          | Best Setting | Δ vs Default | Notes                                                   |
+| :---------------- | :----------- | :----------- | :------------------------------------------------------ |
+| Kernel type       | SIREN        | -0.5% (RFF)  | SIREN (70.6%) beats RFF (70.1%), confirming hypothesis. |
+| ω₀                | —            | —            | —                                                       |
+| Kernel hidden-dim | —            | —            | —                                                       |
+| Mask              | —            | —            | —                                                       |
+| Pos-encoding      | —            | —            | —                                                       |
+| LR                | —            | —            | —                                                       |
+| Weight decay      | —            | —            | —                                                       |
 
 ______________________________________________________________________
 
@@ -316,22 +316,22 @@ ______________________________________________________________________
 > \[!IMPORTANT\]
 > **Always update this log when submitting a job.** Record the job ID, config, and phase so we can trace results back to specific runs.
 
-| Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status       | Val Acc | Notes                                                                         |
-| :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :----------- | :------ | :---------------------------------------------------------------------------- |
-| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | 🔄 Running   | —       | SIREN baseline (ablation ref)                                                 |
-| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ⏳ Pending   | —       | RFF kernel ablation                                                           |
-| 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done      | 54.3%   | ViT-B baseline pipeline validation                                            |
-| 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ✅ Completed | 70.67%  | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) |
-| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | 🔄 Running   | 68.2%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) |
-| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | 🔄 Running   | 63.9%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) |
-| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | 🔄 Running   | 61.8%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
-| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | 🔄 Running   | 22.9%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
-| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped   | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
-| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.    |
-| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
-| 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.   |
-| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | ❌ Timeout   | —       | Timed out at 4h. Resubmitted with resume logic as `141076`.                   |
-| 2026-02-21       | `141076` | infra | WebDataset conversion (Resumed)    | IVI     | cees      | 0    | 🔄 Running   | —       | Resumed from shard 65 after fix. 24h limit.                                   |
+| Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status        | Val Acc | Notes                                                                         |
+| :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :------------ | :------ | :---------------------------------------------------------------------------- |
+| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | ⚠️ OOM (289k) | 70.6%   | SIREN baseline. OOM Killed at epoch 373.                                      |
+| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ✅ Completed  | 70.1%   | RFF kernel ablation completed full 300k steps.                                |
+| 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done       | 54.3%   | ViT-B baseline pipeline validation                                            |
+| 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ✅ Completed  | 70.67%  | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) |
+| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | 🔄 Running    | 68.2%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) |
+| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | 🔄 Running    | 63.9%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) |
+| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | 🔄 Running    | 61.8%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
+| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | 🔄 Running    | 22.9%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
+| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped    | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
+| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.    |
+| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled  | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
+| 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.   |
+| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | ❌ Timeout    | —       | Timed out at 4h. Resubmitted with resume logic as `141076`.                   |
+| 2026-02-21       | `141076` | infra | WebDataset conversion (Resumed)    | IVI     | cees      | 0    | 🔄 Running    | —       | Resumed from shard 65 after fix. 24h limit.                                   |
 
 ______________________________________________________________________
 
@@ -365,6 +365,7 @@ ______________________________________________________________________
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**.
 - **2026-02-21**: Phase 1.1 (Hyena SIREN baseline) is nearly complete. Current val accuracy is **70.3%** at step 288k. Accuracy is significantly higher than the Attention baseline.
 - **2026-02-22**: Phase 1.1 (Hyena SIREN baseline, job `140280`) was OOM Killed at epoch 373 (~289k steps). Best val acc remains **70.3%**. Phase 1.2 (RFF ablation, job `140281`) is running and currently at **69.4%** val acc (epoch ~313), trailing behind the SIREN kernel.
+- **2026-02-24**: Both geodude jobs for Phase 1 are finalized. Phase 1.2 (RFF kernel ablation, job `140281`) finished all 300k steps with **70.1%** max val acc. Phase 1.1 (SIREN baseline, job `140280`) reached a final max val acc of **70.6%** right before being OOM killed at step 289k. This confirms our hypothesis that the SIREN kernel's representation outperforms RFF.
 - **2026-02-19**: Phase 0.1 (ViT-B Attention) finished with **54.3% Val Acc**. Stable convergence; success criteria (≥55%) nearly met.
 - **2026-02-17**: Tracker created. Pipeline validation (Phase 0) is highest priority.
 - **2026-02-17 22:35**: Submitted Phase 0.1 (ViT-B attention patchify) → Job `137108` on geodude (4× A5000). Estimated ~17–25h.
