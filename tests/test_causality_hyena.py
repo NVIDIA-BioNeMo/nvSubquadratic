@@ -78,6 +78,7 @@ from nvsubquadratic.modules.causal_conv1d import CausalConv1D
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 ################################################################################
@@ -414,7 +415,7 @@ class TestHyenaCausality:
             short_conv_cfg=short_conv_cfg,
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
-            apply_qk_norm=True,
+            qk_norm_cfg=LazyConfig(L2Norm)(),
             use_rope=True,
             output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
         )
@@ -459,7 +460,7 @@ class TestHyenaCausality:
             short_conv_cfg=short_conv_cfg,
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
-            apply_qk_norm=True,
+            qk_norm_cfg=LazyConfig(L2Norm)(),
             use_rope=True,
             output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
         )
@@ -623,7 +624,6 @@ class TestHyenaCausality:
             short_conv_cfg=short_conv_cfg,
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),  # No gate!
             pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No norm
-            apply_qk_norm=False,  # No QK norm
             use_rope=False,  # No RoPE
             output_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No output norm
         )
@@ -705,7 +705,7 @@ class TestQKVSequenceMixerHyenaCausality:
                 short_conv_cfg=short_conv_cfg,
                 gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
                 pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
-                apply_qk_norm=True,
+                qk_norm_cfg=LazyConfig(L2Norm)(),
                 use_rope=True,
                 output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             ),
@@ -757,7 +757,7 @@ class TestQKVSequenceMixerHyenaCausality:
                 short_conv_cfg=short_conv_cfg,
                 gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
                 pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
-                apply_qk_norm=True,
+                qk_norm_cfg=LazyConfig(L2Norm)(),
                 use_rope=True,
                 output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             ),
@@ -936,7 +936,7 @@ def test_hyena_1d_is_causal_integration():
         short_conv_cfg=short_conv_cfg,
         gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
         pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim, eps=1e-5),
-        apply_qk_norm=True,
+        qk_norm_cfg=LazyConfig(L2Norm)(),
         use_rope=True,
         output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim, eps=1e-5),
     )

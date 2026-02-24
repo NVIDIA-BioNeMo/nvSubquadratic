@@ -4,20 +4,23 @@
 """QK normalization utilities."""
 
 import torch
+import torch.nn.functional as F
 
 
-def apply_qk_norm(query: torch.Tensor, key: torch.Tensor, dim: int) -> tuple[torch.Tensor, torch.Tensor]:
-    """L2-normalize queries and keys along the specified dimension.
+class L2Norm(torch.nn.Module):
+    """L2 normalization as a module, for use as a LazyConfig target.
 
-    Args:
-        query: torch.Tensor - The query tensor of shape (batch_size, hidden_dim, * spatial_dims) or (batch_size, * spatial_dims, hidden_dim).
-        key: torch.Tensor - The key tensor of shape (batch_size, hidden_dim, * spatial_dims) or (batch_size, * spatial_dims, hidden_dim).
-        dim: int - The dimension along which to normalize the query and key. This should be the hidden dimension.
-
-    Returns:
-        tuple[torch.Tensor, torch.Tensor]: The normalized query and key of corresponding shape.
-
+    Normalizes along the last dimension by default, matching the convention
+    of torch.nn.RMSNorm and torch.nn.LayerNorm.
     """
-    query = torch.nn.functional.normalize(query, p=2.0, dim=dim)
-    key = torch.nn.functional.normalize(key, p=2.0, dim=dim)
-    return query, key
+
+    def __init__(self, dim: int = -1, eps: float = 1e-12):
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.normalize(x, p=2.0, dim=self.dim, eps=self.eps)
+
+    def extra_repr(self) -> str:
+        return f"dim={self.dim}, eps={self.eps}"
