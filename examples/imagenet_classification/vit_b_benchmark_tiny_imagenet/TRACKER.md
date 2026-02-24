@@ -145,20 +145,20 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-### Phase 4: Mask Ablation (Hyena + pixel — no patchify)
+### Phase 4: Mask Ablation (Hyena + patch-4)
 
-**Goal**: Evaluate the impact of the modulation mask on classification. Tested on full 4096-token pixel input where ringing artifacts are most pronounced.
+**Goal**: Evaluate the impact of the modulation mask on classification accuracy.
 
-| #   | Experiment                  | Mask                      | Partition | GPUs | Status     | Val Acc | Job ID | WandB | Notes                     |
-| :-- | :-------------------------- | :------------------------ | :-------- | :--- | :--------- | :------ | :----- | :---- | :------------------------ |
-| 4.1 | **Gaussian mask (default)** | `GaussianModulationND`    | all6000   | 4    | 📅 Planned | —       | —      | —     | Current default for pixel |
-| 4.2 | No mask                     | `Identity`                | all6000   | 4    | 📅 Planned | —       | —      | —     | Does mask matter?         |
-| 4.3 | Exponential mask            | `ExponentialModulationND` | all6000   | 4    | 📅 Planned | —       | —      | —     | Alternative decay         |
+| #   | Experiment                  | Mask                      | Config                       | Partition | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                   |
+| :-- | :-------------------------- | :------------------------ | :--------------------------- | :-------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :---------------------- |
+| 4.1 | **Gaussian mask (default)** | `GaussianModulationND`    | `hyena_patchify.py`          | hipster   | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run)  |
+| 4.2 | No mask                     | `Identity`                | `hyena_patchify_no_mask.py`  | geodude   | 4    | 🔄 Running   | —       | `142347` | —                                                                             | Does mask matter?       |
+| 4.3 | Exponential mask            | `ExponentialModulationND` | `hyena_patchify_exp_mask.py` | geodude   | 4    | ⏳ Queued    | —       | `142347` | —                                                                             | Runs after 4.2 finishes |
 
 > \[!NOTE\]
-> Full-res pixel Hyena (4096 tokens) is expensive. Use all6000 (8×RTX 6000) to speed up, or geodude with longer walltime. Running fewer parallel experiments here.
+> All 3 runs execute sequentially in a single SLURM job via `run_phase4_mask_ablation_geodude.sh`.
 
-**Hypothesis**: Gaussian mask critical at pixel resolution (suppresses SIREN ringing at filter boundaries), less important with patchify.
+**Hypothesis**: Gaussian mask important for suppressing SIREN ringing at filter boundaries.
 
 ______________________________________________________________________
 
