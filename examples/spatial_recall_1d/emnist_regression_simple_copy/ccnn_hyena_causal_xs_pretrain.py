@@ -37,6 +37,7 @@ from experiments.default_cfg import (
 )
 from experiments.lightning_wrappers.autoregressive_wrapper import AutoregressiveWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.utils.qk_norm import L2Norm
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
