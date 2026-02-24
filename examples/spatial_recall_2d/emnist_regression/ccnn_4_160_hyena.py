@@ -13,15 +13,15 @@ from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModu
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.utils.qk_norm import L2Norm
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset parameters
@@ -187,7 +187,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         job_group="spatial_recall_2d_emnist_regression",
         entity="implicit-long-convs",
-        project="nvsubquadratic",
+        project="nvsubq_paper",
     )
 
     config.callbacks = [

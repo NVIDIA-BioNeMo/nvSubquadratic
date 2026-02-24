@@ -6,20 +6,19 @@ import os
 
 import torch
 
-from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
-from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
@@ -188,7 +187,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         job_group="imagenet_classification",
         entity="implicit-long-convs",
-        project="nvsubquadratic",
+        project="nvsubq_paper",
     )
 
     return config

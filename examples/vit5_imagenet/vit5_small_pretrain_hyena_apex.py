@@ -42,6 +42,7 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -161,7 +162,7 @@ def get_config() -> ExperimentConfig:
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
-            apply_qk_norm=True,
+            qk_norm_cfg=LazyConfig(L2Norm)(),
             use_rope=False,
         ),
         init_method_in=small_init,

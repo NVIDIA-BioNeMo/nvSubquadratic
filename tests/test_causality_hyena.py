@@ -624,7 +624,6 @@ class TestHyenaCausality:
             short_conv_cfg=short_conv_cfg,
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),  # No gate!
             pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No norm
-            qk_norm_cfg=None,  # No QK norm
             use_rope=False,  # No RoPE
             output_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No output norm
         )
@@ -666,8 +665,8 @@ class TestQKVSequenceMixerHyenaCausality:
     @pytest.fixture
     def mixer_causal(self):
         """Create a causal QKVSequenceMixer with Hyena."""
-        from nvsubquadratic.lazy_config import LazyConfig, instantiate
-        from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+        from nvsubq_paper.lazy_config import LazyConfig, instantiate
+        from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
 
         hidden_dim = 64
         seq_len = 64
@@ -716,8 +715,8 @@ class TestQKVSequenceMixerHyenaCausality:
     @pytest.fixture
     def mixer_non_causal(self):
         """Create a non-causal QKVSequenceMixer with Hyena."""
-        from nvsubquadratic.lazy_config import LazyConfig, instantiate
-        from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+        from nvsubq_paper.lazy_config import LazyConfig, instantiate
+        from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
 
         hidden_dim = 64
         seq_len = 64
