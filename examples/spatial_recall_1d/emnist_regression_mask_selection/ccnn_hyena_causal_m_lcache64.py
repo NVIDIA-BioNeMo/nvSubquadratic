@@ -27,7 +27,8 @@ from examples.spatial_recall_1d.base_config import (
     base_experiment_config as spatial_recall_1d_base_experiment_config,
 )
 from experiments.default_cfg import ExperimentConfig
-from nvsubquadratic.lazy_config import PLACEHOLDER
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset-specific parameters
@@ -59,7 +60,7 @@ def get_config() -> ExperimentConfig:
     assert config.net.block_cfg.sequence_mixer_cfg == PLACEHOLDER
     config.net.block_cfg.sequence_mixer_cfg = spatial_recall_1d_mixer_defaults.get_hyena_mixer_cfg(
         is_causal=True,
-        apply_qk_norm=True,
+        qk_norm_cfg=LazyConfig(L2Norm)(),
         L_cache="${dataset.canvas_size}",  # Key: Use 64 instead of 4096!
     )
 

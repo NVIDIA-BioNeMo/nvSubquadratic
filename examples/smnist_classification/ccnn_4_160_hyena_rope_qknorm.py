@@ -20,6 +20,7 @@ from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset parameters
@@ -122,7 +123,7 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels="${net.hidden_dim}"),
-                    apply_qk_norm=True,
+                    qk_norm_cfg=LazyConfig(L2Norm)(),
                     use_rope=True,
                     rope_base=10000.0,
                 ),

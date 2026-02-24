@@ -13,6 +13,7 @@ from experiments.datamodules.spatial_recall_dataset import SpatialRecallDataModu
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.utils.qk_norm import L2Norm
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -130,7 +131,7 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),  # No gate required.
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-                    apply_qk_norm=True,
+                    qk_norm_cfg=LazyConfig(L2Norm)(),
                     use_rope=False,
                     rope_base=10000.0,
                 ),

@@ -1,15 +1,15 @@
-"""ViT-5-Small + Hyena ImageNet-1k — CLS-row variant, Apex FusedLAMB.
+"""ViT-5-Small + Hyena + GAP ImageNet-1k — Apex FusedLAMB variant.
 
-Same architecture as vit5_small_pretrain_hyena_apex.py except CLS and register
-tokens are placed in an extra row at the top of the 2D grid so that CLS
-participates directly in the spatial convolution.
+Same as vit5_small_pretrain_hyena_apex.py except the CLS token is removed
+entirely. Classification is done via global average pooling (GAP) over
+patch tokens at the final layer, which is the natural readout for a
+convolutional sequence mixer like Hyena.
 
 Key differences from vit5_small_pretrain_hyena_apex.py:
-- prepend_registers=True places registers between CLS and patches so the full
-  sequence [CLS, regs, patches] reshapes to a contiguous (H'+1)×W' grid
-- num_registers=W'-1 (13) fills the extra row alongside CLS
-- CLS participates in the 2D convolution at grid position [0,0]
-- Registers are global: added once and updated by every block (mixer + MLP)
+- use_cls_token=False: no CLS token prepended to the sequence
+- has_cls_token=False in ViT5HyenaAdapter: patches go directly through
+  the 2D Hyena mixer without CLS bookkeeping
+- Final classification: mean-pool of patch tokens -> norm -> linear head
 """
 
 import os
@@ -24,13 +24,10 @@ from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
-    import warnings
-    warnings.warn(
-        "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
-        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
-        stacklevel=2,
+    raise ImportError(
+        "apex.optimizers.FusedLAMB not found — "
+        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup)."
     )
-    from torch_optimizer import Lamb
 
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -53,16 +50,16 @@ IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/ima
 IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 
-# ─── Model (ViT-5-Small + Hyena, CLS-row) ───────────────────────────────────────
+# ─── Model (ViT-5-Small + Hyena, no CLS) ─────────────────────────────────────
 HIDDEN_DIM = 384
 NUM_BLOCKS = 12
 PATCH_SIZE = 16
+NUM_REGISTERS = 0
 LAYER_SCALE_INIT = 1e-4
 DROP_PATH_RATE = 0.05
 MLP_RATIO = 4
 NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
 NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
-NUM_REGISTERS = NUM_PATCHES_W - 1  # 13 — fills the extra row: [CLS, regs, patches] → (H'+1)×W' grid
 
 # ─── Hyena / SIREN kernel hyperparameters ────────────────────────────────────────
 KERNEL_MLP_HIDDEN_DIM = 32
@@ -90,7 +87,7 @@ NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_avail
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small + Hyena CLS-row config with Apex FusedLAMB."""
+    """Return the ViT-5-Small + Hyena (GAP) config with Apex FusedLAMB."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
@@ -144,10 +141,7 @@ def get_config() -> ExperimentConfig:
                     num_layers=KERNEL_NUM_LAYERS,
                     embedding_dim=KERNEL_EMBEDDING_DIM,
                     omega_0=KERNEL_OMEGA_0,
-                    L_cache=NUM_PATCHES_H + 1,  # 15: grid is (H'+1)×W' due to the extra CLS row.
-                    # L_cache must not be modified during training for torch.compile(mode="max-autotune") to work.
-                    # With 14, the grid cache would be constructed for 14×14 grids instead of 15×14, which 
-                    # would trigger a modification of the grid_cache number of elements, leading to errors.
+                    L_cache=NUM_PATCHES_H,
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                 ),
@@ -165,7 +159,7 @@ def get_config() -> ExperimentConfig:
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
-            qk_norm_cfg=LazyConfig(L2Norm)(),
+            qk_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             use_rope=False,
         ),
         init_method_in=small_init,
@@ -181,7 +175,7 @@ def get_config() -> ExperimentConfig:
         image_size=FINAL_IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
-        prepend_registers=True,
+        use_cls_token=False,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(
