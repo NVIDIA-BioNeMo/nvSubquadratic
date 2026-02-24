@@ -33,7 +33,7 @@ from PIL import Image
 
 HF_DATASET = "ILSVRC/imagenet-1k"
 HF_CACHE = os.environ.get("IMAGENET_PATH", "data/imagenet")
-OUTPUT_DIR = os.environ.get("IMAGENET_FOLDER_PATH", "data/imagenet_folder")
+OUTPUT_DIR = os.environ.get("IMAGENET_FOLDER_PATH", "/local_scratch/dknigge/imagenet_folder")
 NUM_VERIFY_SAMPLES = 200
 
 

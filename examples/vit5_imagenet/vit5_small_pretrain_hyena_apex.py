@@ -16,7 +16,7 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ImageNetDataModule
 from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -49,8 +49,7 @@ INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
-IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
-IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
+IMAGENET_WDS_PATH = os.environ.get("IMAGENET_WDS_PATH", "data/imagenet-wds")
 HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 
 # ─── Model (ViT-5-Small + Hyena) ────────────────────────────────────────────────
@@ -72,10 +71,11 @@ KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 
 # ─── Training recipe ────────────────────────────────────────────────────────────
-BATCH_SIZE = 256
+BATCH_SIZE = 128  # Per-GPU batch size (reduced from 256 to fit in 24GB)
+ACCUMULATE_GRAD_STEPS = 2  # Gradient accumulation steps
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
-EFFECTIVE_BATCH_SIZE = 2048
+EFFECTIVE_BATCH_SIZE = 2048  # 8 GPUs × 128 batch/GPU × 2 accum steps = 2048
 ITERS_PER_EPOCH = IMAGENET_TRAIN_SIZE // EFFECTIVE_BATCH_SIZE
 TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH
 WARMUP_EPOCHS = 5
@@ -94,15 +94,13 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
-    config.compile = True
-    config.compile_mode = "max-autotune"
-    hf_token = os.environ.get("HF_TOKEN")
+    config.compile = False
+    config.compile_mode = "reduce-overhead"  # Using reduce-overhead instead of max-autotune due to complex ops in Hyena FFT
 
     # ─── Dataset ────────────────────────────────────────────────────────────
     config.dataset = LazyConfig(ImageNetDataModule)(
-        data_dir=IMAGENET_PATH,
-        imagefolder_dir=IMAGENET_FOLDER_PATH,
-        prefetch_factor=2,
+        data_dir=IMAGENET_WDS_PATH,
+        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH", None),
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=torch.cuda.is_available() and config.device == "cuda",
@@ -112,9 +110,6 @@ def get_config() -> ExperimentConfig:
         center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
-        hf_dataset_name=HF_DATASET_NAME,
-        hf_dataset_config=None,
-        hf_auth_token=hf_token,
         task="classification",
         mixup_cfg=LazyConfig(MixupConfig)(
             mixup=0.8,
@@ -218,6 +213,7 @@ def get_config() -> ExperimentConfig:
         iterations=TOTAL_ITERATIONS,
         grad_clip=GRAD_CLIP,
         precision=PRECISION,
+        accumulate_grad_steps=ACCUMULATE_GRAD_STEPS,
     )
 
     config.trainer = TrainerConfig(

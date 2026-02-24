@@ -12,17 +12,15 @@ Pretraining recipe (from ViT-5 paper, Table 12):
 - Batch 2048 (256/GPU x 8 GPUs), 800 epochs, cosine schedule, 5 warmup epochs
 - 3-Augment, Color Jitter 0.3, Mixup 0.8, CutMix 1.0
 - BCE loss, no label smoothing, stochastic depth 0.05
-- Input 224x224
-- USING: ImageNetWebDataModule
+- USING: ImageNetDataModule
 """
 
 import os
 import torch
 from torch_optimizer import Lamb
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-from experiments.datamodules.imagenet_wds import ImageNetWebDataModule
 from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ImageNetDataModule
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
@@ -41,8 +39,7 @@ INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
-IMAGENET_WDS_PATH = os.environ.get("IMAGENET_WDS_PATH", "data/imagenet-wds")
-HF_DATASET_NAME = "ILSVRC/imagenet-1k"
+IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "data/imagenet")
 
 # ─── Model (Hyena-ViT-5-Small) ────────────────────────────────────────────────────────
 HIDDEN_DIM = 384
@@ -91,10 +88,10 @@ def get_config() -> ExperimentConfig:
     config.compile_mode = "max-autotune"
     hf_token = os.environ.get("HF_TOKEN")
 
-    # ─── Dataset (WebDataset backend) ───────────────────────────────────────
-    config.dataset = LazyConfig(ImageNetWebDataModule)(
-        data_dir=IMAGENET_WDS_PATH,
-        gpu_decode=True,
+    # ─── Dataset ────────────────────────────────────────────────────────────
+    config.dataset = LazyConfig(ImageNetDataModule)(
+        data_dir=IMAGENET_PATH,
+        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH", None),
         prefetch_factor=2,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
