@@ -308,11 +308,13 @@ class Hyena(torch.nn.Module):
         # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
         if self.q_norm is not None:
             query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
-            key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
+            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+                key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
+            # key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
 
         # First gate
         # z = query * key. We remove the nonlinearity here to align more with the Mamba defition.
-        query = query * key
+        query = query * self.gate_nonlinear(key)
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
