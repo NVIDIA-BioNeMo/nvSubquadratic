@@ -114,11 +114,11 @@ ______________________________________________________________________
 
 | #   | Experiment            | ω₀  | Partition    | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                        |
 | :-- | :-------------------- | :-- | :----------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------------- |
-| 2.1 | ω₀ = 10               | 10  | hipster/cap  | 2    | 🔄 Running   | 69.9%   | `174895` | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) | Ep 242, ~189k/300k, ETA ~37h |
-| 2.2 | ω₀ = 20               | 20  | hipster/cap  | 2    | 🔄 Running   | 70.5%   | `174896` | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) | Ep 228, ~178k/300k, ETA ~41h |
+| 2.1 | ω₀ = 10               | 10  | hipster/cap  | 2    | ✅ Completed | 69.6%   | `174895` | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) | Ep 242, ~189k/300k, ETA ~37h |
+| 2.2 | ω₀ = 20               | 20  | hipster/cap  | 2    | ✅ Completed | 70.5%   | `174896` | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) | Ep 228, ~178k/300k, ETA ~41h |
 | 2.3 | **ω₀ = 30 (default)** | 30  | hipster/perf | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run)       |
-| 2.4 | ω₀ = 60               | 60  | hipster/cap  | 2    | 🔄 Running   | 69.2%   | `174897` | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) | Ep 216, ~169k/300k, ETA ~44h |
-| 2.5 | ω₀ = 100              | 100 | hipster/cap  | 2    | 🔄 Running   | 70.1%   | `174898` | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) | Ep 183, ~143k/300k, ETA ~52h |
+| 2.4 | ω₀ = 60               | 60  | hipster/cap  | 2    | ✅ Completed | 69.2%   | `174897` | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) | Ep 216, ~169k/300k, ETA ~44h |
+| 2.5 | ω₀ = 100              | 100 | hipster/cap  | 2    | ✅ Completed | 70.5%   | `174898` | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) | Ep 183, ~143k/300k, ETA ~52h |
 
 > \[!TIP\]
 > **Efficiency**: Run 2.1–2.5 in parallel on 1 GPU each (4 on geodude + 1 on all6000), or use 1 GPU on geodude sequentially, gradient-accumulating to match effective batch size. With 4 GPUs on geodude we can run 4 of these in parallel.
@@ -131,12 +131,12 @@ ______________________________________________________________________
 
 **Goal**: Find optimal SIREN MLP hidden dimension (expressiveness vs parameters tradeoff).
 
-| #   | Experiment              | Hidden Dim | Partition | GPUs | Status     | Val Acc | Job ID | WandB | Notes            |
-| :-- | :---------------------- | :--------- | :-------- | :--- | :--------- | :------ | :----- | :---- | :--------------- |
-| 3.1 | hdim = 32               | 32         | geodude   | 1    | 📅 Planned | —       | —      | —     | Lean kernel      |
-| 3.2 | **hdim = 64 (default)** | 64         | geodude   | 1    | 📅 Planned | —       | —      | —     | Reference        |
-| 3.3 | hdim = 128              | 128        | geodude   | 1    | 📅 Planned | —       | —      | —     |                  |
-| 3.4 | hdim = 256              | 256        | geodude   | 1    | 📅 Planned | —       | —      | —     | Expensive kernel |
+| #   | Experiment              | Hidden Dim | Partition    | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                  |
+| :-- | :---------------------- | :--------- | :----------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------- |
+| 3.1 | hdim = 32               | 32         | hipster/cap  | 2    | � Running    | —       | `188586` | —                                                                             | Lean kernel            |
+| 3.2 | **hdim = 64 (default)** | 64         | hipster/perf | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run) |
+| 3.3 | hdim = 128              | 128        | hipster/cap  | 2    | 🔄 Running   | 68.6%   | `187086` | [5lchthne](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5lchthne) |                        |
+| 3.4 | hdim = 256              | 256        | hipster/cap  | 2    | 🔄 Running   | 68.4%   | `187082` | [bj4d7h9m](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/bj4d7h9m) | Expensive kernel       |
 
 > \[!NOTE\]
 > Should be run with optimal ω₀ from Phase 2.
@@ -318,14 +318,18 @@ ______________________________________________________________________
 
 | Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status        | Val Acc | Notes                                                                         |
 | :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :------------ | :------ | :---------------------------------------------------------------------------- |
+| 2026-02-24       | `188586` | 3.1   | `hyena_patchify.py` + hdim=32      | hipster | capacity  | 2    | 🔄 Running    | —       | Phase 3: Hidden-Dim=32 sweep                                                  |
+| 2026-02-22       | `187089` | 3.2   | `hyena_patchify.py` + hdim=64      | hipster | capacity  | 2    | ❌ Cancelled  | 67.9%   | Redundant — baseline run (174875) used instead                                |
+| 2026-02-22       | `187086` | 3.3   | `hyena_patchify.py` + hdim=128     | hipster | capacity  | 2    | 🔄 Running    | 68.6%   | Phase 3: Hidden-Dim=128 sweep                                                 |
+| 2026-02-22       | `187082` | 3.4   | `hyena_patchify.py` + hdim=256     | hipster | capacity  | 2    | 🔄 Running    | 68.4%   | Phase 3: Hidden-Dim=256 sweep                                                 |
 | 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | ⚠️ OOM (289k) | 70.6%   | SIREN baseline. OOM Killed at epoch 373.                                      |
 | 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ✅ Completed  | 70.1%   | RFF kernel ablation completed full 300k steps.                                |
 | 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done       | 54.3%   | ViT-B baseline pipeline validation                                            |
 | 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ✅ Completed  | 70.67%  | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) |
-| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | 🔄 Running    | 68.2%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) |
-| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | 🔄 Running    | 63.9%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) |
-| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | 🔄 Running    | 61.8%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
-| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | 🔄 Running    | 22.9%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
+| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | ✅ Completed  | 69.6%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) |
+| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | ✅ Completed  | 70.5%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) |
+| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | ✅ Completed  | 69.2%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
+| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | ✅ Completed  | 70.5%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
 | 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped    | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
 | 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.    |
 | 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled  | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
@@ -389,5 +393,5 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-21 23:35
-**Status**: 🔄 Phase 1.1 finishing on IVI/geodude (Job `140280`), Phase 0.1 Done, Phase 1.2 Pending.
+**Last Updated**: 2026-02-24 14:42
+**Status**: 🔄 Phase 3 hidden-dim sweep running on hipster/capacity (Jobs `188586`, `187086`, `187082`). Phase 3.2 (hdim=64) uses baseline run `174875`.
