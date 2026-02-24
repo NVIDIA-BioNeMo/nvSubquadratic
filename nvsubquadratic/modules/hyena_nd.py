@@ -32,6 +32,8 @@ to Mamba's selective-scan formulation.
 
 from typing import Optional
 
+from typing import Optional
+
 import torch
 from einops import rearrange
 
