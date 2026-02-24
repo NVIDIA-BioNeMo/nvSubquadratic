@@ -3,6 +3,8 @@
 
 """Hyena-style global convolutional mixer implementation for ND signals."""
 
+from typing import Optional
+
 import torch
 from einops import rearrange
 
@@ -13,7 +15,7 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv3d,
 )
 from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
-from nvsubquadratic.utils import qk_norm, rope
+from nvsubquadratic.utils import rope
 
 
 class Hyena(torch.nn.Module):
@@ -25,8 +27,8 @@ class Hyena(torch.nn.Module):
         short_conv_cfg: LazyConfig,
         gate_nonlinear_cfg: LazyConfig,
         pixelhyena_norm_cfg: LazyConfig,
-        apply_qk_norm: bool,
         use_rope: bool,
+        qk_norm_cfg: Optional[LazyConfig] | None,
         rope_base: float = 10000.0,
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
     ):
@@ -37,8 +39,8 @@ class Hyena(torch.nn.Module):
             short_conv_cfg: LazyConfig - LazyConfig for the short convolutional layer.
             gate_nonlinear_cfg: LazyConfig - LazyConfig for the gate nonlinear layer.
             pixelhyena_norm_cfg: LazyConfig - LazyConfig for the pixelhyena normalization layer. Use torch.nn.Identity for no normalization.
-            apply_qk_norm: bool - Whether to apply normalization to the query and key.
             use_rope: bool - Whether to use RoPE.
+            qk_norm_cfg: Optional[LazyConfig] - LazyConfig for Q/K normalization (e.g., L2Norm, RMSNorm). None to disable.
             rope_base: float - The base of the RoPE (default: 10000.0).
             output_norm_cfg: LazyConfig - LazyConfig for the output normalization layer. Defaults to torch.nn.Identity.
 
@@ -79,8 +81,13 @@ class Hyena(torch.nn.Module):
         for param in self.output_norm.parameters():
             param._no_weight_decay = True
 
-        # QK Normalization
-        self.apply_qk_norm = apply_qk_norm
+        # QK Normalization (separate instances for Q and K to support stateful norms like RMSNorm)
+        if qk_norm_cfg is not None:
+            self.q_norm = instantiate(qk_norm_cfg)
+            self.k_norm = instantiate(qk_norm_cfg)
+        else:
+            self.q_norm = None
+            self.k_norm = None
 
         # RoPE
         self.use_rope = use_rope
@@ -95,7 +102,8 @@ class Hyena(torch.nn.Module):
         """Return extra representation string for the module."""
         # Get is_causal from global_conv if it has that attribute
         is_causal = getattr(self.global_conv, "is_causal", None)
-        parts = [f"apply_qk_norm={self.apply_qk_norm}", f"use_rope={self.use_rope}"]
+        qk_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
+        parts = [f"qk_norm={qk_norm_str}", f"use_rope={self.use_rope}"]
         if is_causal is not None:
             parts.append(f"is_causal={is_causal}")
         return ", ".join(parts)
@@ -295,9 +303,12 @@ class Hyena(torch.nn.Module):
             else:
                 raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
 
-        # Apply QK normalization (after RoPE)
-        if self.apply_qk_norm:
-            query, key = qk_norm.apply_qk_norm(query, key, dim=1)
+        # Apply QK normalization (after RoPE).
+        # Tensors are BHL: [B, C, *spatial]. Move C to last dim for norms that
+        # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
+        if self.q_norm is not None:
+            query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
+            key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
 
         # First gate
         # z = query * key. We remove the nonlinearity here to align more with the Mamba defition.

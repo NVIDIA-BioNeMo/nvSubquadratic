@@ -40,6 +40,7 @@ from nvsubquadratic.parallel.utils import (
     zigzag_split_across_group_ranks,
 )
 from nvsubquadratic.testing import compute_relative_error
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
@@ -105,7 +106,7 @@ def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
-            apply_qk_norm=True,
+            qk_norm_cfg=LazyConfig(L2Norm)(),
             use_rope=False,  # Disable RoPE to avoid in-place issues
             rope_base=10000.0,
         ),
