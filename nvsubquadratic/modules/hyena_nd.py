@@ -81,10 +81,12 @@ class Hyena(torch.nn.Module):
         for param in self.output_norm.parameters():
             param._no_weight_decay = True
 
-        # QK Normalization (separate instances for Q and K to support stateful norms like RMSNorm)
+        # QK Normalization (separate instances for Q and K to support stateful norms like RMSNorm).
+        # k_norm is only used when gate_nonlinear is Identity (otherwise k bypasses normalization
+        # and goes straight into the gate nonlinearity).
         if qk_norm_cfg is not None:
             self.q_norm = instantiate(qk_norm_cfg)
-            self.k_norm = instantiate(qk_norm_cfg)
+            self.k_norm = instantiate(qk_norm_cfg) if isinstance(self.gate_nonlinear, torch.nn.Identity) else None
         else:
             self.q_norm = None
             self.k_norm = None
@@ -308,9 +310,8 @@ class Hyena(torch.nn.Module):
         # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
         if self.q_norm is not None:
             query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
-            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+            if self.k_norm is not None:
                 key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
-            # key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
 
         # First gate
         # z = query * key. We remove the nonlinearity here to align more with the Mamba defition.
