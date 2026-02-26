@@ -221,7 +221,6 @@ def get_config() -> ExperimentConfig:
     )
 
     config.trainer = TrainerConfig(
-        val_check_interval=1.0,
         checkpoint_every_n_steps=5000,
     )
 

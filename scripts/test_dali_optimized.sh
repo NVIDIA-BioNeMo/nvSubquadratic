@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=profile-bottleneck
+#SBATCH --job-name=test-dali-opt
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
@@ -11,8 +11,8 @@
 #SBATCH --container-writable
 #SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared"
 #SBATCH --container-workdir=/home/dwromero/projects/nvSubquadratic-private
-#SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/profile_bottleneck_%j.out
-#SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/profile_bottleneck_%j.err
+#SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/test_dali_opt_%j.out
+#SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/test_dali_opt_%j.err
 
 set -eo pipefail
 set -a
@@ -28,4 +28,4 @@ source /home/dwromero/miniconda3/etc/profile.d/conda.sh
 conda activate nv-subq
 
 cd /home/dwromero/projects/nvSubquadratic-private
-PYTHONPATH=. python scripts/profile_training_bottleneck.py "$@"
+PYTHONPATH=. python tests/test_dali_optimized_equivalence.py

@@ -146,7 +146,8 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
-        val_check_interval=cfg.trainer.val_check_interval,
+        val_check_interval=cfg.trainer.check_val_every_n_iterations,
+        check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         limit_val_batches=cfg.trainer.limit_val_batches,
         # Logging frequency
         log_every_n_steps=10,
