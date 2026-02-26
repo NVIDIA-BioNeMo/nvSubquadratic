@@ -45,8 +45,6 @@ class AugmentConfig:
     use_three_augment: bool = False
     color_jitter: float = 0.4
     rand_augment: Optional[str] = None  # e.g., 'rand-m9-n3-mstd0.5'
-    use_src: bool = False  # Simple Random Crop; False = RandomResizedCrop (reference default)
-
 
 class ThreeAugment(torch.nn.Module):
     """DeiT III 3-Augment: Grayscale, Solarization, Gaussian Blur."""
@@ -240,22 +238,12 @@ class ImageNetDataModule(pl.LightningDataModule):
             mean = self.normalization_mean
             std = self.normalization_std
 
-        # Initialize ops with Simple Random Crop logic: Resize -> RandomCrop
-        # For SRC, we typically resize to slightly larger than crop size (e.g. 256 for 224 crop) or
-        # resize shortest edge to target size.
-        # Original code used Resize(image_size + 32). This is standard SRC.
         ops: list[transforms.Transform] = []
 
-        use_src = self.augment_cfg is not None and self.augment_cfg.use_src
-
         if train:
-            if use_src:
-                ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
-                ops.append(transforms.RandomCrop(self.image_size))
-            else:
-                ops.append(RandomResizedCropAndInterpolation(
-                    self.image_size, scale=(0.08, 1.0), interpolation="bicubic",
-                ))
+            ops.append(RandomResizedCropAndInterpolation(
+                self.image_size, scale=(0.08, 1.0), interpolation="bicubic",
+            ))
 
             ops.append(transforms.RandomHorizontalFlip())
 
