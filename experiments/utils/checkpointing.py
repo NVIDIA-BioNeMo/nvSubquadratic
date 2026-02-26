@@ -107,6 +107,17 @@ def load_checkpoint_state_dict(ckpt_path: str) -> dict:
     raise ValueError(f"Unsupported checkpoint format for {ckpt_path}: type={type(obj)}")
 
 
+class StripCompiledPrefix:
+    """Checkpoint callback that strips ``_orig_mod.`` prefix from state_dict keys.
+
+    Enables loading checkpoints saved from ``torch.compile``-wrapped models into
+    non-compiled models (and vice versa).
+    """
+
+    def __call__(self, state_dict, **_kwargs):
+        return {k.replace("._orig_mod.", "."): v for k, v in state_dict.items()}
+
+
 def _compute_overlapping_slices(target_shape, source_shape):
     """Return a tuple of slice objects selecting overlapping extents for target and source tensors.
 

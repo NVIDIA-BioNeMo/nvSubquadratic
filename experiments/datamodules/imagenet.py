@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Tuple
+import shutil
+import subprocess
 
 import pytorch_lightning as pl
 import torch
@@ -155,6 +157,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         imagefolder_dir: Optional[str] = None,
         prefetch_factor: int = 2,
         eval_crop_ratio: float = 1.0,
+        local_staging_dir: Optional[str] = None,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
         augment_cfg: Optional[AugmentConfig] = None,
@@ -163,6 +166,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
         self.imagefolder_dir = Path(imagefolder_dir) if imagefolder_dir else None
+        self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
         self.prefetch_factor = prefetch_factor
         self.eval_crop_ratio = eval_crop_ratio
         self.batch_size = batch_size
@@ -281,8 +285,55 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops.append(transforms.Normalize(mean=mean, std=std))
         return transforms.Compose(ops)
 
+    def _stage_to_local(self) -> None:
+        """Copy ImageFolder data to fast local storage (e.g. NVMe).
+
+        Idempotent: uses a ``.staging_complete`` sentinel so partial copies
+        are retried and completed copies are skipped.  Raises on failure.
+        """
+        src = self.imagefolder_dir
+        dst = self._local_staging_dir
+
+        print(f"[data-staging] local_staging_dir={dst}, checking ...", flush=True)
+
+        try:
+            dst.mkdir(parents=True, exist_ok=True)
+            free_bytes = shutil.disk_usage(dst).free
+            min_bytes = 160 * (1024 ** 3)
+            if free_bytes < min_bytes:
+                raise RuntimeError(
+                    f"[data-staging] {dst} has only "
+                    f"{free_bytes / (1024**3):.1f} GB free (need {min_bytes / (1024**3):.0f} GB)"
+                )
+        except OSError as exc:
+            raise RuntimeError(f"[data-staging] Cannot access {dst}: {exc}") from exc
+
+        sentinel = dst / ".staging_complete"
+        if sentinel.is_file():
+            print(f"[data-staging] {dst} already staged (sentinel found), skipping copy.", flush=True)
+            self.imagefolder_dir = dst
+            return
+
+        print(f"[data-staging] Copying {src} -> {dst} (this may take 10-20 min) ...", flush=True)
+        subprocess.run(
+            ["cp", "-a", "--no-clobber", "-r", str(src / "train"), str(src / "val"), str(dst)],
+            check=True,
+            timeout=3600,
+        )
+        sentinel.write_text("ok\n")
+        self.imagefolder_dir = dst
+        print(f"[data-staging] Done. Using local path: {dst}", flush=True)
+
     def prepare_data(self) -> None:
-        """Download the train/validation splits if they are not already cached locally."""
+        """Download / stage data before training.
+
+        When ``local_staging_dir`` is set and ``imagefolder_dir`` points to a
+        network path, stage data to fast local storage first.
+        """
+        if self._local_staging_dir is not None and self.imagefolder_dir is not None:
+            self._stage_to_local()
+            return
+
         if self.imagefolder_dir is not None:
             return
 
