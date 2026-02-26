@@ -362,9 +362,13 @@ def main() -> None:
         else:
             print(f"[checkpoint] Skipping weight reload; best checkpoint not found (path={best_ckpt_path!r}).")
 
-    # Validate and test after training before finishing
-    trainer.validate(model, datamodule=datamodule)
-    trainer.test(model, datamodule=datamodule)
+    # Validate and test after training before finishing.
+    # Skip if no training was done -- validation-only runs already validated
+    # in the start_from_checkpoint block above, and re-entering the strategy
+    # launcher a second time can fail with FSDP (parameter state mismatch).
+    if config.train.do:
+        trainer.validate(model, datamodule=datamodule)
+        trainer.test(model, datamodule=datamodule)
 
 
 if __name__ == "__main__":

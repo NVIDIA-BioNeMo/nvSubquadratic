@@ -1,15 +1,18 @@
-"""ViT-5-Small ImageNet-1k — Validation only with fused DALI dataloader.
+"""ViT-5-Small ImageNet-1k — Validation only with FSDP HYBRID_SHARD strategy.
 
 Loads pretrained weights from W&B run 2y06y121 and validates using the
-DALIImageNetFusedDataModule (all augmentations inside DALI pipeline).
+DALIImageNetFusedDataModule with FSDP HYBRID_SHARD wrapping.
 No training is performed.
 
-Requires: pip install nvidia-dali-cuda120
+Requires: pip install nvidia-dali-cuda120, apex
 """
 
 import os
 
 import torch
+from apex.optimizers import FusedLAMB as Lamb
+from pytorch_lightning.strategies import FSDPStrategy
+from torch.distributed.fsdp import MixedPrecision
 
 from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
@@ -25,9 +28,6 @@ from experiments.default_cfg import (
 from experiments.utils.checkpointing import StripCompiledPrefix
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-
-from apex.optimizers import FusedLAMB as Lamb
-
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
@@ -55,16 +55,28 @@ NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
 
 BATCH_SIZE = 256
-PRECISION = "bf16-mixed"
 NUM_WORKERS = 12
 
 
 def get_config() -> ExperimentConfig:
-    """Return validation-only config with fused DALI datamodule."""
+    """Return validation-only config with FSDP HYBRID_SHARD strategy."""
     config = ExperimentConfig()
     config.debug = True
     config.seed = 42
     config.compile = False
+
+    # ─── Strategy (FSDP HYBRID_SHARD) ────────────────────────────────────
+    config.strategy = LazyConfig(FSDPStrategy)(
+        sharding_strategy="HYBRID_SHARD",
+        auto_wrap_policy={ViT5ResidualBlock},
+        mixed_precision=MixedPrecision(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.float32,
+            buffer_dtype=torch.bfloat16,
+        ),
+        state_dict_type="full",
+        use_orig_params=True,
+    )
 
     # ─── Dataset (fused DALI) ────────────────────────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
@@ -149,7 +161,7 @@ def get_config() -> ExperimentConfig:
         do=False,
         batch_size="${dataset.batch_size}",
         iterations=0,
-        precision=PRECISION,
+        precision="bf16-mixed",
     )
 
     config.trainer = TrainerConfig()
@@ -171,7 +183,7 @@ def get_config() -> ExperimentConfig:
     )
 
     config.wandb = WandbConfig(
-        job_group="vit5_imagenet_validate",
+        job_group="vit5_imagenet_validate_fsdp",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )

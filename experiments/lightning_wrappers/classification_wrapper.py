@@ -109,7 +109,7 @@ class ClassificationWrapper(LightningWrapperBase):
         # For multi-class classification, if the labels are float, we need to convert them to long for the accuracy calculator.
         # This is a workaround used during training to have accuracy calculations for training steps / epochs as well.
         if self.multiclass:
-            if labels.dtype == torch.float and labels.ndim > 1:
+            if labels.is_floating_point() and labels.ndim > 1:
                 accuracy_calculator(predictions, torch.argmax(labels, dim=1))
             else:
                 accuracy_calculator(predictions, labels)

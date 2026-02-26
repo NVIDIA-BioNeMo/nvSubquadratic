@@ -110,6 +110,7 @@ class ExperimentConfig:
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
     compile_mode: Optional[str] = None  # torch.compile mode: None (default), "reduce-overhead", "max-autotune"
+    strategy: Optional[LazyConfig] = None  # Lightning strategy (e.g. LazyConfig(FSDPStrategy)(...)); None = auto DDP
     experiment_dir: Optional[str] = None
     num_nodes: int = 1
 

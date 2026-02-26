@@ -1,33 +1,24 @@
-"""ViT-5-Small ImageNet-1k — Validation only with fused DALI dataloader.
+"""ViT-5-Small ImageNet-1k — Apex FusedLAMB + fused DALI + FSDP HYBRID_SHARD.
 
-Loads pretrained weights from W&B run 2y06y121 and validates using the
-DALIImageNetFusedDataModule (all augmentations inside DALI pipeline).
-No training is performed.
+Same training recipe as vit5_small_pretrain_apex_dali_fused.py but uses
+FSDP HYBRID_SHARD strategy instead of DDP. Each ViT5ResidualBlock is wrapped
+as an individual FSDP unit; sharding is within-node, replication across nodes.
 
-Requires: pip install nvidia-dali-cuda120
+Requires: pip install nvidia-dali-cuda120, apex
 """
 
 import os
 
 import torch
+from apex.optimizers import FusedLAMB as Lamb
+from pytorch_lightning.strategies import FSDPStrategy
+from torch.distributed.fsdp import MixedPrecision
 
 from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-from experiments.default_cfg import (
-    AutoResumeConfig,
-    ExperimentConfig,
-    SchedulerConfig,
-    StartFromCheckpointConfig,
-    TrainConfig,
-    TrainerConfig,
-    WandbConfig,
-)
-from experiments.utils.checkpointing import StripCompiledPrefix
+from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-
-from apex.optimizers import FusedLAMB as Lamb
-
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
@@ -54,19 +45,44 @@ MLP_RATIO = 4
 NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
 
+# ─── Training recipe ────────────────────────────────────────────────────────────
 BATCH_SIZE = 256
-PRECISION = "bf16-mixed"
+EPOCHS = 800
+IMAGENET_TRAIN_SIZE = 1_281_167
+EFFECTIVE_BATCH_SIZE = 2048
+ITERS_PER_EPOCH = IMAGENET_TRAIN_SIZE // EFFECTIVE_BATCH_SIZE
+TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH
+WARMUP_EPOCHS = 5
+WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS
+
+LEARNING_RATE = 4e-3
+WEIGHT_DECAY = 0.05
+GRAD_CLIP = 1.0
+
 NUM_WORKERS = 12
 
 
 def get_config() -> ExperimentConfig:
-    """Return validation-only config with fused DALI datamodule."""
+    """Return the ViT-5-Small config with fused DALI + FSDP HYBRID_SHARD."""
     config = ExperimentConfig()
-    config.debug = True
+    config.debug = False
     config.seed = 42
     config.compile = False
 
-    # ─── Dataset (fused DALI) ────────────────────────────────────────────
+    # ─── Strategy (FSDP HYBRID_SHARD) ────────────────────────────────────
+    config.strategy = LazyConfig(FSDPStrategy)(
+        sharding_strategy="HYBRID_SHARD",
+        auto_wrap_policy={ViT5ResidualBlock},
+        mixed_precision=MixedPrecision(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.float32,
+            buffer_dtype=torch.bfloat16,
+        ),
+        state_dict_type="full",
+        use_orig_params=True,
+    )
+
+    # ─── Dataset (fused DALI + local staging) ─────────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
         data_dir=IMAGENET_PATH,
         imagefolder_dir=IMAGENET_FOLDER_PATH,
@@ -93,6 +109,7 @@ def get_config() -> ExperimentConfig:
             color_jitter=0.3,
         ),
         device_id=0,
+        local_staging_dir=f"/scratch/{os.environ.get('USER', 'unknown')}/imagenet_dataset",
     )
 
     # ─── Network ────────────────────────────────────────────────────────────
@@ -137,45 +154,44 @@ def get_config() -> ExperimentConfig:
     # ─── Lightning wrapper ──────────────────────────────────────────────────
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
 
-    # ─── Optimizer (required by run.py even for validation) ──────────────
+    # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
         params=PLACEHOLDER,
-        lr=4e-3,
-        weight_decay=0.05,
+        lr=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
     )
 
-    # ─── Training (disabled — validation only) ──────────────────────────
+    # ─── Training ───────────────────────────────────────────────────────────
     config.train = TrainConfig(
-        do=False,
         batch_size="${dataset.batch_size}",
-        iterations=0,
-        precision=PRECISION,
+        iterations=TOTAL_ITERATIONS,
+        grad_clip=GRAD_CLIP,
+        precision="bf16-mixed",
     )
 
-    config.trainer = TrainerConfig()
+    config.trainer = TrainerConfig(
+        check_val_every_n_epoch=4,
+        checkpoint_every_n_steps=5000,
+    )
 
+    # ─── Scheduler ──────────────────────────────────────────────────────────
     config.scheduler = SchedulerConfig(
         name="cosine",
-        warmup_iterations_percentage=0.00625,
+        warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
         mode="max",
     )
 
-    # ─── Load weights from W&B run 2y06y121 ─────────────────────────────
-    config.start_from_checkpoint = StartFromCheckpointConfig(
-        load=True,
-        run_path="implicit-long-convs/nvsubquadratic/2y06y121",
-        alias="latest",
-        strict=True,
-        callbacks=[LazyConfig(StripCompiledPrefix)()],
-    )
-
+    # ─── Wandb ──────────────────────────────────────────────────────────────
     config.wandb = WandbConfig(
-        job_group="vit5_imagenet_validate",
+        job_group="vit5_imagenet_pretrain_fsdp",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )
 
-    config.autoresume = AutoResumeConfig(enabled=False)
+    # ─── Auto-resume ──────────────────────────────────────────────────────
+    config.autoresume = AutoResumeConfig(
+        enabled=False,
+    )
 
     return config

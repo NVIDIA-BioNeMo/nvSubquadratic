@@ -76,13 +76,38 @@ def construct_trainer(
     assert cfg.device == "cuda", "Only CUDA training is supported."
 
     device_count = torch.cuda.device_count()
-    if device_count > 1:  # Multi-GPU training
+
+    if cfg.strategy is not None:
+        strategy = instantiate(cfg.strategy)
+        assert isinstance(strategy, pl.strategies.Strategy), (
+            f"cfg.strategy must produce a Lightning Strategy instance, got {type(strategy).__name__}. "
+            f"Use e.g. LazyConfig(FSDPStrategy)(sharding_strategy='HYBRID_SHARD', ...)."
+        )
+
+        from pytorch_lightning.strategies import FSDPStrategy
+
+        if isinstance(strategy, FSDPStrategy):
+            assert not cfg.compile, (
+                "torch.compile is not yet supported with FSDP strategies. "
+                "Set compile=False in your config."
+            )
+            # FSDP handles mixed precision via its MixedPrecision policy;
+            # Lightning's autocast (bf16-mixed) must be disabled to avoid double-casting.
+            cfg.train.precision = "32-true"
+            print(
+                f"[trainer] FSDP strategy detected ({type(strategy).__name__}). "
+                f"Precision overridden to '32-true' (FSDP handles mixed precision natively)."
+            )
+
+        sync_batchnorm = device_count > 1
+
+    elif device_count > 1:  # Multi-GPU training
         strategy = "ddp"
         sync_batchnorm = True
+
     else:
         strategy = "auto"
         sync_batchnorm = False
-    # num_nodes = 1  # Multi-node training not verified.
 
     # Merge default callbacks with any experiment-defined callbacks
     user_callbacks = [instantiate(cb_cfg) for cb_cfg in cfg.callbacks] if cfg.callbacks else []

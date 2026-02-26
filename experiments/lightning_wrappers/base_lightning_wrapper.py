@@ -204,6 +204,20 @@ class LightningWrapperBase(pl.LightningModule):
         self._cuda_forward_end_event = None
         self._cuda_backward_end_event = None
 
+    def configure_gradient_clipping(self, optimizer, gradient_clip_val=None, gradient_clip_algorithm=None):
+        from pytorch_lightning.strategies import FSDPStrategy
+
+        if gradient_clip_val is None or gradient_clip_val <= 0:
+            return
+
+        if isinstance(self.trainer.strategy, FSDPStrategy):
+            assert gradient_clip_algorithm in (None, "norm"), (
+                f"FSDP only supports gradient clipping by norm, got {gradient_clip_algorithm!r}"
+            )
+            self.trainer.strategy.model.clip_grad_norm_(gradient_clip_val)
+        else:
+            self.clip_gradients(optimizer, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm=gradient_clip_algorithm)
+
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """Patch checkpoint for cross-optimizer and compiled/non-compiled resume.
 
