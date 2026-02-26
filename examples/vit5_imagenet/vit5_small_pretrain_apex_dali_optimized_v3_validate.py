@@ -1,37 +1,21 @@
-"""ViT-5-Small ImageNet-1k — Apex FusedLAMB variant.
-
-Identical to vit5_small_pretrain.py except:
-- Apex FusedLAMB optimizer (fused multi-tensor LAMB, faster optimizer step)
-- Fresh run (no auto-resume) to avoid checkpoint state incompatibility
-"""
+"""Validation-only config for DALI optimised v3 — loads checkpoint from run 2y06y121."""
 
 import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules.dali_imagenet_optimized_v3 import DALIImageNetOptimizedV3DataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.default_cfg import (
-    AutoResumeConfig,
-    ExperimentConfig,
-    SchedulerConfig,
-    TrainConfig,
-    TrainerConfig,
-    WandbConfig,
+    AutoResumeConfig, ExperimentConfig, SchedulerConfig,
+    StartFromCheckpointConfig, TrainConfig, TrainerConfig, WandbConfig,
 )
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
-    import warnings
-
-    warnings.warn(
-        "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
-        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
-        stacklevel=2,
-    )
     from torch_optimizer import Lamb
 
 from nvsubquadratic.modules.mlp import MLP
@@ -40,17 +24,13 @@ from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 
-
-# ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
 IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
-HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 
-# ─── Model (ViT-5-Small) ────────────────────────────────────────────────────────
 HIDDEN_DIM = 384
 NUM_BLOCKS = 12
 NUM_HEADS = 6
@@ -62,7 +42,6 @@ MLP_RATIO = 4
 NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
 
-# ─── Training recipe ────────────────────────────────────────────────────────────
 BATCH_SIZE = 256
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
@@ -77,35 +56,35 @@ WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
 
-NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
+NUM_WORKERS = 8
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small config with Apex FusedLAMB."""
     config = ExperimentConfig()
-    config.debug = False
+    config.debug = True
     config.seed = 42
     config.compile = True
-    config.compile_mode = "max-autotune"
-    hf_token = os.environ.get("HF_TOKEN")
+    config.compile_mode = "default"
 
-    # ─── Dataset ────────────────────────────────────────────────────────────
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    config.start_from_checkpoint = StartFromCheckpointConfig(
+        load=True,
+        alias="latest",
+        strict=True,
+        run_path="implicit-long-convs/nvsubquadratic/2y06y121",
+    )
+
+    config.dataset = LazyConfig(DALIImageNetOptimizedV3DataModule)(
         data_dir=IMAGENET_PATH,
         imagefolder_dir=IMAGENET_FOLDER_PATH,
         prefetch_factor=2,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
-        pin_memory=torch.cuda.is_available() and config.device == "cuda",
+        pin_memory=True,
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
-        hf_dataset_name=HF_DATASET_NAME,
-        hf_dataset_config=None,
-        hf_auth_token=hf_token,
         task="classification",
         mixup_cfg=LazyConfig(MixupConfig)(
             mixup=0.8,
@@ -119,9 +98,9 @@ def get_config() -> ExperimentConfig:
             use_three_augment=True,
             color_jitter=0.3,
         ),
+        device_id=0,
     )
 
-    # ─── Network ────────────────────────────────────────────────────────────
     config.net = LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
         num_classes=NUM_CLASSES,
@@ -160,29 +139,24 @@ def get_config() -> ExperimentConfig:
         ),
     )
 
-    # ─── Lightning wrapper ──────────────────────────────────────────────────
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
 
-    # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
     )
 
-    # ─── Training ───────────────────────────────────────────────────────────
     config.train = TrainConfig(
+        do=False,
         batch_size="${dataset.batch_size}",
         iterations=TOTAL_ITERATIONS,
         grad_clip=GRAD_CLIP,
         precision=PRECISION,
     )
 
-    config.trainer = TrainerConfig(
-        checkpoint_every_n_steps=5000,
-    )
+    config.trainer = TrainerConfig()
 
-    # ─── Scheduler ──────────────────────────────────────────────────────────
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
@@ -190,16 +164,12 @@ def get_config() -> ExperimentConfig:
         mode="max",
     )
 
-    # ─── Wandb ──────────────────────────────────────────────────────────────
     config.wandb = WandbConfig(
         job_group="vit5_imagenet_pretrain",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )
 
-    # ─── Auto-resume ──────────────────────────────────────────────────────
-    config.autoresume = AutoResumeConfig(
-        enabled=False,
-    )
+    config.autoresume = AutoResumeConfig(enabled=False)
 
     return config
