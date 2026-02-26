@@ -39,4 +39,13 @@ export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export TRITON_CACHE_DIR=/home/dwromero/.triton/cache
 
 cd /home/dwromero/projects/nvSubquadratic-private
+
+# Triton autotuning needs ldconfig; create symlink if missing in container
+if [ ! -f /sbin/ldconfig ]; then
+    LDCONFIG_PATH=$(which ldconfig 2>/dev/null || find /usr -name ldconfig -type f 2>/dev/null | head -1)
+    if [ -n "$LDCONFIG_PATH" ]; then
+        mkdir -p /sbin && ln -sf "$LDCONFIG_PATH" /sbin/ldconfig
+    fi
+fi
+
 PYTHONPATH=. python experiments/run.py --config "$CONFIG" "$@"
