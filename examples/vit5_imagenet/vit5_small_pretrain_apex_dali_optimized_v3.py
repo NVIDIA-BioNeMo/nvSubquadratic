@@ -1,61 +1,46 @@
-"""ViT-5-Small ImageNet-1k Pretraining Configuration.
+"""ViT-5-Small ImageNet-1k — Apex FusedLAMB + optimised DALI dataloader (v3).
 
-Architecture (from ViT-5 paper, Table 4):
-- 12 layers, dim 384, 6 heads, 4 registers, ~22M params
-- RMSNorm, LayerScale (init 1e-4), QK-Norm (RMSNorm)
-- APE + 2D RoPE, register tokens with high-frequency RoPE (theta=100)
-- GeLU MLP (ratio 4), no QKV bias
-- Patch size 16 -> 224/16 = 14x14 = 196 tokens
-
-Pretraining recipe (from ViT-5 paper, Table 12):
-- LAMB optimizer, lr 4e-3, weight decay 0.05, grad clip 1.0
-- Batch 2048, 800 epochs, cosine schedule, 5 warmup epochs
-- 3-Augment, Color Jitter 0.3, Mixup 0.8, CutMix 1.0
-- BCE loss, no label smoothing, stochastic depth 0.05
-- Input 224x224
+Builds on v2 with additional optimizations:
+- DALI outputs CHW directly (no permute needed)
+- bf16 augmentation pipeline
+- Compiled ColorJitter + normalise
+- Requires: pip install nvidia-dali-cuda120
 """
 
 import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules.dali_imagenet_optimized_v3 import DALIImageNetOptimizedV3DataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-# NOTE: Apex FusedLAMB is faster but its optimizer state is incompatible with
-# torch_optimizer.Lamb for checkpoint resume.  Use Lamb for runs that need to
-# resume from a Lamb checkpoint; switch to FusedLAMB only for fresh runs.
-#
-# try:
-#     from apex.optimizers import FusedLAMB as Lamb
-# except ImportError:
-#     import warnings
-#     warnings.warn(
-#         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
-#         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
-#         stacklevel=2,
-#     )
-#     from torch_optimizer import Lamb
+try:
+    from apex.optimizers import FusedLAMB as Lamb
+except ImportError:
+    import warnings
+    warnings.warn(
+        "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
+        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
+        stacklevel=2,
+    )
+    from torch_optimizer import Lamb
 
-from torch_optimizer import Lamb
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 
-# ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
 IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
-HF_DATASET_NAME = "ILSVRC/imagenet-1k"
 
-# ─── Model (ViT-5-Small) ────────────────────────────────────────────────────────
 HIDDEN_DIM = 384
 NUM_BLOCKS = 12
 NUM_HEADS = 6
@@ -64,53 +49,46 @@ NUM_REGISTERS = 4
 LAYER_SCALE_INIT = 1e-4
 DROP_PATH_RATE = 0.05
 MLP_RATIO = 4
-NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
-NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
+NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
+NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
 
-# ─── Training recipe ────────────────────────────────────────────────────────────
-BATCH_SIZE = 256  # per-GPU; 256 * 8 GPUs = 2048 effective
+BATCH_SIZE = 256
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
 EFFECTIVE_BATCH_SIZE = 2048
 ITERS_PER_EPOCH = IMAGENET_TRAIN_SIZE // EFFECTIVE_BATCH_SIZE
-TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH  # ~500,000
+TOTAL_ITERATIONS = EPOCHS * ITERS_PER_EPOCH
 WARMUP_EPOCHS = 5
-WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS  # 5/800 ≈ 0.00625
+WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS
 
 LEARNING_RATE = 4e-3
 WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
 
-NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
+NUM_WORKERS = 8
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small ImageNet-1k pretraining configuration."""
+    """Return the ViT-5-Small config with Apex FusedLAMB + optimised DALI v3."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     config.compile = True
     config.compile_mode = "max-autotune"
-    hf_token = os.environ.get("HF_TOKEN")
 
-    # ─── Dataset ────────────────────────────────────────────────────────────
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    config.dataset = LazyConfig(DALIImageNetOptimizedV3DataModule)(
         data_dir=IMAGENET_PATH,
         imagefolder_dir=IMAGENET_FOLDER_PATH,
         prefetch_factor=2,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
-        pin_memory=torch.cuda.is_available() and config.device == "cuda",
+        pin_memory=True,
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True,
         num_classes=NUM_CLASSES,
         drop_labels=False,
-        hf_dataset_name=HF_DATASET_NAME,
-        hf_dataset_config=None,
-        hf_auth_token=hf_token,
         task="classification",
         mixup_cfg=LazyConfig(MixupConfig)(
             mixup=0.8,
@@ -124,9 +102,9 @@ def get_config() -> ExperimentConfig:
             use_three_augment=True,
             color_jitter=0.3,
         ),
+        device_id=0,
     )
 
-    # ─── Network ────────────────────────────────────────────────────────────
     config.net = LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
         num_classes=NUM_CLASSES,
@@ -165,17 +143,14 @@ def get_config() -> ExperimentConfig:
         ),
     )
 
-    # ─── Lightning wrapper ──────────────────────────────────────────────────
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
 
-    # ─── Optimizer ────────────────────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
     )
 
-    # ─── Training ───────────────────────────────────────────────────────────
     config.train = TrainConfig(
         batch_size="${dataset.batch_size}",
         iterations=TOTAL_ITERATIONS,
@@ -187,7 +162,6 @@ def get_config() -> ExperimentConfig:
         checkpoint_every_n_steps=5000,
     )
 
-    # ─── Scheduler ──────────────────────────────────────────────────────────
     config.scheduler = SchedulerConfig(
         name="cosine",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
@@ -195,16 +169,12 @@ def get_config() -> ExperimentConfig:
         mode="max",
     )
 
-    # ─── Wandb ──────────────────────────────────────────────────────────────
     config.wandb = WandbConfig(
         job_group="vit5_imagenet_pretrain",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )
 
-    # ─── Auto-resume ─────────────────────────────────────────────────────────
-    config.autoresume = AutoResumeConfig(
-        enabled=False,
-    )
+    config.autoresume = AutoResumeConfig(enabled=False)
 
     return config

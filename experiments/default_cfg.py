@@ -34,8 +34,12 @@ class TrainConfig:
 class TrainerConfig:
     """Lightning Trainer configuration overrides."""
 
-    # Check once every epoch by default.
-    val_check_interval: float = 1.0
+    # Validate every N training iterations (maps to Lightning's val_check_interval).
+    # None = rely on check_val_every_n_epoch only.
+    check_val_every_n_iterations: Optional[int] = None
+
+    # Validate every N epochs (Lightning's check_val_every_n_epoch). Default: 1.
+    check_val_every_n_epoch: int = 1
 
     # Run through all validation batches every epoch by default.
     limit_val_batches: Union[int, float] = 1.0
