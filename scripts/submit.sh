@@ -8,7 +8,7 @@
 #SBATCH --container-image=/shared/images/nvsubquadratic_cuda129.sqsh
 #SBATCH --container-name=nv-subq
 #SBATCH --container-writable
-#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared"
+#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch"
 #SBATCH --container-workdir=/home/dwromero/projects/nvSubquadratic-private
 #SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.out
 #SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.err

@@ -3,26 +3,41 @@
 Measures data loading, forward, backward, and optimizer step independently
 to show where time is actually spent in the training loop.
 
-Usage (interactive SLURM session with 1 GPU):
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py
+Usage:
+    PYTHONPATH=. python scripts/profile_training_bottleneck.py --eager --num-workers 14
+    PYTHONPATH=. python scripts/profile_training_bottleneck.py --eager --dali --num-workers 14
+    PYTHONPATH=. python scripts/profile_training_bottleneck.py --num-workers 14          # compiled
 """
 
+import argparse
+import json
 import os
 import time
+from datetime import datetime
+from pathlib import Path
 
 import torch
 import torch.nn as nn
 
-os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
-os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
-
-from experiments.datamodules.imagenet import ImageNetDataModule, MixupConfig, AugmentConfig
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
+os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
+os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
+
+try:
+    from apex.optimizers import FusedLAMB as Lamb
+    OPTIMIZER_NAME = "Apex FusedLAMB"
+except ImportError:
+    from torch_optimizer import Lamb
+    OPTIMIZER_NAME = "torch_optimizer.Lamb"
+
+# ── Constants ────────────────────────────────────────────────────────────────
 
 BATCH_SIZE = 256
 NUM_STEPS = 50
@@ -32,7 +47,13 @@ NUM_BLOCKS = 12
 NUM_REGISTERS = 4
 IMAGE_SIZE = 224
 PATCH_SIZE = 16
-NUM_PATCHES = (IMAGE_SIZE // PATCH_SIZE)
+NUM_PATCHES = IMAGE_SIZE // PATCH_SIZE
+
+AUGMENT_CFG = AugmentConfig(use_three_augment=True, color_jitter=0.3)
+MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0,
+                         mixup_switch_prob=0.5, smoothing=0.0)
+
+# ── Builders ─────────────────────────────────────────────────────────────────
 
 
 def build_model():
@@ -60,193 +81,312 @@ def build_model():
     return instantiate(net_cfg)
 
 
-def build_dataloader(prefetch_factor: int = 4):
-    folder_path = os.environ.get("IMAGENET_FOLDER_PATH")
+def build_cpu_dataloader(prefetch_factor: int = 2, num_workers: int = 14):
+    """Standard torchvision CPU dataloader."""
     dm = ImageNetDataModule(
         data_dir=os.environ["IMAGENET_PATH"],
-        imagefolder_dir=folder_path,
+        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
         prefetch_factor=prefetch_factor,
-        batch_size=BATCH_SIZE, num_workers=16, pin_memory=True, seed=42,
+        batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, seed=42,
         image_size=IMAGE_SIZE, final_image_size=IMAGE_SIZE,
         center_crop=True, num_classes=1000, drop_labels=False,
         hf_dataset_name="ILSVRC/imagenet-1k", hf_dataset_config=None,
         hf_auth_token=os.environ.get("HF_TOKEN"), task="classification",
-        mixup_cfg=MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0,
-                              mixup_switch_prob=0.5, smoothing=0.0),
-        augment_cfg=AugmentConfig(use_three_augment=True, color_jitter=0.3),
+        mixup_cfg=MIXUP_CFG, augment_cfg=AUGMENT_CFG,
     )
     dm.prepare_data()
     dm.setup("fit")
-    return dm.train_dataloader()
+    return dm.train_dataloader(), dm
 
 
-def main():
+def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optimized: str = ""):
+    """NVIDIA DALI GPU-pipelined dataloader.
+
+    Args:
+        optimized: "" for original DALI, "v2" for optimised, "v3" for v3.
+    """
+    common = dict(
+        data_dir=os.environ["IMAGENET_PATH"],
+        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
+        prefetch_factor=prefetch_factor,
+        batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, seed=42,
+        image_size=IMAGE_SIZE, final_image_size=IMAGE_SIZE,
+        num_classes=1000, drop_labels=False, task="classification",
+        augment_cfg=AUGMENT_CFG, device_id=0,
+    )
+    if optimized == "v3":
+        from experiments.datamodules.dali_imagenet_optimized_v3 import DALIImageNetOptimizedV3DataModule
+        dm = DALIImageNetOptimizedV3DataModule(**common)
+    elif optimized == "v2":
+        from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
+        dm = DALIImageNetOptimizedDataModule(**common)
+    else:
+        from experiments.datamodules.dali_imagenet import DALIImageNetDataModule
+        dm = DALIImageNetDataModule(**common)
+    dm.setup("fit")
+    return dm.train_dataloader(), dm
+
+
+def _build_loader(use_dali: bool, optimized: str = "", **kwargs):
+    if use_dali:
+        return build_dali_dataloader(optimized=optimized, **kwargs)
+    return build_cpu_dataloader(**kwargs)
+
+
+# ── Benchmarking helpers ─────────────────────────────────────────────────────
+
+
+def bench_dataloader(prefetch_factor, num_workers, use_dali=False, optimized=False, warmup=5):
+    """Benchmark pure data loading for a single (prefetch, workers) combo."""
+    loader, dm = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
+    it = iter(loader)
+    for _ in range(warmup):
+        next(it)
+    torch.cuda.synchronize()
+    t0 = time.perf_counter()
+    for _ in range(NUM_STEPS):
+        next(it)
+    torch.cuda.synchronize()
+    elapsed = time.perf_counter() - t0
+    del loader, it
+    ms = elapsed / NUM_STEPS * 1000
+    tput = BATCH_SIZE * NUM_STEPS / elapsed
+    return ms, tput
+
+
+def prepare_batch(raw_batch, dm, device, use_dali):
+    """Convert a raw dataloader batch into the dict the model expects."""
+    if use_dali:
+        return dm.on_before_batch_transfer(raw_batch, 0)
+    images, labels = raw_batch
+    images = images.permute(0, 2, 3, 1).contiguous().to(device, non_blocking=True)
+    labels = labels.to(device, non_blocking=True)
+    return {"input": images, "label": labels, "condition": None}
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+
+def main(args):
     device = torch.device("cuda")
-    print(f"Device: {torch.cuda.get_device_name()}")
-    print(f"Batch size: {BATCH_SIZE}, Workers: 16")
+    mode_str = "eager" if args.eager else "compiled"
+    nw = args.num_workers
+    use_dali = args.dali or args.dali_optimized or args.dali_v3
+    if args.dali_v3:
+        dali_opt_str = "v3"
+    elif args.dali_optimized:
+        dali_opt_str = "v2"
+    else:
+        dali_opt_str = ""
+    if dali_opt_str == "v3":
+        decode_str = "DALI-v3 (GPU pipelined, bf16)"
+    elif dali_opt_str == "v2":
+        decode_str = "DALI-optimized (GPU pipelined)"
+    elif use_dali:
+        decode_str = "DALI (GPU pipelined)"
+    else:
+        decode_str = "CPU (PIL)"
+    gpu_name = torch.cuda.get_device_name()
+    node = os.environ.get("SLURMD_NODENAME", "unknown")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    print(f"Device: {gpu_name} (node={node})")
+    print(f"Mode: {mode_str.upper()}")
+    print(f"Decode: {decode_str}")
+    print(f"Optimizer: {OPTIMIZER_NAME}")
+    print(f"Batch size: {BATCH_SIZE}, Workers: {nw}")
+    print(f"Timestamp: {timestamp}")
     print()
 
-    # ── 0. Prefetch factor sweep ───────────────────────────────────────
+    # ── 0. Prefetch factor sweep ─────────────────────────────────────
     print("=" * 60)
     print("PHASE 0: Prefetch factor sweep (data loading only)")
     print("=" * 60)
+    prefetch_factors = [2, 4, 8, 16]
+    pf_results = {}
     best_pf, best_ms = 2, float("inf")
-    for pf in [2, 4, 8]:
-        loader = build_dataloader(prefetch_factor=pf)
-        it = iter(loader)
-        for _ in range(3):
-            next(it)
-        t0 = time.perf_counter()
-        for _ in range(NUM_STEPS):
-            next(it)
-        elapsed = time.perf_counter() - t0
-        ms = elapsed / NUM_STEPS * 1000
-        tput = BATCH_SIZE * NUM_STEPS / elapsed
-        print(f"  prefetch_factor={pf}: {ms:.1f}ms/batch, {tput:.0f} samples/sec")
+    for pf in prefetch_factors:
+        ms, tput = bench_dataloader(pf, nw, use_dali=use_dali, optimized=dali_opt_str)
+        pf_results[pf] = {"ms": round(ms, 1), "tput": round(tput)}
+        print(f"  prefetch_factor={pf:>2d}: {ms:6.1f}ms/batch, {tput:>5.0f} samples/sec")
         if ms < best_ms:
             best_ms, best_pf = ms, pf
-        del loader, it
     print(f"  >> Best: prefetch_factor={best_pf} ({best_ms:.1f}ms)")
     print()
 
-    # ── 1. Data loading speed (using best prefetch_factor) ────────────
+    # ── 1. Data loading speed ────────────────────────────────────────
     print("=" * 60)
     print(f"PHASE 1: Data loading speed (prefetch_factor={best_pf})")
     print("=" * 60)
-    loader = build_dataloader(prefetch_factor=best_pf)
-    it = iter(loader)
-
-    for _ in range(3):
-        next(it)
-
-    t0 = time.perf_counter()
-    for i in range(NUM_STEPS):
-        batch = next(it)
-    data_time = time.perf_counter() - t0
-    data_per_step = data_time / NUM_STEPS
-    data_throughput = BATCH_SIZE * NUM_STEPS / data_time
-    print(f"  {NUM_STEPS} batches in {data_time:.2f}s")
-    print(f"  Per batch: {data_per_step * 1000:.1f}ms")
-    print(f"  Throughput: {data_throughput:.0f} samples/sec")
+    data_ms, data_tput = bench_dataloader(best_pf, nw, use_dali=use_dali, optimized=dali_opt_str, warmup=5)
+    print(f"  Per batch: {data_ms:.1f}ms")
+    print(f"  Throughput: {data_tput:.0f} samples/sec")
     print()
 
-    # ── 2. Model forward + backward (synthetic data) ──────────────────
+    # ── 2. Forward + backward (synthetic) ────────────────────────────
     print("=" * 60)
-    print("PHASE 2: Forward + backward (synthetic data, no data loading)")
+    print(f"PHASE 2: Forward + backward (synthetic, mode={mode_str})")
     print("=" * 60)
     model = build_model().to(device)
-    model = torch.compile(model, mode="max-autotune")
+    if not args.eager:
+        print("  Compiling with max-autotune...")
+        model = torch.compile(model, mode="max-autotune")
     loss_fn = nn.CrossEntropyLoss()
 
-    # Synthetic input matching what the model expects (channels-last dict)
     fake_img = torch.randn(BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, 3, device=device)
     fake_lbl = torch.randint(0, 1000, (BATCH_SIZE,), device=device)
     fake_batch = {"input": fake_img, "label": fake_lbl, "condition": None}
 
-    # Compile warmup
-    print("  Warming up torch.compile...")
-    for _ in range(5):
-        out = model(fake_batch)["logits"]
-        loss = loss_fn(out, fake_lbl)
-        loss.backward()
-        model.zero_grad()
+    warmup_iters = 5 if args.eager else 20
+    print(f"  Warming up ({warmup_iters} iters)...")
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        for _ in range(warmup_iters):
+            out = model(fake_batch)["logits"]
+            loss = loss_fn(out, fake_lbl)
+            loss.backward()
+            model.zero_grad()
     torch.cuda.synchronize()
 
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
+    start_ev = torch.cuda.Event(enable_timing=True)
+    end_ev = torch.cuda.Event(enable_timing=True)
 
-    start.record()
-    for _ in range(NUM_STEPS):
-        out = model(fake_batch)["logits"]
-        loss = loss_fn(out, fake_lbl)
-        loss.backward()
-        model.zero_grad()
-    end.record()
+    start_ev.record()
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        for _ in range(NUM_STEPS):
+            out = model(fake_batch)["logits"]
+            loss = loss_fn(out, fake_lbl)
+            loss.backward()
+            model.zero_grad()
+    end_ev.record()
     torch.cuda.synchronize()
 
-    compute_ms = start.elapsed_time(end)
-    compute_per_step = compute_ms / NUM_STEPS
-    compute_throughput = BATCH_SIZE * NUM_STEPS / (compute_ms / 1000)
-    print(f"  {NUM_STEPS} steps in {compute_ms:.0f}ms")
-    print(f"  Per step: {compute_per_step:.1f}ms")
-    print(f"  Throughput: {compute_throughput:.0f} samples/sec")
+    compute_ms_total = start_ev.elapsed_time(end_ev)
+    compute_ms = compute_ms_total / NUM_STEPS
+    compute_tput = BATCH_SIZE * NUM_STEPS / (compute_ms_total / 1000)
+    print(f"  Per step: {compute_ms:.1f}ms")
+    print(f"  Throughput: {compute_tput:.0f} samples/sec")
     print()
 
-    # ── 3. Optimizer step ─────────────────────────────────────────────
+    # ── 3. Optimizer step ────────────────────────────────────────────
     print("=" * 60)
-    print("PHASE 3: Optimizer step timing")
+    print(f"PHASE 3: Optimizer step ({OPTIMIZER_NAME})")
     print("=" * 60)
-    from torch_optimizer import Lamb
     optimizer = Lamb(model.parameters(), lr=4e-3, weight_decay=0.05)
 
-    # Run one forward-backward to have gradients
-    out = model(fake_batch)["logits"]
-    loss = loss_fn(out, fake_lbl)
-    loss.backward()
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        out = model(fake_batch)["logits"]
+        loss = loss_fn(out, fake_lbl)
+        loss.backward()
     torch.cuda.synchronize()
 
-    start.record()
+    start_ev.record()
     for _ in range(NUM_STEPS):
         optimizer.step()
-    end.record()
+    end_ev.record()
     torch.cuda.synchronize()
 
-    optim_ms = start.elapsed_time(end)
-    optim_per_step = optim_ms / NUM_STEPS
-    print(f"  {NUM_STEPS} steps in {optim_ms:.0f}ms")
-    print(f"  Per step: {optim_per_step:.1f}ms")
+    optim_ms_total = start_ev.elapsed_time(end_ev)
+    optim_ms = optim_ms_total / NUM_STEPS
+    print(f"  Per step: {optim_ms:.1f}ms")
     print()
 
-    # ── 4. Full training step (data loading + compute + optimizer) ────
+    # ── 4. Full training step ────────────────────────────────────────
     print("=" * 60)
-    print("PHASE 4: Full training step (data + compute + optimizer)")
+    print(f"PHASE 4: Full training step (data + compute + optimizer, decode={decode_str})")
     print("=" * 60)
+    loader, dm = _build_loader(use_dali, optimized=dali_opt_str, prefetch_factor=best_pf, num_workers=nw)
+    dm.trainer = type("_Mock", (), {"training": True})()
+
     it = iter(loader)
-    for _ in range(3):
-        next(it)
+    # Warmup: run enough iterations to let torch.compile finish compiling
+    # the augmentation pipeline AND the model with real data
+    full_warmup = 20
+    print(f"  Warming up full pipeline ({full_warmup} iters)...")
+    for _ in range(full_warmup):
+        batch = prepare_batch(next(it), dm, device, use_dali)
+        optimizer.zero_grad()
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            out = model(batch)["logits"]
+            loss = loss_fn(out, batch["label"])
+            loss.backward()
+        optimizer.step()
 
     torch.cuda.synchronize()
     t0 = time.perf_counter()
-    for i in range(NUM_STEPS):
-        images, labels = next(it)
-        images = images.permute(0, 2, 3, 1).contiguous().to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True)
-        batch = {"input": images, "label": labels, "condition": None}
+    for _ in range(NUM_STEPS):
+        batch = prepare_batch(next(it), dm, device, use_dali)
         optimizer.zero_grad()
-        out = model(batch)["logits"]
-        loss = loss_fn(out, labels)
-        loss.backward()
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            out = model(batch)["logits"]
+            loss = loss_fn(out, batch["label"])
+            loss.backward()
         optimizer.step()
         torch.cuda.synchronize()
     full_time = time.perf_counter() - t0
-    full_per_step = full_time / NUM_STEPS
-    full_throughput = BATCH_SIZE * NUM_STEPS / full_time
-    print(f"  {NUM_STEPS} steps in {full_time:.2f}s")
-    print(f"  Per step: {full_per_step * 1000:.1f}ms")
-    print(f"  Throughput: {full_throughput:.0f} samples/sec")
+    full_ms = full_time / NUM_STEPS * 1000
+    full_tput = BATCH_SIZE * NUM_STEPS / full_time
+    print(f"  Per step: {full_ms:.1f}ms")
+    print(f"  Throughput: {full_tput:.0f} samples/sec")
     print()
 
-    # ── Summary ───────────────────────────────────────────────────────
+    # ── Summary ──────────────────────────────────────────────────────
+    overhead_ms = full_ms - data_ms - compute_ms - optim_ms
     print("=" * 60)
     print("SUMMARY (per step)")
     print("=" * 60)
-    print(f"  Data loading:    {data_per_step * 1000:7.1f}ms  ({data_per_step / full_per_step * 100:5.1f}%)")
-    print(f"  Forward+backward:{compute_per_step:7.1f}ms  ({compute_per_step / 1000 / full_per_step * 100:5.1f}%)")
-    print(f"  Optimizer step:  {optim_per_step:7.1f}ms  ({optim_per_step / 1000 / full_per_step * 100:5.1f}%)")
-    overhead = full_per_step * 1000 - data_per_step * 1000 - compute_per_step - optim_per_step
-    print(f"  Other overhead:  {overhead:7.1f}ms  ({overhead / (full_per_step * 1000) * 100:5.1f}%)")
+    print(f"  Data loading:    {data_ms:7.1f}ms  ({data_ms / full_ms * 100:5.1f}%)")
+    print(f"  Forward+backward:{compute_ms:7.1f}ms  ({compute_ms / full_ms * 100:5.1f}%)")
+    print(f"  Optimizer step:  {optim_ms:7.1f}ms  ({optim_ms / full_ms * 100:5.1f}%)")
+    print(f"  Other overhead:  {overhead_ms:7.1f}ms  ({overhead_ms / full_ms * 100:5.1f}%)")
     print(f"  ─────────────────────────")
-    print(f"  Full step:       {full_per_step * 1000:7.1f}ms")
+    print(f"  Full step:       {full_ms:7.1f}ms")
     print()
 
-    if data_per_step * 1000 > compute_per_step:
-        ratio = data_per_step * 1000 / compute_per_step
-        print(f"  ** DATA LOADING is {ratio:.1f}x slower than compute **")
-        print(f"  ** The training loop is DATA-BOUND, not compute-bound **")
-        print(f"  ** Recommended: switch to torchvision ImageFolder or NVIDIA DALI **")
+    if data_ms > compute_ms:
+        ratio = data_ms / compute_ms
+        print(f"  ** DATA LOADING is {ratio:.1f}x slower than compute → DATA-BOUND **")
     else:
-        print(f"  Training loop is COMPUTE-BOUND — optimizations are effective")
+        ratio = compute_ms / data_ms
+        print(f"  ** COMPUTE is {ratio:.1f}x slower than data loading → COMPUTE-BOUND **")
+
+    # ── Write JSON results ───────────────────────────────────────────
+    results = {
+        "timestamp": timestamp,
+        "node": node,
+        "gpu": gpu_name,
+        "mode": mode_str,
+        "decode": f"dali-{dali_opt_str}" if dali_opt_str else ("dali" if use_dali else "cpu"),
+        "optimizer": OPTIMIZER_NAME,
+        "batch_size": BATCH_SIZE,
+        "num_workers": nw,
+        "num_steps": NUM_STEPS,
+        "prefetch_sweep": pf_results,
+        "best_prefetch_factor": best_pf,
+        "data_ms": round(data_ms, 1),
+        "data_tput": round(data_tput),
+        "compute_ms": round(compute_ms, 1),
+        "compute_tput": round(compute_tput),
+        "optim_ms": round(optim_ms, 1),
+        "full_ms": round(full_ms, 1),
+        "full_tput": round(full_tput),
+        "overhead_ms": round(overhead_ms, 1),
+        "data_pct": round(data_ms / full_ms * 100, 1),
+        "compute_pct": round(compute_ms / full_ms * 100, 1),
+    }
+
+    tracker_dir = Path("benchmarks")
+    tracker_dir.mkdir(exist_ok=True)
+    jsonl_path = tracker_dir / f"dataloader_profile_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+    with open(jsonl_path, "a") as f:
+        f.write(json.dumps(results) + "\n")
+    print(f"\n  Results appended to {jsonl_path}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Profile training pipeline bottleneck")
+    parser.add_argument("--eager", action="store_true", help="Eager mode (no torch.compile)")
+    parser.add_argument("--dali", action="store_true", help="Use NVIDIA DALI pipeline")
+    parser.add_argument("--dali-optimized", action="store_true", help="Use optimised DALI pipeline (v2)")
+    parser.add_argument("--dali-v3", action="store_true", help="Use optimised DALI pipeline v3 (bf16, CHW)")
+    parser.add_argument("--num-workers", type=int, default=14)
+    main(parser.parse_args())
