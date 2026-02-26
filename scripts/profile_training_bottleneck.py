@@ -3,10 +3,10 @@
 Measures data loading, forward, backward, and optimizer step independently
 to show where time is actually spent in the training loop.
 
-Usage:
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py --eager --num-workers 14
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py --eager --dali --num-workers 14
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py --num-workers 14          # compiled
+Usage (single-GPU):
+    PYTHONPATH=. python scripts/profile_training_bottleneck.py --dali-optimized --num-workers 12
+Usage (multi-GPU with DDP):
+    PYTHONPATH=. torchrun --nproc_per_node=8 scripts/profile_training_bottleneck.py --ddp --dali-optimized --num-workers 12
 """
 
 import argparse
@@ -18,6 +18,8 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
@@ -41,13 +43,14 @@ except ImportError:
 
 BATCH_SIZE = 256
 NUM_STEPS = 50
-HIDDEN_DIM = 384
-NUM_HEADS = 6
-NUM_BLOCKS = 12
-NUM_REGISTERS = 4
 IMAGE_SIZE = 224
 PATCH_SIZE = 16
 NUM_PATCHES = IMAGE_SIZE // PATCH_SIZE
+
+MODEL_PRESETS = {
+    "small": {"hidden_dim": 384, "num_heads": 6, "num_blocks": 12, "num_registers": 4},
+    "base":  {"hidden_dim": 768, "num_heads": 12, "num_blocks": 12, "num_registers": 4},
+}
 
 AUGMENT_CFG = AugmentConfig(use_three_augment=True, color_jitter=0.3)
 MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0,
@@ -99,7 +102,7 @@ def build_cpu_dataloader(prefetch_factor: int = 2, num_workers: int = 14):
     return dm.train_dataloader(), dm
 
 
-def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optimized: str = ""):
+def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optimized: str = "", device_id: int = 0):
     """NVIDIA DALI GPU-pipelined dataloader.
 
     Args:
@@ -112,9 +115,12 @@ def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optim
         batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, seed=42,
         image_size=IMAGE_SIZE, final_image_size=IMAGE_SIZE,
         num_classes=1000, drop_labels=False, task="classification",
-        augment_cfg=AUGMENT_CFG, device_id=0,
+        augment_cfg=AUGMENT_CFG, device_id=device_id,
     )
-    if optimized == "v3":
+    if optimized == "fused":
+        from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
+        dm = DALIImageNetFusedDataModule(**common)
+    elif optimized == "v3":
         from experiments.datamodules.dali_imagenet_optimized_v3 import DALIImageNetOptimizedV3DataModule
         dm = DALIImageNetOptimizedV3DataModule(**common)
     elif optimized == "v2":
@@ -127,9 +133,9 @@ def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optim
     return dm.train_dataloader(), dm
 
 
-def _build_loader(use_dali: bool, optimized: str = "", **kwargs):
+def _build_loader(use_dali: bool, optimized: str = "", device_id: int = 0, **kwargs):
     if use_dali:
-        return build_dali_dataloader(optimized=optimized, **kwargs)
+        return build_dali_dataloader(optimized=optimized, device_id=device_id, **kwargs)
     return build_cpu_dataloader(**kwargs)
 
 
@@ -168,17 +174,38 @@ def prepare_batch(raw_batch, dm, device, use_dali):
 
 
 def main(args):
-    device = torch.device("cuda")
+    global HIDDEN_DIM, NUM_HEADS, NUM_BLOCKS, NUM_REGISTERS
+    preset = MODEL_PRESETS[args.model_size]
+    HIDDEN_DIM = preset["hidden_dim"]
+    NUM_HEADS = preset["num_heads"]
+    NUM_BLOCKS = preset["num_blocks"]
+    NUM_REGISTERS = preset["num_registers"]
+
+    use_ddp = args.ddp
+    local_rank = 0
+    world_size = 1
+    if use_ddp:
+        dist.init_process_group(backend="nccl")
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        world_size = dist.get_world_size()
+        torch.cuda.set_device(local_rank)
+
+    device = torch.device("cuda", local_rank)
+    rank0 = local_rank == 0
     mode_str = "eager" if args.eager else "compiled"
     nw = args.num_workers
-    use_dali = args.dali or args.dali_optimized or args.dali_v3
-    if args.dali_v3:
+    use_dali = args.dali or args.dali_optimized or args.dali_v3 or args.dali_fused
+    if args.dali_fused:
+        dali_opt_str = "fused"
+    elif args.dali_v3:
         dali_opt_str = "v3"
     elif args.dali_optimized:
         dali_opt_str = "v2"
     else:
         dali_opt_str = ""
-    if dali_opt_str == "v3":
+    if dali_opt_str == "fused":
+        decode_str = "DALI-fused (augmentations in DALI pipeline)"
+    elif dali_opt_str == "v3":
         decode_str = "DALI-v3 (GPU pipelined, bf16)"
     elif dali_opt_str == "v2":
         decode_str = "DALI-optimized (GPU pipelined)"
@@ -189,48 +216,55 @@ def main(args):
     gpu_name = torch.cuda.get_device_name()
     node = os.environ.get("SLURMD_NODENAME", "unknown")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ddp_str = f"DDP x{world_size}" if use_ddp else "single-GPU"
 
-    print(f"Device: {gpu_name} (node={node})")
-    print(f"Mode: {mode_str.upper()}")
-    print(f"Decode: {decode_str}")
-    print(f"Optimizer: {OPTIMIZER_NAME}")
-    print(f"Batch size: {BATCH_SIZE}, Workers: {nw}")
-    print(f"Timestamp: {timestamp}")
-    print()
+    def log(msg=""):
+        if rank0:
+            print(msg, flush=True)
 
-    # ── 0. Prefetch factor sweep ─────────────────────────────────────
-    print("=" * 60)
-    print("PHASE 0: Prefetch factor sweep (data loading only)")
-    print("=" * 60)
+    model_size = args.model_size.upper()
+    log(f"Device: {gpu_name} (node={node})")
+    log(f"Model: ViT-5-{model_size} (dim={HIDDEN_DIM}, heads={NUM_HEADS}, blocks={NUM_BLOCKS})")
+    log(f"Mode: {mode_str.upper()}, {ddp_str}")
+    log(f"Decode: {decode_str}")
+    log(f"Optimizer: {OPTIMIZER_NAME}")
+    log(f"Batch size: {BATCH_SIZE} per GPU, Workers: {nw}")
+    log(f"Timestamp: {timestamp}")
+    log()
+
+    # ── 0. Prefetch factor sweep (rank 0 only for data benchmarks) ──
+    log("=" * 60)
+    log("PHASE 0: Prefetch factor sweep (data loading only)")
+    log("=" * 60)
     prefetch_factors = [2, 4, 8, 16]
     pf_results = {}
     best_pf, best_ms = 2, float("inf")
     for pf in prefetch_factors:
         ms, tput = bench_dataloader(pf, nw, use_dali=use_dali, optimized=dali_opt_str)
         pf_results[pf] = {"ms": round(ms, 1), "tput": round(tput)}
-        print(f"  prefetch_factor={pf:>2d}: {ms:6.1f}ms/batch, {tput:>5.0f} samples/sec")
+        log(f"  prefetch_factor={pf:>2d}: {ms:6.1f}ms/batch, {tput:>5.0f} samples/sec")
         if ms < best_ms:
             best_ms, best_pf = ms, pf
-    print(f"  >> Best: prefetch_factor={best_pf} ({best_ms:.1f}ms)")
-    print()
+    log(f"  >> Best: prefetch_factor={best_pf} ({best_ms:.1f}ms)")
+    log()
 
     # ── 1. Data loading speed ────────────────────────────────────────
-    print("=" * 60)
-    print(f"PHASE 1: Data loading speed (prefetch_factor={best_pf})")
-    print("=" * 60)
+    log("=" * 60)
+    log(f"PHASE 1: Data loading speed (prefetch_factor={best_pf})")
+    log("=" * 60)
     data_ms, data_tput = bench_dataloader(best_pf, nw, use_dali=use_dali, optimized=dali_opt_str, warmup=5)
-    print(f"  Per batch: {data_ms:.1f}ms")
-    print(f"  Throughput: {data_tput:.0f} samples/sec")
-    print()
+    log(f"  Per batch: {data_ms:.1f}ms")
+    log(f"  Throughput: {data_tput:.0f} samples/sec")
+    log()
 
-    # ── 2. Forward + backward (synthetic) ────────────────────────────
-    print("=" * 60)
-    print(f"PHASE 2: Forward + backward (synthetic, mode={mode_str})")
-    print("=" * 60)
-    model = build_model().to(device)
+    # ── 2. Forward + backward (no DDP — pure compute baseline) ───────
+    log("=" * 60)
+    log(f"PHASE 2: Forward + backward — NO DDP (synthetic, mode={mode_str})")
+    log("=" * 60)
+    raw_model = build_model().to(device)
     if not args.eager:
-        print("  Compiling with max-autotune...")
-        model = torch.compile(model, mode="max-autotune")
+        log("  Compiling with max-autotune...")
+        raw_model = torch.compile(raw_model, mode="max-autotune")
     loss_fn = nn.CrossEntropyLoss()
 
     fake_img = torch.randn(BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, 3, device=device)
@@ -238,13 +272,13 @@ def main(args):
     fake_batch = {"input": fake_img, "label": fake_lbl, "condition": None}
 
     warmup_iters = 5 if args.eager else 20
-    print(f"  Warming up ({warmup_iters} iters)...")
+    log(f"  Warming up ({warmup_iters} iters)...")
     with torch.amp.autocast("cuda", dtype=torch.bfloat16):
         for _ in range(warmup_iters):
-            out = model(fake_batch)["logits"]
+            out = raw_model(fake_batch)["logits"]
             loss = loss_fn(out, fake_lbl)
             loss.backward()
-            model.zero_grad()
+            raw_model.zero_grad()
     torch.cuda.synchronize()
 
     start_ev = torch.cuda.Event(enable_timing=True)
@@ -253,24 +287,89 @@ def main(args):
     start_ev.record()
     with torch.amp.autocast("cuda", dtype=torch.bfloat16):
         for _ in range(NUM_STEPS):
-            out = model(fake_batch)["logits"]
+            out = raw_model(fake_batch)["logits"]
             loss = loss_fn(out, fake_lbl)
             loss.backward()
-            model.zero_grad()
+            raw_model.zero_grad()
     end_ev.record()
     torch.cuda.synchronize()
 
     compute_ms_total = start_ev.elapsed_time(end_ev)
     compute_ms = compute_ms_total / NUM_STEPS
     compute_tput = BATCH_SIZE * NUM_STEPS / (compute_ms_total / 1000)
-    print(f"  Per step: {compute_ms:.1f}ms")
-    print(f"  Throughput: {compute_tput:.0f} samples/sec")
-    print()
+    log(f"  Per step: {compute_ms:.1f}ms")
+    log(f"  Throughput: {compute_tput:.0f} samples/sec")
+    log()
+
+    # ── 2b. Forward + backward WITH DDP (backward overlaps allreduce) ─
+    ddp_compute_ms = compute_ms
+    allreduce_ms = 0.0
+    if use_ddp:
+        log("=" * 60)
+        log(f"PHASE 2b: Forward + backward — WITH DDP (synthetic, mode={mode_str})")
+        log("=" * 60)
+        ddp_model = DDP(raw_model, device_ids=[local_rank])
+        log(f"  Warming up DDP ({warmup_iters} iters)...")
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            for _ in range(warmup_iters):
+                out = ddp_model(fake_batch)["logits"]
+                loss = loss_fn(out, fake_lbl)
+                loss.backward()
+                ddp_model.zero_grad()
+        torch.cuda.synchronize()
+
+        start_ev.record()
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            for _ in range(NUM_STEPS):
+                out = ddp_model(fake_batch)["logits"]
+                loss = loss_fn(out, fake_lbl)
+                loss.backward()
+                ddp_model.zero_grad()
+        end_ev.record()
+        torch.cuda.synchronize()
+
+        ddp_compute_total = start_ev.elapsed_time(end_ev)
+        ddp_compute_ms = ddp_compute_total / NUM_STEPS
+        ddp_compute_tput = BATCH_SIZE * world_size * NUM_STEPS / (ddp_compute_total / 1000)
+        log(f"  Per step (fwd+bwd+allreduce): {ddp_compute_ms:.1f}ms")
+        log(f"  Aggregate throughput: {ddp_compute_tput:.0f} samples/sec")
+        log()
+
+        # ── 2c. Allreduce only (measure raw communication cost) ──────
+        log("=" * 60)
+        log("PHASE 2c: Allreduce only (raw NCCL cost)")
+        log("=" * 60)
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            out = ddp_model(fake_batch)["logits"]
+            loss = loss_fn(out, fake_lbl)
+            loss.backward()
+        grads = [p.grad.clone() for p in ddp_model.parameters() if p.grad is not None]
+        ddp_model.zero_grad()
+        torch.cuda.synchronize()
+
+        start_ev.record()
+        for _ in range(NUM_STEPS):
+            for g in grads:
+                dist.all_reduce(g, op=dist.ReduceOp.AVG)
+        end_ev.record()
+        torch.cuda.synchronize()
+
+        ar_total = start_ev.elapsed_time(end_ev)
+        allreduce_ms = ar_total / NUM_STEPS
+        overlap_ms = compute_ms + allreduce_ms - ddp_compute_ms
+        log(f"  Per step (all params): {allreduce_ms:.1f}ms")
+        log(f"  Overlap with backward: {overlap_ms:.1f}ms "
+            f"({overlap_ms / allreduce_ms * 100:.0f}% of allreduce hidden)" if allreduce_ms > 0 else "")
+        log()
+
+        model = ddp_model
+    else:
+        model = raw_model
 
     # ── 3. Optimizer step ────────────────────────────────────────────
-    print("=" * 60)
-    print(f"PHASE 3: Optimizer step ({OPTIMIZER_NAME})")
-    print("=" * 60)
+    log("=" * 60)
+    log(f"PHASE 3: Optimizer step ({OPTIMIZER_NAME})")
+    log("=" * 60)
     optimizer = Lamb(model.parameters(), lr=4e-3, weight_decay=0.05)
 
     with torch.amp.autocast("cuda", dtype=torch.bfloat16):
@@ -287,21 +386,22 @@ def main(args):
 
     optim_ms_total = start_ev.elapsed_time(end_ev)
     optim_ms = optim_ms_total / NUM_STEPS
-    print(f"  Per step: {optim_ms:.1f}ms")
-    print()
+    log(f"  Per step: {optim_ms:.1f}ms")
+    log()
 
     # ── 4. Full training step ────────────────────────────────────────
-    print("=" * 60)
-    print(f"PHASE 4: Full training step (data + compute + optimizer, decode={decode_str})")
-    print("=" * 60)
-    loader, dm = _build_loader(use_dali, optimized=dali_opt_str, prefetch_factor=best_pf, num_workers=nw)
+    log("=" * 60)
+    log(f"PHASE 4: Full training step (data + compute + optimizer, decode={decode_str})")
+    log("=" * 60)
+    loader, dm = _build_loader(
+        use_dali, optimized=dali_opt_str, device_id=local_rank,
+        prefetch_factor=best_pf, num_workers=nw,
+    )
     dm.trainer = type("_Mock", (), {"training": True})()
 
     it = iter(loader)
-    # Warmup: run enough iterations to let torch.compile finish compiling
-    # the augmentation pipeline AND the model with real data
     full_warmup = 20
-    print(f"  Warming up full pipeline ({full_warmup} iters)...")
+    log(f"  Warming up full pipeline ({full_warmup} iters)...")
     for _ in range(full_warmup):
         batch = prepare_batch(next(it), dm, device, use_dali)
         optimizer.zero_grad()
@@ -312,6 +412,8 @@ def main(args):
         optimizer.step()
 
     torch.cuda.synchronize()
+    if use_ddp:
+        dist.barrier()
     t0 = time.perf_counter()
     for _ in range(NUM_STEPS):
         batch = prepare_batch(next(it), dm, device, use_dali)
@@ -325,61 +427,80 @@ def main(args):
     full_time = time.perf_counter() - t0
     full_ms = full_time / NUM_STEPS * 1000
     full_tput = BATCH_SIZE * NUM_STEPS / full_time
-    print(f"  Per step: {full_ms:.1f}ms")
-    print(f"  Throughput: {full_tput:.0f} samples/sec")
-    print()
+    agg_tput = full_tput * world_size
+    log(f"  Per step: {full_ms:.1f}ms")
+    log(f"  Per-GPU throughput: {full_tput:.0f} samples/sec")
+    if use_ddp:
+        log(f"  Aggregate throughput: {agg_tput:.0f} samples/sec ({world_size} GPUs)")
+    log()
 
     # ── Summary ──────────────────────────────────────────────────────
-    overhead_ms = full_ms - data_ms - compute_ms - optim_ms
-    print("=" * 60)
-    print("SUMMARY (per step)")
-    print("=" * 60)
-    print(f"  Data loading:    {data_ms:7.1f}ms  ({data_ms / full_ms * 100:5.1f}%)")
-    print(f"  Forward+backward:{compute_ms:7.1f}ms  ({compute_ms / full_ms * 100:5.1f}%)")
-    print(f"  Optimizer step:  {optim_ms:7.1f}ms  ({optim_ms / full_ms * 100:5.1f}%)")
-    print(f"  Other overhead:  {overhead_ms:7.1f}ms  ({overhead_ms / full_ms * 100:5.1f}%)")
-    print(f"  ─────────────────────────")
-    print(f"  Full step:       {full_ms:7.1f}ms")
-    print()
+    effective_compute = ddp_compute_ms if use_ddp else compute_ms
+    overhead_ms = full_ms - data_ms - effective_compute - optim_ms
+    log("=" * 60)
+    log("SUMMARY (per step)")
+    log("=" * 60)
+    log(f"  Data loading:       {data_ms:7.1f}ms  ({data_ms / full_ms * 100:5.1f}%)")
+    log(f"  Fwd+bwd (no DDP):   {compute_ms:7.1f}ms  ({compute_ms / full_ms * 100:5.1f}%)")
+    if use_ddp:
+        log(f"  Allreduce (raw):    {allreduce_ms:7.1f}ms  ({allreduce_ms / full_ms * 100:5.1f}%)")
+        log(f"  Fwd+bwd+AR (DDP):  {ddp_compute_ms:7.1f}ms  ({ddp_compute_ms / full_ms * 100:5.1f}%)")
+        overlap_ms = compute_ms + allreduce_ms - ddp_compute_ms
+        log(f"  AR overlap w/ bwd: {overlap_ms:7.1f}ms  ({overlap_ms / allreduce_ms * 100:.0f}% hidden)" if allreduce_ms > 0 else "")
+    log(f"  Optimizer step:     {optim_ms:7.1f}ms  ({optim_ms / full_ms * 100:5.1f}%)")
+    log(f"  Other overhead:     {overhead_ms:7.1f}ms  ({overhead_ms / full_ms * 100:5.1f}%)")
+    log(f"  ─────────────────────────")
+    log(f"  Full step:          {full_ms:7.1f}ms")
+    log()
 
-    if data_ms > compute_ms:
-        ratio = data_ms / compute_ms
-        print(f"  ** DATA LOADING is {ratio:.1f}x slower than compute → DATA-BOUND **")
+    if data_ms > effective_compute:
+        ratio = data_ms / effective_compute
+        log(f"  ** DATA LOADING is {ratio:.1f}x slower than compute -> DATA-BOUND **")
     else:
-        ratio = compute_ms / data_ms
-        print(f"  ** COMPUTE is {ratio:.1f}x slower than data loading → COMPUTE-BOUND **")
+        ratio = effective_compute / data_ms
+        log(f"  ** COMPUTE is {ratio:.1f}x slower than data loading -> COMPUTE-BOUND **")
 
     # ── Write JSON results ───────────────────────────────────────────
-    results = {
-        "timestamp": timestamp,
-        "node": node,
-        "gpu": gpu_name,
-        "mode": mode_str,
-        "decode": f"dali-{dali_opt_str}" if dali_opt_str else ("dali" if use_dali else "cpu"),
-        "optimizer": OPTIMIZER_NAME,
-        "batch_size": BATCH_SIZE,
-        "num_workers": nw,
-        "num_steps": NUM_STEPS,
-        "prefetch_sweep": pf_results,
-        "best_prefetch_factor": best_pf,
-        "data_ms": round(data_ms, 1),
-        "data_tput": round(data_tput),
-        "compute_ms": round(compute_ms, 1),
-        "compute_tput": round(compute_tput),
-        "optim_ms": round(optim_ms, 1),
-        "full_ms": round(full_ms, 1),
-        "full_tput": round(full_tput),
-        "overhead_ms": round(overhead_ms, 1),
-        "data_pct": round(data_ms / full_ms * 100, 1),
-        "compute_pct": round(compute_ms / full_ms * 100, 1),
-    }
+    if rank0:
+        results = {
+            "timestamp": timestamp,
+            "node": node,
+            "gpu": gpu_name,
+            "model_size": args.model_size,
+            "hidden_dim": HIDDEN_DIM,
+            "mode": mode_str,
+            "ddp": use_ddp,
+            "world_size": world_size,
+            "decode": f"dali-{dali_opt_str}" if dali_opt_str else ("dali" if use_dali else "cpu"),
+            "optimizer": OPTIMIZER_NAME,
+            "batch_size": BATCH_SIZE,
+            "num_workers": nw,
+            "num_steps": NUM_STEPS,
+            "prefetch_sweep": pf_results,
+            "best_prefetch_factor": best_pf,
+            "data_ms": round(data_ms, 1),
+            "data_tput": round(data_tput),
+            "compute_no_ddp_ms": round(compute_ms, 1),
+            "compute_ddp_ms": round(ddp_compute_ms, 1),
+            "allreduce_ms": round(allreduce_ms, 1),
+            "optim_ms": round(optim_ms, 1),
+            "full_ms": round(full_ms, 1),
+            "full_tput": round(full_tput),
+            "agg_tput": round(agg_tput),
+            "overhead_ms": round(overhead_ms, 1),
+            "data_pct": round(data_ms / full_ms * 100, 1),
+            "compute_pct": round(effective_compute / full_ms * 100, 1),
+        }
 
-    tracker_dir = Path("benchmarks")
-    tracker_dir.mkdir(exist_ok=True)
-    jsonl_path = tracker_dir / f"dataloader_profile_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
-    with open(jsonl_path, "a") as f:
-        f.write(json.dumps(results) + "\n")
-    print(f"\n  Results appended to {jsonl_path}")
+        tracker_dir = Path("benchmarks")
+        tracker_dir.mkdir(exist_ok=True)
+        jsonl_path = tracker_dir / f"dataloader_profile_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
+        with open(jsonl_path, "a") as f:
+            f.write(json.dumps(results) + "\n")
+        log(f"\n  Results appended to {jsonl_path}")
+
+    if use_ddp:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
@@ -388,5 +509,9 @@ if __name__ == "__main__":
     parser.add_argument("--dali", action="store_true", help="Use NVIDIA DALI pipeline")
     parser.add_argument("--dali-optimized", action="store_true", help="Use optimised DALI pipeline (v2)")
     parser.add_argument("--dali-v3", action="store_true", help="Use optimised DALI pipeline v3 (bf16, CHW)")
+    parser.add_argument("--dali-fused", action="store_true", help="Use fully-fused DALI pipeline (augmentations in DALI)")
+    parser.add_argument("--ddp", action="store_true", help="Run with DDP across all visible GPUs")
     parser.add_argument("--num-workers", type=int, default=14)
+    parser.add_argument("--model-size", choices=["small", "base"], default="small",
+                        help="Model size: small (384d/6h) or base (768d/12h)")
     main(parser.parse_args())

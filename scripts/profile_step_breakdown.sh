@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=profile-bottleneck
+#SBATCH --job-name=step-breakdown
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
@@ -11,8 +11,8 @@
 #SBATCH --container-writable
 #SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch"
 #SBATCH --container-workdir=/home/dwromero/projects/nvSubquadratic-private
-#SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/profile_bottleneck_%j.out
-#SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/profile_bottleneck_%j.err
+#SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/step_breakdown_%j.out
+#SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/step_breakdown_%j.err
 
 set -eo pipefail
 set -a
@@ -29,15 +29,21 @@ conda activate nv-subq
 
 cd /home/dwromero/projects/nvSubquadratic-private
 
-# Triton autotuning needs ldconfig; create symlink if missing in container
-if [ ! -f /sbin/ldconfig ] && command -v ldconfig &>/dev/null; then
-    mkdir -p /sbin && ln -sf "$(command -v ldconfig)" /sbin/ldconfig
+# Triton autotuning needs ldconfig; create symlink or stub if missing
+if [ ! -f /sbin/ldconfig ]; then
+    mkdir -p /sbin 2>/dev/null || true
+    LDCONFIG_PATH=$(which ldconfig 2>/dev/null || true)
+    if [ -n "$LDCONFIG_PATH" ]; then
+        ln -sf "$LDCONFIG_PATH" /sbin/ldconfig 2>/dev/null || true
+    else
+        printf '#!/bin/sh\n' > /sbin/ldconfig 2>/dev/null && chmod +x /sbin/ldconfig 2>/dev/null || true
+    fi
 fi
 
 NGPUS=$(nvidia-smi -L | wc -l)
 
 if echo "$@" | grep -q -- "--ddp"; then
-    PYTHONPATH=. torchrun --nproc_per_node="$NGPUS" scripts/profile_training_bottleneck.py "$@"
+    PYTHONPATH=. torchrun --nproc_per_node="$NGPUS" scripts/profile_step_breakdown.py "$@"
 else
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py "$@"
+    PYTHONPATH=. python scripts/profile_step_breakdown.py "$@"
 fi
