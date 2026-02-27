@@ -15,8 +15,8 @@ import os
 
 import torch
 
-from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig

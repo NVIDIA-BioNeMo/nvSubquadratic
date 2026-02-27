@@ -42,6 +42,7 @@ from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 from nvsubquadratic.utils.qk_norm import L2Norm
 
+
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
 NUM_CLASSES = 1000

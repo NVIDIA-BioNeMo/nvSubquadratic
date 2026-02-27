@@ -46,6 +46,7 @@ from nvsubquadratic.utils.qk_norm import L2Norm
 =======
 >>>>>>> a999d36 (Added support for RMSNorm in QK normalization.)
 
+
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
