@@ -216,6 +216,7 @@ def get_config() -> ExperimentConfig:
     config.trainer = TrainerConfig(
         check_val_every_n_epoch=4,
         checkpoint_every_n_steps=5000,
+        find_unused_parameters=True,
     )
 
     # ─── Scheduler ──────────────────────────────────────────────────────────

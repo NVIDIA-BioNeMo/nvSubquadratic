@@ -52,6 +52,10 @@ class TrainerConfig:
     # Set to False to disable WandbSelectiveCheckpointUploader and WandbCacheCleanupCallback.
     # Local ModelCheckpoint saving is unaffected by this flag.
     wandb_checkpoint_upload: bool = True
+    
+    # Enable DDP find_unused_parameters (required when some model parameters
+    # are not part of every forward pass, e.g. multi-head CKConv variants).
+    find_unused_parameters: bool = False
 
 
 @dataclass
