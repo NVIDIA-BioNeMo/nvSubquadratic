@@ -59,7 +59,7 @@ repos:
             --check-dirs,
             tests/,
             --check-dirs,
-            examples/,
+            configs/,
           ]
         pass_filenames: false
         always_run: false

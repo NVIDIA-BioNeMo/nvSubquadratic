@@ -276,7 +276,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=str,
-        default="examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py",
+        default="configs/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py",
         help="Path to the ImageNet diffusion config file.",
     )
     parser.add_argument(

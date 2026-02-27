@@ -6,7 +6,7 @@
 
 Usage:
     # MNIST classification
-    PYTHONPATH=. python nvsubq_paper/examples/run.py --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
+    PYTHONPATH=. python nvsubq_paper/configs/run.py --config configs/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
 """
 
 import argparse

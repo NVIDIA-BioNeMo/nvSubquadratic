@@ -27,7 +27,7 @@ CONTAINER_RESULTS="/workspace/results"
 # ============================================================================
 TIME_LIMIT_HOURS=4
 EXPERIMENT_NAME="imagenet64_hyena_baseline_multinode"  # Give your experiment a meaningful name
-CONFIG_FILE="examples/imagenet_classification/ccnn_7_512_hyena.py"
+CONFIG_FILE="configs/imagenet_classification/ccnn_7_512_hyena.py"
 CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"  # e.g., "train.iterations=100000 dataset.batch_size=32"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
 
