@@ -17,12 +17,11 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-import torch.distributed as dist
 import torch.nn as nn
+import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
-from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -30,17 +29,14 @@ from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 
-
 os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
 try:
     from apex.optimizers import FusedLAMB as Lamb
-
     OPTIMIZER_NAME = "Apex FusedLAMB"
 except ImportError:
     from torch_optimizer import Lamb
-
     OPTIMIZER_NAME = "torch_optimizer.Lamb"
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -53,47 +49,36 @@ NUM_PATCHES = IMAGE_SIZE // PATCH_SIZE
 
 MODEL_PRESETS = {
     "small": {"hidden_dim": 384, "num_heads": 6, "num_blocks": 12, "num_registers": 4},
-    "base": {"hidden_dim": 768, "num_heads": 12, "num_blocks": 12, "num_registers": 4},
+    "base":  {"hidden_dim": 768, "num_heads": 12, "num_blocks": 12, "num_registers": 4},
 }
 
 AUGMENT_CFG = AugmentConfig(use_three_augment=True, color_jitter=0.3)
-MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob=0.5, smoothing=0.0)
+MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0,
+                         mixup_switch_prob=0.5, smoothing=0.0)
 
 # ── Builders ─────────────────────────────────────────────────────────────────
 
 
 def build_model():
-    """Instantiate a ViT-5-Small model for benchmarking."""
     net_cfg = LazyConfig(ViT5ClassificationNet)(
-        in_channels=3,
-        num_classes=1000,
-        hidden_dim=HIDDEN_DIM,
-        num_blocks=NUM_BLOCKS,
-        patch_size=PATCH_SIZE,
-        image_size=IMAGE_SIZE,
-        num_registers=NUM_REGISTERS,
-        dropout_rate=0.0,
+        in_channels=3, num_classes=1000, hidden_dim=HIDDEN_DIM,
+        num_blocks=NUM_BLOCKS, patch_size=PATCH_SIZE, image_size=IMAGE_SIZE,
+        num_registers=NUM_REGISTERS, dropout_rate=0.0,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
-                hidden_dim=HIDDEN_DIM,
-                num_heads=NUM_HEADS,
-                num_patches_h=NUM_PATCHES,
-                num_patches_w=NUM_PATCHES,
+                hidden_dim=HIDDEN_DIM, num_heads=NUM_HEADS,
+                num_patches_h=NUM_PATCHES, num_patches_w=NUM_PATCHES,
                 num_registers=NUM_REGISTERS,
                 qk_norm=LazyConfig(RMSNorm)(dim=HIDDEN_DIM // NUM_HEADS, eps=1e-6),
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
-                dim=HIDDEN_DIM,
-                activation="gelu",
-                expansion_factor=4.0,
+                dim=HIDDEN_DIM, activation="gelu", expansion_factor=4.0,
                 dropout_cfg=LazyConfig(nn.Dropout)(p=0.0),
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
-            hidden_dim=HIDDEN_DIM,
-            layer_scale_init=1e-4,
-            drop_path_rate=0.05,
+            hidden_dim=HIDDEN_DIM, layer_scale_init=1e-4, drop_path_rate=0.05,
         ),
     )
     return instantiate(net_cfg)
@@ -105,21 +90,12 @@ def build_cpu_dataloader(prefetch_factor: int = 2, num_workers: int = 14):
         data_dir=os.environ["IMAGENET_PATH"],
         imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
         prefetch_factor=prefetch_factor,
-        batch_size=BATCH_SIZE,
-        num_workers=num_workers,
-        pin_memory=True,
-        seed=42,
-        image_size=IMAGE_SIZE,
-        final_image_size=IMAGE_SIZE,
-        center_crop=True,
-        num_classes=1000,
-        drop_labels=False,
-        hf_dataset_name="ILSVRC/imagenet-1k",
-        hf_dataset_config=None,
-        hf_auth_token=os.environ.get("HF_TOKEN"),
-        task="classification",
-        mixup_cfg=MIXUP_CFG,
-        augment_cfg=AUGMENT_CFG,
+        batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, seed=42,
+        image_size=IMAGE_SIZE, final_image_size=IMAGE_SIZE,
+        center_crop=True, num_classes=1000, drop_labels=False,
+        hf_dataset_name="ILSVRC/imagenet-1k", hf_dataset_config=None,
+        hf_auth_token=os.environ.get("HF_TOKEN"), task="classification",
+        mixup_cfg=MIXUP_CFG, augment_cfg=AUGMENT_CFG,
     )
     dm.prepare_data()
     dm.setup("fit")
@@ -130,38 +106,25 @@ def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optim
     """NVIDIA DALI GPU-pipelined dataloader.
 
     Args:
-        prefetch_factor: Number of batches to prefetch.
-        num_workers: Number of data loading workers.
         optimized: "" for original DALI, "v2" for optimised, "v3" for v3.
-        device_id: CUDA device index.
     """
-    common = {
-        "data_dir": os.environ["IMAGENET_PATH"],
-        "imagefolder_dir": os.environ.get("IMAGENET_FOLDER_PATH"),
-        "prefetch_factor": prefetch_factor,
-        "batch_size": BATCH_SIZE,
-        "num_workers": num_workers,
-        "pin_memory": True,
-        "seed": 42,
-        "image_size": IMAGE_SIZE,
-        "final_image_size": IMAGE_SIZE,
-        "num_classes": 1000,
-        "drop_labels": False,
-        "task": "classification",
-        "augment_cfg": AUGMENT_CFG,
-        "device_id": device_id,
-    }
+    common = dict(
+        data_dir=os.environ["IMAGENET_PATH"],
+        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
+        prefetch_factor=prefetch_factor,
+        batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, seed=42,
+        image_size=IMAGE_SIZE, final_image_size=IMAGE_SIZE,
+        num_classes=1000, drop_labels=False, task="classification",
+        augment_cfg=AUGMENT_CFG, device_id=device_id,
+    )
     if optimized == "fused":
         from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
-
         dm = DALIImageNetFusedDataModule(**common)
     elif optimized == "v2":
         from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
-
         dm = DALIImageNetOptimizedDataModule(**common)
     else:
         from experiments.datamodules._deprecated.dali_imagenet import DALIImageNetDataModule
-
         dm = DALIImageNetDataModule(**common)
     dm.setup("fit")
     return dm.train_dataloader(), dm
@@ -178,7 +141,7 @@ def _build_loader(use_dali: bool, optimized: str = "", device_id: int = 0, **kwa
 
 def bench_dataloader(prefetch_factor, num_workers, use_dali=False, optimized=False, warmup=5):
     """Benchmark pure data loading for a single (prefetch, workers) combo."""
-    loader, _ = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
+    loader, dm = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
     it = iter(loader)
     for _ in range(warmup):
         next(it)
@@ -208,7 +171,6 @@ def prepare_batch(raw_batch, dm, device, use_dali):
 
 
 def main(args):
-    """Run the bottleneck profiling session."""
     global HIDDEN_DIM, NUM_HEADS, NUM_BLOCKS, NUM_REGISTERS
     preset = MODEL_PRESETS[args.model_size]
     HIDDEN_DIM = preset["hidden_dim"]
@@ -393,11 +355,8 @@ def main(args):
         allreduce_ms = ar_total / NUM_STEPS
         overlap_ms = compute_ms + allreduce_ms - ddp_compute_ms
         log(f"  Per step (all params): {allreduce_ms:.1f}ms")
-        log(
-            f"  Overlap with backward: {overlap_ms:.1f}ms ({overlap_ms / allreduce_ms * 100:.0f}% of allreduce hidden)"
-            if allreduce_ms > 0
-            else ""
-        )
+        log(f"  Overlap with backward: {overlap_ms:.1f}ms "
+            f"({overlap_ms / allreduce_ms * 100:.0f}% of allreduce hidden)" if allreduce_ms > 0 else "")
         log()
 
         model = ddp_model
@@ -432,11 +391,8 @@ def main(args):
     log(f"PHASE 4: Full training step (data + compute + optimizer, decode={decode_str})")
     log("=" * 60)
     loader, dm = _build_loader(
-        use_dali,
-        optimized=dali_opt_str,
-        device_id=local_rank,
-        prefetch_factor=best_pf,
-        num_workers=nw,
+        use_dali, optimized=dali_opt_str, device_id=local_rank,
+        prefetch_factor=best_pf, num_workers=nw,
     )
     dm.trainer = type("_Mock", (), {"training": True})()
 
@@ -487,14 +443,10 @@ def main(args):
         log(f"  Allreduce (raw):    {allreduce_ms:7.1f}ms  ({allreduce_ms / full_ms * 100:5.1f}%)")
         log(f"  Fwd+bwd+AR (DDP):  {ddp_compute_ms:7.1f}ms  ({ddp_compute_ms / full_ms * 100:5.1f}%)")
         overlap_ms = compute_ms + allreduce_ms - ddp_compute_ms
-        log(
-            f"  AR overlap w/ bwd: {overlap_ms:7.1f}ms  ({overlap_ms / allreduce_ms * 100:.0f}% hidden)"
-            if allreduce_ms > 0
-            else ""
-        )
+        log(f"  AR overlap w/ bwd: {overlap_ms:7.1f}ms  ({overlap_ms / allreduce_ms * 100:.0f}% hidden)" if allreduce_ms > 0 else "")
     log(f"  Optimizer step:     {optim_ms:7.1f}ms  ({optim_ms / full_ms * 100:5.1f}%)")
     log(f"  Other overhead:     {overhead_ms:7.1f}ms  ({overhead_ms / full_ms * 100:5.1f}%)")
-    log("  ─────────────────────────")
+    log(f"  ─────────────────────────")
     log(f"  Full step:          {full_ms:7.1f}ms")
     log()
 
@@ -554,15 +506,9 @@ if __name__ == "__main__":
     parser.add_argument("--dali", action="store_true", help="Use NVIDIA DALI pipeline")
     parser.add_argument("--dali-optimized", action="store_true", help="Use optimised DALI pipeline (v2)")
     parser.add_argument("--dali-v3", action="store_true", help="Use optimised DALI pipeline v3 (bf16, CHW)")
-    parser.add_argument(
-        "--dali-fused", action="store_true", help="Use fully-fused DALI pipeline (augmentations in DALI)"
-    )
+    parser.add_argument("--dali-fused", action="store_true", help="Use fully-fused DALI pipeline (augmentations in DALI)")
     parser.add_argument("--ddp", action="store_true", help="Run with DDP across all visible GPUs")
     parser.add_argument("--num-workers", type=int, default=14)
-    parser.add_argument(
-        "--model-size",
-        choices=["small", "base"],
-        default="small",
-        help="Model size: small (384d/6h) or base (768d/12h)",
-    )
+    parser.add_argument("--model-size", choices=["small", "base"], default="small",
+                        help="Model size: small (384d/6h) or base (768d/12h)")
     main(parser.parse_args())

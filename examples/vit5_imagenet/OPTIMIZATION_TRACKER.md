@@ -208,12 +208,12 @@ Fine-grained profiling with `torch.cuda.synchronize()` between each phase to mea
 | `experiments/datamodules/dali_imagenet_optimized.py` | Optimized DALI datamodule (v2 + local staging) |
 | `experiments/datamodules/dali_imagenet_optimized_v3.py` | v3 experiments (bf16, single compiled fn) |
 | `experiments/datamodules/dali_imagenet_fused.py` | Fused DALI datamodule (all augments in pipeline) |
-| `scripts/profile_training_bottleneck.py` | Single-GPU component profiling |
-| `scripts/profile_step_breakdown.py` | Per-phase step breakdown (CUDA events + wall-clock) |
+| `benchmarks/vit5_imagenet/profile_training_bottleneck.py` | Single-GPU component profiling |
+| `benchmarks/vit5_imagenet/profile_step_breakdown.py` | Per-phase step breakdown (CUDA events + wall-clock) |
 | `scripts/stage_imagenet.sh` | SLURM job to pre-stage ImageNet on all nodes |
-| `benchmarks/dataloader_profile_2026-02-25.jsonl` | Raw profiling data (JSON lines) |
-| `benchmarks/dataloader_profile_2026-02-26.jsonl` | Profiling data incl. fused DALI |
-| `benchmarks/step_breakdown_2026-02-26.jsonl` | Per-phase step breakdown data |
+| `benchmarks/vit5_imagenet/dataloader_profile_2026-02-25.jsonl` | Raw profiling data (JSON lines) |
+| `benchmarks/vit5_imagenet/dataloader_profile_2026-02-26.jsonl` | Profiling data incl. fused DALI |
+| `benchmarks/vit5_imagenet/step_breakdown_2026-02-26.jsonl` | Per-phase step breakdown data |
 
 ---
 
