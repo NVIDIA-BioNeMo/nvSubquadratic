@@ -12,8 +12,8 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenette_datamodule import ImagenetteDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.imagenette_datamodule import ImagenetteDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig

@@ -17,14 +17,23 @@ import os
 import torch
 
 from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
-from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
+from experiments.default_cfg import (
+    AutoResumeConfig,
+    ExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    TrainerConfig,
+    WandbConfig,
+)
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+
 
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
     import warnings
+
     warnings.warn(
         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
@@ -43,6 +52,7 @@ from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 from nvsubquadratic.utils.qk_norm import L2Norm
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -146,7 +156,7 @@ def get_config() -> ExperimentConfig:
                     omega_0=KERNEL_OMEGA_0,
                     L_cache=NUM_PATCHES_H + 1,  # 15: grid is (H'+1)×W' due to the extra CLS row.
                     # L_cache must not be modified during training for torch.compile(mode="max-autotune") to work.
-                    # With 14, the grid cache would be constructed for 14×14 grids instead of 15×14, which 
+                    # With 14, the grid cache would be constructed for 14×14 grids instead of 15×14, which
                     # would trigger a modification of the grid_cache number of elements, leading to errors.
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,

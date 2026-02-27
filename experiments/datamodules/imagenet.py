@@ -6,10 +6,11 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
-from torch.utils.data import DataLoader, Dataset
-from torchvision import datasets as tv_datasets, transforms
-from torchvision.transforms import InterpolationMode
 from timm.data.auto_augment import rand_augment_transform
+from torch.utils.data import DataLoader, Dataset
+from torchvision import datasets as tv_datasets
+from torchvision import transforms
+from torchvision.transforms import InterpolationMode
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -98,6 +99,7 @@ class _ImageNetDataset(Dataset):
         self.drop_labels = drop_labels
 
         from datasets import load_dataset
+
         self.dataset = load_dataset(
             path=dataset_name,
             name=dataset_config,
@@ -299,6 +301,7 @@ class ImageNetDataModule(pl.LightningDataModule):
             return
 
         from datasets import load_dataset
+
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,

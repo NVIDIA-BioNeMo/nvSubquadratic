@@ -13,16 +13,18 @@ import time
 import torch
 import torch.nn as nn
 
+
 os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
-from experiments.datamodules.imagenet import ImageNetDataModule, MixupConfig, AugmentConfig
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
-from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
 
 BATCH_SIZE = 256
 NUM_STEPS = 50
@@ -32,29 +34,40 @@ NUM_BLOCKS = 12
 NUM_REGISTERS = 4
 IMAGE_SIZE = 224
 PATCH_SIZE = 16
-NUM_PATCHES = (IMAGE_SIZE // PATCH_SIZE)
+NUM_PATCHES = IMAGE_SIZE // PATCH_SIZE
 
 
 def build_model():
     net_cfg = LazyConfig(ViT5ClassificationNet)(
-        in_channels=3, num_classes=1000, hidden_dim=HIDDEN_DIM,
-        num_blocks=NUM_BLOCKS, patch_size=PATCH_SIZE, image_size=IMAGE_SIZE,
-        num_registers=NUM_REGISTERS, dropout_rate=0.0,
+        in_channels=3,
+        num_classes=1000,
+        hidden_dim=HIDDEN_DIM,
+        num_blocks=NUM_BLOCKS,
+        patch_size=PATCH_SIZE,
+        image_size=IMAGE_SIZE,
+        num_registers=NUM_REGISTERS,
+        dropout_rate=0.0,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
-                hidden_dim=HIDDEN_DIM, num_heads=NUM_HEADS,
-                num_patches_h=NUM_PATCHES, num_patches_w=NUM_PATCHES,
+                hidden_dim=HIDDEN_DIM,
+                num_heads=NUM_HEADS,
+                num_patches_h=NUM_PATCHES,
+                num_patches_w=NUM_PATCHES,
                 num_registers=NUM_REGISTERS,
                 qk_norm=LazyConfig(RMSNorm)(dim=HIDDEN_DIM // NUM_HEADS, eps=1e-6),
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
-                dim=HIDDEN_DIM, activation="gelu", expansion_factor=4.0,
+                dim=HIDDEN_DIM,
+                activation="gelu",
+                expansion_factor=4.0,
                 dropout_cfg=LazyConfig(nn.Dropout)(p=0.0),
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
-            hidden_dim=HIDDEN_DIM, layer_scale_init=1e-4, drop_path_rate=0.05,
+            hidden_dim=HIDDEN_DIM,
+            layer_scale_init=1e-4,
+            drop_path_rate=0.05,
         ),
     )
     return instantiate(net_cfg)
@@ -66,13 +79,20 @@ def build_dataloader(prefetch_factor: int = 4):
         data_dir=os.environ["IMAGENET_PATH"],
         imagefolder_dir=folder_path,
         prefetch_factor=prefetch_factor,
-        batch_size=BATCH_SIZE, num_workers=16, pin_memory=True, seed=42,
-        image_size=IMAGE_SIZE, final_image_size=IMAGE_SIZE,
-        center_crop=True, num_classes=1000, drop_labels=False,
-        hf_dataset_name="ILSVRC/imagenet-1k", hf_dataset_config=None,
-        hf_auth_token=os.environ.get("HF_TOKEN"), task="classification",
-        mixup_cfg=MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0,
-                              mixup_switch_prob=0.5, smoothing=0.0),
+        batch_size=BATCH_SIZE,
+        num_workers=16,
+        pin_memory=True,
+        seed=42,
+        image_size=IMAGE_SIZE,
+        final_image_size=IMAGE_SIZE,
+        center_crop=True,
+        num_classes=1000,
+        drop_labels=False,
+        hf_dataset_name="ILSVRC/imagenet-1k",
+        hf_dataset_config=None,
+        hf_auth_token=os.environ.get("HF_TOKEN"),
+        task="classification",
+        mixup_cfg=MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob=0.5, smoothing=0.0),
         augment_cfg=AugmentConfig(use_three_augment=True, color_jitter=0.3),
     )
     dm.prepare_data()
@@ -177,6 +197,7 @@ def main():
     print("PHASE 3: Optimizer step timing")
     print("=" * 60)
     from torch_optimizer import Lamb
+
     optimizer = Lamb(model.parameters(), lr=4e-3, weight_decay=0.05)
 
     # Run one forward-backward to have gradients
@@ -235,17 +256,17 @@ def main():
     print(f"  Optimizer step:  {optim_per_step:7.1f}ms  ({optim_per_step / 1000 / full_per_step * 100:5.1f}%)")
     overhead = full_per_step * 1000 - data_per_step * 1000 - compute_per_step - optim_per_step
     print(f"  Other overhead:  {overhead:7.1f}ms  ({overhead / (full_per_step * 1000) * 100:5.1f}%)")
-    print(f"  ─────────────────────────")
+    print("  ─────────────────────────")
     print(f"  Full step:       {full_per_step * 1000:7.1f}ms")
     print()
 
     if data_per_step * 1000 > compute_per_step:
         ratio = data_per_step * 1000 / compute_per_step
         print(f"  ** DATA LOADING is {ratio:.1f}x slower than compute **")
-        print(f"  ** The training loop is DATA-BOUND, not compute-bound **")
-        print(f"  ** Recommended: switch to torchvision ImageFolder or NVIDIA DALI **")
+        print("  ** The training loop is DATA-BOUND, not compute-bound **")
+        print("  ** Recommended: switch to torchvision ImageFolder or NVIDIA DALI **")
     else:
-        print(f"  Training loop is COMPUTE-BOUND — optimizations are effective")
+        print("  Training loop is COMPUTE-BOUND — optimizations are effective")
 
 
 if __name__ == "__main__":

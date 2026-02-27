@@ -7,10 +7,12 @@ pure-PyTorch fallback for CPU / environments without QuACK.
 import torch
 import torch.nn as nn
 
+
 try:
     from quack import rmsnorm as _quack_rmsnorm
 except ImportError:
     import warnings
+
     warnings.warn(
         "quack.rmsnorm not found — falling back to pure-PyTorch RMSNorm. "
         "Install QuACK for a fused Triton RMSNorm kernel.",
@@ -23,12 +25,14 @@ class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization."""
 
     def __init__(self, dim: int, eps: float = 1e-6):
+        """Initialize RMSNorm."""
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.weight._no_weight_decay = True
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         if _quack_rmsnorm is not None and x.is_cuda:
             return _quack_rmsnorm(x, self.weight, eps=self.eps)
         input_dtype = x.dtype

@@ -223,6 +223,7 @@ class LightningWrapperBase(pl.LightningModule):
             model_keys = set(self.state_dict().keys())
             ckpt_keys = set(state_dict.keys())
             if model_keys != ckpt_keys:
+
                 def _strip(key: str) -> str:
                     return key.replace("._orig_mod.", ".")
 

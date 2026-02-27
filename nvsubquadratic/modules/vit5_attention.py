@@ -23,7 +23,10 @@ from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 def _build_2d_rope_flat(
-    height: int, width: int, head_dim: int, rope_base: float,
+    height: int,
+    width: int,
+    head_dim: int,
+    rope_base: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Precompute flattened 2D RoPE cos/sin for a (height x width) grid.
 
@@ -61,10 +64,13 @@ def _build_2d_rope_flat(
     angles_x = angles_x.repeat_interleave(2, dim=-1)  # [W, dim_half]
 
     # Broadcast to [H, W, dim_half] each, then cat to [H, W, head_dim]
-    angles_2d = torch.cat([
-        angles_y[:, None, :].expand(height, width, dim_half),
-        angles_x[None, :, :].expand(height, width, dim_half),
-    ], dim=-1)
+    angles_2d = torch.cat(
+        [
+            angles_y[:, None, :].expand(height, width, dim_half),
+            angles_x[None, :, :].expand(height, width, dim_half),
+        ],
+        dim=-1,
+    )
 
     flat = angles_2d.reshape(height * width, head_dim)
     return flat.cos(), flat.sin()
@@ -90,8 +96,8 @@ def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
     d_quarter = d // 4
     x_y1 = x[..., :d_quarter]
     x_y2 = x[..., d_quarter:d_half]
-    x_x1 = x[..., d_half:d_half + d_quarter]
-    x_x2 = x[..., d_half + d_quarter:]
+    x_x1 = x[..., d_half : d_half + d_quarter]
+    x_x2 = x[..., d_half + d_quarter :]
     return torch.cat([-x_y2, x_y1, -x_x2, x_x1], dim=-1)
 
 
@@ -130,12 +136,13 @@ class ViT5Attention(nn.Module):
         proj_dropout: float = 0.0,
         qkv_bias: bool = False,
     ):
+        """Initialize ViT5Attention."""
         super().__init__()
         assert hidden_dim % num_heads == 0
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
         self.num_patches_h = num_patches_h
         self.num_patches_w = num_patches_w
         self.num_registers = num_registers
@@ -154,8 +161,8 @@ class ViT5Attention(nn.Module):
 
         self.rope_base = rope_base
         self.reg_rope_base = reg_rope_base
-        self.reg_rope_h = int(num_registers ** 0.5)
-        self.reg_rope_w = int(num_registers ** 0.5)
+        self.reg_rope_h = int(num_registers**0.5)
+        self.reg_rope_w = int(num_registers**0.5)
 
         # ── Precomputed RoPE cos/sin buffers ──────────────────────────────
         #
@@ -169,17 +176,23 @@ class ViT5Attention(nn.Module):
         # CLS token gets cos=1, sin=0 (identity — no positional bias).
         # Register tokens get their own high-frequency RoPE (theta=100).
         patch_cos, patch_sin = _build_2d_rope_flat(
-            num_patches_h, num_patches_w, self.head_dim, rope_base,
+            num_patches_h,
+            num_patches_w,
+            self.head_dim,
+            rope_base,
         )
 
-        parts_cos = [torch.ones(1, self.head_dim)]   # cls: cos=1 (no rotation)
-        parts_sin = [torch.zeros(1, self.head_dim)]   # cls: sin=0 (no rotation)
+        parts_cos = [torch.ones(1, self.head_dim)]  # cls: cos=1 (no rotation)
+        parts_sin = [torch.zeros(1, self.head_dim)]  # cls: sin=0 (no rotation)
         parts_cos.append(patch_cos)
         parts_sin.append(patch_sin)
 
         if num_registers > 0:
             reg_cos, reg_sin = _build_2d_rope_flat(
-                self.reg_rope_h, self.reg_rope_w, self.head_dim, reg_rope_base,
+                self.reg_rope_h,
+                self.reg_rope_w,
+                self.head_dim,
+                reg_rope_base,
             )
             parts_cos.append(reg_cos)
             parts_sin.append(reg_sin)
@@ -221,7 +234,9 @@ class ViT5Attention(nn.Module):
         v = v.transpose(1, 2)
 
         out = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             dropout_p=self.attn_dropout if self.training else 0.0,
             is_causal=False,
             scale=1.0 if self.qk_norm else self.scale,
@@ -233,6 +248,7 @@ class ViT5Attention(nn.Module):
         return out
 
     def extra_repr(self) -> str:
+        """Return a string representation of the module."""
         return (
             f"hidden_dim={self.hidden_dim}, num_heads={self.num_heads}, "
             f"qk_norm={self.qk_norm}, num_registers={self.num_registers}, "

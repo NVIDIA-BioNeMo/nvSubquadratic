@@ -131,12 +131,12 @@ ______________________________________________________________________
 
 **Goal**: Find optimal SIREN MLP hidden dimension (expressiveness vs parameters tradeoff).
 
-| #   | Experiment              | Hidden Dim | Partition    | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                  |
-| :-- | :---------------------- | :--------- | :----------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------- |
-| 3.1 | hdim = 32               | 32         | hipster/cap  | 2    | � Running    | —       | `188586` | —                                                                             | Lean kernel            |
-| 3.2 | **hdim = 64 (default)** | 64         | hipster/perf | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run) |
-| 3.3 | hdim = 128              | 128        | hipster/cap  | 2    | 🔄 Running   | 68.6%   | `187086` | [5lchthne](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5lchthne) |                        |
-| 3.4 | hdim = 256              | 256        | hipster/cap  | 2    | 🔄 Running   | 68.4%   | `187082` | [bj4d7h9m](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/bj4d7h9m) | Expensive kernel       |
+| #   | Experiment              | Hidden Dim | Partition    | GPUs | Status             | Val Acc | Job ID   | WandB                                                                         | Notes                  |
+| :-- | :---------------------- | :--------- | :----------- | :--- | :----------------- | :------ | :------- | :---------------------------------------------------------------------------- | :--------------------- |
+| 3.1 | hdim = 32               | 32         | hipster/cap  | 2    | � Running          | —       | `188586` | —                                                                             | Lean kernel            |
+| 3.2 | **hdim = 64 (default)** | 64         | hipster/perf | 4    | ✅ Completed       | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run) |
+| 3.3 | hdim = 128              | 128        | hipster/cap  | 2    | ⚠️ Crashed (ep275) | 70.0%   | `187086` | [5lchthne](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5lchthne) | Near-complete          |
+| 3.4 | hdim = 256              | 256        | hipster/cap  | 2    | ⚠️ Crashed (ep274) | 70.3%   | `187082` | [bj4d7h9m](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/bj4d7h9m) | Near-complete          |
 
 > \[!NOTE\]
 > Should be run with optimal ω₀ from Phase 2.
@@ -152,8 +152,8 @@ ______________________________________________________________________
 | #   | Experiment                  | Mask                      | Config                       | Partition | GPUs | Status       | Val Acc | Job ID   | WandB                                                                         | Notes                   |
 | :-- | :-------------------------- | :------------------------ | :--------------------------- | :-------- | :--- | :----------- | :------ | :------- | :---------------------------------------------------------------------------- | :---------------------- |
 | 4.1 | **Gaussian mask (default)** | `GaussianModulationND`    | `hyena_patchify.py`          | hipster   | 4    | ✅ Completed | 70.67%  | `174875` | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) | = Phase 0.2 (same run)  |
-| 4.2 | No mask                     | `Identity`                | `hyena_patchify_no_mask.py`  | geodude   | 4    | 🔄 Running   | —       | `142347` | —                                                                             | Does mask matter?       |
-| 4.3 | Exponential mask            | `ExponentialModulationND` | `hyena_patchify_exp_mask.py` | geodude   | 4    | ⏳ Queued    | —       | `142347` | —                                                                             | Runs after 4.2 finishes |
+| 4.2 | No mask                     | `Identity`                | `hyena_patchify_no_mask.py`  | geodude   | 4    | ✅ Completed | 68.7%   | `142347` | [7d0zo8yy](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/7d0zo8yy) | -2% vs Gaussian ⚠️      |
+| 4.3 | Exponential mask            | `ExponentialModulationND` | `hyena_patchify_exp_mask.py` | geodude   | 4    | ❌ OOM (ep3) | 23.0%   | `142347` | [vi2h4jyp](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/vi2h4jyp) | OOM crash after epoch 3 |
 
 > \[!NOTE\]
 > All 3 runs execute sequentially in a single SLURM job via `run_phase4_mask_ablation_geodude.sh`.
@@ -302,9 +302,9 @@ ______________________________________________________________________
 | Ablation          | Best Setting | Δ vs Default | Notes                                                   |
 | :---------------- | :----------- | :----------- | :------------------------------------------------------ |
 | Kernel type       | SIREN        | -0.5% (RFF)  | SIREN (70.6%) beats RFF (70.1%), confirming hypothesis. |
-| ω₀                | —            | —            | —                                                       |
-| Kernel hidden-dim | —            | —            | —                                                       |
-| Mask              | —            | —            | —                                                       |
+| ω₀                | 30 (default) | ~1% range    | 30 (70.7%) ≈ 20 (70.5%) ≈ 100 (70.5%) > 10 (69.6%).     |
+| Kernel hidden-dim | 64 (default) | ~0% (all)    | 64 (70.7%) ≈ 128 (70.0%) ≈ 256 (70.3%). No benefit.     |
+| Mask              | Gaussian     | -2.0% (none) | Gaussian (70.7%) > None (68.7%) > Exp (OOM). Mask helps |
 | Pos-encoding      | —            | —            | —                                                       |
 | LR                | —            | —            | —                                                       |
 | Weight decay      | —            | —            | —                                                       |
@@ -316,26 +316,28 @@ ______________________________________________________________________
 > \[!IMPORTANT\]
 > **Always update this log when submitting a job.** Record the job ID, config, and phase so we can trace results back to specific runs.
 
-| Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status        | Val Acc | Notes                                                                         |
-| :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :------------ | :------ | :---------------------------------------------------------------------------- |
-| 2026-02-24       | `188586` | 3.1   | `hyena_patchify.py` + hdim=32      | hipster | capacity  | 2    | 🔄 Running    | —       | Phase 3: Hidden-Dim=32 sweep                                                  |
-| 2026-02-22       | `187089` | 3.2   | `hyena_patchify.py` + hdim=64      | hipster | capacity  | 2    | ❌ Cancelled  | 67.9%   | Redundant — baseline run (174875) used instead                                |
-| 2026-02-22       | `187086` | 3.3   | `hyena_patchify.py` + hdim=128     | hipster | capacity  | 2    | 🔄 Running    | 68.6%   | Phase 3: Hidden-Dim=128 sweep                                                 |
-| 2026-02-22       | `187082` | 3.4   | `hyena_patchify.py` + hdim=256     | hipster | capacity  | 2    | 🔄 Running    | 68.4%   | Phase 3: Hidden-Dim=256 sweep                                                 |
-| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | ⚠️ OOM (289k) | 70.6%   | SIREN baseline. OOM Killed at epoch 373.                                      |
-| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ✅ Completed  | 70.1%   | RFF kernel ablation completed full 300k steps.                                |
-| 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done       | 54.3%   | ViT-B baseline pipeline validation                                            |
-| 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ✅ Completed  | 70.67%  | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w) |
-| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | ✅ Completed  | 69.6%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh) |
-| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | ✅ Completed  | 70.5%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706) |
-| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | ✅ Completed  | 69.2%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226) |
-| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | ✅ Completed  | 70.5%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw) |
-| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped    | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                         |
-| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.    |
-| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled  | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit      |
-| 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.   |
-| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | ❌ Timeout    | —       | Timed out at 4h. Resubmitted with resume logic as `141076`.                   |
-| 2026-02-21       | `141076` | infra | WebDataset conversion (Resumed)    | IVI     | cees      | 0    | 🔄 Running    | —       | Resumed from shard 65 after fix. 24h limit.                                   |
+| Date             | Job ID   | Phase | Config                             | Cluster | Partition | GPUs | Status        | Val Acc | Notes                                                                                                       |
+| :--------------- | :------- | :---- | :--------------------------------- | :------ | :-------- | :--- | :------------ | :------ | :---------------------------------------------------------------------------------------------------------- |
+| 2026-02-24       | `188586` | 3.1   | `hyena_patchify.py` + hdim=32      | hipster | capacity  | 2    | 🔄 Running    | —       | Phase 3: Hidden-Dim=32 sweep                                                                                |
+| 2026-02-24       | `142347` | 4.2   | `hyena_patchify_no_mask.py`        | IVI     | geodude   | 4    | ✅ Completed  | 68.7%   | [7d0zo8yy](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/7d0zo8yy)                               |
+| 2026-02-26       | `142347` | 4.3   | `hyena_patchify_exp_mask.py`       | IVI     | geodude   | 4    | ❌ OOM        | 23.0%   | [vi2h4jyp](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/vi2h4jyp)                               |
+| 2026-02-22       | `187089` | 3.2   | `hyena_patchify.py` + hdim=64      | hipster | capacity  | 2    | ❌ Cancelled  | 67.9%   | Redundant — baseline run (174875) used instead                                                              |
+| 2026-02-22       | `187086` | 3.3   | `hyena_patchify.py` + hdim=128     | hipster | capacity  | 2    | ⚠️ Crashed    | 70.0%   | Crashed ep275, near-complete. [5lchthne](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5lchthne) |
+| 2026-02-22       | `187082` | 3.4   | `hyena_patchify.py` + hdim=256     | hipster | capacity  | 2    | ⚠️ Crashed    | 70.3%   | Crashed ep274, near-complete. [bj4d7h9m](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/bj4d7h9m) |
+| 2026-02-19       | `140280` | 1.1   | `hyena_patchify.py`                | IVI     | geodude   | 4    | ⚠️ OOM (289k) | 70.6%   | SIREN baseline. OOM Killed at epoch 373.                                                                    |
+| 2026-02-19       | `140281` | 1.2   | `hyena_patchify_rff.py`            | IVI     | geodude   | 4    | ✅ Completed  | 70.1%   | RFF kernel ablation completed full 300k steps.                                                              |
+| 2026-02-17       | `137108` | 0.1   | `attention_patchify.py`            | IVI     | geodude   | 4    | ✅ Done       | 54.3%   | ViT-B baseline pipeline validation                                                                          |
+| 2026-02-17       | `174875` | 0.2   | `hyena_patchify.py`                | hipster | perf      | 4    | ✅ Completed  | 70.67%  | [9iqbx19w](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/9iqbx19w)                               |
+| 2026-02-17       | `174895` | 2.1   | `hyena_patchify.py` + ω₀=10        | hipster | capacity  | 2    | ✅ Completed  | 69.6%   | [yxxcr5wh](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/yxxcr5wh)                               |
+| 2026-02-17       | `174896` | 2.2   | `hyena_patchify.py` + ω₀=20        | hipster | capacity  | 2    | ✅ Completed  | 70.5%   | [c4x52706](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c4x52706)                               |
+| 2026-02-17       | `174897` | 2.4   | `hyena_patchify.py` + ω₀=60        | hipster | capacity  | 2    | ✅ Completed  | 69.2%   | [jc9bv226](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jc9bv226)                               |
+| 2026-02-17       | `174898` | 2.5   | `hyena_patchify.py` + ω₀=100       | hipster | capacity  | 2    | ✅ Completed  | 70.5%   | [n86qahfw](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/n86qahfw)                               |
+| 2026-02-19 00:58 | `139226` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Stopped    | 9.3%    | Old config (LR=3e-3, no EMA/DropPath). Ran ~2 epochs.                                                       |
+| 2026-02-19       | `140271` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | 6.7%    | v2: Cancelled due to NFS I/O bottleneck (0.10 it/s). Replaced by `140500`.                                  |
+| 2026-02-19       | `140272` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees6000  | 8    | ❌ Cancelled  | —       | Cancelled — cees6000 nodes fully occupied + GrpTRES cpu=128 shared limit                                    |
+| 2026-02-20       | `140500` | 0.3   | `attention_patchify_imagenet1k.py` | IVI     | cees      | 8    | ❌ Cancelled  | —       | v3: SSD staging too slow (3.4 MB/s rsync). Replaced by WebDataset approach.                                 |
+| 2026-02-20       | `140516` | infra | WebDataset conversion              | IVI     | cees      | 0    | ❌ Timeout    | —       | Timed out at 4h. Resubmitted with resume logic as `141076`.                                                 |
+| 2026-02-21       | `141076` | infra | WebDataset conversion (Resumed)    | IVI     | cees      | 0    | 🔄 Running    | —       | Resumed from shard 65 after fix. 24h limit.                                                                 |
 
 ______________________________________________________________________
 
@@ -395,5 +397,5 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-24 14:42
-**Status**: 🔄 Phase 3 hidden-dim sweep running on hipster/capacity (Jobs `188586`, `187086`, `187082`). Phase 3.2 (hdim=64) uses baseline run `174875`.
+**Last Updated**: 2026-02-27
+**Status**: 🔄 Phase 3.1 (hdim=32) still running on hipster/capacity (Job `188586`). ✅ Phase 3.3 (hdim=128) crashed ep275 at **70.0%**. ✅ Phase 3.4 (hdim=256) crashed ep274 at **70.3%**. ✅ Phase 4.2 (no mask) completed: **68.7%**. ❌ Phase 4.3 (exp mask) OOM crashed at epoch 3.

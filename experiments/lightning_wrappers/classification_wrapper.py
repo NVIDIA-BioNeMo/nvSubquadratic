@@ -5,8 +5,8 @@
 import torch
 import torch.nn.functional as F
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -20,6 +20,7 @@ class SoftTargetCrossEntropy(torch.nn.Module):
     """
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         loss = torch.sum(-targets * F.log_softmax(logits, dim=-1), dim=-1)
         return loss.mean()
 

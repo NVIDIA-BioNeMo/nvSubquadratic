@@ -10,14 +10,23 @@ import os
 import torch
 
 from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
-from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
+from experiments.default_cfg import (
+    AutoResumeConfig,
+    ExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    TrainerConfig,
+    WandbConfig,
+)
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+
 
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
     import warnings
+
     warnings.warn(
         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
@@ -30,6 +39,7 @@ from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3

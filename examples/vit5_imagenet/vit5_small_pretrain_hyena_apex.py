@@ -21,10 +21,12 @@ from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, Schedule
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
+
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
     import warnings
+
     warnings.warn(
         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
@@ -43,6 +45,7 @@ from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 from nvsubquadratic.utils.qk_norm import L2Norm
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
