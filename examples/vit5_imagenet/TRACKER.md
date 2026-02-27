@@ -17,6 +17,10 @@ W&B project: [`implicit-long-convs/nvsubquadratic`](https://wandb.ai/implicit-lo
 | `VALIDATION_vit5_small_dali_fused.py` | ViT5Attention | — | DALI fused | Yes | 4 | Validation-only config for checkpoint testing |
 | `v2/vit5_small_pretrain_hyena_gap_apex.py` | Hyena (SiLU gate, output RMSNorm) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | **No** (GAP) | 0 | v2 Hyena-GAP: SiLU gate + output RMSNorm + DALI fused |
 | `v2/vit5_small_pretrain_hyena_cls_row_apex.py` | Hyena (SiLU gate, output RMSNorm) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | Yes (in-grid) | 13 (prepended) | v2 Hyena-CLS-row: SiLU gate + output RMSNorm + DALI fused |
+| `v2/vit5_small_pretrain_multihead_hyena_gap_apex.py` | Multi-head Hyena (SiLU gate, output RMSNorm, 6 heads) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | **No** (GAP) | 0 | v2 Multi-head Hyena-GAP: dense within-head mixing |
+| `v2/vit5_small_pretrain_multihead_hyena_cls_row_apex.py` | Multi-head Hyena (SiLU gate, output RMSNorm, 6 heads) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | Yes (in-grid) | 13 (prepended) | v2 Multi-head Hyena-CLS-row: dense within-head mixing |
+| `v2/vit5_small_pretrain_hyena_gap_apex_gated.py` | Hyena (SiLU/Sigmoid gates, output RMSNorm) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | **No** (GAP) | 0 | Gated-attention Hyena-GAP: SiLU 1st gate + Sigmoid 2nd gate |
+| `v2/vit5_small_pretrain_hyena_cls_row_apex_gated.py` | Hyena (SiLU/Sigmoid gates, output RMSNorm) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | Yes (in-grid) | 13 (prepended) | Gated-attention Hyena-CLS-row: SiLU 1st gate + Sigmoid 2nd gate |
 
 All training configs share: ViT-5-Small (12 blocks, dim 384, patch 16, 224x224), LAMB lr=4e-3, wd=0.05, batch 2048, 800 epochs, cosine schedule, 5 warmup epochs, 3-Augment, Mixup 0.8 + CutMix 1.0, BCE loss, DropPath 0.05, LayerScale 1e-4, bf16-mixed.
 
@@ -35,6 +39,20 @@ All v2 runs use the DALI fused data pipeline with local NVMe staging, SiLU gate 
 | 32336 | `v2-hyena-gap` | `v2/…hyena_gap_apex.py` | SiLU | [`c3mbeoc5`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c3mbeoc5) | b65c909e-01 | Running | 0 | — | — | — |
 | 32337 | `v2-hyena-cls-row` | `v2/…hyena_cls_row_apex.py` | SiLU | [`96wy1zzj`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/96wy1zzj) | b65c909e-20 | Running | 0 | — | — | — |
 | 32339 | `v2-hyena-gap-idgate` | `v2/…hyena_gap_apex.py` + CLI override | Identity | [`eljt4gx6`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/eljt4gx6) | b65c909e-06 | Running | 0 | — | — | — |
+
+### v2 runs — Multi-head Hyena (DALI fused + local NVMe)
+
+| Job ID | Job name | Config | W&B run | Node | Status | Epoch | val/loss | val/acc | it/s |
+|--------|----------|--------|---------|------|--------|-------|----------|---------|------|
+| 32357 | `v2-mh-hyena-gap` | `v2/…multihead_hyena_gap_apex.py` | — | b65c909e-08 | Running | 0 | — | — | — |
+| 32359 | `v2-mh-hyena-cls-row` | `v2/…multihead_hyena_cls_row_apex.py` | — | b65c909e-10 | Running | 0 | — | — | — |
+
+### v2 runs — Gated-attention Hyena (SiLU/Sigmoid, DALI fused + local NVMe) *(experimental branch)*
+
+| Job ID | Job name | Config | Gates | W&B run | Node | Status | Epoch | val/loss | val/acc | it/s |
+|--------|----------|--------|-------|---------|------|--------|-------|----------|---------|------|
+| 32365 | `v2-gated-gap` | `v2/…hyena_gap_apex_gated.py` | SiLU/Sigmoid | — | b65c909e-13 | Running | 0 | — | — | — |
+| 32366 | `v2-gated-cls-row` | `v2/…hyena_cls_row_apex_gated.py` | SiLU/Sigmoid | — | b65c909e-14 | Running | 0 | — | — | — |
 
 ## Cancelled runs (second generation)
 
@@ -69,8 +87,20 @@ Hyena-GAP with two mixer-level changes vs v1: SiLU gate nonlinearity (adds nonli
 #### `v2-hyena-cls-row` (32337) — Hyena-CLS-row v2 (SiLU gate + output RMSNorm)
 Same v2 mixer changes as above but with the CLS-row architecture: CLS + 13 registers as an extra row prepended to the 2D patch grid (15×14). Uses DALI fused pipeline with local NVMe staging.
 
-#### `v2-hyena-gap-idgate` (32338) — Hyena-GAP v2 ablation (Identity gate)
+#### `v2-hyena-gap-idgate` (32339) — Hyena-GAP v2 ablation (Identity gate)
 Same as `v2-hyena-gap` but with the gate nonlinearity set to Identity via CLI override, isolating the effect of the output RMSNorm without the SiLU gate.
+
+#### `v2-mh-hyena-gap` (32357) — Multi-head Hyena-GAP v2
+Multi-head variant using CKConvMultiheadND (6 heads, head_dim=64). Dense channel mixing within each head in the frequency domain. PerHeadRMSNorm for QK normalization.
+
+#### `v2-mh-hyena-cls-row` (32359) — Multi-head Hyena-CLS-row v2
+Same multi-head architecture as above but with CLS-row layout (15×14 grid, 13 registers).
+
+#### `v2-gated-gap` (32365) — Gated-attention Hyena-GAP *(experimental)*
+Gated attention-style dual nonlinearity (Hua et al., 2022): first gate uses SiLU on K, second gate uses Sigmoid on V. Tests whether asymmetric gating improves over symmetric SiLU gating. All other settings match `v2-hyena-gap`.
+
+#### `v2-gated-cls-row` (32366) — Gated-attention Hyena-CLS-row *(experimental)*
+Same gated attention setup as above but with CLS-row architecture (15×14 grid).
 
 ### Completed runs (first generation)
 

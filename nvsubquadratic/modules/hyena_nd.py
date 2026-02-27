@@ -19,15 +19,17 @@ Computation graph (per-block):
          │
     h = GlobalConv(z)                       long-range convolution (FFTConv, etc.)
          │
-    y = h ⊙ σ(V)                            second multiplicative gate
+    y = h ⊙ σ₂(V)                           second multiplicative gate
          │
     Output-Norm(y)                          optional normalization before projection
          │
     return y                                [B, *spatial, C]
 
-σ denotes `gate_nonlinear` (e.g. SiLU).  When set to Identity the gates
+σ denotes `gate_nonlinear` (first gate) and σ₂ denotes `gate_nonlinear_2`
+(second gate).  By default σ₂ = σ.  When both are Identity the gates
 reduce to plain element-wise products, recovering a linear variant closer
-to Mamba's selective-scan formulation.
+to Mamba's selective-scan formulation.  Setting σ=SiLU, σ₂=Sigmoid follows
+the gated attention formulation.
 """
 
 from typing import Optional
@@ -52,10 +54,11 @@ class Hyena(torch.nn.Module):
 
         z = Q ⊙ σ(K)           — first gate
         h = GlobalConv(z)
-        y = h ⊙ σ(V)           — second gate
+        y = h ⊙ σ₂(V)          — second gate
 
-    where σ is ``gate_nonlinear`` (e.g. SiLU).  Setting σ = Identity
-    gives plain element-wise products, recovering a linear gating variant.
+    where σ is ``gate_nonlinear`` and σ₂ is ``gate_nonlinear_2`` (defaults
+    to σ when not provided).  Setting both to Identity gives plain
+    element-wise products, recovering a linear gating variant.
 
     Optional components (each disabled by passing Identity or None):
         - Short depthwise convolution on concatenated [Q, K, V]
@@ -76,13 +79,14 @@ class Hyena(torch.nn.Module):
         qk_norm_cfg: Optional[LazyConfig] | None,
         rope_base: float = 10000.0,
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
+        gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
     ):
         """
         Args:
             global_conv_cfg: Global (long-range) convolutional layer.
             short_conv_cfg: Short depthwise conv applied to concatenated [Q, K, V].
                 Must produce a ConvNd, DistributedDepthwiseConvNd, or Identity.
-            gate_nonlinear_cfg: Activation for both multiplicative gates (e.g. SiLU).
+            gate_nonlinear_cfg: Activation for the first multiplicative gate (e.g. SiLU).
                 Use Identity for linear gating.
             pixelhyena_norm_cfg: Normalization between first gate and global conv.
                 Use Identity to disable.
@@ -92,6 +96,8 @@ class Hyena(torch.nn.Module):
                 support stateful norms (e.g. RMSNorm with learnable scale).
             rope_base: Base frequency for RoPE (default: 10000.0).
             output_norm_cfg: Normalization after the second gate.  Defaults to Identity.
+            gate_nonlinear_2_cfg: Activation for the second multiplicative gate.
+                If None (default), reuses gate_nonlinear_cfg for both gates.
         """
         super().__init__()
 
@@ -113,8 +119,12 @@ class Hyena(torch.nn.Module):
             f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity. Current type: {type(self.short_conv)}"
         )
 
-        # Nonlinear gate
+        # Nonlinear gates
         self.gate_nonlinear = instantiate(gate_nonlinear_cfg)
+        if gate_nonlinear_2_cfg is not None:
+            self.gate_nonlinear_2 = instantiate(gate_nonlinear_2_cfg)
+        else:
+            self.gate_nonlinear_2 = self.gate_nonlinear
 
         # Pixelhyena normalization (use torch.nn.Identity for no normalization)
         self.pixelhyena_norm = instantiate(pixelhyena_norm_cfg)
@@ -146,10 +156,13 @@ class Hyena(torch.nn.Module):
 
     def extra_repr(self) -> str:
         """Return extra representation string for the module."""
-        # Get is_causal from global_conv if it has that attribute
         is_causal = getattr(self.global_conv, "is_causal", None)
         qk_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
         parts = [f"qk_norm={qk_norm_str}", f"use_rope={self.use_rope}"]
+        if self.gate_nonlinear is not self.gate_nonlinear_2:
+            g1 = self.gate_nonlinear.__class__.__name__
+            g2 = self.gate_nonlinear_2.__class__.__name__
+            parts.append(f"gates={g1}/{g2}")
         if is_causal is not None:
             parts.append(f"is_causal={is_causal}")
         return ", ".join(parts)
@@ -385,8 +398,8 @@ class Hyena(torch.nn.Module):
         if cp_group is not None and cp_group.size() > 1:
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
-        # Second gate: y = h ⊙ σ(V)
-        y = y * self.gate_nonlinear(value)
+        # Second gate: y = h ⊙ σ₂(V)
+        y = y * self.gate_nonlinear_2(value)
 
         # Output normalization (after the second gate).
         if not isinstance(self.output_norm, torch.nn.Identity):
