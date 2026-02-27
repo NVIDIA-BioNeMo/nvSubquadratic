@@ -4,9 +4,9 @@ Measures data loading, forward, backward, and optimizer step independently
 to show where time is actually spent in the training loop.
 
 Usage (single-GPU):
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py --dali-optimized --num-workers 12
+    PYTHONPATH=. python benchmarks/vit5_imagenet/profile_training_bottleneck.py --dali-optimized --num-workers 12
 Usage (multi-GPU with DDP):
-    PYTHONPATH=. torchrun --nproc_per_node=8 scripts/profile_training_bottleneck.py --ddp --dali-optimized --num-workers 12
+    PYTHONPATH=. torchrun --nproc_per_node=8 benchmarks/vit5_imagenet/profile_training_bottleneck.py --ddp --dali-optimized --num-workers 12
 """
 
 import argparse
@@ -500,7 +500,7 @@ def main(args):
             "compute_pct": round(effective_compute / full_ms * 100, 1),
         }
 
-        tracker_dir = Path("benchmarks")
+        tracker_dir = Path("benchmarks/vit5_imagenet")
         tracker_dir.mkdir(exist_ok=True)
         jsonl_path = tracker_dir / f"dataloader_profile_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
         with open(jsonl_path, "a") as f:

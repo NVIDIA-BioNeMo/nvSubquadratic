@@ -8,7 +8,7 @@ Checks:
 5. Visual side-by-side comparison saved as PNG
 
 Usage:
-    PYTHONPATH=. python scripts/verify_dali_fused.py
+    PYTHONPATH=. python benchmarks/vit5_imagenet/verify_dali_fused.py
 """
 
 import os
@@ -21,7 +21,7 @@ os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
+from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
 from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
 
 
@@ -139,7 +139,7 @@ def check_training(dm, name):
     return images, labels
 
 
-def save_visual_comparison(opt_img, fused_img, path="benchmarks/dali_fused_comparison.png"):
+def save_visual_comparison(opt_img, fused_img, path="benchmarks/vit5_imagenet/dali_fused_comparison.png"):
     """Save a side-by-side visual comparison of the two pipelines."""
     try:
         import matplotlib

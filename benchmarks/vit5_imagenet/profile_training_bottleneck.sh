@@ -37,7 +37,7 @@ fi
 NGPUS=$(nvidia-smi -L | wc -l)
 
 if echo "$@" | grep -q -- "--ddp"; then
-    PYTHONPATH=. torchrun --nproc_per_node="$NGPUS" scripts/profile_training_bottleneck.py "$@"
+    PYTHONPATH=. torchrun --nproc_per_node="$NGPUS" benchmarks/vit5_imagenet/profile_training_bottleneck.py "$@"
 else
-    PYTHONPATH=. python scripts/profile_training_bottleneck.py "$@"
+    PYTHONPATH=. python benchmarks/vit5_imagenet/profile_training_bottleneck.py "$@"
 fi

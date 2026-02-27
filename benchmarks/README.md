@@ -99,21 +99,23 @@ ViT-5-Small per-sample FLOPs (12 blocks, dim 384, 6 heads, 201 tokens):
 
 | Script | Purpose |
 |---|---|
-| `bench_vit5_baseline.py` | Original model eager throughput + FLOPs/MFU calculation |
-| `bench_vit5_compile.py` | Eager vs torch.compile (default) vs max-autotune + profiler |
-| `bench_vit5_profile.py` | Single-step CUDA kernel profiling (top-30 by time) |
-| `bench_vit5_optimized.py` | Correctness checks + throughput for the optimized model |
-| `scripts/profile_training_bottleneck.py` | Single-GPU component profiling (data / compute / optimizer) |
-| `scripts/profile_step_breakdown.py` | Per-phase step breakdown with CUDA events (data / fwd / bwd / optim) |
+| `vit5_imagenet/bench_vit5_baseline.py` | Original model eager throughput + FLOPs/MFU calculation |
+| `vit5_imagenet/bench_vit5_compile.py` | Eager vs torch.compile (default) vs max-autotune + profiler |
+| `vit5_imagenet/bench_vit5_profile.py` | Single-step CUDA kernel profiling (top-30 by time) |
+| `vit5_imagenet/bench_vit5_optimized.py` | Correctness checks + throughput for the optimized model |
+| `vit5_imagenet/profile_training_bottleneck.py` | Single-GPU component profiling (data / compute / optimizer) |
+| `vit5_imagenet/profile_step_breakdown.py` | Per-phase step breakdown with CUDA events (data / fwd / bwd / optim) |
+| `vit5_imagenet/verify_dali_fused.py` | DALI fused pipeline correctness verification |
+| `vit5_imagenet/validate_checkpoint.py` | Checkpoint validation against W&B metrics |
 
 ### Running
 
 Submit via SLURM (from the repo root):
 
 ```bash
-sbatch benchmarks/scripts/bench_optimized.sh
-sbatch benchmarks/scripts/bench_compile.sh
-sbatch benchmarks/scripts/bench_profile.sh
+sbatch benchmarks/vit5_imagenet/scripts/bench_optimized.sh
+sbatch benchmarks/vit5_imagenet/scripts/bench_compile.sh
+sbatch benchmarks/vit5_imagenet/scripts/bench_profile.sh
 ```
 
 Logs go to `logs/`.
