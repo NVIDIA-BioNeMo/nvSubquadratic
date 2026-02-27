@@ -43,7 +43,7 @@ fi
 NGPUS=$(nvidia-smi -L | wc -l)
 
 if echo "$@" | grep -q -- "--ddp"; then
-    PYTHONPATH=. torchrun --nproc_per_node="$NGPUS" scripts/profile_step_breakdown.py "$@"
+    PYTHONPATH=. torchrun --nproc_per_node="$NGPUS" benchmarks/vit5_imagenet/profile_step_breakdown.py "$@"
 else
-    PYTHONPATH=. python scripts/profile_step_breakdown.py "$@"
+    PYTHONPATH=. python benchmarks/vit5_imagenet/profile_step_breakdown.py "$@"
 fi

@@ -19,7 +19,7 @@ Two passes are run:
      end-to-end step time.
 
 Usage:
-    PYTHONPATH=. torchrun --nproc_per_node=8 scripts/profile_step_breakdown.py \\
+    PYTHONPATH=. torchrun --nproc_per_node=8 benchmarks/vit5_imagenet/profile_step_breakdown.py \\
         --dali-fused --ddp --num-workers 12 --model-size small
 """
 
@@ -108,10 +108,10 @@ def build_dali_loader(optimized, device_id, prefetch_factor=3, num_workers=12):
         from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
         dm = DALIImageNetFusedDataModule(**common)
     elif optimized == "v2":
-        from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
+        from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
         dm = DALIImageNetOptimizedDataModule(**common)
     else:
-        from experiments.datamodules.dali_imagenet import DALIImageNetDataModule
+        from experiments.datamodules._deprecated.dali_imagenet import DALIImageNetDataModule
         dm = DALIImageNetDataModule(**common)
     dm.setup("fit")
     return dm.train_dataloader(), dm
@@ -548,7 +548,7 @@ def main(args):
             "agg_throughput": round(agg_tput),
         }
 
-        out_dir = Path("benchmarks")
+        out_dir = Path("benchmarks/vit5_imagenet")
         out_dir.mkdir(exist_ok=True)
         out_path = out_dir / f"step_breakdown_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
         with open(out_path, "a") as f:

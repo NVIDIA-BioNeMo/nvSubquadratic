@@ -26,4 +26,4 @@ source /home/dwromero/miniconda3/etc/profile.d/conda.sh
 conda activate nv-subq
 
 cd /home/dwromero/projects/nvSubquadratic-private
-PYTHONPATH=. python -u scripts/validate_checkpoint.py
+PYTHONPATH=. python -u benchmarks/vit5_imagenet/validate_checkpoint.py
