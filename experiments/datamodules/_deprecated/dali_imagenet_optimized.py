@@ -22,25 +22,25 @@ from typing import Literal, Optional
 
 import pytorch_lightning as pl
 import torch
-from nvidia.dali import fn, pipeline_def, types
-from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
 from torchvision.transforms.v2.functional import gaussian_blur
 
-from experiments.datamodules.dali_imagenet_fused import (
+from nvidia.dali import fn, pipeline_def, types
+from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
+
+from experiments.datamodules.imagenet import (
+    AugmentConfig,
+    MixupConfig,
     DEFAULT_IMAGENET_MEAN,
     DEFAULT_IMAGENET_STD,
     IMAGENET_MEAN_STD_BY_SIZE,
-    AugmentConfig,
-    MixupConfig,
 )
 
 
 # ---------------------------------------------------------------------------
 # DALI pipelines (identical to dali_imagenet.py)
 # ---------------------------------------------------------------------------
-
 
 @pipeline_def
 def _train_pipeline(
@@ -107,7 +107,6 @@ def _val_pipeline(
 # Thin wrapper so DALI iterators look like PyTorch DataLoaders to Lightning
 # ---------------------------------------------------------------------------
 
-
 class _DALILoaderWrapper:
     """Wraps ``DALIGenericIterator`` to yield ``(images, labels)`` tuples."""
 
@@ -117,8 +116,8 @@ class _DALILoaderWrapper:
     def __iter__(self):
         for batch in self._iter:
             data = batch[0]
-            images = data["images"]  # (B, H, W, C) uint8 GPU
-            labels = data["labels"].squeeze(-1).long()  # (B,)
+            images = data["images"]                       # (B, H, W, C) uint8 GPU
+            labels = data["labels"].squeeze(-1).long()    # (B,)
             yield images, labels
 
     def __len__(self):
@@ -128,7 +127,6 @@ class _DALILoaderWrapper:
 # ---------------------------------------------------------------------------
 # Batched PyTorch augmentations — compile-friendly versions
 # ---------------------------------------------------------------------------
-
 
 class _BatchThreeAugment(torch.nn.Module):
     """Batched DeiT III 3-Augment on (B, C, H, W) uint8 tensors.
@@ -155,9 +153,7 @@ class _BatchThreeAugment(torch.nn.Module):
         if blur_mask.any():
             sigma = torch.rand(1).item() * 1.9 + 0.1
             images[blur_mask] = gaussian_blur(
-                images[blur_mask],
-                kernel_size=[5, 5],
-                sigma=sigma,
+                images[blur_mask], kernel_size=[5, 5], sigma=sigma,
             )
 
         return images
@@ -202,8 +198,7 @@ class _BatchColorJitter(torch.nn.Module):
 
             sel = perms[:, step].view(B, 1, 1, 1)
             images = torch.where(
-                sel == 0,
-                brightness_out,
+                sel == 0, brightness_out,
                 torch.where(sel == 1, contrast_out, saturation_out),
             )
 
@@ -214,7 +209,6 @@ class _BatchColorJitter(torch.nn.Module):
 # Compiled helpers
 # ---------------------------------------------------------------------------
 
-
 @torch.compile
 def _fused_val_normalize(images: torch.Tensor, inv_std_255: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
     """uint8 NCHW → float32 normalised NCHW in a single fused kernel."""
@@ -224,7 +218,6 @@ def _fused_val_normalize(images: torch.Tensor, inv_std_255: torch.Tensor, bias: 
 # ---------------------------------------------------------------------------
 # Main DataModule
 # ---------------------------------------------------------------------------
-
 
 class DALIImageNetOptimizedDataModule(pl.LightningDataModule):
     """Optimised DALI-accelerated ImageNet datamodule.
@@ -385,7 +378,7 @@ class DALIImageNetOptimizedDataModule(pl.LightningDataModule):
         try:
             dst.mkdir(parents=True, exist_ok=True)
             free_bytes = shutil.disk_usage(dst).free
-            min_bytes = 160 * (1024**3)  # 160 GB headroom for ImageNet
+            min_bytes = 160 * (1024 ** 3)  # 160 GB headroom for ImageNet
             if free_bytes < min_bytes:
                 raise RuntimeError(
                     f"[data-staging] {dst} has only "
@@ -452,26 +445,22 @@ class DALIImageNetOptimizedDataModule(pl.LightningDataModule):
             self._val_pipe.build()
 
     def train_dataloader(self):
-        return _DALILoaderWrapper(
-            DALIGenericIterator(
-                self._train_pipe,
-                output_map=["images", "labels"],
-                reader_name="reader",
-                last_batch_policy=LastBatchPolicy.DROP,
-                auto_reset=True,
-            )
-        )
+        return _DALILoaderWrapper(DALIGenericIterator(
+            self._train_pipe,
+            output_map=["images", "labels"],
+            reader_name="reader",
+            last_batch_policy=LastBatchPolicy.DROP,
+            auto_reset=True,
+        ))
 
     def val_dataloader(self):
-        return _DALILoaderWrapper(
-            DALIGenericIterator(
-                self._val_pipe,
-                output_map=["images", "labels"],
-                reader_name="reader",
-                last_batch_policy=LastBatchPolicy.PARTIAL,
-                auto_reset=True,
-            )
-        )
+        return _DALILoaderWrapper(DALIGenericIterator(
+            self._val_pipe,
+            output_map=["images", "labels"],
+            reader_name="reader",
+            last_batch_policy=LastBatchPolicy.PARTIAL,
+            auto_reset=True,
+        ))
 
     def test_dataloader(self):
         return self.val_dataloader()

@@ -10,25 +10,16 @@ import os
 
 import torch
 
-from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
-from experiments.default_cfg import (
-    AutoResumeConfig,
-    ExperimentConfig,
-    SchedulerConfig,
-    TrainConfig,
-    TrainerConfig,
-    WandbConfig,
-)
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-
 
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
     import warnings
-
     warnings.warn(
         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
@@ -41,7 +32,6 @@ from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
-
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -159,10 +149,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    # NOTE: The ViT-5 reference uses BCE for pretraining, but we observed that
-    # pretraining with BCE leads to significantly lower finetuning accuracy
-    # (~76%) compared to SoftTargetCE (~82%).
-    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
 
     # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(

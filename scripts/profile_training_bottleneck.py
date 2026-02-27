@@ -120,14 +120,11 @@ def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optim
     if optimized == "fused":
         from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
         dm = DALIImageNetFusedDataModule(**common)
-    elif optimized == "v3":
-        from experiments.datamodules.dali_imagenet_optimized_v3 import DALIImageNetOptimizedV3DataModule
-        dm = DALIImageNetOptimizedV3DataModule(**common)
     elif optimized == "v2":
-        from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
+        from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
         dm = DALIImageNetOptimizedDataModule(**common)
     else:
-        from experiments.datamodules.dali_imagenet import DALIImageNetDataModule
+        from experiments.datamodules._deprecated.dali_imagenet import DALIImageNetDataModule
         dm = DALIImageNetDataModule(**common)
     dm.setup("fit")
     return dm.train_dataloader(), dm
