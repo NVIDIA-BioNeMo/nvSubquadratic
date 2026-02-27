@@ -31,9 +31,9 @@ from examples_migrated.mixer_factories import create_hyena_sequence_mixer, creat
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.residual_block import ResidualBlock
-from nvsubquadratic.networks.classification_resnet import ClassificationResNet
+from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubq_paper.modules.residual_block import ResidualBlock
+from nvsubq_paper.networks.classification_resnet import ClassificationResNet
 
 
 # Dataset parameters

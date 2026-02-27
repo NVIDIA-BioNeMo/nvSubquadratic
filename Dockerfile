@@ -1,7 +1,8 @@
 # Development Dockerfile for nvsubq_paper
 #
-# Build instructions:
-#   docker build -t nvsubq_paper:dev .
+# Build instructions (private git dependency requires BuildKit + GitHub token):
+#   DOCKER_BUILDKIT=1 GITHUB_TOKEN=ghp_xxx docker build --secret id=github_token,env=GITHUB_TOKEN -t nvsubq_paper:dev .
+# Or with devcontainer: set GITHUB_TOKEN in your environment before building the container.
 
 FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
 
@@ -58,14 +59,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the entire project for development (as root first for package installation)
 COPY . .
 
+
 # Set up git safe directory
 RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 
 # Install development dependencies first (as root, system-wide)
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-# Install the package (as root, system-wide)
-RUN pip install --no-cache-dir --no-build-isolation .
+# =============================================================================
+# nvsubquadratic Installation (for Hyena modules)
+# =============================================================================
+# Private repo - requires GitHub token with access to NVIDIA-Digital-Bio
+# If GITHUB_TOKEN is not available at build time, skip and install in postCreateCommand
+ARG GITHUB_TOKEN
+RUN if [ -n "${GITHUB_TOKEN}" ]; then \
+    echo "Installing nvSubquadratic with token..." && \
+    pip install --no-cache-dir git+https://${GITHUB_TOKEN}@github.com/NVIDIA-Digital-Bio/nvSubquadratic.git; \
+    else \
+    echo "Skipping nvSubquadratic installation - GITHUB_TOKEN not available at build time." && \
+    echo "Will be installed via postCreateCommand if .env file exists."; \
+    fi
+# =============================================================================
+
+
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \

@@ -22,7 +22,7 @@ from examples.spatial_recall_1d.base_config import (
 )
 from examples_migrated.mixer_factories import create_hyena_sequence_mixer
 from experiments.default_cfg import ExperimentConfig
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubq_paper.lazy_config import LazyConfig
 
 
 # Dataset-specific parameters
