@@ -54,16 +54,18 @@ class ViT5ResidualBlock(nn.Module):
         self.ls_mlp = LayerScale(hidden_dim, init_value=layer_scale_init) if layer_scale_init > 0 else nn.Identity()
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
 
-    def forward(self, x: torch.Tensor, condition: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, condition: torch.Tensor = None, **mixer_kwargs) -> torch.Tensor:
         """Forward pass.
 
         Args:
             x: [B, T, C] where T = num_tokens (cls + patches + registers).
             condition: Unused, kept for API compatibility with ResidualBlock.
+            **mixer_kwargs: Extra keyword arguments forwarded to the sequence
+                mixer (e.g. ``precomputed_kernel`` when using MetaSIRENKernelND).
 
         Returns:
             [B, T, C]
         """
-        x = x + self.drop_path(self.ls_attn(self.sequence_mixer(self.input_norm(x))))
+        x = x + self.drop_path(self.ls_attn(self.sequence_mixer(self.input_norm(x), **mixer_kwargs)))
         x = x + self.drop_path(self.ls_mlp(self.mlp(self.mlp_norm(x))))
         return x

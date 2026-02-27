@@ -13,6 +13,7 @@ Reference: Wang et al., "ViT-5: Vision Transformers for The Mid-2020s", 2026.
 import torch
 import torch.nn as nn
 from einops import rearrange
+from typing import Literal
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
@@ -39,6 +40,16 @@ class ViT5ClassificationNet(nn.Module):
             ([CLS, patches, regs]). This allows the full sequence to be reshaped to a
             contiguous 2D grid for spatial mixers like Hyena. Only takes effect when
             both use_cls_token and num_registers > 0.
+        meta_kernel_cfg: Optional LazyConfig for a centralized
+            :class:`~nvsubquadratic.modules.meta_kernels_nd.MetaSIRENKernelND`.
+            When provided, the meta-kernel generates all per-layer convolutional
+            kernels in a single forward pass and distributes them to blocks.
+            Each block's ``CKConvND`` should have ``kernel_cfg=None`` and
+            ``mask_cfg=None`` in this mode.
+        meta_kernel_grid_type: Grid type for the meta-kernel (``"single"`` or
+            ``"double"``).  Determines how the spatial dimensions map to the
+            ``seq_lens`` passed to the meta-kernel.  Only used when
+            ``meta_kernel_cfg`` is provided.
     """
 
     def __init__(
@@ -52,6 +63,8 @@ class ViT5ClassificationNet(nn.Module):
         num_registers: int,
         block_cfg: LazyConfig,
         norm_cfg: LazyConfig,
+        meta_kernel_cfg: LazyConfig | None,
+        meta_kernel_grid_type: Literal["double", "single"],
         dropout_rate: float = 0.0,
         use_cls_token: bool = True,
         prepend_registers: bool = False,
@@ -65,9 +78,10 @@ class ViT5ClassificationNet(nn.Module):
         self.use_cls_token = use_cls_token
         self.prepend_registers = prepend_registers
 
-        num_patches_h = image_size // patch_size
-        num_patches_w = image_size // patch_size
-        self.num_patches = num_patches_h * num_patches_w
+        self.num_patches_h = image_size // patch_size
+        self.num_patches_w = image_size // patch_size
+        self.num_patches = self.num_patches_h * self.num_patches_w
+        self.meta_kernel_grid_type = meta_kernel_grid_type
 
         # Patch embedding (non-overlapping Conv2d)
         self.patch_embed = nn.Conv2d(
@@ -91,6 +105,9 @@ class ViT5ClassificationNet(nn.Module):
             self.reg_token._no_weight_decay = True
         else:
             self.reg_token = None
+
+        # Centralized kernel generator (optional)
+        self.meta_kernel = instantiate(meta_kernel_cfg) if meta_kernel_cfg is not None else None
 
         # Transformer blocks
         self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
@@ -157,9 +174,21 @@ class ViT5ClassificationNet(nn.Module):
             else:
                 x = torch.cat([x, reg_tokens], dim=1)
 
-        # Apply transformer blocks
-        for block in self.blocks:
-            x = block(x)
+        block_kwargs: list[dict] = [{}] * len(self.blocks)
+
+        # Generate centralized kernels when using MetaSIRENKernelND
+        if self.meta_kernel is not None:
+            num_tokens = x.shape[1]
+            spatial_dims = (num_tokens // self.num_patches_w, self.num_patches_w)
+            if self.meta_kernel_grid_type == "single":
+                seq_lens = tuple((s + 1) // 2 for s in spatial_dims)
+            else:
+                seq_lens = spatial_dims
+            block_kwargs = [{"precomputed_kernel": pk} for pk in self.meta_kernel(seq_lens)]
+
+        # Apply residual blocks
+        for block, kwargs in zip(self.blocks, block_kwargs):
+            x = block(x, **kwargs)
 
         if self.use_cls_token:
             out = x[:, 0]

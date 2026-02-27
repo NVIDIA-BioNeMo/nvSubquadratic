@@ -33,7 +33,7 @@ class ViT5HyenaAdapter(nn.Module):
         self.inner_mixer = instantiate(inner_mixer_cfg)
         self.grid_w = grid_w
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, **mixer_kwargs) -> torch.Tensor:
         """Forward pass.
 
         Args:
@@ -41,7 +41,9 @@ class ViT5HyenaAdapter(nn.Module):
                 When registers are present, Hyena accomodates them at the first row of the 2D grid,
                 making the token at position (0, 0) the CLS token, and the (0, 1), ..., (0, num_registers-1)
                 the register tokens.
-            
+            **mixer_kwargs: Extra keyword arguments forwarded to the inner mixer
+                (e.g. ``precomputed_kernel`` when using MetaSIRENKernelND).
+
             IMPORTANT: In the future we can have M < grid_w registers by appending grid_w - M zeros to the row.
 
         Returns:
@@ -49,7 +51,7 @@ class ViT5HyenaAdapter(nn.Module):
         """
         B, T, C = x.shape
         x = x.reshape(B, T // self.grid_w, self.grid_w, C)
-        x = self.inner_mixer(x)
+        x = self.inner_mixer(x, **mixer_kwargs)
         x = x.reshape(B, T, C)
         return x
 

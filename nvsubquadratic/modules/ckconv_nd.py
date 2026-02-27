@@ -101,8 +101,8 @@ class CKConvND(torch.nn.Module):
         self,
         data_dim: int,
         hidden_dim: int,
-        kernel_cfg: LazyConfig,
-        mask_cfg: LazyConfig,
+        kernel_cfg: LazyConfig | None,
+        mask_cfg: LazyConfig | None,
         grid_type: Literal["double", "single"],
         fft_padding: Literal["zero", "circular"],
         is_causal: bool = False,
@@ -113,8 +113,12 @@ class CKConvND(torch.nn.Module):
         Args:
             data_dim: Dimension of input data (1D for sequences, 2D for images, 3D for videos, etc.).
             hidden_dim: Hidden dimension.
-            kernel_cfg: LazyConfig for the kernel.
-            mask_cfg: LazyConfig for the mask.
+            kernel_cfg: LazyConfig for the kernel. When ``None``, the module
+                expects a precomputed kernel in ``forward()`` (e.g. from a
+                centralized :class:`MetaSIRENKernelND`).
+            mask_cfg: LazyConfig for the mask. When ``None``, defaults to
+                ``nn.Identity`` (no masking). Set to ``None`` when using
+                MetaSIRENKernelND, which applies the mask centrally.
             grid_type: Type of grid to use.
             fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
                 cropping (conventional FFT-based conv). 'circular' uses periodic
@@ -157,9 +161,9 @@ class CKConvND(torch.nn.Module):
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
 
-        # Construct kernel and mask
-        self.kernel = instantiate(kernel_cfg)
-        self.mask = instantiate(mask_cfg)
+        # Construct kernel and mask (both optional for MetaSIRENKernelND mode)
+        self.kernel = instantiate(kernel_cfg) if kernel_cfg is not None else None
+        self.mask = instantiate(mask_cfg) if mask_cfg is not None else None
 
         # Construct shortcut projection
         self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim, dtype=torch.float32))
@@ -231,7 +235,11 @@ class CKConvND(torch.nn.Module):
             return x.to(x_dtype)
 
     def forward(
-        self, x: torch.Tensor, is_bhl_input: bool = False, cp_group: torch.distributed.ProcessGroup = None
+        self,
+        x: torch.Tensor,
+        is_bhl_input: bool = False,
+        cp_group: torch.distributed.ProcessGroup = None,
+        precomputed_kernel: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Forward pass of the CKConvND.
 
@@ -241,33 +249,45 @@ class CKConvND(torch.nn.Module):
                 Default is False.
             cp_group (torch.distributed.ProcessGroup): Context parallel process group.
                 Default is None.
+            precomputed_kernel (torch.Tensor | None): Already-masked kernel tensor of
+                shape ``[1, *spatial_dims, hidden_dim]``, provided by a centralized
+                :class:`MetaSIRENKernelND`.  When given, skips local kernel generation and
+                masking entirely.
 
         Returns:
             torch.Tensor: Output tensor of shape (batch_size, * spatial_dims, hidden_dim) or (batch_size, hidden_dim, * spatial_dims)
         """
-        # Get the spatial dimensions from the input tensor
-        if is_bhl_input:
-            spatial_dims = x.shape[2:]  # [* spatial_dims]
+        if precomputed_kernel is not None:
+            conv_kernel = precomputed_kernel
         else:
-            spatial_dims = x.shape[1:-1]  # [* spatial_dims]
+            assert self.kernel is not None, (
+                "CKConvND has no local kernel (kernel_cfg=None) and no "
+                "precomputed_kernel was provided. Use MetaSIRENKernelND or supply kernel_cfg."
+            )
 
-        if self.grid_type == "single":
-            # Take half the spatial dimensions for the grid cache. Since the grid cache is
-            # double the size of the input, when we take half the spatial dimensions, we get
-            # a convolutional kernel with size equal to the input.
-            grid_lens = [(seq_len + 1) // 2 for seq_len in spatial_dims]
-        else:  # "double"
-            # Take the full spatial dimensions for the grid cache. Since the grid cache is
-            # double the size of the input, when we take the full spatial dimensions, we get
-            # a convolutional kernel with size equal to twice the input.
-            grid_lens = spatial_dims
+            # Get the spatial dimensions from the input tensor
+            if is_bhl_input:
+                spatial_dims = x.shape[2:]  # [* spatial_dims]
+            else:
+                spatial_dims = x.shape[1:-1]  # [* spatial_dims]
 
-        # Compute kernel
-        conv_kernel, grid = self.kernel(grid_lens)
+            if self.grid_type == "single":
+                # Take half the spatial dimensions for the grid cache. Since the grid cache is
+                # double the size of the input, when we take half the spatial dimensions, we get
+                # a convolutional kernel with size equal to the input.
+                grid_lens = [(seq_len + 1) // 2 for seq_len in spatial_dims]
+            else:  # "double"
+                # Take the full spatial dimensions for the grid cache. Since the grid cache is
+                # double the size of the input, when we take the full spatial dimensions, we get
+                # a convolutional kernel with size equal to twice the input.
+                grid_lens = spatial_dims
 
-        # Apply mask to kernel
-        if not isinstance(self.mask, torch.nn.Identity):
-            conv_kernel = self.mask(grid=grid, x=conv_kernel)
+            # Compute kernel
+            conv_kernel, grid = self.kernel(grid_lens)
+
+            # Apply mask to kernel
+            if not isinstance(self.mask, torch.nn.Identity):
+                conv_kernel = self.mask(grid=grid, x=conv_kernel)
 
         # For causal convolution, crop the kernel to use only the "positive" half
         # (i.e., the part that looks backward in time). The kernel is in BLH format: [1, L, H].
