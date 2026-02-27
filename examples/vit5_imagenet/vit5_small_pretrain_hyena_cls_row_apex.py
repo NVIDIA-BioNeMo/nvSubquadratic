@@ -28,18 +28,7 @@ from experiments.default_cfg import (
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-
-try:
-    from apex.optimizers import FusedLAMB as Lamb
-except ImportError:
-    import warnings
-
-    warnings.warn(
-        "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
-        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
-        stacklevel=2,
-    )
-    from torch_optimizer import Lamb
+from apex.optimizers import FusedLAMB as Lamb
 
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena

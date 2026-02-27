@@ -20,13 +20,7 @@ from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, Schedule
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-try:
-    from apex.optimizers import FusedLAMB as Lamb
-except ImportError:
-    raise ImportError(
-        "apex.optimizers.FusedLAMB not found — "
-        "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup)."
-    )
+from apex.optimizers import FusedLAMB as Lamb
 
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
