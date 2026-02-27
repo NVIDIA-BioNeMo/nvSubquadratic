@@ -1,22 +1,11 @@
 """RMSNorm — Root Mean Square Layer Normalization.
 
-Uses QuACK's fused Triton kernel on CUDA when available, with a
-pure-PyTorch fallback for CPU / environments without QuACK.
+Uses QuACK's fused Triton kernel on CUDA, with a pure-PyTorch fallback for CPU.
 """
 
 import torch
 import torch.nn as nn
-
-try:
-    from quack import rmsnorm as _quack_rmsnorm
-except ImportError:
-    import warnings
-    warnings.warn(
-        "quack.rmsnorm not found — falling back to pure-PyTorch RMSNorm. "
-        "Install QuACK for a fused Triton RMSNorm kernel.",
-        stacklevel=2,
-    )
-    _quack_rmsnorm = None
+from quack import rmsnorm as _quack_rmsnorm
 
 
 class RMSNorm(nn.Module):
