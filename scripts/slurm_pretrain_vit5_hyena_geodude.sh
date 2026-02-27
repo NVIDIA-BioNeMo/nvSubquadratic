@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=vit5_hyena_dali
-#SBATCH --account=ceesusers
-#SBATCH --partition=cees
+#SBATCH --account=geodudeusers
+#SBATCH --partition=geodude
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:rtx_a5000:1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=13
 #SBATCH --mem=240G
 #SBATCH --time=48:00:00

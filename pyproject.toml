@@ -29,6 +29,9 @@ dependencies = [
     "timm==1.0.22",
 ]
 
+[project.optional-dependencies]
+dali = ["nvidia-dali-cuda120>=1.28.0"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["nvsubquadratic*"]
