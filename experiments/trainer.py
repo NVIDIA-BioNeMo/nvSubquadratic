@@ -77,7 +77,10 @@ def construct_trainer(
 
     device_count = torch.cuda.device_count()
     if device_count > 1:  # Multi-GPU training
-        strategy = "ddp"
+        if cfg.trainer.find_unused_parameters:
+            strategy = "ddp_find_unused_parameters_true"
+        else:
+            strategy = "ddp"
         sync_batchnorm = True
     else:
         strategy = "auto"

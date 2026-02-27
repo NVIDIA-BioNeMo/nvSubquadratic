@@ -48,6 +48,10 @@ class TrainerConfig:
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None
 
+    # Enable DDP find_unused_parameters (required when some model parameters
+    # are not part of every forward pass, e.g. multi-head CKConv variants).
+    find_unused_parameters: bool = False
+
 
 @dataclass
 class SchedulerConfig:
