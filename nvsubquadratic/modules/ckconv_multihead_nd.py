@@ -146,11 +146,11 @@ class CKConvMultiheadND(torch.nn.Module):
 
         # Get spatial dimensions
         if is_bhl_input:
-            B, _C, H, W = x.shape
+            B, C, H, W = x.shape
             # Reshape to [B, num_heads, head_dim, H, W]
             x_heads = x.view(B, self.num_heads, self.head_dim, H, W)
         else:
-            B, H, W, _C = x.shape
+            B, H, W, C = x.shape
             # Reshape to [B, num_heads, head_dim, H, W]
             x_heads = rearrange(x, "b h w (n d) -> b n d h w", n=self.num_heads, d=self.head_dim)
 

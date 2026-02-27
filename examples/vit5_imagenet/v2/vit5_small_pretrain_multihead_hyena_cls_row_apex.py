@@ -18,25 +18,18 @@ Key differences from v2/vit5_small_pretrain_hyena_cls_row_apex.py:
 import os
 
 import torch
-from apex.optimizers import FusedLAMB as Lamb
 
-from experiments.datamodules.dali_imagenet_fused import (
-    AugmentConfig,
-    DALIImageNetFusedDataModule,
-    MixupConfig,
-)
-from experiments.default_cfg import (
-    AutoResumeConfig,
-    ExperimentConfig,
-    SchedulerConfig,
-    TrainConfig,
-    TrainerConfig,
-    WandbConfig,
-)
+from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+
+from apex.optimizers import FusedLAMB as Lamb
+
 from nvsubquadratic.modules.ckconv_multihead_nd import CKConvMultiheadND
 from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import PerHeadRMSNorm, RMSNorm
@@ -44,8 +37,6 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -205,10 +196,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    # NOTE: The ViT-5 reference uses BCE for pretraining, but we observed that
-    # pretraining with BCE leads to significantly lower finetuning accuracy
-    # (~76%) compared to SoftTargetCE (~82%).
-    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
 
     # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
@@ -228,7 +216,6 @@ def get_config() -> ExperimentConfig:
     config.trainer = TrainerConfig(
         check_val_every_n_epoch=4,
         checkpoint_every_n_steps=5000,
-        find_unused_parameters=True,
     )
 
     # ─── Scheduler ──────────────────────────────────────────────────────────

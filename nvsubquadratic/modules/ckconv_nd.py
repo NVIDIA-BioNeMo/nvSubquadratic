@@ -192,7 +192,6 @@ class CKConvND(torch.nn.Module):
             f"use_chunked_fftconv={self.use_chunked_fftconv}"
         )
 
-    # @torch.compiler.disable()
     def apply_convolution(
         self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
     ) -> torch.Tensor:
