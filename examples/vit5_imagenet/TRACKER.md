@@ -4,45 +4,78 @@ W&B project: [`implicit-long-convs/nvsubquadratic`](https://wandb.ai/implicit-lo
 
 ## Config files
 
-| Config | Mixer | Optimizer | CLS token | Registers | Notes |
-|--------|-------|-----------|-----------|-----------|-------|
-| `vit5_small_pretrain.py` | ViT5Attention | `torch_optimizer.Lamb` | Yes | 4 | Baseline attention, non-Apex LAMB |
-| `vit5_small_pretrain_apex.py` | ViT5Attention | Apex `FusedLAMB` | Yes | 4 | Attention + fused LAMB |
-| `vit5_small_pretrain_hyena_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | Yes (mean-pool update) | 0 | Hyena replaces attention; CLS updated via mean-pool of mixed patches each layer |
-| `vit5_small_pretrain_hyena_gap_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | **No** (GAP) | 0 | Same as above but CLS token removed; classification via global average pooling |
-| `vit5_small_pretrain_hyena_cls_row_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | Yes (in-grid) | 13 (prepended) | CLS + 13 registers form extra row at top of 2D grid → 15×14. CLS participates directly in 2D convolution. Registers are global. |
+| Config | Mixer | Optimizer | Dataloader | CLS token | Registers | Notes |
+|--------|-------|-----------|------------|-----------|-----------|-------|
+| `vit5_small_pretrain.py` | ViT5Attention | `torch_optimizer.Lamb` | PyTorch CPU | Yes | 4 | Baseline attention, non-Apex LAMB |
+| `vit5_small_pretrain_apex.py` | ViT5Attention | Apex `FusedLAMB` | PyTorch CPU | Yes | 4 | Attention + fused LAMB |
+| `vit5_small_pretrain_apex_dali_fused.py` | ViT5Attention | Apex `FusedLAMB` | **DALI fused** (local NVMe) | Yes | 4 | All augments in DALI pipeline + local NVMe staging |
+| `vit5_small_pretrain_hyena_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | Yes (mean-pool update) | 0 | Hyena replaces attention; CLS updated via mean-pool |
+| `vit5_small_pretrain_hyena_gap_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | **No** (GAP) | 0 | CLS removed; classification via global average pooling |
+| `vit5_small_pretrain_hyena_gap_apex_optimized.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | **No** (GAP) | 0 | Hyena-GAP with all pipeline optimizations |
+| `vit5_small_pretrain_hyena_gap_apex_qk_rmsnorm.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | **No** (GAP) | 0 | Hyena-GAP + RMSNorm QK normalization |
+| `vit5_small_pretrain_hyena_cls_row_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | Yes (in-grid) | 13 (prepended) | CLS + 13 registers as extra row → 15×14 grid |
+| `VALIDATION_vit5_small_dali_fused.py` | ViT5Attention | — | DALI fused | Yes | 4 | Validation-only config for checkpoint testing |
 
-All configs share: ViT-5-Small (12 blocks, dim 384, patch 16, 224x224), LAMB lr=4e-3, wd=0.05, batch 2048, 800 epochs, cosine schedule, 5 warmup epochs, 3-Augment, Mixup 0.8 + CutMix 1.0, BCE loss, DropPath 0.05, LayerScale 1e-4, bf16-mixed.
+All training configs share: ViT-5-Small (12 blocks, dim 384, patch 16, 224x224), LAMB lr=4e-3, wd=0.05, batch 2048, 800 epochs, cosine schedule, 5 warmup epochs, 3-Augment, Mixup 0.8 + CutMix 1.0, BCE loss, DropPath 0.05, LayerScale 1e-4, bf16-mixed.
 
-## Active runs
+## Active runs (as of 2026-02-26)
 
-| Job ID | Job name | Config | W&B run | Node | Status | Last epoch | val/loss | val/acc | it/s |
-|--------|----------|--------|---------|------|--------|------------|----------|---------|------|
-| 30923 | `vit5-apex` | `vit5_small_pretrain_apex.py` | [`ia7b26u7`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ia7b26u7) | b65c909e-01 | Running | ~312 | 0.964 | 75.5% | ~2.7 |
-| 30924 | `vit5-simd` | `vit5_small_pretrain.py` | [`ea0z7ttf`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ea0z7ttf) | b65c909e-20 | Running | ~302 | 1.010 | 75.1% | ~2.4 |
-| 30931 | `vit5-apex-refaug` | `vit5_small_pretrain_apex.py` | [`2y06y121`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2y06y121) | b65c909e-21 | Running | ~320 | 1.040 | 74.3% | ~3.1 |
-| 30969 | `vit5-hyena` | `vit5_small_pretrain_hyena_apex.py` | [`r9pmc5ps`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r9pmc5ps) | b65c909e-41 | Running | ~62 | 1.560 | 63.8% | ~2.7 |
-| 30995 | `vit5-hyena-gap` | `vit5_small_pretrain_hyena_gap_apex.py` | [`k7lme5pm`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/k7lme5pm) | b65c909e-18 | Running | ~3 | 5.340 | 7.9% | ~2.3 |
-| 31003 | `hyena-cls-row` | `vit5_small_pretrain_hyena_cls_row_apex.py` | [`lx5yhn7t`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/lx5yhn7t) | b65c909e-42 | Running (compile=False) | ~34 | 1.910 | 56.8% | ~2.5 |
+| Job ID | Job name | Config | W&B run | Node | Status | Epoch | val/loss | val/acc | it/s |
+|--------|----------|--------|---------|------|--------|-------|----------|---------|------|
+| 31829 | `vit5-dali` | `_deprecated/vit5_small_pretrain_apex_dali.py` | `4on8` | b65c909e-01 | Running | ~644 | 0.756 | 81.1% | ~5.9 |
+| 31870 | `vit5-dali-v2` | `_deprecated/vit5_small_pretrain_apex_dali_optimized_v2.py` | `lp1q` | b65c909e-08 | Running | ~643 | 0.740 | 81.2% | ~6.3 |
+| 32158 | `vit5-dali-fused` | `vit5_small_pretrain_apex_dali_fused.py` | `ky33` | b65c909e-38 | Running | ~316 | 0.994 | 74.5% | ~12.4 |
+| 31147 | `hyena-gap-optim` | `vit5_small_pretrain_hyena_gap_apex_optimized.py` | `fg5d` | b65c909e-20 | Running | ~707 | 0.929 | 78.7% | ~2.4 |
+| 31221 | `mh-hyena-optim` | multihead Hyena-GAP optimized | `6ecn` | b65c909e-06 | Running | ~531 | 0.936 | 78.1% | ~2.2 |
+
+## Completed runs (first generation)
+
+| Job ID | Job name | Config | W&B run | Final epoch | val/loss | val/acc | Notes |
+|--------|----------|--------|---------|-------------|----------|---------|-------|
+| 30923 | `vit5-apex` | `vit5_small_pretrain_apex.py` | [`ia7b26u7`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ia7b26u7) | 800 | — | ~81.7% | Attention baseline (Network FS, CPU dataloader) |
+| 30924 | `vit5-simd` | `vit5_small_pretrain.py` | [`ea0z7ttf`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ea0z7ttf) | 800 | — | — | Non-Apex LAMB optimizer ablation |
+| 30931 | `vit5-apex-refaug` | `vit5_small_pretrain_apex.py` | [`2y06y121`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2y06y121) | 800 | — | ~81.7% | Second seed / reproducibility check |
+| 30969 | `vit5-hyena` | `vit5_small_pretrain_hyena_apex.py` | [`r9pmc5ps`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r9pmc5ps) | 800 | — | — | Hyena + CLS mean-pool |
+| 30995 | `vit5-hyena-gap` | `vit5_small_pretrain_hyena_gap_apex.py` | [`k7lme5pm`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/k7lme5pm) | 800 | — | — | Hyena + GAP |
+| 31003 | `hyena-cls-row` | `vit5_small_pretrain_hyena_cls_row_apex.py` | [`lx5yhn7t`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/lx5yhn7t) | 800 | — | — | Hyena + CLS-in-grid (compile=False) |
 
 ## Run descriptions
 
-### `vit5-apex` (30923) — Attention + Apex FusedLAMB
+### Active runs
+
+#### `vit5-dali` (31829) — Attention + DALI v1
+Attention baseline using DALI v1 dataloader on network FS with `torch.compile(max-autotune)`. Started 2026-02-25. Uses deprecated DALI v1 config (before augmentation fusion). Validates every epoch.
+
+#### `vit5-dali-v2` (31870) — Attention + DALI optimized
+Same architecture, using DALI v2 optimized dataloader (compile-friendly GPU augmentations) on network FS. Slightly faster than v1. Validates every epoch.
+
+#### `vit5-dali-fused` (32158) — Attention + DALI fused (local NVMe)
+Attention baseline using the fully fused DALI pipeline with all augmentations in the DALI pipeline + local NVMe staging. Fastest data pipeline: ~12.4 it/s (2.4x v1). Started 2026-02-26. Still catching up but on track.
+
+#### `hyena-gap-optim` (31147) — Hyena-GAP optimized
+Hyena (CKConvND + SIREN) with GAP classification, all pipeline optimizations applied. Uses CPU dataloader on network FS (Hyena is compute-bound so DALI benefit is minimal). Approaching 800 epochs.
+
+#### `mh-hyena-optim` (31221) — Multihead Hyena-GAP optimized
+Multi-head variant of Hyena-GAP with additional architectural modifications. Uses CPU dataloader on network FS.
+
+### Completed runs (first generation)
+
+#### `vit5-apex` (30923) — Attention + Apex FusedLAMB
 Primary attention baseline with autoresume enabled. Uses ViT5Attention (6 heads, RoPE, QK-norm) + 4 register tokens. CLS token readout.
 
-### `vit5-simd` (30924) — Attention + non-Apex LAMB
+#### `vit5-simd` (30924) — Attention + non-Apex LAMB
 Same architecture as `vit5-apex` but uses `torch_optimizer.Lamb` instead of Apex FusedLAMB. Serves as an optimizer ablation — slightly slower due to non-fused optimizer step.
 
-### `vit5-apex-refaug` (30931) — Attention + Apex FusedLAMB (duplicate)
+#### `vit5-apex-refaug` (30931) — Attention + Apex FusedLAMB (duplicate)
 Identical config to `vit5-apex` but with autoresume disabled (fresh run started later). Acts as a second seed / reproducibility check.
 
-### `vit5-hyena` (30969) — Hyena + Apex FusedLAMB
+#### `vit5-hyena` (30969) — Hyena + Apex FusedLAMB
 Replaces all ViT5Attention layers with 2D Hyena (CKConvND + SIREN kernel). No register tokens. CLS token is updated via mean-pool of mixed patches each layer. Positional info from absolute PE + SIREN kernel (no RoPE).
 
-### `vit5-hyena-gap` (30995) — Hyena + GAP + Apex FusedLAMB
+#### `vit5-hyena-gap` (30995) — Hyena + GAP + Apex FusedLAMB
 Same as `vit5-hyena` but removes the CLS token entirely. Classification via global average pooling over final patch representations. Motivated by the observation that the CLS-patch interaction in the Hyena variant is constrained to a mean-pool update, which limits bidirectional information flow.
 
-### `hyena-cls-row` (31003) — Hyena + CLS-row + Apex FusedLAMB
+#### `hyena-cls-row` (31003) — Hyena + CLS-row + Apex FusedLAMB
 CLS token and 13 global register tokens form an extra row prepended to the top of the 2D patch grid, producing a 15×14 spatial grid instead of 14×14. CLS sits at position [0,0] and participates directly in the 2D Hyena convolution — no more mean-pool workaround. Registers persist across layers (truly global, updated by every mixer + MLP block). Launched with `compile=False` due to container `/sbin/ldconfig` issue blocking torch.compile on fresh graph shapes.
 
 ## Reference baseline
@@ -52,7 +85,7 @@ The file `_reference_logs/wandb_export_2026-02-20T18_29_03.071-08_00.csv` contai
 ## How to launch a new run
 
 ```bash
-sbatch --job-name=<NAME> --exclude=b65c909e-02 scripts/submit.sh examples/vit5_imagenet/<CONFIG>.py
+sbatch --job-name=<NAME> scripts/submit.sh examples/vit5_imagenet/<CONFIG>.py
 ```
 
 ## How to monitor
@@ -71,3 +104,4 @@ tail -f logs/<NAME>_<JOBID>.err
 ## TODOs
 
 - [ ] **Remove `ViT5HyenaAdapter`**: The adapter only reshapes `[B, T, C]` ↔ `[B, H, W, C]` around the `QKVSequenceMixer`, but `QKVSequenceMixer` (and all norms, MLP, LayerScale, DropPath in the residual block) already accept `[B, *spatial_dims, C]`. If the classification net reshapes to `[B, H, W, C]` before the blocks and back after, the adapter is unnecessary and can be deleted entirely.
+- [ ] **Fill in completed run final metrics**: Check W&B for final val/loss and val/acc of generation-1 runs (30923–31003) once confirmed.
