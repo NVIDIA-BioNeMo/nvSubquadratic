@@ -15,18 +15,35 @@ W&B project: [`implicit-long-convs/nvsubquadratic`](https://wandb.ai/implicit-lo
 | `vit5_small_pretrain_hyena_gap_apex_qk_rmsnorm.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | **No** (GAP) | 0 | Hyena-GAP + RMSNorm QK normalization |
 | `vit5_small_pretrain_hyena_cls_row_apex.py` | Hyena (CKConvND + SIREN) | Apex `FusedLAMB` | PyTorch CPU | Yes (in-grid) | 13 (prepended) | CLS + 13 registers as extra row → 15×14 grid |
 | `VALIDATION_vit5_small_dali_fused.py` | ViT5Attention | — | DALI fused | Yes | 4 | Validation-only config for checkpoint testing |
+| `v2/vit5_small_pretrain_hyena_gap_apex.py` | Hyena (SiLU gate, output RMSNorm) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | **No** (GAP) | 0 | v2 Hyena-GAP: SiLU gate + output RMSNorm + DALI fused |
+| `v2/vit5_small_pretrain_hyena_cls_row_apex.py` | Hyena (SiLU gate, output RMSNorm) | Apex `FusedLAMB` | **DALI fused** (local NVMe) | Yes (in-grid) | 13 (prepended) | v2 Hyena-CLS-row: SiLU gate + output RMSNorm + DALI fused |
 
 All training configs share: ViT-5-Small (12 blocks, dim 384, patch 16, 224x224), LAMB lr=4e-3, wd=0.05, batch 2048, 800 epochs, cosine schedule, 5 warmup epochs, 3-Augment, Mixup 0.8 + CutMix 1.0, BCE loss, DropPath 0.05, LayerScale 1e-4, bf16-mixed.
 
-## Active runs (as of 2026-02-26)
+## Active runs (as of 2026-02-27)
 
 | Job ID | Job name | Config | W&B run | Node | Status | Epoch | val/loss | val/acc | it/s |
 |--------|----------|--------|---------|------|--------|-------|----------|---------|------|
-| 31829 | `vit5-dali` | `_deprecated/vit5_small_pretrain_apex_dali.py` | `4on8` | b65c909e-01 | Running | ~644 | 0.756 | 81.1% | ~5.9 |
-| 31870 | `vit5-dali-v2` | `_deprecated/vit5_small_pretrain_apex_dali_optimized_v2.py` | `lp1q` | b65c909e-08 | Running | ~643 | 0.740 | 81.2% | ~6.3 |
 | 32158 | `vit5-dali-fused` | `vit5_small_pretrain_apex_dali_fused.py` | `ky33` | b65c909e-38 | Running | ~316 | 0.994 | 74.5% | ~12.4 |
-| 31147 | `hyena-gap-optim` | `vit5_small_pretrain_hyena_gap_apex_optimized.py` | `fg5d` | b65c909e-20 | Running | ~707 | 0.929 | 78.7% | ~2.4 |
-| 31221 | `mh-hyena-optim` | multihead Hyena-GAP optimized | `6ecn` | b65c909e-06 | Running | ~531 | 0.936 | 78.1% | ~2.2 |
+
+### v2 runs — Hyena mixer ablations (DALI fused + local NVMe)
+
+All v2 runs use the DALI fused data pipeline with local NVMe staging, SiLU gate nonlinearity (unless overridden), output RMSNorm, L2 QK-norm, and validate every 4 epochs.
+
+| Job ID | Job name | Config | Gate | W&B run | Node | Status | Epoch | val/loss | val/acc | it/s |
+|--------|----------|--------|------|---------|------|--------|-------|----------|---------|------|
+| 32336 | `v2-hyena-gap` | `v2/…hyena_gap_apex.py` | SiLU | [`c3mbeoc5`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/c3mbeoc5) | b65c909e-01 | Running | 0 | — | — | — |
+| 32337 | `v2-hyena-cls-row` | `v2/…hyena_cls_row_apex.py` | SiLU | [`96wy1zzj`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/96wy1zzj) | b65c909e-20 | Running | 0 | — | — | — |
+| 32339 | `v2-hyena-gap-idgate` | `v2/…hyena_gap_apex.py` + CLI override | Identity | [`eljt4gx6`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/eljt4gx6) | b65c909e-06 | Running | 0 | — | — | — |
+
+## Cancelled runs (second generation)
+
+| Job ID | Job name | Config | W&B run | Final epoch | val/loss | val/acc | Notes |
+|--------|----------|--------|---------|-------------|----------|---------|-------|
+| 31829 | `vit5-dali` | `_deprecated/vit5_small_pretrain_apex_dali.py` | `4on8` | ~644 | 0.756 | 81.1% | Attention + DALI v1 (network FS). Cancelled to free node. |
+| 31870 | `vit5-dali-v2` | `_deprecated/vit5_small_pretrain_apex_dali_optimized_v2.py` | `lp1q` | ~643 | 0.740 | 81.2% | Attention + DALI optimized (network FS). Cancelled to free node. |
+| 31147 | `hyena-gap-optim` | `vit5_small_pretrain_hyena_gap_apex_optimized.py` | `fg5d` | ~707 | 0.929 | 78.7% | Hyena-GAP optimized. Cancelled — superseded by v2 runs. |
+| 31221 | `mh-hyena-optim` | multihead Hyena-GAP optimized | `6ecn` | ~531 | 0.936 | 78.1% | Multi-head Hyena-GAP. Cancelled — superseded by v2 runs. |
 
 ## Completed runs (first generation)
 
@@ -43,20 +60,17 @@ All training configs share: ViT-5-Small (12 blocks, dim 384, patch 16, 224x224),
 
 ### Active runs
 
-#### `vit5-dali` (31829) — Attention + DALI v1
-Attention baseline using DALI v1 dataloader on network FS with `torch.compile(max-autotune)`. Started 2026-02-25. Uses deprecated DALI v1 config (before augmentation fusion). Validates every epoch.
-
-#### `vit5-dali-v2` (31870) — Attention + DALI optimized
-Same architecture, using DALI v2 optimized dataloader (compile-friendly GPU augmentations) on network FS. Slightly faster than v1. Validates every epoch.
-
 #### `vit5-dali-fused` (32158) — Attention + DALI fused (local NVMe)
 Attention baseline using the fully fused DALI pipeline with all augmentations in the DALI pipeline + local NVMe staging. Fastest data pipeline: ~12.4 it/s (2.4x v1). Started 2026-02-26. Still catching up but on track.
 
-#### `hyena-gap-optim` (31147) — Hyena-GAP optimized
-Hyena (CKConvND + SIREN) with GAP classification, all pipeline optimizations applied. Uses CPU dataloader on network FS (Hyena is compute-bound so DALI benefit is minimal). Approaching 800 epochs.
+#### `v2-hyena-gap` (32336) — Hyena-GAP v2 (SiLU gate + output RMSNorm)
+Hyena-GAP with two mixer-level changes vs v1: SiLU gate nonlinearity (adds nonlinearity to the otherwise bilinear mixer) and output RMSNorm (Mamba2-style stabilization before the residual stream). Uses DALI fused pipeline with local NVMe staging. Validates every 4 epochs.
 
-#### `mh-hyena-optim` (31221) — Multihead Hyena-GAP optimized
-Multi-head variant of Hyena-GAP with additional architectural modifications. Uses CPU dataloader on network FS.
+#### `v2-hyena-cls-row` (32337) — Hyena-CLS-row v2 (SiLU gate + output RMSNorm)
+Same v2 mixer changes as above but with the CLS-row architecture: CLS + 13 registers as an extra row prepended to the 2D patch grid (15×14). Uses DALI fused pipeline with local NVMe staging.
+
+#### `v2-hyena-gap-idgate` (32338) — Hyena-GAP v2 ablation (Identity gate)
+Same as `v2-hyena-gap` but with the gate nonlinearity set to Identity via CLI override, isolating the effect of the output RMSNorm without the SiLU gate.
 
 ### Completed runs (first generation)
 
