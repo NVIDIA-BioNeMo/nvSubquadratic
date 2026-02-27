@@ -16,8 +16,15 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ImageNetDataModule
-from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.default_cfg import (
+    AutoResumeConfig,
+    ExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    TrainerConfig,
+    WandbConfig,
+)
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
@@ -98,7 +105,9 @@ def get_config() -> ExperimentConfig:
     config.debug = False
     config.seed = 42
     config.compile = False
-    config.compile_mode = "reduce-overhead"  # Using reduce-overhead instead of max-autotune due to complex ops in Hyena FFT
+    config.compile_mode = (
+        "reduce-overhead"  # Using reduce-overhead instead of max-autotune due to complex ops in Hyena FFT
+    )
 
     # ─── Dataset ────────────────────────────────────────────────────────────
     config.dataset = LazyConfig(ImageNetDataModule)(
