@@ -31,6 +31,12 @@ from nvsubquadratic.ops.fftconv import (
     fftconv3d_bhl_w_reshape,
 )
 
+# FP16 FFT convolutions (2D only, requires power-of-2 padding)
+from nvsubquadratic.ops.fftconv_fp16 import (
+    fftconv2d_fp16_bhl,
+    fftconv2d_fp16_bhl_w_reshape,
+)
+
 # Chunked (memory-efficient) variants for zero-padded and causal convolutions
 # Note: circular convolutions don't have chunked variants (lower memory overhead already)
 from nvsubquadratic.ops.fftconv_chunked import (
@@ -107,6 +113,7 @@ class CKConvND(torch.nn.Module):
         fft_padding: Literal["zero", "circular"],
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
+        use_fp16_fft: bool = False,
     ):
         """Initialize the CKConvND.
 
@@ -131,6 +138,11 @@ class CKConvND(torch.nn.Module):
                 intermediates. Typical savings: ~26% memory with ~11% compute overhead.
                 Useful for memory-constrained training with large spatial dimensions
                 in 2D/3D. Default is False.
+            use_fp16_fft: If True, use fp16 FFT convolutions for 2D data. Pads to
+                power-of-2 sizes (cuFFT requirement) and uses ortho normalization to
+                prevent overflow. Saves ~36% peak memory per convolution with ~0.8%
+                mean relative error vs f32. Only supported for 2D zero-padded
+                convolutions. Default is False.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
@@ -154,12 +166,20 @@ class CKConvND(torch.nn.Module):
                 "Circular convolutions already have lower memory overhead due to no padding."
             )
 
+        if use_fp16_fft:
+            assert data_dim == 2, f"use_fp16_fft only supports 2D data. Got {data_dim}D."
+            assert fft_padding == "zero", (
+                f"use_fp16_fft requires fft_padding='zero'. Got '{fft_padding}'."
+            )
+            assert not use_chunked_fftconv, "use_fp16_fft is incompatible with use_chunked_fftconv."
+
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
+        self.use_fp16_fft = use_fp16_fft
 
         # Construct kernel and mask (both optional for MetaSIRENKernelND mode)
         self.kernel = instantiate(kernel_cfg) if kernel_cfg is not None else None
@@ -174,16 +194,20 @@ class CKConvND(torch.nn.Module):
         # Causal mode overrides fft_padding for 1D
         effective_padding = "causal" if is_causal else self.fft_padding
 
-        # Choose between standard and chunked FFT functions
-        fft_fn_table = FFT_FUNCTIONS_CHUNKED if use_chunked_fftconv else FFT_FUNCTIONS
-        try:
-            self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
-        except KeyError:
-            valid_dims = sorted(FFT_FUNCTIONS.get(effective_padding, {}).keys())
-            raise ValueError(
-                f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
-                f"Valid dimensions for '{effective_padding}': {valid_dims}"
-            )
+        # Choose FFT functions: fp16 > chunked > standard
+        if use_fp16_fft:
+            self.fftconv_fn = fftconv2d_fp16_bhl_w_reshape
+            self.fftconv_fn_bhl_input = fftconv2d_fp16_bhl
+        else:
+            fft_fn_table = FFT_FUNCTIONS_CHUNKED if use_chunked_fftconv else FFT_FUNCTIONS
+            try:
+                self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
+            except KeyError:
+                valid_dims = sorted(FFT_FUNCTIONS.get(effective_padding, {}).keys())
+                raise ValueError(
+                    f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
+                    f"Valid dimensions for '{effective_padding}': {valid_dims}"
+                )
 
         # Define the grid type
         self.grid_type = grid_type
@@ -193,7 +217,7 @@ class CKConvND(torch.nn.Module):
         return (
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
-            f"use_chunked_fftconv={self.use_chunked_fftconv}"
+            f"use_chunked_fftconv={self.use_chunked_fftconv}, use_fp16_fft={self.use_fp16_fft}"
         )
 
     def apply_convolution(
@@ -212,26 +236,23 @@ class CKConvND(torch.nn.Module):
         Returns:
             torch.Tensor: Output tensor after applying convolution.
         """
+        # FP16 fftconv handles its own dtype casting internally
+        cast_dtype = None if self.use_fp16_fft else torch.float32
+
         if is_bhl_input:
-            # Apply kernel
-            conv_kernel = rearrange(
-                conv_kernel, "b ... c -> b c ..."
-            )  # Reshape kernel to [B, C, * spatial_dims] (Kernels are always in BLH format)
+            conv_kernel = rearrange(conv_kernel, "b ... c -> b c ...")
             x_dtype = x.dtype
-            x = self.fftconv_fn_bhl_input(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
+            if cast_dtype is not None:
+                x = self.fftconv_fn_bhl_input(x.to(cast_dtype), conv_kernel.to(cast_dtype), shortcut.to(cast_dtype))
+            else:
+                x = self.fftconv_fn_bhl_input(x, conv_kernel, shortcut)
             return x.to(x_dtype)
         else:
-            # Apply kernel
             x_dtype = x.dtype
-            x = self.fftconv_fn(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
+            if cast_dtype is not None:
+                x = self.fftconv_fn(x.to(cast_dtype), conv_kernel.to(cast_dtype), shortcut.to(cast_dtype))
+            else:
+                x = self.fftconv_fn(x, conv_kernel, shortcut)
             return x.to(x_dtype)
 
     def forward(
