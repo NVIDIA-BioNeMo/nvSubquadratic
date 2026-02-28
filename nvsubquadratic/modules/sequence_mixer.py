@@ -54,12 +54,15 @@ class QKVSequenceMixer(torch.nn.Module):
             if out_proj_bias:
                 torch.nn.init.zeros_(self.out_proj.bias)
 
-    def forward(self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None, **mixer_kwargs
+    ) -> torch.Tensor:
         """Forward pass of the QKV sequence mixer.
 
         Args:
             x: torch.Tensor - The input tensor of shape [batch_size, *spatial_dims, hidden_dim].
             cp_group: torch.distributed.ProcessGroup - Context parallel process group.
+            **mixer_kwargs: Forwarded to the inner mixer (e.g. ``conditioning`` for FiLM).
 
         Returns:
             torch.Tensor - The output tensor of shape [batch_size, *spatial_dims, hidden_dim].
@@ -68,7 +71,7 @@ class QKVSequenceMixer(torch.nn.Module):
         qkv = self.qkv_proj(x)
         q, k, v = torch.chunk(qkv, 3, dim=-1)
         # Sequence mixer (e.g., self-attention, hyena, etc.)
-        x = self.mixer(q, k, v, cp_group)
+        x = self.mixer(q, k, v, cp_group, **mixer_kwargs)
         # Output projection
         x = self.out_proj(x)
         return x

@@ -122,8 +122,8 @@ def causal_fftconv1d_blh(
         torch.fft.rfft(kernel, n=fft_len, dim=1),
     )
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=1)[:, :seq_len, :]
 
@@ -171,8 +171,8 @@ def fftconv1d_blh(
         torch.fft.rfft(kernel, n=fft_len, dim=1),
     )
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     crop_start = (kernel_len) // 2
     y = torch.fft.irfft(fft_x, n=fft_len, dim=1)[:, crop_start : crop_start + seq_len, :]
@@ -226,8 +226,8 @@ def fftconv2d_blh(
     fft_x = torch.fft.rfft2(x, s=fft_shape, dim=(1, 2))
     fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(1, 2))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -288,8 +288,8 @@ def fftconv3d_blh(
     fft_x = torch.fft.rfftn(x, s=fft_shape, dim=(1, 2, 3))
     fft_kernel = torch.fft.rfftn(kernel, s=fft_shape, dim=(1, 2, 3))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -452,8 +452,8 @@ def causal_fftconv1d_bhl(
         torch.fft.rfft(kernel, n=fft_len, dim=2),
     )
 
-    # Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=2)[..., :seq_len]
 
@@ -503,8 +503,8 @@ def fftconv1d_bhl(
         torch.fft.rfft(kernel, n=fft_len, dim=2),
     )
 
-    # Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     crop_start = (kernel_len) // 2
 
@@ -561,8 +561,8 @@ def fftconv2d_bhl(
     fft_x = torch.fft.rfft2(x, s=fft_shape, dim=(2, 3))
     fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(2, 3))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -626,8 +626,8 @@ def fftconv3d_bhl(
     fft_x = torch.fft.rfftn(x, s=fft_shape, dim=(2, 3, 4))
     fft_kernel = torch.fft.rfftn(kernel, s=fft_shape, dim=(2, 3, 4))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    fft_x = fft_x * fft_kernel
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
