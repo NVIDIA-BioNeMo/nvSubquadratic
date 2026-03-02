@@ -36,7 +36,7 @@ RUN conda install --yes \
     && conda clean --all --yes
 
 RUN pip install --no-cache-dir \
-    torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
+    torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128 \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
