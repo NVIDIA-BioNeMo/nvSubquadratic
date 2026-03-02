@@ -341,8 +341,21 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         print(f"[data-staging] Done. Using local path: {dst}", flush=True)
 
     def prepare_data(self) -> None:
-        if self._local_staging_dir is not None:
+        if self._local_staging_dir is None:
+            return
+
+        local_rank = int(os.environ.get("LOCAL_RANK", os.environ.get("SLURM_LOCALID", 0)))
+        if local_rank == 0:
             self._stage_to_local()
+        else:
+            # Wait for rank 0 to finish staging.
+            sentinel = self._local_staging_dir / ".staging_complete"
+            print(f"[data-staging] rank {local_rank} waiting for rank 0 to finish staging ...", flush=True)
+            while not sentinel.is_file():
+                import time
+                time.sleep(5)
+            print(f"[data-staging] rank {local_rank} detected sentinel, proceeding.", flush=True)
+            self.imagefolder_dir = self._local_staging_dir
 
     def setup(self, stage: Optional[str] = None) -> None:
         train_root = str(self.imagefolder_dir / "train")

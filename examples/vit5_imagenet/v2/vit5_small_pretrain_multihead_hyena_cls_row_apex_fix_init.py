@@ -29,7 +29,6 @@ from apex.optimizers import FusedLAMB as Lamb
 
 from nvsubquadratic.modules.ckconv_multihead_nd import CKConvMultiheadND
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import PerHeadRMSNorm, RMSNorm
@@ -70,9 +69,10 @@ KERNEL_HIDDEN_OMEGA_0 = 1.0
 KERNEL_OUT_DIM = NUM_HEADS * HEAD_DIM * HEAD_DIM  # dense kernel per head
 
 # ─── Training recipe ────────────────────────────────────────────────────────────
-EFFECTIVE_BATCH_SIZE = 256 #2048
+EFFECTIVE_BATCH_SIZE = 2048
 BATCH_SIZE = 128
-NUM_ACCUM_STEPS = 2 # EFFECTIVE_BATCH_SIZE // BATCH_SIZE  # gradient accumulation to achieve effective batch size of 2048
+NUM_GPUS = 8
+NUM_ACCUM_STEPS = EFFECTIVE_BATCH_SIZE // (BATCH_SIZE * NUM_GPUS)  # 2: gradient accumulation to achieve effective batch size of 2048
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
 ITERS_PER_EPOCH = IMAGENET_TRAIN_SIZE // EFFECTIVE_BATCH_SIZE
@@ -162,8 +162,6 @@ def get_config() -> ExperimentConfig:
             use_rope=False,
             output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         ),
-        init_method_in=small_init,
-        init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
     )
 
     config.net = LazyConfig(ViT5ClassificationNet)(
@@ -188,8 +186,6 @@ def get_config() -> ExperimentConfig:
                 activation="gelu",
                 expansion_factor=float(MLP_RATIO),
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
-                init_method_in=small_init,
-                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             hidden_dim=HIDDEN_DIM,
@@ -214,6 +210,7 @@ def get_config() -> ExperimentConfig:
         iterations=TOTAL_ITERATIONS,
         grad_clip=GRAD_CLIP,
         precision=PRECISION,
+        accumulate_grad_steps=NUM_ACCUM_STEPS,
     )
 
     config.trainer = TrainerConfig(
