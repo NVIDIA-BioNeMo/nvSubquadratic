@@ -341,6 +341,12 @@ uv.lock
 # SpecStory generated documentation
 .specstory/
 
+# Cursor IDE
+.cursor/
+
+# SLURM output files in repo root (logs/ dir already ignored above)
+slurm-*.out
+
 # Data directory
 .data/
 
