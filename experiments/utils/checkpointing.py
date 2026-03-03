@@ -107,14 +107,24 @@ def load_checkpoint_state_dict(ckpt_path: str) -> dict:
 
 
 class StripCompiledPrefix:
-    """Checkpoint callback that strips ``_orig_mod.`` prefix from state_dict keys.
+    """Align ``_orig_mod.`` prefixes between checkpoint and model state dicts.
 
-    Enables loading checkpoints saved from ``torch.compile``-wrapped models into
-    non-compiled models (and vice versa).
+    Handles both directions: strips the prefix when loading a compiled
+    checkpoint into a non-compiled model, and adds it when loading a
+    non-compiled checkpoint into a compiled model.
     """
 
-    def __call__(self, state_dict, **_kwargs):
-        return {k.replace("._orig_mod.", "."): v for k, v in state_dict.items()}
+    def __call__(self, state_dict, model=None, **_kwargs):
+        ckpt_has_orig = any("._orig_mod." in k for k in state_dict)
+        model_has_orig = model is not None and any(
+            "._orig_mod." in k for k in model.state_dict()
+        )
+
+        if ckpt_has_orig and not model_has_orig:
+            return {k.replace("._orig_mod.", "."): v for k, v in state_dict.items()}
+        if not ckpt_has_orig and model_has_orig:
+            return {k.replace("network.", "network._orig_mod.", 1): v for k, v in state_dict.items()}
+        return state_dict
 
 
 def _compute_overlapping_slices(target_shape, source_shape):

@@ -73,7 +73,7 @@ PRECISION = "bf16-mixed"
 NUM_WORKERS = 12
 
 # ─── Pretrained checkpoint ──────────────────────────────────────────────────────
-PRETRAINED_RUN_PATH = "implicit-long-convs/nvsubquadratic/qyjyx58f"
+PRETRAINED_RUN_PATH = "implicit-long-convs/nvsubquadratic/ujummr9l"
 
 
 def get_config() -> ExperimentConfig:
@@ -191,7 +191,7 @@ def get_config() -> ExperimentConfig:
     config.start_from_checkpoint = StartFromCheckpointConfig(
         load=True,
         run_path=PRETRAINED_RUN_PATH,
-        alias="best",
+        alias="latest",
         strict=True,
         callbacks=[LazyConfig(StripCompiledPrefix)()],
     )
