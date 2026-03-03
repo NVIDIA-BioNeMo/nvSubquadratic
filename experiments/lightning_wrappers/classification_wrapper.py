@@ -36,9 +36,6 @@ class ClassificationWrapper(LightningWrapperBase):
     - ``"bce"`` — ``BCEWithLogitsLoss`` with binarized multi-hot targets.
       Each class is an independent sigmoid.  Matching the ViT-5 / DeiT III
       **pretraining** recipe (``--bce-loss``).
-
-    Legacy ``use_bce_loss=True`` is mapped to ``"soft_target_ce"`` for
-    backward compatibility but emits a deprecation warning.
     """
 
     _VALID_LOSSES = ("cross_entropy", "soft_target_ce", "bce")
@@ -48,17 +45,7 @@ class ClassificationWrapper(LightningWrapperBase):
         network: torch.nn.Module,
         cfg: ExperimentConfig,
         loss: str = "cross_entropy",
-        use_bce_loss: bool = False,
     ):
-        """Initialize the ClassificationWrapper.
-
-        Args:
-            network: Network to wrap.
-            cfg: Configuration.
-            loss: Loss function mode — one of "cross_entropy", "soft_target_ce", "bce".
-            use_bce_loss: **Deprecated.** If True and ``loss`` is default,
-                falls back to ``"soft_target_ce"`` for backward compatibility.
-        """
         super().__init__(
             network=network,
             cfg=cfg,
@@ -70,17 +57,6 @@ class ClassificationWrapper(LightningWrapperBase):
 
         # Binary problem?
         self.multiclass = network.out_proj.out_features != 1
-
-        # Resolve loss mode (handle legacy use_bce_loss flag)
-        if use_bce_loss and loss == "cross_entropy":
-            import warnings
-            warnings.warn(
-                "use_bce_loss=True is deprecated; use loss='soft_target_ce' "
-                "(finetuning) or loss='bce' (pretraining) instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            loss = "soft_target_ce"
 
         if loss not in self._VALID_LOSSES:
             raise ValueError(f"loss must be one of {self._VALID_LOSSES}, got '{loss}'")
