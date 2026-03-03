@@ -36,7 +36,6 @@ export SLURM_JOB_NAME=bash
 
 export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export TRITON_CACHE_DIR=/home/dwromero/.triton/cache_${SLURM_JOB_ID}
-export DALI_NO_MMAP=1
 
 cd /home/dwromero/projects/nvSubquadratic-private
 
