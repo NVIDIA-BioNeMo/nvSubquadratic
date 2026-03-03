@@ -13,6 +13,11 @@ import argparse
 import os
 from pathlib import Path
 
+# Force-initialize PIL plugins in the main process before DataLoader workers
+# are forked.  Prevents crashes from lazy initialization in child processes.
+import PIL.Image
+PIL.Image.init()
+
 import pytorch_lightning as pl
 import torch
 import wandb

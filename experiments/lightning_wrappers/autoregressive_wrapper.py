@@ -255,6 +255,10 @@ class AutoregressiveWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log metrics at end of validation epoch."""
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         validation_step_outputs = self.other_outputs_validation
         if len(validation_step_outputs) == 0:
             # When autoresuming, the first epoch step outputs is empty, which would otherwise raise an error.

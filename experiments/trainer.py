@@ -44,7 +44,9 @@ def construct_trainer(
         benchmark = True
 
     # Metric to monitor
-    if cfg.scheduler.mode == "max":
+    if cfg.trainer.checkpoint_monitor is not None:
+        monitor = cfg.trainer.checkpoint_monitor
+    elif cfg.scheduler.mode == "max":
         monitor = "val/acc"
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"

@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as tv_datasets, transforms
 from torchvision.transforms import InterpolationMode
 from timm.data.auto_augment import rand_augment_transform
+from timm.data.random_erasing import RandomErasing
 from timm.data.transforms import RandomResizedCropAndInterpolation
 
 
@@ -50,6 +51,8 @@ class AugmentConfig:
     use_three_augment: bool = False
     color_jitter: float = 0.4
     rand_augment: Optional[str] = None  # e.g., 'rand-m9-n3-mstd0.5'
+    random_erasing_prob: float = 0.0
+    random_erasing_mode: str = "pixel"
 
 class ThreeAugment(torch.nn.Module):
     """DeiT III 3-Augment: Grayscale, Solarization, Gaussian Blur."""
@@ -255,6 +258,8 @@ class ImageNetDataModule(pl.LightningDataModule):
 
             if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
                 ops.append(ThreeAugment())
+
+            if self.augment_cfg is not None and self.augment_cfg.color_jitter > 0:
                 ops.append(
                     transforms.ColorJitter(
                         brightness=self.augment_cfg.color_jitter,
@@ -285,6 +290,14 @@ class ImageNetDataModule(pl.LightningDataModule):
 
         ops.append(transforms.ToTensor())
         ops.append(transforms.Normalize(mean=mean, std=std))
+
+        if train and self.augment_cfg is not None and self.augment_cfg.random_erasing_prob > 0:
+            ops.append(RandomErasing(
+                probability=self.augment_cfg.random_erasing_prob,
+                mode=self.augment_cfg.random_erasing_mode,
+                device="cpu",
+            ))
+
         return transforms.Compose(ops)
 
     def _stage_to_local(self) -> None:

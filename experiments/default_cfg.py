@@ -48,6 +48,10 @@ class TrainerConfig:
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None
 
+    # Override the metric monitored by ModelCheckpoint. If None, auto-derived
+    # from scheduler.mode ("val/acc" for max, "val/loss" for min).
+    checkpoint_monitor: Optional[str] = None
+
     # Enable DDP find_unused_parameters (required when some model parameters
     # are not part of every forward pass, e.g. multi-head CKConv variants).
     find_unused_parameters: bool = False
@@ -60,6 +64,7 @@ class SchedulerConfig:
     name: str = PLACEHOLDER
     warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
+    eta_min: float = 0.0
     mode: str = "max"
     monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
 

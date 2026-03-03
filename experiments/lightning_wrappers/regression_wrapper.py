@@ -152,6 +152,10 @@ class RegressionWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log best validation loss and logits over the validation set."""
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         validation_step_outputs = self.other_outputs_validation
         validation_step_outputs_keys = validation_step_outputs[0].keys()
 

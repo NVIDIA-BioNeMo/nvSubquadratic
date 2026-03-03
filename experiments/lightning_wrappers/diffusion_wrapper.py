@@ -721,6 +721,9 @@ class DiffusionWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self, outputs=None):
         """Compute and log validation summary metrics and sample grids."""
+        if self.trainer.sanity_checking:
+            return
+
         if self.fid_metric is not None and self._fid_batches_seen > 0:
             fid_value = self.fid_metric.compute()
             self.log("metrics/fid", fid_value, prog_bar=False, sync_dist=self.distributed)
