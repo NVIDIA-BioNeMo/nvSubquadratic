@@ -96,8 +96,8 @@ def construct_scheduler(
     Returns:
         torch.optim.lr_scheduler.LRScheduler: The constructed scheduler.
     """
-    assert scheduler_cfg.name in [PLACEHOLDER, "cosine"], (
-        f"scheduler_cfg.name must be either {PLACEHOLDER} or 'cosine'. Got {scheduler_cfg.name}"
+    assert scheduler_cfg.name in [PLACEHOLDER, "cosine", "constant"], (
+        f"scheduler_cfg.name must be one of {PLACEHOLDER}, 'cosine', or 'constant'. Got {scheduler_cfg.name}"
     )
     if scheduler_cfg.name != PLACEHOLDER:
         assert scheduler_cfg.total_iterations != PLACEHOLDER, (
@@ -115,51 +115,53 @@ def construct_scheduler(
     )
     warmup_iterations = int(total_iterations * warmup_iterations_percentage)
 
-    # Validate eta_min < base lr to prevent nonsensical schedules
+    # Validate eta_min < base lr to prevent nonsensical cosine schedules
     base_lr = optimizer.param_groups[0]["lr"]
-    if scheduler_cfg.eta_min >= base_lr:
+    if scheduler_type == "cosine" and scheduler_cfg.eta_min >= base_lr:
         raise ValueError(
             f"eta_min ({scheduler_cfg.eta_min}) must be strictly less than the "
             f"optimizer learning rate ({base_lr})."
         )
 
-    # Create main scheduler
-    if scheduler_type == "cosine":
-        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer=optimizer,
-            T_max=total_iterations - warmup_iterations,
-            eta_min=scheduler_cfg.eta_min,
-        )
-    else:
-        cosine_scheduler = None
-        warnings.warn(
-            f"No scheduler will be used. cfg.train.scheduler = {scheduler_type}",
-            stacklevel=2,
-        )
-
-    # Combine warmup + main via SequentialLR (only one scheduler active at a
-    # time, avoiding the compounding interaction of ChainedScheduler).
-    if warmup_iterations != 0 and cosine_scheduler is not None:
+    # Build the warmup scheduler (shared across schedule types)
+    warmup_scheduler = None
+    if warmup_iterations != 0:
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=1e-8,
             end_factor=1.0,
             total_iters=warmup_iterations,
         )
-        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
-            optimizer,
-            schedulers=[warmup_scheduler, cosine_scheduler],
-            milestones=[warmup_iterations],
+
+    # Build the post-warmup scheduler
+    if scheduler_type == "cosine":
+        post_warmup = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer=optimizer,
+            T_max=total_iterations - warmup_iterations,
+            eta_min=scheduler_cfg.eta_min,
         )
-    elif warmup_iterations != 0:
-        lr_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=1e-8,
-            end_factor=1.0,
-            total_iters=warmup_iterations,
+    elif scheduler_type == "constant":
+        post_warmup = torch.optim.lr_scheduler.ConstantLR(
+            optimizer, factor=1.0, total_iters=total_iterations,
         )
     else:
-        lr_scheduler = cosine_scheduler
+        post_warmup = None
+        warnings.warn(
+            f"No scheduler will be used. cfg.train.scheduler = {scheduler_type}",
+            stacklevel=2,
+        )
+
+    # Combine warmup + post-warmup via SequentialLR
+    if warmup_scheduler is not None and post_warmup is not None:
+        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, post_warmup],
+            milestones=[warmup_iterations],
+        )
+    elif warmup_scheduler is not None:
+        lr_scheduler = warmup_scheduler
+    else:
+        lr_scheduler = post_warmup
 
     return lr_scheduler
 
