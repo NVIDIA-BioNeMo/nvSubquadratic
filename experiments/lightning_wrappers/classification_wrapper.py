@@ -25,12 +25,29 @@ class SoftTargetCrossEntropy(torch.nn.Module):
 
 
 class ClassificationWrapper(LightningWrapperBase):
-    """Lightning wrapper for classification tasks."""
+    """Lightning wrapper for classification tasks.
+
+    Loss modes (``loss`` parameter):
+
+    - ``"cross_entropy"`` — standard ``CrossEntropyLoss`` (hard labels).
+    - ``"soft_target_ce"`` — ``SoftTargetCrossEntropy``:
+      ``-sum(target * log_softmax(logits))``.  Classes compete via softmax.
+      Use for **finetuning** with Mixup/CutMix (DeiT III recipe).
+    - ``"bce"`` — ``BCEWithLogitsLoss`` with binarized multi-hot targets.
+      Each class is an independent sigmoid.  Matching the ViT-5 / DeiT III
+      **pretraining** recipe (``--bce-loss``).
+
+    Legacy ``use_bce_loss=True`` is mapped to ``"soft_target_ce"`` for
+    backward compatibility but emits a deprecation warning.
+    """
+
+    _VALID_LOSSES = ("cross_entropy", "soft_target_ce", "bce")
 
     def __init__(
         self,
         network: torch.nn.Module,
         cfg: ExperimentConfig,
+        loss: str = "cross_entropy",
         use_bce_loss: bool = False,
     ):
         """Initialize the ClassificationWrapper.
@@ -38,7 +55,9 @@ class ClassificationWrapper(LightningWrapperBase):
         Args:
             network: Network to wrap.
             cfg: Configuration.
-            use_bce_loss: Whether to use BCEWithLogitsLoss for classification.
+            loss: Loss function mode — one of "cross_entropy", "soft_target_ce", "bce".
+            use_bce_loss: **Deprecated.** If True and ``loss`` is default,
+                falls back to ``"soft_target_ce"`` for backward compatibility.
         """
         super().__init__(
             network=network,
@@ -52,13 +71,29 @@ class ClassificationWrapper(LightningWrapperBase):
         # Binary problem?
         self.multiclass = network.out_proj.out_features != 1
 
+        # Resolve loss mode (handle legacy use_bce_loss flag)
+        if use_bce_loss and loss == "cross_entropy":
+            import warnings
+            warnings.warn(
+                "use_bce_loss=True is deprecated; use loss='soft_target_ce' "
+                "(finetuning) or loss='bce' (pretraining) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            loss = "soft_target_ce"
+
+        if loss not in self._VALID_LOSSES:
+            raise ValueError(f"loss must be one of {self._VALID_LOSSES}, got '{loss}'")
+        self.loss_mode = loss
+
         # Loss metric
-        self.use_bce_loss = use_bce_loss
-        if self.multiclass and not self.use_bce_loss:
+        if not self.multiclass:
+            self.loss_metric = torch.nn.BCEWithLogitsLoss()
+        elif loss == "cross_entropy":
             self.loss_metric = torch.nn.CrossEntropyLoss()
-        elif self.multiclass and self.use_bce_loss:
+        elif loss == "soft_target_ce":
             self.loss_metric = SoftTargetCrossEntropy()
-        else:
+        elif loss == "bce":
             self.loss_metric = torch.nn.BCEWithLogitsLoss()
 
         # Function to get predictions:
@@ -120,11 +155,21 @@ class ClassificationWrapper(LightningWrapperBase):
             accuracy_calculator(predictions, labels)
             labels = labels.float()
 
-        # SoftTargetCrossEntropy requires soft probability targets [B, C].
-        # During training, Mixup/CutMix already provides soft labels.
-        # During validation/test, labels are integer indices and need one-hot conversion.
-        if self.use_bce_loss and labels.ndim == 1:
-            labels = torch.nn.functional.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
+        # Prepare labels for the chosen loss function.
+        if self.loss_mode == "bce":
+            # BCEWithLogitsLoss expects [B, C] float targets.
+            # During training, Mixup provides soft labels — binarize them
+            # (threshold > 0) to get multi-hot targets, matching the ViT-5
+            # reference (engine.py: targets = targets.gt(0.0).type(targets.dtype)).
+            if labels.ndim == 1:
+                labels = F.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
+            else:
+                labels = labels.gt(0.0).to(labels.dtype)
+        elif self.loss_mode == "soft_target_ce":
+            # SoftTargetCrossEntropy expects [B, C] soft probability targets.
+            # During validation/test, labels are integer indices → one-hot.
+            if labels.ndim == 1:
+                labels = F.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
 
         # Calculate the loss
         loss = self.loss_metric(logits, labels)
