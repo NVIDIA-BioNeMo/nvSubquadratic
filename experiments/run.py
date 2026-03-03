@@ -6,7 +6,7 @@
 
 Usage:
     # MNIST classification
-    PYTHONPATH=. python nvsubquadratic/examples/run.py --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
+    PYTHONPATH=. python nvsubq_paper/examples/run.py --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
 """
 
 import argparse
@@ -16,25 +16,23 @@ from pathlib import Path
 # Force-initialize PIL plugins in the main process before DataLoader workers
 # are forked.  Prevents crashes from lazy initialization in child processes.
 import PIL.Image
-
-
 PIL.Image.init()
 
-import pytorch_lightning as pl  # noqa: E402
-import torch  # noqa: E402
-from pytorch_lightning.loggers import WandbLogger  # noqa: E402
-from rich import print as rprint  # noqa: E402
-from rich.tree import Tree  # noqa: E402
+import pytorch_lightning as pl
+import torch
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+from rich import print as rprint
+from rich.tree import Tree
 
-import wandb  # noqa: E402
-from experiments.trainer import construct_trainer  # noqa: E402
-from experiments.utils.checkpointing import (  # noqa: E402
+from experiments.trainer import construct_trainer
+from experiments.utils.checkpointing import (
     download_checkpoint,
     load_checkpoint_state_dict,
     load_state_dict_partially,
     preview_state_dict_compatibility,
 )
-from experiments.utils.cli import (  # noqa: E402
+from experiments.utils.cli import (
     add_to_tree,
     apply_config_overrides,
     config_to_dict,
@@ -42,7 +40,7 @@ from experiments.utils.cli import (  # noqa: E402
     load_config_from_file,
     verify_no_interpolator_overwrites,
 )
-from nvsubquadratic.lazy_config import instantiate  # noqa: E402
+from nvsubq_paper.lazy_config import instantiate
 
 
 torch._dynamo.config.cache_size_limit = 32
@@ -139,13 +137,6 @@ def main() -> None:
 
     # Construct model
     network = instantiate(config.net)
-
-    # Enable compile-compatible FFT path if requested (needed for models with FFT conv, e.g. Hyena + FiLM)
-    if getattr(config, "compile_compatible_fftconv", False):
-        import nvsubquadratic.ops.fftconv as _fftconv
-
-        _fftconv.COMPILE_COMPATIBLE = True
-        print("[compile] Using compile-compatible FFT convolution (real-valued complex multiply)")
 
     # Compile the model if specified
     if config.compile:

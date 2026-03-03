@@ -73,6 +73,9 @@ class ClassificationWrapper(LightningWrapperBase):
         self.best_train_loss = 1e9
         self.best_val_loss = 1e9
 
+        # Suffix appended to validation metric names (set by EMA callbacks to "_ema")
+        self._val_metric_suffix = ""
+
     def _step(
         self, batch: dict[str, torch.Tensor], accuracy_calculator: torchmetrics.Metric
     ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
@@ -154,9 +157,9 @@ class ClassificationWrapper(LightningWrapperBase):
         """Perform a validation step and log the validation loss & accuracy."""
         # Perform step
         predictions, loss, other_outputs = self._step(batch, self.val_acc)
-        # Log and return loss (Required in training step)
+        s = self._val_metric_suffix
         self.log(
-            "val/loss",
+            f"val/loss{s}",
             loss,
             on_step=False,
             on_epoch=True,
@@ -164,7 +167,7 @@ class ClassificationWrapper(LightningWrapperBase):
             sync_dist=self.distributed,
         )
         self.log(
-            "val/acc",
+            f"val/acc{s}",
             self.val_acc,
             on_step=False,
             on_epoch=True,
@@ -248,6 +251,12 @@ class ClassificationWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log best validation accuracy and loss and logits over the validation set."""
+        # Sanity check runs only a few batches, so metrics are not
+        # representative.  Skip best-metric tracking to avoid inflated values.
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         # Gather logits from validation set and construct a histogram of them.
         validation_step_outputs = self.other_outputs_validation
         validation_step_outputs_keys = validation_step_outputs[0].keys()
@@ -271,24 +280,25 @@ class ClassificationWrapper(LightningWrapperBase):
         self.other_outputs_validation.clear()
 
         # Log best accuracy
-        val_acc = self.trainer.callback_metrics["val/acc"]
+        s = self._val_metric_suffix
+        val_acc = self.trainer.callback_metrics[f"val/acc{s}"]
         if val_acc > self.best_val_acc:
             self.best_val_acc = val_acc.item()
             if self.logger is not None:
                 self.logger.experiment.log(
                     {
-                        "val/best_acc": self.best_val_acc,
+                        f"val/best_acc{s}": self.best_val_acc,
                         "global_step": self.global_step,
                     }
                 )
         # Log best validation loss
-        val_loss = self.trainer.callback_metrics["val/loss"]
+        val_loss = self.trainer.callback_metrics[f"val/loss{s}"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss.item()
             if self.logger is not None:
                 self.logger.experiment.log(
                     {
-                        "val/best_loss": self.best_val_loss,
+                        f"val/best_loss{s}": self.best_val_loss,
                         "global_step": self.global_step,
                     }
                 )
