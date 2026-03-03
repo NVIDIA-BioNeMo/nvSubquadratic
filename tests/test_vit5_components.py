@@ -512,8 +512,8 @@ class TestCrossValidation:
         config = get_config()
         net = instantiate(config.net)
         wrapper = instantiate(config.lightning_wrapper_class, network=net, cfg=config)
-        assert wrapper.use_bce_loss is True
-        assert isinstance(wrapper.loss_metric, SoftTargetCrossEntropy)
+        assert wrapper.loss_mode == "bce"
+        assert isinstance(wrapper.loss_metric, torch.nn.BCEWithLogitsLoss)
 
     def test_uses_gelu_not_swiglu(self):
         """ViT-5 uses GeLU MLP, not SwiGLU (Section 3.3 - over-gating issue)."""

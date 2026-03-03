@@ -166,7 +166,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(use_bce_loss=True)
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="bce")
 
     # ─── Optimizer ────────────────────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(

@@ -5,7 +5,10 @@ import warnings
 import torch
 
 from experiments.default_cfg import ExperimentConfig
-from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
+from experiments.lightning_wrappers.classification_wrapper import (
+    ClassificationWrapper,
+    SoftTargetCrossEntropy,
+)
 
 
 # Suppress PyTorch Lightning warnings for cleaner output
@@ -20,37 +23,43 @@ class MockNet(torch.nn.Module):
         self.out_proj = torch.nn.Linear(10, num_classes)
 
     def forward(self, input_and_condition):
-        # Extract input from the dictionary passed by ClassificationWrapper
         x = input_and_condition["input"]
         return {"logits": self.out_proj(x)}
 
 
 def test_bce_loss():
-    print("Testing BCE Loss implementation...")
+    print("Testing loss= parameter...")
     cfg = ExperimentConfig()
     net = MockNet(num_classes=10)
 
-    # ---------------------------------------------------------
-    # Test 1: Initialize with use_bce_loss=True
-    # ---------------------------------------------------------
-    wrapper_bce = ClassificationWrapper(net, cfg, use_bce_loss=True)
-
-    # Verify the loss metric choice
+    # Test 1: loss="bce" → BCEWithLogitsLoss
+    wrapper_bce = ClassificationWrapper(net, cfg, loss="bce")
     assert isinstance(wrapper_bce.loss_metric, torch.nn.BCEWithLogitsLoss), (
-        "Expected BCEWithLogitsLoss when use_bce_loss=True"
+        "Expected BCEWithLogitsLoss when loss='bce'"
     )
-    print("[PASS] Loss metric is correctly set to BCEWithLogitsLoss.")
+    print("[PASS] loss='bce' → BCEWithLogitsLoss")
 
-    # ---------------------------------------------------------
-    # Test 2: Initialize with use_bce_loss=False (Default)
-    # ---------------------------------------------------------
-    wrapper_ce = ClassificationWrapper(net, cfg, use_bce_loss=False)
+    # Test 2: loss="soft_target_ce" → SoftTargetCrossEntropy
+    wrapper_soft = ClassificationWrapper(net, cfg, loss="soft_target_ce")
+    assert isinstance(wrapper_soft.loss_metric, SoftTargetCrossEntropy), (
+        "Expected SoftTargetCrossEntropy when loss='soft_target_ce'"
+    )
+    print("[PASS] loss='soft_target_ce' → SoftTargetCrossEntropy")
 
-    # Verify the loss metric choice
+    # Test 3: loss="cross_entropy" (default) → CrossEntropyLoss
+    wrapper_ce = ClassificationWrapper(net, cfg, loss="cross_entropy")
     assert isinstance(wrapper_ce.loss_metric, torch.nn.CrossEntropyLoss), (
-        "Expected CrossEntropyLoss when use_bce_loss=False"
+        "Expected CrossEntropyLoss when loss='cross_entropy'"
     )
-    print("[PASS] Loss metric is correctly set to CrossEntropyLoss.")
+    print("[PASS] loss='cross_entropy' → CrossEntropyLoss")
+
+    # Test 4: invalid loss raises ValueError
+    try:
+        ClassificationWrapper(net, cfg, loss="invalid")
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        print("[PASS] Invalid loss raises ValueError")
+
     print("All verification steps passed!")
 
 
