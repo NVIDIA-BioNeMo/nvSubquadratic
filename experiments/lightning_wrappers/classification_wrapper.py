@@ -5,8 +5,8 @@
 import torch
 import torch.nn.functional as F
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -20,6 +20,7 @@ class SoftTargetCrossEntropy(torch.nn.Module):
     """
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Compute soft-target cross-entropy: ``-sum(target * log_softmax(logits))``."""
         loss = torch.sum(-targets * F.log_softmax(logits, dim=-1), dim=-1)
         return loss.mean()
 
@@ -46,6 +47,7 @@ class ClassificationWrapper(LightningWrapperBase):
         cfg: ExperimentConfig,
         loss: str = "cross_entropy",
     ):
+        """Initialize classification wrapper with loss mode and metrics."""
         super().__init__(
             network=network,
             cfg=cfg,
@@ -323,6 +325,25 @@ class ClassificationWrapper(LightningWrapperBase):
                         "global_step": self.global_step,
                     }
                 )
+
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        """Persist best-metric tracking values so they survive resume."""
+        checkpoint["best_metrics"] = {
+            "best_train_acc": self.best_train_acc,
+            "best_train_loss": self.best_train_loss,
+            "best_val_acc": self.best_val_acc,
+            "best_val_loss": self.best_val_loss,
+        }
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """Restore best-metric tracking values and delegate key remapping to base."""
+        super().on_load_checkpoint(checkpoint)
+        metrics = checkpoint.get("best_metrics")
+        if metrics is not None:
+            self.best_train_acc = metrics.get("best_train_acc", 0.0)
+            self.best_train_loss = metrics.get("best_train_loss", 1e9)
+            self.best_val_acc = metrics.get("best_val_acc", 0.0)
+            self.best_val_loss = metrics.get("best_val_loss", 1e9)
 
     @staticmethod
     def multiclass_prediction(logits):

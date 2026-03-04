@@ -15,7 +15,9 @@ from experiments.default_cfg import (
     ExperimentConfig,
     SchedulerConfig,
 )
+from experiments.utils.checkpointing import align_compiled_keys
 from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.schedulers import ResumableSequentialLR
 
 
 def construct_optimizer(
@@ -173,7 +175,7 @@ def construct_scheduler(
         )
         schedulers.append(decay_scheduler)
 
-        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+        lr_scheduler = ResumableSequentialLR(
             optimizer,
             schedulers=schedulers,
             milestones=milestones,
@@ -201,7 +203,7 @@ def construct_scheduler(
 
     # Combine warmup + post-warmup via SequentialLR
     if warmup_scheduler is not None and post_warmup is not None:
-        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+        lr_scheduler = ResumableSequentialLR(
             optimizer,
             schedulers=[warmup_scheduler, post_warmup],
             milestones=[warmup_iterations],
@@ -263,34 +265,34 @@ class LightningWrapperBase(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """Patch checkpoint for cross-optimizer and compiled/non-compiled resume.
 
-        Handles two mismatch scenarios:
+        Handles three mismatch scenarios:
 
         1. **state_dict key prefixes** — ``torch.compile`` wraps modules under
            ``_orig_mod``, so checkpoint keys may differ from the live model.
 
-        2. **optimizer param-group keys** — resuming with a different optimizer
+        2. **current_model_state key prefixes** — when EMA is active, Lightning
+           saves the raw training weights under ``current_model_state``.  The
+           EMA callback later calls ``pl_module.load_state_dict(...)`` with
+           these keys, so they must also be remapped.
+
+        3. **optimizer param-group keys** — resuming with a different optimizer
            (e.g. Apex FusedLAMB vs torch_optimizer.Lamb) may require injecting
            default values for keys the new optimizer expects but the old
            checkpoint lacks (like ``bias_correction``, ``adam_w_mode``, etc.).
         """
+        model_keys = set(self.state_dict().keys())
+
         # --- 1. state_dict key remapping ----------------------------------
         state_dict = checkpoint.get("state_dict")
         if state_dict is not None:
-            model_keys = set(self.state_dict().keys())
-            ckpt_keys = set(state_dict.keys())
-            if model_keys != ckpt_keys:
+            checkpoint["state_dict"] = align_compiled_keys(state_dict, model_keys)
 
-                def _strip(key: str) -> str:
-                    return key.replace("._orig_mod.", ".")
+        # --- 2. current_model_state key remapping (EMA) -------------------
+        current_model_state = checkpoint.get("current_model_state")
+        if current_model_state is not None:
+            checkpoint["current_model_state"] = align_compiled_keys(current_model_state, model_keys)
 
-                model_stripped = {_strip(k): k for k in model_keys}
-                remapped: dict[str, torch.Tensor] = {}
-                for ckpt_key, value in state_dict.items():
-                    target = model_stripped.get(_strip(ckpt_key), ckpt_key)
-                    remapped[target] = value
-                checkpoint["state_dict"] = remapped
-
-        # --- 2. optimizer param-group patching ----------------------------
+        # --- 3. optimizer param-group patching ----------------------------
         #
         # When resuming with a different optimizer (e.g. Apex FusedLAMB from
         # a torch_optimizer.Lamb checkpoint), the checkpoint's param groups
