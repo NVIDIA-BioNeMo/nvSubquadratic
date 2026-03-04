@@ -12,14 +12,23 @@ import torch
 
 from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
 from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
+from experiments.default_cfg import (
+    AutoResumeConfig,
+    ExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    TrainerConfig,
+    WandbConfig,
+)
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+
 
 try:
     from apex.optimizers import FusedLAMB as Lamb
 except ImportError:
     import warnings
+
     warnings.warn(
         "apex.optimizers.FusedLAMB not found — falling back to torch_optimizer.Lamb. "
         "Install Apex for fused multi-tensor LAMB (significant optimizer step speedup).",
@@ -32,6 +41,7 @@ from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -149,7 +159,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="bce")
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
 
     # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
