@@ -654,6 +654,73 @@ def plot_mixing_matrices(
     return figs
 
 
+def plot_mixing_svd_map(
+    all_kernels: list[dict],
+    detail_layers: list[int],
+    selected_heads: list[int] | None,
+) -> plt.Figure:
+    """Heatmap of the top singular value σ₁ of each spatial position's mixing matrix.
+
+    For each head at each spatial offset (y, x), the kernel stores a
+    head_dim × head_dim channel-mixing matrix K[h, :, :, y, x].  Its top
+    singular value σ₁ summarizes *how strongly* that position mixes channels.
+
+    High σ₁ ⇒ strong cross-channel interaction at that offset.
+    Low  σ₁ ⇒ nearly zero mixing (position is effectively "off").
+    """
+    kernels = [all_kernels[i] for i in detail_layers]
+    num_heads_total = kernels[0]["masked_kernel"].shape[0]
+    heads = selected_heads if selected_heads is not None else list(range(num_heads_total))
+    n_layers = len(kernels)
+    n_heads = len(heads)
+
+    fig, axes = plt.subplots(
+        n_layers, n_heads, figsize=(2.5 * n_heads, 2.2 * n_layers), squeeze=False
+    )
+
+    for row, kdata in enumerate(kernels):
+        kernel = kdata["masked_kernel"]  # [num_heads, head_dim, head_dim, K_h, K_w]
+
+        for ci, h in enumerate(heads):
+            ax = axes[row, ci]
+            K = kernel[h]  # [head_dim, head_dim, K_h, K_w]
+            hd, _, Kh, Kw = K.shape
+
+            # Compute top singular value at each spatial position
+            # Reshape to [K_h * K_w, head_dim, head_dim] for batched SVD
+            mats = K.permute(2, 3, 0, 1).reshape(Kh * Kw, hd, hd)  # [N, D, D]
+            # torch.linalg.svdvals returns singular values in descending order
+            sigma1 = torch.linalg.svdvals(mats)[:, 0]  # [N]
+            sigma1_map = sigma1.reshape(Kh, Kw).numpy()  # [K_h, K_w]
+
+            im = ax.imshow(
+                sigma1_map, cmap=_CMAP_SPECTRAL, origin="lower", aspect="auto"
+            )
+            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row == 0:
+                ax.set_title(f"Head {h}", fontsize=9)
+            if ci == 0:
+                ax.set_ylabel(f"Layer {kdata['layer_idx']}", fontsize=9)
+
+    fig.suptitle("Mixing Strength Map (σ₁ of channel-mixing matrix)", fontsize=13, y=1.02)
+    fig.text(
+        0.5,
+        -0.01,
+        "Goal: Summarise how actively each spatial offset mixes channels. Each pixel shows σ₁ of the\n"
+        "head_dim×head_dim mixing matrix at that position. High σ₁ = strong cross-channel interaction;\n"
+        "concentrated near center = local mixing dominates; broad = long-range channel interactions.",
+        ha="center",
+        va="top",
+        fontsize=7,
+        style="italic",
+        color="0.4",
+    )
+    fig.tight_layout()
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Panel 6: Activation maps (image-conditioned)
 # ---------------------------------------------------------------------------
