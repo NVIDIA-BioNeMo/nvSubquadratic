@@ -8,7 +8,7 @@ paper's fine-tuning recipe (Table 13):
 - RandAugment rand-m9-mstd0.5-inc1, Mixup 0.8, CutMix 1.0, no Random Erasing
 - Label smoothing 0.1, no ThreeAugment, no gradient clipping
 - EMA decay=0.99996 (val/acc and val/loss are EMA metrics)
-- Uses ImageNetDataModule (torchvision) for RandAugment + Random Erasing support
+- Uses DALIImageNetFusedDataModule for GPU-accelerated data loading
 
 Network: Hyena GAP apex (no CLS token, global average pooling over patch tokens).
 """
@@ -18,7 +18,11 @@ import os
 import torch
 
 from experiments.callbacks.model_ema import LabeledEMAWeightAveraging
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules.dali_imagenet_fused import (
+    AugmentConfig,
+    DALIImageNetFusedDataModule,
+    MixupConfig,
+)
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,
@@ -29,8 +33,8 @@ from experiments.default_cfg import (
     WandbConfig,
 )
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
+from experiments.utils.checkpointing import StripCompiledPrefix
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -42,6 +46,7 @@ from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 from nvsubquadratic.utils.qk_norm import L2Norm
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -96,8 +101,8 @@ def get_config() -> ExperimentConfig:
     config.seed = 42
     config.compile = True
 
-    # ─── Dataset (torchvision, not DALI — for RandAugment + Random Erasing) ──
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    # ─── Dataset (DALI with fused augmentations including RandAugment) ──
+    config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
         data_dir=IMAGENET_PATH,
         imagefolder_dir=IMAGENET_FOLDER_PATH,
         prefetch_factor=3,
@@ -126,6 +131,7 @@ def get_config() -> ExperimentConfig:
             random_erasing_prob=0.0,
             random_erasing_mode="pixel",
         ),
+        device_id=0,
         local_staging_dir=f"/scratch/{os.environ.get('USER', 'unknown')}/imagenet_dataset",
     )
 
@@ -237,8 +243,9 @@ def get_config() -> ExperimentConfig:
     config.start_from_checkpoint = StartFromCheckpointConfig(
         load=True,
         run_path=PRETRAINED_RUN_PATH,
-        alias="best",
+        alias="latest",
         strict=True,
+        callbacks=[LazyConfig(StripCompiledPrefix)()],
     )
 
     # ─── Wandb ──────────────────────────────────────────────────────────────

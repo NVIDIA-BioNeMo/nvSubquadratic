@@ -13,29 +13,66 @@ Requires: ``pip install nvidia-dali-cuda120``
 import os
 import shutil
 import subprocess
+
+# ---------------------------------------------------------------------------
+# Shared ImageNet constants and config dataclasses
+# ---------------------------------------------------------------------------
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
 import pytorch_lightning as pl
 import torch
+from nvidia.dali import fn, pipeline_def, types
+from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
 
-from nvidia.dali import fn, pipeline_def, types
-from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
+from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
 
-from experiments.datamodules.imagenet import (
-    AugmentConfig,
-    MixupConfig,
-    DEFAULT_IMAGENET_MEAN,
-    DEFAULT_IMAGENET_STD,
-    IMAGENET_MEAN_STD_BY_SIZE,
-)
+
+IMAGENET_MEAN_STD_BY_SIZE = {
+    32: (
+        [0.48450482, 0.45589244, 0.40366766],
+        [0.25668961, 0.24765739, 0.26173702],
+    ),
+    64: (
+        [0.48453078, 0.45592377, 0.40370297],
+        [0.26425716, 0.25516447, 0.26875198],
+    ),
+}
+
+DEFAULT_IMAGENET_MEAN = [0.485, 0.456, 0.406]
+DEFAULT_IMAGENET_STD = [0.229, 0.224, 0.225]
+
+
+@dataclass
+class MixupConfig:
+    """Configuration for mixup."""
+
+    mixup: float = 0.0
+    cutmix: float = 0.0
+    mixup_prob: float = 1.0
+    mixup_switch_prob: float = 0.5
+    mixup_mode: str = "batch"
+    smoothing: float = 0.1
+
+
+@dataclass
+class AugmentConfig:
+    """Configuration for augmentations."""
+
+    use_three_augment: bool = False
+    color_jitter: float = 0.4
+    rand_augment: Optional[str] = None
+    random_erasing_prob: float = 0.0
+    random_erasing_mode: str = "pixel"
 
 
 # ---------------------------------------------------------------------------
 # DALI pipelines — augmentations fused into the pipeline
 # ---------------------------------------------------------------------------
+
 
 def _solarize(images):
     """Solarize: invert pixels whose value >= 128 (per-element masking)."""
@@ -54,6 +91,7 @@ def _train_pipeline_fused(
     norm_std: tuple,
     use_three_augment: bool = False,
     color_jitter: float = 0.0,
+    rand_augment_config: str = "",
     shard_id: int = 0,
     num_shards: int = 1,
 ):
@@ -65,6 +103,7 @@ def _train_pipeline_fused(
         shard_id=shard_id,
         num_shards=num_shards,
     )
+
     images = fn.decoders.image(jpegs, device="mixed", output_type=types.RGB)
     images = fn.random_resized_crop(
         images,
@@ -87,7 +126,9 @@ def _train_pipeline_fused(
         coin = fn.random.uniform(range=(0.0, 1.0))
         if coin < (1.0 / 3.0):
             grey = fn.color_space_conversion(
-                images, image_type=types.RGB, output_type=types.GRAY,
+                images,
+                image_type=types.RGB,
+                output_type=types.GRAY,
             )
             images = fn.cat(grey, grey, grey, axis=2)
         else:
@@ -107,6 +148,14 @@ def _train_pipeline_fused(
             brightness=brightness,
             contrast=contrast,
             saturation=saturation,
+        )
+
+    # ── RandAugment (timm-compatible, applied on uint8 before normalize) ──
+    if rand_augment_config:
+        images = dali_rand_augment(
+            images,
+            config_str=rand_augment_config,
+            shape=(final_image_size, final_image_size),
         )
 
     # ── uint8 → float32 + normalize ─────────────────────────────────
@@ -167,6 +216,7 @@ def _val_pipeline_fused(
 # Thin wrapper so DALI iterators look like PyTorch DataLoaders to Lightning
 # ---------------------------------------------------------------------------
 
+
 class _DALILoaderWrapper:
     """Wraps ``DALIGenericIterator`` to yield ``(images, labels)`` tuples."""
 
@@ -176,7 +226,7 @@ class _DALILoaderWrapper:
     def __iter__(self):
         for batch in self._iter:
             data = batch[0]
-            images = data["images"]       # (B, C, H, W) float32 GPU (already NCHW + normalized)
+            images = data["images"]  # (B, C, H, W) float32 GPU (already NCHW + normalized)
             labels = data["labels"].squeeze(-1).long()
             yield images, labels
 
@@ -187,6 +237,7 @@ class _DALILoaderWrapper:
 # ---------------------------------------------------------------------------
 # Main DataModule
 # ---------------------------------------------------------------------------
+
 
 class DALIImageNetFusedDataModule(pl.LightningDataModule):
     """DALI ImageNet DataModule with all augmentations inside the DALI pipeline.
@@ -225,6 +276,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         channels_first: bool = False,
         local_staging_dir: Optional[str] = None,
     ) -> None:
+        """Initialize DALI ImageNet DataModule with augmentation and mixup configs."""
         super().__init__()
 
         self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
@@ -269,12 +321,22 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
             augment_cfg = OmegaConf.to_object(OmegaConf.merge(base, augment_cfg))
         self.augment_cfg = augment_cfg
 
-        self._use_three_augment = (
-            augment_cfg is not None and augment_cfg.use_three_augment
+        self._use_three_augment = augment_cfg is not None and augment_cfg.use_three_augment
+        self._color_jitter = augment_cfg.color_jitter if augment_cfg is not None else 0.0
+        self._rand_augment_config = (
+            augment_cfg.rand_augment if augment_cfg is not None and getattr(augment_cfg, "rand_augment", None) else ""
         )
-        self._color_jitter = (
-            augment_cfg.color_jitter if augment_cfg is not None else 0.0
-        )
+
+        # ── RandomErasing (applied on GPU in on_before_batch_transfer) ───
+        self._random_erasing_fn = None
+        if augment_cfg is not None and getattr(augment_cfg, "random_erasing_prob", 0.0) > 0:
+            from timm.data.random_erasing import RandomErasing
+
+            self._random_erasing_fn = RandomErasing(
+                probability=augment_cfg.random_erasing_prob,
+                mode=getattr(augment_cfg, "random_erasing_mode", "pixel"),
+                device="cuda",
+            )
 
         # ── Mixup config ────────────────────────────────────────────────
         if isinstance(mixup_cfg, (dict, DictConfig)):
@@ -315,7 +377,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         try:
             dst.mkdir(parents=True, exist_ok=True)
             free_bytes = shutil.disk_usage(dst).free
-            min_bytes = 160 * (1024 ** 3)
+            min_bytes = 160 * (1024**3)
             if free_bytes < min_bytes:
                 raise RuntimeError(
                     f"[data-staging] {dst} has only "
@@ -341,10 +403,12 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         print(f"[data-staging] Done. Using local path: {dst}", flush=True)
 
     def prepare_data(self) -> None:
+        """Stage data to local storage if configured."""
         if self._local_staging_dir is not None:
             self._stage_to_local()
 
     def setup(self, stage: Optional[str] = None) -> None:
+        """Build DALI train/val pipelines for the given stage."""
         train_root = str(self.imagefolder_dir / "train")
         val_root = str(self.imagefolder_dir / "val")
 
@@ -364,6 +428,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 norm_std=self._norm_std_tuple,
                 use_three_augment=self._use_three_augment,
                 color_jitter=self._color_jitter,
+                rand_augment_config=self._rand_augment_config,
                 shard_id=local_rank,
                 num_shards=world_size,
                 batch_size=self.batch_size,
@@ -392,24 +457,31 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
             self._val_pipe.build()
 
     def train_dataloader(self):
-        return _DALILoaderWrapper(DALIGenericIterator(
-            self._train_pipe,
-            output_map=["images", "labels"],
-            reader_name="reader",
-            last_batch_policy=LastBatchPolicy.DROP,
-            auto_reset=True,
-        ))
+        """Return DALI-backed training dataloader."""
+        return _DALILoaderWrapper(
+            DALIGenericIterator(
+                self._train_pipe,
+                output_map=["images", "labels"],
+                reader_name="reader",
+                last_batch_policy=LastBatchPolicy.DROP,
+                auto_reset=True,
+            )
+        )
 
     def val_dataloader(self):
-        return _DALILoaderWrapper(DALIGenericIterator(
-            self._val_pipe,
-            output_map=["images", "labels"],
-            reader_name="reader",
-            last_batch_policy=LastBatchPolicy.PARTIAL,
-            auto_reset=True,
-        ))
+        """Return DALI-backed validation dataloader."""
+        return _DALILoaderWrapper(
+            DALIGenericIterator(
+                self._val_pipe,
+                output_map=["images", "labels"],
+                reader_name="reader",
+                last_batch_policy=LastBatchPolicy.PARTIAL,
+                auto_reset=True,
+            )
+        )
 
     def test_dataloader(self):
+        """Return DALI-backed test dataloader (same as validation)."""
         return self.val_dataloader()
 
     # ------------------------------------------------------------------
@@ -417,8 +489,12 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
     # ------------------------------------------------------------------
 
     def on_before_batch_transfer(self, batch, dataloader_idx):
+        """Apply RandomErasing, Mixup/CutMix, and layout permute on GPU."""
         images, labels = batch  # (B, C, H, W) float32 GPU (already augmented + normalized)
         labels = labels.to(device=images.device)
+
+        if self._random_erasing_fn is not None and self.trainer is not None and self.trainer.training:
+            images = self._random_erasing_fn(images)
 
         if self.mixup_fn is not None and self.trainer is not None and self.trainer.training:
             images, labels = self.mixup_fn(images, labels)
@@ -432,6 +508,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         return {"input": images, "label": labels, "condition": None}
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        """No-op: DALI data is already on GPU."""
         return batch
 
     # ------------------------------------------------------------------
