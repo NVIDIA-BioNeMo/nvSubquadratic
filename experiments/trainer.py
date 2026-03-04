@@ -40,6 +40,31 @@ def _scheduler_phase_boundaries(cfg: ExperimentConfig) -> dict[str, tuple[int, i
     return {}
 
 
+def _scheduler_phase_boundaries(cfg: ExperimentConfig) -> dict[str, tuple[int, int]]:
+    """Derive per-phase step boundaries from the scheduler config.
+
+    Returns a mapping ``{phase_name: (start_step, end_step)}`` suitable for
+    :class:`WandbSelectiveCheckpointUploader`.  Warmup is excluded because it
+    is typically too short to warrant dedicated checkpoints.
+    """
+    sched = cfg.scheduler
+    total = sched.total_iterations
+    if total is None or total <= 0:
+        return {}
+    warmup_end = int(sched.warmup_iterations_percentage * total)
+
+    name = getattr(sched, "name", None)
+    if name == "wsd":
+        stable_pct = getattr(sched, "stable_iterations_percentage", 0.0)
+        stable_end = warmup_end + int(stable_pct * total)
+        return {"stable": (warmup_end, stable_end), "decay": (stable_end, total)}
+    if name == "cosine":
+        return {"cosine": (warmup_end, total)}
+    if name == "constant":
+        return {"constant": (warmup_end, total)}
+    return {}
+
+
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,
@@ -128,6 +153,24 @@ def construct_trainer(
         pl_callbacks.Timer(),
         # Progress bar for SLURM/non-TTY environments - prints training progress with it/s
         pl_callbacks.TQDMProgressBar(refresh_rate=10),
+        # Wandb selective checkpoint uploader (with per-scheduler-phase tracking)
+        WandbSelectiveCheckpointUploader(
+            upload_best=True,
+            upload_last=True,
+            remove_local_after_upload=False,
+            keep_last_k_versions=2,
+            phase_boundaries=_scheduler_phase_boundaries(cfg),
+            mode=cfg.scheduler.mode,
+        ),
+        # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
+        WandbCacheCleanupCallback(
+            max_cache_size="5GB",
+            every_n_epochs=2,
+            executable="wandb",
+            run_on_fit_start=True,
+            background=True,
+            timeout=60,
+        ),
         # Append user-defined callbacks
         *user_callbacks,
     ]
