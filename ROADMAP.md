@@ -13,10 +13,10 @@ to open the Gradio app, explore the panels, and understand what each
 visualization reveals about the model's behavior — without reading the source code.
 
 ### Milestone 1.1 — Audit & Improvement Plan
-- [ ] Full audit of all 11 panels: clarity, best practices, interpretive scaffolding
-- [ ] Identify panels that need redesign vs. panels that need minor polish
-- [ ] Research alternative/complementary visualization techniques
-- [ ] Produce prioritized task files for Claude
+- [x] Full audit of all 11 panels: clarity, best practices, interpretive scaffolding
+- [x] Identify panels that need redesign vs. panels that need minor polish
+- [x] Research alternative/complementary visualization techniques
+- [x] Produce prioritized task files for Claude
 
 ### Milestone 1.2 — Panel Redesign & Enhancement
 - [ ] Add interpretive context to each panel (reference ranges, annotations, summaries)
