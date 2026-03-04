@@ -1,16 +1,19 @@
-"""Tests for checkpoint resume fixes.
+"""Tests for checkpoint resume fixes and per-phase checkpoint uploads.
 
 Covers:
 1. Best-metric persistence across save/load checkpoint cycles.
 2. ``current_model_state`` key remapping for EMA + torch.compile mismatch.
 3. ``ResumableSequentialLR`` round-trip for cosine and WSD schedules.
+4. ``WandbSelectiveCheckpointUploader`` phase determination and per-phase best tracking.
 """
+
+from typing import ClassVar
 
 import pytest
 import torch
 import torch.nn as nn
 
-from experiments.utils.checkpointing import align_compiled_keys
+from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader, align_compiled_keys
 from nvsubquadratic.modules.schedulers import ResumableSequentialLR
 
 
@@ -312,3 +315,163 @@ class TestResumableSequentialLR:
         assert restored_lr != pytest.approx(expected_lr, abs=1e-6), (
             "If this fails, PyTorch fixed the SequentialLR bug — ResumableSequentialLR can be removed"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 4: WandbSelectiveCheckpointUploader — phase determination & tracking
+# ---------------------------------------------------------------------------
+def _make_uploader(phase_boundaries=None, mode="max", **kwargs):
+    """Create a WandbSelectiveCheckpointUploader for unit testing."""
+    return WandbSelectiveCheckpointUploader(
+        upload_best=True,
+        upload_last=True,
+        phase_boundaries=phase_boundaries,
+        mode=mode,
+        **kwargs,
+    )
+
+
+class TestSchedulerPhaseBoundaries:
+    """Verify ``_scheduler_phase_boundaries`` helper in trainer.py."""
+
+    def test_wsd_boundaries(self):
+        from experiments.default_cfg import ExperimentConfig, SchedulerConfig
+        from experiments.trainer import _scheduler_phase_boundaries
+
+        cfg = ExperimentConfig()
+        cfg.scheduler = SchedulerConfig(
+            name="wsd",
+            warmup_iterations_percentage=0.1,
+            stable_iterations_percentage=0.6,
+            total_iterations=10000,
+            mode="max",
+        )
+        boundaries = _scheduler_phase_boundaries(cfg)
+        assert boundaries == {"stable": (1000, 7000), "decay": (7000, 10000)}
+
+    def test_cosine_boundaries(self):
+        from experiments.default_cfg import ExperimentConfig, SchedulerConfig
+        from experiments.trainer import _scheduler_phase_boundaries
+
+        cfg = ExperimentConfig()
+        cfg.scheduler = SchedulerConfig(
+            name="cosine",
+            warmup_iterations_percentage=0.05,
+            total_iterations=20000,
+            mode="max",
+        )
+        boundaries = _scheduler_phase_boundaries(cfg)
+        assert boundaries == {"cosine": (1000, 20000)}
+
+    def test_constant_boundaries(self):
+        from experiments.default_cfg import ExperimentConfig, SchedulerConfig
+        from experiments.trainer import _scheduler_phase_boundaries
+
+        cfg = ExperimentConfig()
+        cfg.scheduler = SchedulerConfig(
+            name="constant",
+            warmup_iterations_percentage=0.02,
+            total_iterations=5000,
+            mode="max",
+        )
+        boundaries = _scheduler_phase_boundaries(cfg)
+        assert boundaries == {"constant": (100, 5000)}
+
+    def test_unknown_scheduler_returns_empty(self):
+        from experiments.default_cfg import ExperimentConfig, SchedulerConfig
+        from experiments.trainer import _scheduler_phase_boundaries
+
+        cfg = ExperimentConfig()
+        cfg.scheduler = SchedulerConfig(
+            name="polynomial",
+            total_iterations=1000,
+            mode="max",
+        )
+        assert _scheduler_phase_boundaries(cfg) == {}
+
+
+class TestUploaderPhaseDetermination:
+    """Verify ``_current_phase`` correctly maps global_step to phase name."""
+
+    WSD_BOUNDARIES: ClassVar[dict] = {"stable": (100, 800), "decay": (800, 1000)}
+
+    def test_warmup_returns_none(self):
+        up = _make_uploader(self.WSD_BOUNDARIES)
+        assert up._current_phase(0) is None
+        assert up._current_phase(50) is None
+        assert up._current_phase(99) is None
+
+    def test_stable_phase(self):
+        up = _make_uploader(self.WSD_BOUNDARIES)
+        assert up._current_phase(100) == "stable"
+        assert up._current_phase(500) == "stable"
+        assert up._current_phase(799) == "stable"
+
+    def test_decay_phase(self):
+        up = _make_uploader(self.WSD_BOUNDARIES)
+        assert up._current_phase(800) == "decay"
+        assert up._current_phase(900) == "decay"
+        assert up._current_phase(999) == "decay"
+
+    def test_beyond_total_returns_none(self):
+        up = _make_uploader(self.WSD_BOUNDARIES)
+        assert up._current_phase(1000) is None
+        assert up._current_phase(5000) is None
+
+    def test_cosine_single_phase(self):
+        up = _make_uploader({"cosine": (50, 500)})
+        assert up._current_phase(49) is None
+        assert up._current_phase(50) == "cosine"
+        assert up._current_phase(499) == "cosine"
+        assert up._current_phase(500) is None
+
+    def test_no_boundaries_always_none(self):
+        up = _make_uploader()
+        assert up._current_phase(0) is None
+        assert up._current_phase(500) is None
+
+
+class TestUploaderPhaseTracking:
+    """Verify per-phase best metric tracking."""
+
+    WSD_BOUNDARIES: ClassVar[dict] = {"stable": (100, 800), "decay": (800, 1000)}
+
+    def test_max_mode_improvement(self):
+        up = _make_uploader(self.WSD_BOUNDARIES, mode="max")
+        assert up._phase_best == {"stable": float("-inf"), "decay": float("-inf")}
+
+        assert up._is_phase_improvement("stable", 0.5)
+        up._phase_best["stable"] = 0.5
+        assert up._is_phase_improvement("stable", 0.6)
+        assert not up._is_phase_improvement("stable", 0.5)
+        assert not up._is_phase_improvement("stable", 0.4)
+
+    def test_min_mode_improvement(self):
+        up = _make_uploader(self.WSD_BOUNDARIES, mode="min")
+        assert up._phase_best == {"stable": float("inf"), "decay": float("inf")}
+
+        assert up._is_phase_improvement("stable", 1.0)
+        up._phase_best["stable"] = 1.0
+        assert up._is_phase_improvement("stable", 0.8)
+        assert not up._is_phase_improvement("stable", 1.0)
+        assert not up._is_phase_improvement("stable", 1.5)
+
+    def test_phases_tracked_independently(self):
+        """Improving in stable does not affect decay tracking."""
+        up = _make_uploader(self.WSD_BOUNDARIES, mode="max")
+        up._phase_best["stable"] = 0.9
+        assert up._is_phase_improvement("decay", 0.1)
+        up._phase_best["decay"] = 0.1
+        assert not up._is_phase_improvement("stable", 0.8)
+
+    def test_empty_boundaries_has_no_tracking(self):
+        up = _make_uploader()
+        assert up._phase_best == {}
+
+    def test_initial_score_always_improves(self):
+        """First score in any phase is always an improvement."""
+        up = _make_uploader(self.WSD_BOUNDARIES, mode="max")
+        assert up._is_phase_improvement("stable", -1000.0)
+
+        up_min = _make_uploader(self.WSD_BOUNDARIES, mode="min")
+        assert up_min._is_phase_improvement("decay", 1e12)

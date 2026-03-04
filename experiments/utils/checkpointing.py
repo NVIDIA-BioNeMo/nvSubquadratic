@@ -302,9 +302,16 @@ def preview_state_dict_compatibility(
 
 
 class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
-    """Upload only selected checkpoints (best/last) to W&B during training.
+    """Upload checkpoints to W&B with per-scheduler-phase best/latest tracking.
 
-    Avoids logging every checkpoint and supports optional local deletion.
+    In addition to the global ``best`` and ``latest`` aliases, this callback
+    uploads ``last.ckpt`` with per-phase aliases (e.g. ``stable-best``,
+    ``decay-latest``) so that the best and most recent checkpoint for each
+    scheduler regime are preserved in W&B artifacts.
+
+    Phase boundaries are derived from the scheduler config and passed as
+    ``phase_boundaries``.  When empty, only global best/latest are uploaded
+    (backward-compatible behavior).
     """
 
     def __init__(
@@ -313,17 +320,51 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         upload_last: bool = True,
         remove_local_after_upload: bool = False,
         keep_last_k_versions: int = 2,
+        phase_boundaries: dict[str, tuple[int, int]] | None = None,
+        mode: str = "max",
     ):
-        """Configure selective checkpoint uploads to W&B."""
+        """Configure selective checkpoint uploads to W&B.
+
+        Args:
+            upload_best: Upload the global-best checkpoint (alias ``"best"``).
+            upload_last: Upload the latest checkpoint (alias ``"latest"``).
+            remove_local_after_upload: Delete local file after successful upload.
+            keep_last_k_versions: Minimum unaliased artifact versions to retain
+                when pruning.  Aliased versions are **always** protected.
+            phase_boundaries: Maps phase name to ``(start_step, end_step)``
+                inclusive/exclusive.  E.g. ``{"stable": (1000, 8000), "decay":
+                (8000, 10000)}``.  Empty or ``None`` disables per-phase tracking.
+            mode: ``"max"`` or ``"min"`` — whether higher or lower metric is better.
+        """
         super().__init__()
         self.upload_best = upload_best
         self.upload_last = upload_last
         self.remove_local_after_upload = remove_local_after_upload
         self.keep_last_k_versions = max(int(keep_last_k_versions), 1)
+        self.phase_boundaries: dict[str, tuple[int, int]] = phase_boundaries or {}
+        self.mode = mode
         # Track per-alias content hashes to avoid re-uploading identical content
         # even if the file path is reused (e.g., latest checkpoint overwrites).
         # Structure: {alias: last_sha256_hex}
         self._uploaded_hashes: dict[str, str] = {}
+        # Per-phase best metric tracking: {phase_name: best_score}
+        self._phase_best: dict[str, float] = {
+            name: float("-inf") if mode == "max" else float("inf") for name in self.phase_boundaries
+        }
+
+    def _current_phase(self, global_step: int) -> str | None:
+        """Return the phase name for *global_step*, or ``None`` if no phase matches."""
+        for name, (start, end) in self.phase_boundaries.items():
+            if start <= global_step < end:
+                return name
+        return None
+
+    def _is_phase_improvement(self, phase: str, score: float) -> bool:
+        """Return ``True`` if *score* improves the per-phase best for *phase*."""
+        prev = self._phase_best[phase]
+        if self.mode == "max":
+            return score > prev
+        return score < prev
 
     def _file_sha256(self, path: str, chunk_size: int = 1024 * 1024) -> str:
         h = hashlib.sha256()
@@ -407,14 +448,14 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             # Newest first
             versions.sort(key=_ver_num, reverse=True)
 
-            # Always preserve versions carrying important aliases
+            # Preserve every version that carries at least one alias
             alias_protected = set()
             for a in versions:
                 aliases = set(getattr(a, "aliases", []) or [])
-                if ("best" in aliases) or ("latest" in aliases):
+                if aliases:
                     alias_protected.add(getattr(a, "id", a))
             if alias_protected:
-                print(f"[checkpoint/prune] Protected by alias (best/latest): {len(alias_protected)}")
+                print(f"[checkpoint/prune] Protected by alias: {len(alias_protected)}")
 
             to_keep = []
             for a in versions:
@@ -490,6 +531,8 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         if ckpt_cb is None:
             print("[checkpoint/upload][warn] No ModelCheckpoint callback found; skipping upload")
             return
+
+        # --- Global best / latest (backward-compatible) -----------------------
         if self.upload_best:
             best_path = getattr(ckpt_cb, "best_model_path", None)
             if best_path:
@@ -497,12 +540,29 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             else:
                 print("[checkpoint/upload][warn] upload_best=True but best_model_path is empty; will retry later")
         if self.upload_last:
-            # Support both Lightning 1.x and 2.x attribute names
             last_path = getattr(ckpt_cb, "last_model_path", None) or getattr(ckpt_cb, "last_model", None)
             if last_path:
                 self._maybe_upload(run, last_path, alias="latest")
             else:
                 print("[checkpoint/upload][warn] upload_last=True but last_model_path is empty; will retry later")
+
+        # --- Per-phase best / latest ------------------------------------------
+        if self.phase_boundaries:
+            phase = self._current_phase(trainer.global_step)
+            if phase is not None:
+                last_path = getattr(ckpt_cb, "last_model_path", None) or getattr(ckpt_cb, "last_model", None)
+                if last_path and os.path.isfile(last_path):
+                    self._maybe_upload(run, last_path, alias=f"{phase}-latest")
+
+                    score = getattr(ckpt_cb, "current_score", None)
+                    if score is not None:
+                        score_val = float(score)
+                        if self._is_phase_improvement(phase, score_val):
+                            self._phase_best[phase] = score_val
+                            self._maybe_upload(run, last_path, alias=f"{phase}-best")
+                            print(
+                                f"[checkpoint/upload] New {phase}-best: {score_val:.4f} (step {trainer.global_step})"
+                            )
 
         # Prune older remote versions to keep storage bounded
         self._prune_old_versions(run, artifact_name=f"model-{run.id}")
