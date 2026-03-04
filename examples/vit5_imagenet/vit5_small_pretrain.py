@@ -173,6 +173,9 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
+    # NOTE: The ViT-5 reference uses BCE for pretraining, but we observed that
+    # pretraining with BCE leads to significantly lower finetuning accuracy
+    # (~76%) compared to SoftTargetCE (~82%).
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
 
     # ─── Optimizer ────────────────────────────────────────────────────────
