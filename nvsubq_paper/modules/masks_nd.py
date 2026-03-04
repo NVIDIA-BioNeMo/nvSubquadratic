@@ -158,21 +158,6 @@ class GaussianModulationND(torch.nn.Module):
         for p in self.parameters():
             p._no_weight_decay = True
 
-        # Use a forward pre-hook to clamp std_param to the limits without breaking the gradient flow.
-        if self.parametrization == "direct":
-            self._clamp_hook = self.register_forward_pre_hook(self._clamp_direct_std_param_pre_hook)
-        else:
-            # IMPORTANT! DO NOT FORGET TO MANAGE GRADIENTS ON THE LIMITS FOR OTHER PARAMETRIZATIONS!
-            pass
-
-    @torch.compiler.disable
-    def _clamp_direct_std_param_pre_hook(self, module, inputs):
-        """Clamp std_param into [min_std, max_std] just before forward without tracking grads."""
-        with torch.no_grad():
-            self.std_param.clamp_(min=self.min_std)
-            if self.max_std is not None:
-                self.std_param.clamp_(max=self.max_std)
-
     def _compute_std(self) -> torch.Tensor:
         """Computes the standard deviation for each channel based on the learned weights.
 
@@ -181,7 +166,9 @@ class GaussianModulationND(torch.nn.Module):
         """
         std = self.std_param.float()  # [data_dim, num_channels]
         if self.parametrization == "direct":
-            # Pre-hook clamps parameters; return parameter directly to keep identity gradient
+            std = std.clamp_min(self.min_std)
+            if self.max_std is not None:
+                std = std.clamp_max(self.max_std)
             return std
         elif self.parametrization == "log":
             std = std.exp()
