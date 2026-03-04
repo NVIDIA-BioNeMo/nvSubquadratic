@@ -15,6 +15,8 @@ import argparse
 import io
 import os
 import sys
+import tempfile
+import zipfile
 
 # Redirect caches before any heavy imports.
 _CACHE_ROOT = os.environ.get("NVSQ_CACHE_ROOT", "/ivi/zfs/s0/original_homes/dknigge/.cache")
@@ -83,9 +85,22 @@ def _placeholder(text: str = "Load a model first.") -> Image.Image:
 # ---------------------------------------------------------------------------
 
 
-def on_load_model(run_path: str, alias: str, device: str):
+def on_load_model(run_path: str, alias: str, device: str, progress=gr.Progress()):
     """Load model + extract kernels. Returns states and updated slider ranges."""
+    if not run_path or not run_path.strip():
+        return (
+            None,
+            None,
+            gr.Slider(value=0),
+            gr.Slider(value=0),
+            "⚠️ Please enter a W&B run path (entity/project/run_id).",
+        )
+
+    if device == "cpu":
+        gr.Info("CPU mode selected — loading and rendering will be slower than on GPU.")
+
     try:
+        progress(0.0, desc="Downloading checkpoint from W&B…")
         model = load_model(None, run_path, alias, device)
     except Exception as e:
         return (
@@ -93,13 +108,15 @@ def on_load_model(run_path: str, alias: str, device: str):
             None,
             gr.Slider(value=0),
             gr.Slider(value=0),
-            f"Error loading model: {e}",
+            f"❌ Error loading model: {e}",
         )
 
+    progress(0.6, desc="Extracting kernels from all layers…")
     kernels = extract_all_kernels(model)
     num_layers = len(model.blocks)
     num_heads = kernels[0]["masked_kernel"].shape[0]
-    status = f"Loaded: {num_layers} layers, {num_heads} heads/layer, device={device}"
+    progress(1.0, desc="Done!")
+    status = f"✅ Loaded: {num_layers} layers, {num_heads} heads/layer, device={device}"
 
     return (
         model,
@@ -133,7 +150,7 @@ def on_render_receptive_field(kernels, layer_idx):
     return fig_to_image(fig_rm), fig_to_image(fig_gauss)
 
 
-def on_render_kernel_structure(kernels, layer_idx, head_idx, all_heads):
+def on_render_kernel_structure(kernels, layer_idx, head_idx, all_heads, progress=gr.Progress()):
     """Kernel structure panels for a single layer and head (or all heads)."""
     if kernels is None:
         ph = _placeholder()
@@ -142,11 +159,17 @@ def on_render_kernel_structure(kernels, layer_idx, head_idx, all_heads):
     layers = [layer_idx]
     heads = None if all_heads else [int(head_idx)]
 
+    progress(0.0, desc="Rendering kernel clustering…")
     fig_pca = plot_kernel_pca(kernels, layers, heads)
+    progress(0.2, desc="Rendering spectral analysis…")
     fig_spec = plot_spectral_analysis(kernels, layers, heads)
+    progress(0.4, desc="Rendering channel correlation…")
     fig_corr = plot_channel_correlation(kernels, layers, heads)
+    progress(0.6, desc="Rendering head-grid mosaic…")
     fig_slices = plot_kernel_slices(kernels, layers, heads)
+    progress(0.8, desc="Rendering mixing strength…")
     fig_svd = plot_mixing_svd_map(kernels, layers, heads)
+    progress(1.0, desc="Done!")
 
     return (
         fig_to_image(fig_pca),
@@ -159,14 +182,17 @@ def on_render_kernel_structure(kernels, layer_idx, head_idx, all_heads):
 
 def on_image_upload(image_path, model, device):
     """Load and preprocess image, run forward pass with hooks."""
-    if image_path is None or model is None:
-        return None, None, "No image or model."
+    if model is None:
+        gr.Warning("Please load a model first before uploading an image.")
+        return None, None, "⚠️ No model loaded."
+    if image_path is None:
+        return None, None, ""
     try:
         img_tensor = load_and_preprocess_image(image_path)
         activations = forward_with_hooks(model, img_tensor, device)
-        return img_tensor, activations, "Forward pass complete."
+        return img_tensor, activations, "✅ Forward pass complete."
     except Exception as e:
-        return None, None, f"Error: {e}"
+        return None, None, f"❌ Error: {e}"
 
 
 def on_render_image_panels(
@@ -194,6 +220,41 @@ def on_render_image_panels(
         head_dim=k0.shape[1],
     )
     return fig_to_image(fig_act), fig_to_image(fig_kern), fig_to_image(fig_head)
+
+
+def on_export_panels(
+    overview, raw_masked, gaussian,
+    pca, spectral, corr, slices, svd,
+    activation, kernel_overlay, activation_head,
+):
+    """Bundle all rendered panels into a ZIP for download."""
+    panels = {
+        "01_overview.png": overview,
+        "02_raw_vs_masked.png": raw_masked,
+        "03_gaussian_masks.png": gaussian,
+        "04_kernel_clustering.png": pca,
+        "05_spectral_analysis.png": spectral,
+        "06_channel_correlation.png": corr,
+        "07_head_grid_mosaic.png": slices,
+        "08_mixing_strength.png": svd,
+        "09_activation_maps.png": activation,
+        "10_kernel_on_image.png": kernel_overlay,
+        "11_activation_on_image.png": activation_head,
+    }
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, img in panels.items():
+            if img is None:
+                continue
+            buf = io.BytesIO()
+            if isinstance(img, Image.Image):
+                img.save(buf, format="PNG", dpi=(200, 200))
+            else:
+                continue
+            zf.writestr(name, buf.getvalue())
+    tmp.close()
+    return gr.File(value=tmp.name, visible=True)
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +324,10 @@ def build_app() -> gr.Blocks:
                 img_status = gr.Textbox(
                     label="Image status", interactive=False, value=""
                 )
+
+                gr.Markdown("---")
+                export_btn = gr.Button("📥 Export All Panels", variant="secondary")
+                export_file = gr.File(label="Download", visible=False)
 
             # ---- Main area ----
             with gr.Column(scale=3):
@@ -469,6 +534,46 @@ def build_app() -> gr.Blocks:
                             label="Per-Head Activation on Image", type="pil"
                         )
 
+                    # ==============================================================
+                    # Tab 5: Guide
+                    # ==============================================================
+                    with gr.Tab("📖 Guide"):
+                        gr.Markdown(
+                            "## Hyena Kernel Visualizer — Quick Reference\n\n"
+                            "### What is a Hyena layer?\n\n"
+                            "A Hyena layer replaces standard self-attention with a **gated global convolution**. "
+                            "The pipeline for each layer is:\n\n"
+                            "1. **SIREN network** generates a continuous kernel from spatial coordinates\n"
+                            "2. **Learned Gaussian mask** modulates the kernel to control the effective receptive field\n"
+                            "3. **Global convolution** (via FFT) applies the masked kernel to the input feature map\n"
+                            "4. **Multiplicative gating** (Q ⊙ σ(K) and h ⊙ σ(V)) controls information flow\n\n"
+                            "### Kernel dimensions\n\n"
+                            "Each Hyena layer produces a kernel tensor of shape:\n\n"
+                            "`[num_heads, head_dim, head_dim, K_h, K_w]`\n\n"
+                            "| Dimension | Meaning |\n"
+                            "|---|---|\n"
+                            "| `num_heads` | Number of independent heads (like multi-head attention) |\n"
+                            "| `head_dim × head_dim` | Channel-mixing matrix at each spatial position |\n"
+                            "| `K_h × K_w` | Spatial extent of the kernel (14×14 for 224px images with patch size 16) |\n\n"
+                            "### Tab guide\n\n"
+                            "| Tab | What it shows | Key insight |\n"
+                            "|---|---|---|\n"
+                            "| **Overview** | Frobenius norm heatmaps for all layers × heads | How kernel magnitude evolves with depth |\n"
+                            "| **Receptive Field** | Raw vs masked kernels + Gaussian envelopes | How each head's spatial reach is shaped |\n"
+                            "| **Kernel Structure** | Clustering, FFT, correlations, SVD | What each head computes internally |\n"
+                            "| **Image Analysis** | Activation maps + overlays on real images | How kernels interact with actual content |\n\n"
+                            "### Glossary\n\n"
+                            "| Term | Definition |\n"
+                            "|---|---|\n"
+                            "| **Frobenius norm** | √(Σᵢⱼ aᵢⱼ²) — overall magnitude of a matrix |\n"
+                            "| **Mixing matrix** | The head_dim × head_dim matrix K[:,:,y,x] showing how channels interact at position (y,x) |\n"
+                            "| **σ₁ (top singular value)** | Largest singular value of the mixing matrix — summarizes mixing strength |\n"
+                            "| **DC component** | Zero-frequency (mean) of the FFT — suppressed in spectral plots to reveal structure |\n"
+                            "| **d/o ratio** | Diagonal mean / off-diagonal mean of channel correlation — measures depthwise vs cross-channel behavior |\n"
+                            "| **SIREN** | Sinusoidal Representation Network — generates the continuous kernel from coordinates |\n"
+                            "| **K-Means modes** | Clusters of similar mixing matrices across spatial positions — reveals functional diversity |\n"
+                        )
+
         # ---- Event wiring ----
 
         # Load model → update states, sliders, then render all tabs
@@ -560,6 +665,18 @@ def build_app() -> gr.Blocks:
             fn=on_render_image_panels,
             inputs=image_panel_inputs,
             outputs=image_panel_outputs,
+        )
+
+        # --- Export button ---
+        export_inputs = [
+            overview_img, raw_masked_img, gaussian_img,
+            pca_img, spectral_img, channel_corr_img, kernel_slices_img, svd_img,
+            activation_img, kernel_overlay_img, activation_head_img,
+        ]
+        export_btn.click(
+            fn=on_export_panels,
+            inputs=export_inputs,
+            outputs=[export_file],
         )
 
     return app
