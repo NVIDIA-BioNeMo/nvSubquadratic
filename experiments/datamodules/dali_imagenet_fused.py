@@ -393,11 +393,15 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
             return
 
         print(f"[data-staging] Copying {src} -> {dst} (this may take 10-20 min) ...", flush=True)
-        subprocess.run(
+        result = subprocess.run(
             ["cp", "-a", "--no-clobber", "-r", str(src / "train"), str(src / "val"), str(dst)],
-            check=True,
+            check=False,
             timeout=3600,
         )
+        # cp --no-clobber exits 1 when it skips existing files (e.g. parallel
+        # jobs staging to the same directory).  Only fail on unexpected codes.
+        if result.returncode not in (0, 1):
+            raise RuntimeError(f"[data-staging] cp failed with exit code {result.returncode}")
         sentinel.write_text("ok\n")
         self.imagefolder_dir = dst
         print(f"[data-staging] Done. Using local path: {dst}", flush=True)
