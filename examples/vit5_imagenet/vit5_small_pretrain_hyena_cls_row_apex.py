@@ -15,14 +15,19 @@ Key differences from vit5_small_pretrain_hyena_apex.py:
 import os
 
 import torch
-
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
-from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
-from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-
 from apex.optimizers import FusedLAMB as Lamb
 
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.default_cfg import (
+    AutoResumeConfig,
+    ExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    TrainerConfig,
+    WandbConfig,
+)
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
@@ -34,6 +39,7 @@ from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 from nvsubquadratic.utils.qk_norm import L2Norm
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -137,7 +143,7 @@ def get_config() -> ExperimentConfig:
                     omega_0=KERNEL_OMEGA_0,
                     L_cache=NUM_PATCHES_H + 1,  # 15: grid is (H'+1)×W' due to the extra CLS row.
                     # L_cache must not be modified during training for torch.compile(mode="max-autotune") to work.
-                    # With 14, the grid cache would be constructed for 14×14 grids instead of 15×14, which 
+                    # With 14, the grid cache would be constructed for 14×14 grids instead of 15×14, which
                     # would trigger a modification of the grid_cache number of elements, leading to errors.
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
@@ -196,7 +202,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="bce")
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
 
     # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(

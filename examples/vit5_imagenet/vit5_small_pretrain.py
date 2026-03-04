@@ -19,11 +19,6 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
-from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, SchedulerConfig, TrainConfig, TrainerConfig, WandbConfig
-from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-
 # NOTE: Apex FusedLAMB is faster but its optimizer state is incompatible with
 # torch_optimizer.Lamb for checkpoint resume.  Use Lamb for runs that need to
 # resume from a Lamb checkpoint; switch to FusedLAMB only for fresh runs.
@@ -38,13 +33,25 @@ from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 #         stacklevel=2,
 #     )
 #     from torch_optimizer import Lamb
-
 from torch_optimizer import Lamb
+
+from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.default_cfg import (
+    AutoResumeConfig,
+    ExperimentConfig,
+    SchedulerConfig,
+    TrainConfig,
+    TrainerConfig,
+    WandbConfig,
+)
+from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
 INPUT_CHANNELS = 3
@@ -166,7 +173,7 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="bce")
+    config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
 
     # ─── Optimizer ────────────────────────────────────────────────────────
     config.optimizer = LazyConfig(Lamb)(
