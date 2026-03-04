@@ -25,10 +25,10 @@ visualization reveals about the model's behavior — without reading the source 
 - [x] Add cross-head comparison capability to Kernel Structure tab
 
 ### Milestone 1.3 — UI/UX Polish
-- [ ] Consistent tab ↔ slider mapping (clear which controls affect which tab)
-- [ ] Loading states, error handling, edge cases
-- [ ] Export / reporting workflow from Gradio app
-- [ ] Documentation for new researchers
+- [x] Consistent tab ↔ slider mapping (clear which controls affect which tab)
+- [x] Loading states, error handling, edge cases
+- [x] Export / reporting workflow from Gradio app
+- [x] Documentation for new researchers
 
 ---
 
