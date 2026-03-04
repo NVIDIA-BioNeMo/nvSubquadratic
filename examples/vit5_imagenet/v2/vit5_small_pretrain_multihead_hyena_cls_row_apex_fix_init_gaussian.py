@@ -25,17 +25,12 @@ from experiments.default_cfg import AutoResumeConfig, ExperimentConfig, Schedule
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-try:
-    from apex.multi_tensor_apply import multi_tensor_applier
-    if not multi_tensor_applier.available:
-        raise ImportError("apex CUDA extensions not compiled")
-    from apex.optimizers import FusedLAMB as Lamb
-except (ImportError, ModuleNotFoundError):
-    from timm.optim import Lamb
+from apex.optimizers import FusedLAMB as Lamb
 
 from nvsubquadratic.modules.ckconv_multihead_nd import CKConvMultiheadND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import PerHeadRMSNorm, RMSNorm
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
@@ -48,10 +43,9 @@ INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
-IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/local_scratch/imagenet/ilsvrc2012/")
-IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/local_scratch/imagenet/ilsvrc2012/")
-LOCAL_STAGING_DIR = "/local_scratch/imagenet/ilsvrc2012/"
-# LOCAL_STAGING_DIR = "/ivi/zfs/s0/original_homes/dwessel/imagenet_folder"
+IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/ivi/zfs/s0/original_homes/dknigge/imagenet_folder")
+IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/ivi/zfs/s0/original_homes/dknigge/imagenet_folder")
+LOCAL_STAGING_DIR = "/local_scratch/dknigge/imagenet_dataset"
 
 # ─── Model (ViT-5-Small + Multi-Head Hyena, CLS-row) ────────────────────────────
 HIDDEN_DIM = 384
@@ -77,7 +71,7 @@ KERNEL_OUT_DIM = NUM_HEADS * HEAD_DIM * HEAD_DIM  # dense kernel per head
 # ─── Training recipe ────────────────────────────────────────────────────────────
 EFFECTIVE_BATCH_SIZE = 2048
 BATCH_SIZE = 128
-NUM_GPUS = 4
+NUM_GPUS = 8
 NUM_ACCUM_STEPS = EFFECTIVE_BATCH_SIZE // (BATCH_SIZE * NUM_GPUS)  # 2: gradient accumulation to achieve effective batch size of 2048
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
@@ -91,7 +85,7 @@ WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
 
-NUM_WORKERS = 12 #os.cpu_count() -1  // NUM_GPUS  # number of workers per GPU for data loading
+NUM_WORKERS = 12
 
 
 def get_config() -> ExperimentConfig:
@@ -100,7 +94,7 @@ def get_config() -> ExperimentConfig:
     config.debug = False
     config.seed = 42
     config.compile = True
-    config.compile_mode = "max-autotune-no-cudagraphs"
+    config.compile_mode = "max-autotune-no-cudagraphs"  # "max-autotune" can cause OOM due to large memory usage of some fused kernels (e.g., FusedLAMB) during autotuning; this mode disables CUDA graph capture during autotuning to reduce memory usage and avoid OOM.
     # ─── Dataset (fused DALI + local NVMe staging) ────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
         data_dir=IMAGENET_PATH,
@@ -150,7 +144,15 @@ def get_config() -> ExperimentConfig:
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                 ),
-                mask_cfg=LazyConfig(torch.nn.Identity)(),
+                mask_cfg=LazyConfig(GaussianModulationND)(
+                    data_dim=2,
+                    num_channels=KERNEL_OUT_DIM,
+                    min_std=0.02,
+                    max_std=1.5,
+                    init_std_low=0.05,
+                    init_std_high=1.2,
+                    parametrization="direct",
+                ),
                 grid_type="double",
                 fft_padding="zero",
             ),
