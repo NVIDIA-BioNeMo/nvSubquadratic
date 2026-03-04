@@ -1,19 +1,20 @@
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Tuple
-import shutil
-import subprocess
 
 import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
-from torch.utils.data import DataLoader, Dataset
-from torchvision import datasets as tv_datasets, transforms
-from torchvision.transforms import InterpolationMode
 from timm.data.auto_augment import rand_augment_transform
 from timm.data.random_erasing import RandomErasing
 from timm.data.transforms import RandomResizedCropAndInterpolation
+from torch.utils.data import DataLoader, Dataset
+from torchvision import datasets as tv_datasets
+from torchvision import transforms
+from torchvision.transforms import InterpolationMode
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -53,6 +54,7 @@ class AugmentConfig:
     rand_augment: Optional[str] = None  # e.g., 'rand-m9-n3-mstd0.5'
     random_erasing_prob: float = 0.0
     random_erasing_mode: str = "pixel"
+
 
 class ThreeAugment(torch.nn.Module):
     """DeiT III 3-Augment: Grayscale, Solarization, Gaussian Blur."""
@@ -103,6 +105,7 @@ class _ImageNetDataset(Dataset):
         self.drop_labels = drop_labels
 
         from datasets import load_dataset
+
         self.dataset = load_dataset(
             path=dataset_name,
             name=dataset_config,
@@ -250,9 +253,13 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops: list[transforms.Transform] = []
 
         if train:
-            ops.append(RandomResizedCropAndInterpolation(
-                self.image_size, scale=(0.08, 1.0), interpolation="bicubic",
-            ))
+            ops.append(
+                RandomResizedCropAndInterpolation(
+                    self.image_size,
+                    scale=(0.08, 1.0),
+                    interpolation="bicubic",
+                )
+            )
 
             ops.append(transforms.RandomHorizontalFlip())
 
@@ -292,11 +299,13 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops.append(transforms.Normalize(mean=mean, std=std))
 
         if train and self.augment_cfg is not None and self.augment_cfg.random_erasing_prob > 0:
-            ops.append(RandomErasing(
-                probability=self.augment_cfg.random_erasing_prob,
-                mode=self.augment_cfg.random_erasing_mode,
-                device="cpu",
-            ))
+            ops.append(
+                RandomErasing(
+                    probability=self.augment_cfg.random_erasing_prob,
+                    mode=self.augment_cfg.random_erasing_mode,
+                    device="cpu",
+                )
+            )
 
         return transforms.Compose(ops)
 
@@ -314,7 +323,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         try:
             dst.mkdir(parents=True, exist_ok=True)
             free_bytes = shutil.disk_usage(dst).free
-            min_bytes = 160 * (1024 ** 3)
+            min_bytes = 160 * (1024**3)
             if free_bytes < min_bytes:
                 raise RuntimeError(
                     f"[data-staging] {dst} has only "
@@ -353,6 +362,7 @@ class ImageNetDataModule(pl.LightningDataModule):
             return
 
         from datasets import load_dataset
+
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,
