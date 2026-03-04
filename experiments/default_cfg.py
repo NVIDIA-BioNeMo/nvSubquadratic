@@ -63,6 +63,9 @@ class SchedulerConfig:
 
     name: str = PLACEHOLDER
     warmup_iterations_percentage: float = 0.0
+    stable_iterations_percentage: float = (
+        0.0  # WSD only: fraction of total iters at constant LR between warmup and decay
+    )
     total_iterations: int = PLACEHOLDER
     eta_min: float = 0.0
     mode: str = "max"

@@ -96,8 +96,9 @@ def construct_scheduler(
     Returns:
         torch.optim.lr_scheduler.LRScheduler: The constructed scheduler.
     """
-    assert scheduler_cfg.name in [PLACEHOLDER, "cosine", "constant"], (
-        f"scheduler_cfg.name must be one of {PLACEHOLDER}, 'cosine', or 'constant'. Got {scheduler_cfg.name}"
+    valid_names = [PLACEHOLDER, "cosine", "constant", "wsd"]
+    assert scheduler_cfg.name in valid_names, (
+        f"scheduler_cfg.name must be one of {valid_names}. Got {scheduler_cfg.name}"
     )
     if scheduler_cfg.name != PLACEHOLDER:
         assert scheduler_cfg.total_iterations != PLACEHOLDER, (
@@ -119,8 +120,7 @@ def construct_scheduler(
     base_lr = optimizer.param_groups[0]["lr"]
     if scheduler_type == "cosine" and scheduler_cfg.eta_min >= base_lr:
         raise ValueError(
-            f"eta_min ({scheduler_cfg.eta_min}) must be strictly less than the "
-            f"optimizer learning rate ({base_lr})."
+            f"eta_min ({scheduler_cfg.eta_min}) must be strictly less than the optimizer learning rate ({base_lr})."
         )
 
     # Build the warmup scheduler (shared across schedule types)
@@ -134,7 +134,53 @@ def construct_scheduler(
         )
 
     # Build the post-warmup scheduler
-    if scheduler_type == "cosine":
+    if scheduler_type == "wsd":
+        # Warmup-Stable-Decay: constant LR for stable phase, then linear decay
+        stable_pct = getattr(scheduler_cfg, "stable_iterations_percentage", 0.0)
+        assert 0.0 <= stable_pct < 1.0, f"stable_iterations_percentage must be in [0.0, 1.0). Got {stable_pct}"
+        warmup_pct = warmup_iterations_percentage
+        decay_pct = 1.0 - warmup_pct - stable_pct
+        assert decay_pct > 0, (
+            f"warmup ({warmup_pct}) + stable ({stable_pct}) must be < 1.0, leaving room for decay (got {decay_pct})"
+        )
+        stable_iterations = int(total_iterations * stable_pct)
+        decay_iterations = total_iterations - warmup_iterations - stable_iterations
+
+        schedulers = []
+        milestones = []
+
+        if warmup_scheduler is not None:
+            schedulers.append(warmup_scheduler)
+            milestones.append(warmup_iterations)
+
+        # Stable phase: constant LR
+        stable_scheduler = torch.optim.lr_scheduler.ConstantLR(
+            optimizer,
+            factor=1.0,
+            total_iters=stable_iterations,
+        )
+        schedulers.append(stable_scheduler)
+        milestones.append(milestones[-1] + stable_iterations if milestones else stable_iterations)
+
+        # Decay phase: linear ramp from base_lr to eta_min
+        eta_min = scheduler_cfg.eta_min
+        end_factor = max(eta_min / base_lr, 1e-8) if base_lr > 0 else 1e-8
+        decay_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1.0,
+            end_factor=end_factor,
+            total_iters=decay_iterations,
+        )
+        schedulers.append(decay_scheduler)
+
+        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=schedulers,
+            milestones=milestones,
+        )
+        return lr_scheduler
+
+    elif scheduler_type == "cosine":
         post_warmup = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
             T_max=total_iterations - warmup_iterations,
@@ -142,7 +188,9 @@ def construct_scheduler(
         )
     elif scheduler_type == "constant":
         post_warmup = torch.optim.lr_scheduler.ConstantLR(
-            optimizer, factor=1.0, total_iters=total_iterations,
+            optimizer,
+            factor=1.0,
+            total_iters=total_iterations,
         )
     else:
         post_warmup = None
@@ -231,6 +279,7 @@ class LightningWrapperBase(pl.LightningModule):
             model_keys = set(self.state_dict().keys())
             ckpt_keys = set(state_dict.keys())
             if model_keys != ckpt_keys:
+
                 def _strip(key: str) -> str:
                     return key.replace("._orig_mod.", ".")
 
