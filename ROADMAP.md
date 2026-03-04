@@ -19,10 +19,10 @@ visualization reveals about the model's behavior — without reading the source 
 - [x] Produce prioritized task files for Claude
 
 ### Milestone 1.2 — Panel Redesign & Enhancement
-- [ ] Add interpretive context to each panel (reference ranges, annotations, summaries)
-- [ ] Introduce alternative visualizations where current ones are hard to read
-- [ ] Improve spatial layout and consistency across tabs in Gradio app
-- [ ] Add cross-head comparison capability to Kernel Structure tab
+- [x] Add interpretive context to each panel (reference ranges, annotations, summaries)
+- [x] Introduce alternative visualizations where current ones are hard to read
+- [x] Improve spatial layout and consistency across tabs in Gradio app
+- [x] Add cross-head comparison capability to Kernel Structure tab
 
 ### Milestone 1.3 — UI/UX Polish
 - [ ] Consistent tab ↔ slider mapping (clear which controls affect which tab)
