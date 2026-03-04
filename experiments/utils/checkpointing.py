@@ -106,25 +106,41 @@ def load_checkpoint_state_dict(ckpt_path: str) -> dict:
     raise ValueError(f"Unsupported checkpoint format for {ckpt_path}: type={type(obj)}")
 
 
-class StripCompiledPrefix:
-    """Align ``_orig_mod.`` prefixes between checkpoint and model state dicts.
+def align_compiled_keys(
+    state_dict: dict[str, torch.Tensor],
+    model_keys: set[str],
+) -> dict[str, torch.Tensor]:
+    """Remap ``state_dict`` keys to match *model_keys*, handling ``_orig_mod`` mismatches.
 
-    Handles both directions: strips the prefix when loading a compiled
-    checkpoint into a non-compiled model, and adds it when loading a
-    non-compiled checkpoint into a compiled model.
+    ``torch.compile`` wraps parameters under ``_orig_mod``, so a checkpoint
+    saved with/without compile may have different key prefixes.  This strips
+    the ``._orig_mod.`` segment from both sides and maps by the canonical
+    (stripped) name.  Works in both directions (compiled->plain and
+    plain->compiled) in a single pass.
+
+    Returns *state_dict* unchanged if the keys already match.
+    """
+    if set(state_dict.keys()) == model_keys:
+        return state_dict
+
+    def _strip(key: str) -> str:
+        return key.replace("._orig_mod.", ".")
+
+    model_stripped = {_strip(k): k for k in model_keys}
+    return {model_stripped.get(_strip(k), k): v for k, v in state_dict.items()}
+
+
+class StripCompiledPrefix:
+    """Callback for ``start_from_checkpoint`` that aligns ``_orig_mod.`` prefixes.
+
+    Delegates to :func:`align_compiled_keys`.
     """
 
     def __call__(self, state_dict, model=None, **_kwargs):
-        ckpt_has_orig = any("._orig_mod." in k for k in state_dict)
-        model_has_orig = model is not None and any(
-            "._orig_mod." in k for k in model.state_dict()
-        )
-
-        if ckpt_has_orig and not model_has_orig:
-            return {k.replace("._orig_mod.", "."): v for k, v in state_dict.items()}
-        if not ckpt_has_orig and model_has_orig:
-            return {k.replace("network.", "network._orig_mod.", 1): v for k, v in state_dict.items()}
-        return state_dict
+        """Align ``_orig_mod.`` prefixes between *state_dict* and *model*."""
+        if model is None:
+            return state_dict
+        return align_compiled_keys(state_dict, set(model.state_dict().keys()))
 
 
 def _compute_overlapping_slices(target_shape, source_shape):
