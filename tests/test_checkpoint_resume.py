@@ -6,7 +6,7 @@ Covers:
 3. ``ResumableSequentialLR`` round-trip for cosine and WSD schedules.
 4. ``WandbSelectiveCheckpointUploader`` phase determination and per-phase best tracking.
 
-.. todo:: Expand resume coverage
+.. TODO(@dwromero/dwessels/dmknigge): Expand resume coverage
     - ``TestBestMetricsPersistence`` only covers ``ClassificationWrapper``.
       Add equivalent round-trip tests for ``RegressionWrapper``,
       ``AutoregressiveWrapper``, and ``DiffusionWrapper`` once they

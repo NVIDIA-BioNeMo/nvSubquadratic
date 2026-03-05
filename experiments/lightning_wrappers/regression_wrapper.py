@@ -15,7 +15,7 @@ from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapp
 class RegressionWrapper(LightningWrapperBase):
     """Lightning wrapper for regression tasks.
 
-    .. TODO(@dwromero): Resume support (see ClassificationWrapper for reference)
+    .. TODO(@dwromero/dwessels): Resume support (see ClassificationWrapper for reference)
         - Add ``on_save_checkpoint`` / ``on_load_checkpoint`` to persist
           ``best_train_loss`` and ``best_val_loss`` across job resumes.
           Without this, best-metric tracking silently resets to initial
