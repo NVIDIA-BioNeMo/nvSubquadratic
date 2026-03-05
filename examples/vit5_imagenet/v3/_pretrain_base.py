@@ -78,15 +78,19 @@ PRECISION = "bf16-mixed"
 NUM_WORKERS = 12
 
 
-def make_block_cfg(sequence_mixer_cfg: LazyConfig) -> LazyConfig:
+def make_block_cfg(sequence_mixer_cfg: LazyConfig, **kwargs) -> LazyConfig:
     """Build a ViT5ResidualBlock config with the given sequence mixer.
 
     Everything except the mixer is shared across all v3 configs: MLP,
     norms, LayerScale, and DropPath.
 
+    Extra keyword arguments are forwarded to ``ViT5ResidualBlock``
+    (e.g. ``register_pooling_cfg``, ``num_registers`` for FiLM-conditioned kernels).
+
     Args:
         sequence_mixer_cfg: LazyConfig for the sequence mixer
             (e.g. ViT5Attention, ViT5HyenaAdapter).
+        **kwargs: Additional arguments forwarded to ViT5ResidualBlock.
 
     Returns:
         LazyConfig for a ViT5ResidualBlock.
@@ -107,6 +111,7 @@ def make_block_cfg(sequence_mixer_cfg: LazyConfig) -> LazyConfig:
         hidden_dim=HIDDEN_DIM,
         layer_scale_init=LAYER_SCALE_INIT,
         drop_path_rate=DROP_PATH_RATE,
+        **kwargs,
     )
 
 

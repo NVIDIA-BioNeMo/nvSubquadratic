@@ -24,7 +24,7 @@ class KernelFiLMGenerator(nn.Module):
         film_hidden_dim: Hidden dimension of the FiLM generator MLP (bottleneck).
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         cond_dim: int,
         kernel_hidden_dim: int,
@@ -45,7 +45,18 @@ class KernelFiLMGenerator(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize so that gamma ~1 and beta ~0 at the start (identity modulation)."""
+        """Initialize so that gamma ~1 and beta ~0 at the start (identity modulation).
+
+        The output layer weights are zeroed and biases set to (gamma=1, beta=0),
+        so at init the FiLM transform is the identity: ``1 * h + 0 = h``.  This
+        means the model starts as if FiLM conditioning does not exist and
+        gradually learns to modulate — a standard residual-style init pattern
+        (cf. ControlNet, DiT adaptive LayerNorm).
+
+        The first linear layer keeps PyTorch's default Kaiming init; its exact
+        values are irrelevant at init because they are multiplied by the
+        all-zeros output weight matrix.
+        """
         final_linear = self.mlp[-1]
         nn.init.zeros_(final_linear.weight)
         with torch.no_grad():
@@ -78,7 +89,7 @@ class RegisterPooling(nn.Module):
         num_registers: Number of register tokens to pool over.
     """
 
-    def __init__(self, num_registers: int):
+    def __init__(self, num_registers: int):  # noqa: D107
         super().__init__()
         self.logits = nn.Parameter(torch.zeros(num_registers))
         self.logits._no_weight_decay = True
@@ -95,5 +106,5 @@ class RegisterPooling(nn.Module):
         weights = F.softmax(self.logits, dim=0)  # [num_registers]
         return torch.einsum("r, b r c -> b c", weights, registers)
 
-    def extra_repr(self) -> str:
+    def extra_repr(self) -> str:  # noqa: D102
         return f"num_registers={self.logits.shape[0]}"
