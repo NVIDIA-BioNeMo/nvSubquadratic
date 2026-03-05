@@ -38,6 +38,7 @@ from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+from nvsubquadratic.utils.init import trunc_normal_init, trunc_normal_init_factory
 
 
 # ─── Constants ───────────────────────────────────────────────────────────────────
@@ -57,6 +58,10 @@ LAYER_SCALE_INIT = 1e-4
 MLP_RATIO = 4
 NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
+
+# Weight init matching the ViT-5 reference: trunc_normal(std=0.02) for all Linear layers.
+_INIT_FN = trunc_normal_init(std=0.02)
+_INIT_FN_FACTORY = trunc_normal_init_factory(std=0.02)
 
 BATCH_SIZE = 256
 EPOCHS = 20
@@ -173,6 +178,9 @@ def get_config(
                 attn_dropout=0.0,
                 proj_dropout=0.0,
                 qkv_bias=False,
+                out_proj_bias=False,
+                init_fn_qkv_proj=_INIT_FN,
+                init_fn_out_proj=_INIT_FN,
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
@@ -180,6 +188,8 @@ def get_config(
                 activation="gelu",
                 expansion_factor=float(MLP_RATIO),
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+                init_method_in=_INIT_FN_FACTORY,
+                init_method_out=_INIT_FN_FACTORY,
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             hidden_dim=HIDDEN_DIM,

@@ -12,8 +12,11 @@ import os
 import torch
 from apex.optimizers import FusedLAMB as Lamb
 
-from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.dali_imagenet_fused import (
+    AugmentConfig,
+    DALIImageNetFusedDataModule,
+    MixupConfig,
+)
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,
@@ -29,6 +32,7 @@ from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+from nvsubquadratic.utils.init import trunc_normal_init, trunc_normal_init_factory
 
 
 # ─── Dataset ────────────────────────────────────────────────────────────────────
@@ -50,6 +54,10 @@ DROP_PATH_RATE = 0.05
 MLP_RATIO = 4
 NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
+
+# Weight init matching the ViT-5 reference: trunc_normal(std=0.02) for all Linear layers.
+_INIT_FN = trunc_normal_init(std=0.02)
+_INIT_FN_FACTORY = trunc_normal_init_factory(std=0.02)
 
 # ─── Training recipe ────────────────────────────────────────────────────────────
 BATCH_SIZE = 256
@@ -131,13 +139,19 @@ def get_config() -> ExperimentConfig:
                 attn_dropout=0.0,
                 proj_dropout=0.0,
                 qkv_bias=False,
+                out_proj_bias=False,
+                init_fn_qkv_proj=_INIT_FN,
+                init_fn_out_proj=_INIT_FN,
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
                 dim=HIDDEN_DIM,
                 activation="gelu",
                 expansion_factor=float(MLP_RATIO),
+                bias=False,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+                init_method_in=_INIT_FN_FACTORY,
+                init_method_out=_INIT_FN_FACTORY,
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             hidden_dim=HIDDEN_DIM,
