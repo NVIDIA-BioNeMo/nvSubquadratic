@@ -77,6 +77,32 @@ import torch
 from einops import rearrange
 
 
+# When True, use real-arithmetic complex multiply that is compilable by
+# torch.compile / Inductor (Triton cannot codegen complex64 kernels).
+# When False (default), use the faster in-place fft_x.mul_(fft_kernel).
+COMPILE_COMPATIBLE = False
+
+
+def _complex_mul_real(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Element-wise complex multiplication using only real arithmetic.
+
+    Avoids complex64 intermediate tensors so ``torch.compile`` / Inductor can
+    generate Triton kernels (Triton has no complex dtype support).
+
+    Args:
+        a: Complex tensor (output of rfft / rfftn).
+        b: Complex tensor (output of rfft / rfftn), broadcastable with *a*.
+
+    Returns:
+        Complex tensor ``a * b`` computed via real-valued ops.
+    """
+    ar = torch.view_as_real(a)  # [..., 2]
+    br = torch.view_as_real(b)  # [..., 2]
+    real = ar[..., 0] * br[..., 0] - ar[..., 1] * br[..., 1]
+    imag = ar[..., 0] * br[..., 1] + ar[..., 1] * br[..., 0]
+    return torch.view_as_complex(torch.stack([real, imag], dim=-1))
+
+
 ###############################################################################
 # BLH variants
 ###############################################################################
@@ -122,8 +148,11 @@ def causal_fftconv1d_blh(
         torch.fft.rfft(kernel, n=fft_len, dim=1),
     )
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=1)[:, :seq_len, :]
 
@@ -171,8 +200,11 @@ def fftconv1d_blh(
         torch.fft.rfft(kernel, n=fft_len, dim=1),
     )
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     crop_start = (kernel_len) // 2
     y = torch.fft.irfft(fft_x, n=fft_len, dim=1)[:, crop_start : crop_start + seq_len, :]
@@ -226,8 +258,11 @@ def fftconv2d_blh(
     fft_x = torch.fft.rfft2(x, s=fft_shape, dim=(1, 2))
     fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(1, 2))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -288,8 +323,11 @@ def fftconv3d_blh(
     fft_x = torch.fft.rfftn(x, s=fft_shape, dim=(1, 2, 3))
     fft_kernel = torch.fft.rfftn(kernel, s=fft_shape, dim=(1, 2, 3))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -452,8 +490,11 @@ def causal_fftconv1d_bhl(
         torch.fft.rfft(kernel, n=fft_len, dim=2),
     )
 
-    # Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=2)[..., :seq_len]
 
@@ -503,8 +544,11 @@ def fftconv1d_bhl(
         torch.fft.rfft(kernel, n=fft_len, dim=2),
     )
 
-    # Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     crop_start = (kernel_len) // 2
 
@@ -561,8 +605,11 @@ def fftconv2d_bhl(
     fft_x = torch.fft.rfft2(x, s=fft_shape, dim=(2, 3))
     fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(2, 3))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
@@ -626,8 +673,11 @@ def fftconv3d_bhl(
     fft_x = torch.fft.rfftn(x, s=fft_shape, dim=(2, 3, 4))
     fft_kernel = torch.fft.rfftn(kernel, s=fft_shape, dim=(2, 3, 4))
 
-    # 3. Apply the Convolution Theorem in place
-    fft_x.mul_(fft_kernel)
+    # 3. Apply the Convolution Theorem
+    if COMPILE_COMPATIBLE:
+        fft_x = _complex_mul_real(fft_x, fft_kernel)
+    else:
+        fft_x.mul_(fft_kernel)
 
     crop_start_x = (K_x) // 2
     crop_start_y = (K_y) // 2
