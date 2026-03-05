@@ -58,6 +58,7 @@ FILM_HIDDEN_DIM = 64
 def get_config() -> ExperimentConfig:
     """Return the ViT-5-Small + Hyena CLS-row gated + FiLM pretrain config with EMA."""
     config = get_base_config()
+    config.compile_compatible_fftconv = True
 
     film_cfg = LazyConfig(KernelFiLMGenerator)(
         cond_dim=HIDDEN_DIM,
