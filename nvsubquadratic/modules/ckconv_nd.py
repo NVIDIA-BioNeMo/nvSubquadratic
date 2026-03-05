@@ -197,8 +197,6 @@ class CKConvND(torch.nn.Module):
     ) -> torch.Tensor:
         """Apply the convolution operation using the FFT-based convolution function.
 
-        Uses separate function to avoid torch.compile issues with complex numbers.
-
         Args:
             x (torch.Tensor): Input tensor.
             conv_kernel (torch.Tensor): Convolution kernel tensor.
@@ -231,7 +229,11 @@ class CKConvND(torch.nn.Module):
             return x.to(x_dtype)
 
     def forward(
-        self, x: torch.Tensor, is_bhl_input: bool = False, cp_group: torch.distributed.ProcessGroup = None
+        self,
+        x: torch.Tensor,
+        is_bhl_input: bool = False,
+        cp_group: torch.distributed.ProcessGroup = None,
+        **mixer_kwargs,
     ) -> torch.Tensor:
         """Forward pass of the CKConvND.
 
@@ -241,6 +243,8 @@ class CKConvND(torch.nn.Module):
                 Default is False.
             cp_group (torch.distributed.ProcessGroup): Context parallel process group.
                 Default is None.
+            **mixer_kwargs: Additional keyword arguments forwarded to the kernel generator
+                (e.g. ``conditioning`` for FiLM-enabled SIRENKernelND).
 
         Returns:
             torch.Tensor: Output tensor of shape (batch_size, * spatial_dims, hidden_dim) or (batch_size, hidden_dim, * spatial_dims)
@@ -262,8 +266,9 @@ class CKConvND(torch.nn.Module):
             # a convolutional kernel with size equal to twice the input.
             grid_lens = spatial_dims
 
-        # Compute kernel
-        conv_kernel, grid = self.kernel(grid_lens)
+        # Compute kernel (pass conditioning if available for FiLM-enabled kernels)
+        conditioning = mixer_kwargs.get("conditioning", None)
+        conv_kernel, grid = self.kernel(grid_lens, conditioning=conditioning)
 
         # Apply mask to kernel
         if not isinstance(self.mask, torch.nn.Identity):

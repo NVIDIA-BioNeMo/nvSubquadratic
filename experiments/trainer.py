@@ -65,6 +65,31 @@ def _scheduler_phase_boundaries(cfg: ExperimentConfig) -> dict[str, tuple[int, i
     return {}
 
 
+def _scheduler_phase_boundaries(cfg: ExperimentConfig) -> dict[str, tuple[int, int]]:
+    """Derive per-phase step boundaries from the scheduler config.
+
+    Returns a mapping ``{phase_name: (start_step, end_step)}`` suitable for
+    :class:`WandbSelectiveCheckpointUploader`.  Warmup is excluded because it
+    is typically too short to warrant dedicated checkpoints.
+    """
+    sched = cfg.scheduler
+    total = sched.total_iterations
+    if total is None or total <= 0:
+        return {}
+    warmup_end = int(sched.warmup_iterations_percentage * total)
+
+    name = getattr(sched, "name", None)
+    if name == "wsd":
+        stable_pct = getattr(sched, "stable_iterations_percentage", 0.0)
+        stable_end = warmup_end + int(stable_pct * total)
+        return {"stable": (warmup_end, stable_end), "decay": (stable_end, total)}
+    if name == "cosine":
+        return {"cosine": (warmup_end, total)}
+    if name == "constant":
+        return {"constant": (warmup_end, total)}
+    return {}
+
+
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,

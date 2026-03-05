@@ -5,6 +5,18 @@ Covers:
 2. ``current_model_state`` key remapping for EMA + torch.compile mismatch.
 3. ``ResumableSequentialLR`` round-trip for cosine and WSD schedules.
 4. ``WandbSelectiveCheckpointUploader`` phase determination and per-phase best tracking.
+
+.. TODO(@dwromero/dwessels/dmknigge): Expand resume coverage
+    - ``TestBestMetricsPersistence`` only covers ``ClassificationWrapper``.
+      Add equivalent round-trip tests for ``RegressionWrapper``,
+      ``AutoregressiveWrapper``, and ``DiffusionWrapper`` once they
+      implement ``on_save_checkpoint`` / ``on_load_checkpoint``.
+    - Add an integration test that runs a short train loop, saves a
+      checkpoint, resumes, and verifies: (a) LR schedule continuity,
+      (b) best-metric values, (c) EMA model weights match pre-resume
+      state, (d) ``_val_metric_suffix`` is preserved.
+    - Add a test for ``DiffusionWrapper``'s manual EMA save/restore
+      once that is implemented.
 """
 
 from typing import ClassVar

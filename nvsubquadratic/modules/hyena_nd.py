@@ -269,6 +269,7 @@ class Hyena(torch.nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         cp_group: torch.distributed.ProcessGroup = None,
+        **mixer_kwargs,
     ) -> torch.Tensor:
         """Compute  y = OutputNorm( GlobalConv( Norm( Q ⊙ σ(K) ) ) ⊙ σ(V) ).
 
@@ -279,6 +280,10 @@ class Hyena(torch.nn.Module):
             key: [B, *spatial, C] key tensor.
             value: [B, *spatial, C] value tensor.
             cp_group: Context-parallel process group.  None disables CP.
+<<<<<<< HEAD:nvsubq_paper/modules/hyena_nd.py
+=======
+            **mixer_kwargs: Forwarded to the global conv (e.g. ``conditioning`` for FiLM).
+>>>>>>> 2c15801 (DALI unification, WSD scheduler, checkpoint resume, reference-matching init, FiLM kernels (#61)):nvsubquadratic/modules/hyena_nd.py
 
         Returns:
             [B, *spatial, C] output tensor.
@@ -392,7 +397,7 @@ class Hyena(torch.nn.Module):
             query = AllToAllSingleFunction.apply(query, cp_group, "split_to_full", True)
 
         # Apply global convolution
-        y = self.global_conv(query, is_bhl_input=True, cp_group=cp_group)
+        y = self.global_conv(query, is_bhl_input=True, cp_group=cp_group, **mixer_kwargs)
 
         # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
         if cp_group is not None and cp_group.size() > 1:

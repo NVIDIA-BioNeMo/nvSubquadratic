@@ -48,11 +48,6 @@ class TrainerConfig:
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None
 
-    # Whether to upload checkpoints to W&B and run cache cleanup.
-    # Set to False to disable WandbSelectiveCheckpointUploader and WandbCacheCleanupCallback.
-    # Local ModelCheckpoint saving is unaffected by this flag.
-    wandb_checkpoint_upload: bool = True
-    
     # Override the metric monitored by ModelCheckpoint. If None, auto-derived
     # from scheduler.mode ("val/acc" for max, "val/loss" for min).
     checkpoint_monitor: Optional[str] = None
@@ -130,6 +125,9 @@ class ExperimentConfig:
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
     compile_mode: Optional[str] = None  # torch.compile mode: None (default), "reduce-overhead", "max-autotune"
+    compile_compatible_fftconv: bool = (
+        False  # Use real-valued complex multiply in FFT conv (needed for torch.compile + FFT models)
+    )
     experiment_dir: Optional[str] = None
     num_nodes: int = 1
 
