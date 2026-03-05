@@ -1,8 +1,8 @@
 """Interactive Hyena Kernel Visualization App (Gradio).
 
 Provides an interactive UI for exploring learned Hyena kernels from trained
-ViT-5 + Multi-Head Hyena models. Supports switching between layers, heads,
-and input images on-the-fly.
+ViT-5 + Multi-Head Hyena models. Loads a model from W&B and renders a
+complete visual report across representative layers and all heads.
 
 Usage:
     PYTHONPATH=. python scripts/visualize_hyena_kernels_app.py --port 7860
@@ -38,6 +38,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from scripts.visualize_hyena_kernels import (
+    _select_detail_layers,
     extract_all_kernels,
     forward_with_hooks,
     load_and_preprocess_image,
@@ -86,13 +87,11 @@ def _placeholder(text: str = "Load a model first.") -> Image.Image:
 
 
 def on_load_model(run_path: str, alias: str, device: str, progress=gr.Progress()):
-    """Load model + extract kernels. Returns states and updated slider ranges."""
+    """Load model + extract kernels."""
     if not run_path or not run_path.strip():
         return (
             None,
             None,
-            gr.Slider(value=0),
-            gr.Slider(value=0),
             "⚠️ Please enter a W&B run path (entity/project/run_id).",
         )
 
@@ -106,8 +105,6 @@ def on_load_model(run_path: str, alias: str, device: str, progress=gr.Progress()
         return (
             None,
             None,
-            gr.Slider(value=0),
-            gr.Slider(value=0),
             f"❌ Error loading model: {e}",
         )
 
@@ -115,16 +112,14 @@ def on_load_model(run_path: str, alias: str, device: str, progress=gr.Progress()
     kernels = extract_all_kernels(model)
     num_layers = len(model.blocks)
     num_heads = kernels[0]["masked_kernel"].shape[0]
+    detail = _select_detail_layers(num_layers)
     progress(1.0, desc="Done!")
-    status = f"✅ Loaded: {num_layers} layers, {num_heads} heads/layer, device={device}"
-
-    return (
-        model,
-        kernels,
-        gr.Slider(minimum=0, maximum=num_layers - 1, step=1, value=0),
-        gr.Slider(minimum=0, maximum=num_heads - 1, step=1, value=0),
-        status,
+    status = (
+        f"✅ Loaded: {num_layers} layers, {num_heads} heads/layer, device={device}\n"
+        f"Detail layers: {detail} (first / middle / last)"
     )
+
+    return model, kernels, status
 
 
 def on_render_overview(kernels):
@@ -136,39 +131,39 @@ def on_render_overview(kernels):
     return fig_to_image(fig)
 
 
-def on_render_receptive_field(kernels, layer_idx):
-    """Receptive field panels: Raw vs Masked + Gaussian mask for ALL heads at the selected layer."""
+def on_render_receptive_field(kernels, progress=gr.Progress()):
+    """Receptive field panels for representative layers × all heads."""
     if kernels is None:
         ph = _placeholder()
         return ph, ph
-    layer_idx = int(layer_idx)
-    layers = [layer_idx]
+    detail_layers = _select_detail_layers(len(kernels))
 
-    fig_rm = plot_raw_vs_masked(kernels, layers, None)
-    fig_gauss = plot_gaussian_masks(kernels, layers, None)
+    progress(0.0, desc="Rendering raw vs masked…")
+    fig_rm = plot_raw_vs_masked(kernels, detail_layers, None)
+    progress(0.5, desc="Rendering Gaussian masks…")
+    fig_gauss = plot_gaussian_masks(kernels, detail_layers, None)
+    progress(1.0, desc="Done!")
 
     return fig_to_image(fig_rm), fig_to_image(fig_gauss)
 
 
-def on_render_kernel_structure(kernels, layer_idx, head_idx, all_heads, progress=gr.Progress()):
-    """Kernel structure panels for a single layer and head (or all heads)."""
+def on_render_kernel_structure(kernels, progress=gr.Progress()):
+    """Kernel structure panels for representative layers × all heads."""
     if kernels is None:
         ph = _placeholder()
         return ph, ph, ph, ph, ph
-    layer_idx = int(layer_idx)
-    layers = [layer_idx]
-    heads = None if all_heads else [int(head_idx)]
+    detail_layers = _select_detail_layers(len(kernels))
 
     progress(0.0, desc="Rendering kernel clustering…")
-    fig_pca = plot_kernel_pca(kernels, layers, heads)
+    fig_pca = plot_kernel_pca(kernels, detail_layers, None)
     progress(0.2, desc="Rendering spectral analysis…")
-    fig_spec = plot_spectral_analysis(kernels, layers, heads)
+    fig_spec = plot_spectral_analysis(kernels, detail_layers, None)
     progress(0.4, desc="Rendering channel correlation…")
-    fig_corr = plot_channel_correlation(kernels, layers, heads)
+    fig_corr = plot_channel_correlation(kernels, detail_layers, None)
     progress(0.6, desc="Rendering head-grid mosaic…")
-    fig_slices = plot_kernel_slices(kernels, layers, heads)
+    fig_slices = plot_kernel_slices(kernels, detail_layers, None)
     progress(0.8, desc="Rendering mixing strength…")
-    fig_svd = plot_mixing_svd_map(kernels, layers, heads)
+    fig_svd = plot_mixing_svd_map(kernels, detail_layers, None)
     progress(1.0, desc="Done!")
 
     return (
@@ -195,27 +190,21 @@ def on_image_upload(image_path, model, device):
         return None, None, f"❌ Error: {e}"
 
 
-def on_render_image_panels(
-    image_tensor, activations, kernels, model, layer_idx, head_idx
-):
-    """Image-conditioned panels for the current image, layer, and head."""
+def on_render_image_panels(image_tensor, activations, kernels, model):
+    """Image-conditioned panels for representative layers × all heads."""
     ph = _placeholder("Upload an image first.")
     if image_tensor is None or activations is None or kernels is None:
         return ph, ph, ph
-    layer_idx = int(layer_idx)
-    head_idx = int(head_idx)
-    layers = [layer_idx]
-    heads = [head_idx]
-
-    fig_act = plot_activation_maps(activations, layers)
-    fig_kern = plot_kernel_on_image(image_tensor, kernels, layers, heads, model)
+    detail_layers = _select_detail_layers(len(kernels))
 
     k0 = kernels[0]["masked_kernel"]
+    fig_act = plot_activation_maps(activations, detail_layers)
+    fig_kern = plot_kernel_on_image(image_tensor, kernels, detail_layers, None, model)
     fig_head = plot_activation_on_image(
         image_tensor,
         activations,
-        layers,
-        heads,
+        detail_layers,
+        None,
         num_heads=k0.shape[0],
         head_dim=k0.shape[1],
     )
@@ -279,7 +268,8 @@ def build_app() -> gr.Blocks:
             "Explore the learned implicit kernels of a Multi-Head Hyena model. "
             "Each Hyena layer replaces attention with a global convolution whose kernel is generated "
             "by a SIREN network and modulated by a learned Gaussian mask. "
-            "Use the tabs below to go from a bird's-eye overview to per-head, per-channel detail."
+            "Load a model to generate a complete visual report across representative layers "
+            "(first, middle, last) and all heads."
         )
 
         with gr.Row():
@@ -292,33 +282,9 @@ def build_app() -> gr.Blocks:
                 load_btn = gr.Button("Load Model", variant="primary")
                 status = gr.Textbox(label="Status", interactive=False, value="No model loaded.")
 
-                gr.Markdown("### Controls")
-                layer_slider = gr.Slider(
-                    minimum=0, maximum=11, step=1, value=0,
-                    label="Layer",
-                    info="Select which Hyena layer to inspect.",
-                )
-                gr.Markdown(
-                    "📍 *Affects: Receptive Field, Kernel Structure, Image Analysis*",
-                )
-                head_slider = gr.Slider(
-                    minimum=0, maximum=5, step=1, value=0,
-                    label="Head",
-                    info="Select which attention head to inspect.",
-                )
-                gr.Markdown(
-                    "📍 *Affects: Kernel Structure, Image Analysis*",
-                )
-                all_heads_checkbox = gr.Checkbox(
-                    label="Compare all heads",
-                    value=False,
-                    info="Show all heads side-by-side in Kernel Structure tab.",
-                )
-
                 gr.Markdown("### Image (optional)")
                 gr.Markdown(
-                    "*Upload an image to see how the kernels process real inputs "
-                    "in the Image Analysis tab.*"
+                    "*Upload an image to populate the Image Analysis tab.*"
                 )
                 image_input = gr.Image(type="filepath", label="Upload image")
                 img_status = gr.Textbox(
@@ -339,21 +305,18 @@ def build_app() -> gr.Blocks:
                         gr.Markdown(
                             "## How do kernels vary across the model?\n\n"
                             "This grid shows the **Frobenius norm** of each head's "
-                            "head_dim x head_dim mixing matrix at every spatial position "
-                            "(K_h x K_w), for all layers and all heads. It gives a quick "
-                            "bird's-eye view of how kernel magnitude and shape evolve "
-                            "with depth.\n\n"
+                            "head_dim × head_dim mixing matrix at every spatial position "
+                            "(K_h × K_w), for **all layers and all heads**.\n\n"
                             "**What to look for:**\n"
-                            "- Shallow layers should have broader, more uniform kernels "
-                            "(local feature extraction).\n"
-                            "- Deeper layers should show sharper, more structured patterns "
-                            "(specialized long-range interactions).\n"
-                            "- Different heads at the same layer should show diversity "
-                            "(multi-scale behavior).\n\n"
-                            "*Rendered once on model load. Not affected by sliders.*"
+                            "- Shallow layers → broader, more uniform kernels "
+                            "(local feature extraction)\n"
+                            "- Deeper layers → sharper, more structured patterns "
+                            "(specialized long-range interactions)\n"
+                            "- Different heads at the same layer → diversity "
+                            "(multi-scale behavior)"
                         )
                         overview_img = gr.Image(
-                            label="Kernel Norm Heatmaps (all layers x all heads)",
+                            label="Kernel Norm Heatmaps (all layers × all heads)",
                             type="pil",
                         )
 
@@ -363,20 +326,19 @@ def build_app() -> gr.Blocks:
                     with gr.Tab("Receptive Field"):
                         gr.Markdown(
                             "## How does each head see the spatial world?\n\n"
-                            "These panels show **all heads side by side** for the selected "
-                            "layer, so you can compare how different heads partition the "
-                            "spatial receptive field at the same depth.\n\n"
-                            "*Controlled by the **Layer** slider. Head slider has no effect here.*"
+                            "These panels show **all heads side by side** for 3 representative "
+                            "layers (first, middle, last), so you can compare how heads partition "
+                            "the spatial receptive field at different depths."
                         )
 
                         gr.Markdown(
                             "### Raw vs Masked Kernel Norms\n\n"
                             "Left = raw SIREN output, right = after Gaussian mask modulation. "
                             "The mask controls the effective receptive field by suppressing "
-                            "distant positions, creating a smooth falloff.\n\n"
-                            "**What to look for:** Heads with narrower masks focus on local "
-                            "context; wider masks capture global patterns. The mask should "
-                            "produce a clean, smooth attenuation of the raw kernel."
+                            "distant positions.\n\n"
+                            "**What to look for:** Narrower masks → local context; "
+                            "wider masks → global patterns. The mask should produce a clean, "
+                            "smooth attenuation."
                         )
                         raw_masked_img = gr.Image(
                             label="Raw vs Masked (all heads)", type="pil"
@@ -384,12 +346,10 @@ def build_app() -> gr.Blocks:
 
                         gr.Markdown(
                             "### Gaussian Mask Shape\n\n"
-                            "The learned Gaussian envelope that modulates each head's kernel. "
-                            "Annotated with sigma values indicating the effective receptive field "
-                            "size in normalized coordinates (grid spans [-1, 1]).\n\n"
-                            "**What to look for:** A diversity of sigma across heads indicates "
-                            "multi-scale behavior. Small sigma = tight local attention, "
-                            "large sigma = broad global attention."
+                            "The learned Gaussian envelope per head, annotated with σ values "
+                            "(grid spans [-1, 1]).\n\n"
+                            "**What to look for:** Diversity of σ across heads = multi-scale "
+                            "behavior. Small σ = tight local, large σ = broad global."
                         )
                         gaussian_img = gr.Image(
                             label="Gaussian Masks (all heads)", type="pil"
@@ -400,52 +360,41 @@ def build_app() -> gr.Blocks:
                     # ==============================================================
                     with gr.Tab("Kernel Structure"):
                         gr.Markdown(
-                            "## What does this head compute?\n\n"
-                            "Detailed analysis of a single head's kernel structure. "
-                            "These panels reveal the internal computation — what spatial "
-                            "frequencies are captured, how channels interact, and what "
-                            "spatial patterns are learned.\n\n"
-                            "*Controlled by both **Layer** and **Head** sliders.*"
+                            "## What does each head compute?\n\n"
+                            "Detailed analysis of kernel structure for 3 representative "
+                            "layers × all heads. These panels reveal the internal computation — "
+                            "spatial frequencies, channel interactions, and learned patterns."
                         )
 
                         gr.Markdown(
                             "### Kernel Clustering: Channel Mixing Modes\n\n"
                             "K-Means clustering (k=4) of PCA-reduced mixing matrices across "
-                            "all spatial positions. Each pixel is colored by its cluster ID "
-                            "(categorical colormap); brightness is modulated by the Frobenius "
-                            "norm so faint positions fade out.\n\n"
+                            "all spatial positions. Each pixel is colored by cluster ID; "
+                            "brightness is modulated by Frobenius norm.\n\n"
                             "**What to look for:** Same color = same channel-mixing mode. "
-                            "Different colors across spatial positions = the head applies "
-                            "different transformations at different offsets. "
-                            "A legend maps each color to a cluster (mixing mode) ID."
+                            "Different colors across positions = the head applies "
+                            "different transformations at different offsets."
                         )
                         pca_img = gr.Image(label="Kernel Clustering", type="pil")
 
                         gr.Markdown(
                             "### Spectral Analysis (DC Suppressed)\n\n"
-                            "2D FFT of the kernel norm map (log magnitude) with the DC "
-                            "component suppressed. The DC (zero-frequency) component represents "
-                            "the mean energy of the kernel and typically dominates the spectrum, "
-                            "making it impossible to see any high-frequency structure. By zeroing "
-                            "out the center pixel, the remaining frequency content becomes visible.\n\n"
-                            "Axes show normalized spatial frequency in [-0.5, 0.5] cycles/pixel. "
-                            "Center = low frequencies (smooth/global), edges = high frequencies "
-                            "(sharp/local).\n\n"
-                            "**What to look for:** Different heads should specialize in "
-                            "different frequency bands. Deeper layers may capture higher "
-                            "frequencies."
+                            "2D FFT of the kernel norm map (log magnitude) with DC "
+                            "component zeroed out. Axes show normalized spatial frequency "
+                            "in [-0.5, 0.5] cycles/pixel.\n\n"
+                            "**What to look for:** Center = low freq (smooth/global), "
+                            "edges = high freq (sharp/local). Different heads should "
+                            "specialize in different frequency bands."
                         )
                         spectral_img = gr.Image(label="Spectral Analysis", type="pil")
 
                         gr.Markdown(
                             "### Channel Correlation Matrix\n\n"
-                            "Each pixel (i, j) shows the Frobenius norm of the K_h x K_w "
-                            "spatial filter between output channel i and input channel j. "
-                            "This reveals how much cross-channel mixing the head performs.\n\n"
+                            "Each pixel (i, j) = Frobenius norm of the K_h × K_w "
+                            "spatial filter between output channel i and input channel j.\n\n"
                             "**What to look for:** Diagonal-dominant = depthwise-like "
-                            "(channels stay independent). Dense off-diagonal = heavy "
-                            "cross-channel mixing. The d/o ratio (diagonal mean / "
-                            "off-diagonal mean) quantifies this."
+                            "(channels independent). Dense off-diagonal = heavy "
+                            "cross-channel mixing. d/o ratio quantifies this."
                         )
                         channel_corr_img = gr.Image(
                             label="Channel Correlation", type="pil"
@@ -453,13 +402,11 @@ def build_app() -> gr.Blocks:
 
                         gr.Markdown(
                             "### Head-Grid Mosaic: Spatial Filters per Channel Pair\n\n"
-                            "Raw K_h x K_w spatial filters for specific (output_ch, input_ch) "
-                            "pairs, shown as grayscale heatmaps. Top row = channel-mean. "
-                            "Channel pairs are selected dynamically by spatial energy: the "
-                            "top 2 most energetic diagonal and off-diagonal pairs are shown.\n\n"
+                            "Raw K_h × K_w spatial filters for specific (out_ch, in_ch) "
+                            "pairs as grayscale heatmaps. Top row = channel-mean. "
+                            "Pairs selected by spatial energy (top diagonal + off-diagonal).\n\n"
                             "**What to look for:** Different heads learning different "
-                            "orientations, frequencies, or receptive field shapes. "
-                            "This is the most direct view of the raw learned kernel values."
+                            "orientations, frequencies, or receptive field shapes."
                         )
                         kernel_slices_img = gr.Image(
                             label="Head-Grid Mosaic", type="pil"
@@ -467,13 +414,10 @@ def build_app() -> gr.Blocks:
 
                         gr.Markdown(
                             "### Mixing Strength Map (Top Singular Value)\n\n"
-                            "The top singular value σ₁ of each spatial position's head_dim × "
-                            "head_dim mixing matrix, displayed as a heatmap. This summarizes "
-                            "how actively each spatial offset mixes channels — high σ₁ means "
-                            "strong cross-channel interaction.\n\n"
-                            "**What to look for:** Concentrated high σ₁ near the center = "
-                            "local mixing dominates. Broad high σ₁ = long-range channel "
-                            "interactions."
+                            "σ₁ of each spatial position's head_dim × head_dim mixing "
+                            "matrix. High σ₁ = strong cross-channel interaction.\n\n"
+                            "**What to look for:** Concentrated σ₁ near center = "
+                            "local mixing. Broad σ₁ = long-range channel interactions."
                         )
                         svd_img = gr.Image(
                             label="Mixing Strength (σ₁)", type="pil"
@@ -484,25 +428,19 @@ def build_app() -> gr.Blocks:
                     # ==============================================================
                     with gr.Tab("Image Analysis"):
                         gr.Markdown(
-                            "## How does this head process a real image?\n\n"
-                            "These panels show image-conditioned visualizations — how the "
-                            "learned kernels interact with actual image content. Upload an "
-                            "image in the sidebar to activate.\n\n"
-                            "*Controlled by both **Layer** and **Head** sliders.*"
+                            "## How do kernels process a real image?\n\n"
+                            "Image-conditioned visualizations for 3 representative "
+                            "layers × all heads. Upload an image in the sidebar to "
+                            "populate these panels."
                         )
 
                         gr.Markdown(
                             "### Activation Maps: Effect of Global Convolution\n\n"
-                            "Top = input activation magnitude (before convolution), "
-                            "middle = output (after), bottom = **log₂ amplification ratio**. "
-                            "We use log₂ instead of a raw ratio because: (1) it centers "
-                            "\"no change\" at 0 instead of at 1, making the diverging colormap "
-                            "meaningful (blue = suppression, red = amplification); (2) it is "
-                            "symmetric — a 2× amplification (+1) and a 2× suppression (−1) "
-                            "have equal visual weight; (3) it avoids numerical instability "
-                            "from dividing by near-zero pre-conv activations.\n\n"
-                            "**What to look for:** Spatially structured patterns where the "
-                            "model amplifies salient regions and suppresses background."
+                            "Top = input magnitude (before conv), middle = output (after), "
+                            "bottom = **log₂ amplification ratio** (blue = suppression, "
+                            "red = amplification, 0 = no change).\n\n"
+                            "**What to look for:** Spatially structured amplification "
+                            "where the model boosts salient regions."
                         )
                         activation_img = gr.Image(
                             label="Activation Maps", type="pil"
@@ -510,12 +448,11 @@ def build_app() -> gr.Blocks:
 
                         gr.Markdown(
                             "### Kernel Receptive Field on Image\n\n"
-                            "The kernel's Frobenius norm (= effective receptive field "
-                            "strength) upsampled to image resolution and overlaid on the "
-                            "input. This is translation-invariant — it shows the kernel's "
-                            "inherent spatial reach, not what it does for this specific input.\n\n"
-                            "**What to look for:** Local heads highlight only the center "
-                            "region; global heads cover a wider area."
+                            "Kernel Frobenius norm upsampled to image resolution and "
+                            "overlaid. Translation-invariant — shows the kernel's "
+                            "inherent spatial reach.\n\n"
+                            "**What to look for:** Local heads → center only; "
+                            "global heads → wider area."
                         )
                         kernel_overlay_img = gr.Image(
                             label="Kernel on Image", type="pil"
@@ -523,12 +460,10 @@ def build_app() -> gr.Blocks:
 
                         gr.Markdown(
                             "### Per-Head Activation on Image\n\n"
-                            "Post-convolution activation magnitude for this head, overlaid "
-                            "on the input image. Unlike the kernel overlay above, this is "
-                            "input-dependent — it reveals what this head actually 'attends to' "
-                            "for this specific image.\n\n"
-                            "**What to look for:** Heads specializing in different aspects: "
-                            "edges, textures, object parts, or background regions."
+                            "Post-conv activation magnitude overlaid on the input. "
+                            "Unlike the kernel overlay, this is **input-dependent**.\n\n"
+                            "**What to look for:** Heads specializing in edges, "
+                            "textures, object parts, or background."
                         )
                         activation_head_img = gr.Image(
                             label="Per-Head Activation on Image", type="pil"
@@ -562,6 +497,8 @@ def build_app() -> gr.Blocks:
                             "| **Receptive Field** | Raw vs masked kernels + Gaussian envelopes | How each head's spatial reach is shaped |\n"
                             "| **Kernel Structure** | Clustering, FFT, correlations, SVD | What each head computes internally |\n"
                             "| **Image Analysis** | Activation maps + overlays on real images | How kernels interact with actual content |\n\n"
+                            "All panels show **3 representative layers** (first, middle, last) × **all heads**. "
+                            "No manual slider interaction needed.\n\n"
                             "### Glossary\n\n"
                             "| Term | Definition |\n"
                             "|---|---|\n"
@@ -576,98 +513,37 @@ def build_app() -> gr.Blocks:
 
         # ---- Event wiring ----
 
-        # Load model → update states, sliders, then render all tabs
+        # Load model → render all kernel-based tabs
         load_btn.click(
             fn=on_load_model,
             inputs=[run_path, alias, device],
-            outputs=[model_state, kernels_state, layer_slider, head_slider, status],
+            outputs=[model_state, kernels_state, status],
         ).then(
             fn=on_render_overview,
             inputs=[kernels_state],
             outputs=[overview_img],
         ).then(
             fn=on_render_receptive_field,
-            inputs=[kernels_state, layer_slider],
+            inputs=[kernels_state],
             outputs=[raw_masked_img, gaussian_img],
         ).then(
             fn=on_render_kernel_structure,
-            inputs=[kernels_state, layer_slider, head_slider, all_heads_checkbox],
+            inputs=[kernels_state],
             outputs=[pca_img, spectral_img, channel_corr_img, kernel_slices_img, svd_img],
         )
 
-        # --- Receptive Field tab: layer slider only ---
-        receptive_field_inputs = [kernels_state, layer_slider]
-        receptive_field_outputs = [raw_masked_img, gaussian_img]
-
-        layer_slider.change(
-            fn=on_render_receptive_field,
-            inputs=receptive_field_inputs,
-            outputs=receptive_field_outputs,
-        )
-
-        # --- Kernel Structure tab: both sliders + all-heads checkbox ---
-        kernel_structure_inputs = [kernels_state, layer_slider, head_slider, all_heads_checkbox]
-        kernel_structure_outputs = [
-            pca_img,
-            spectral_img,
-            channel_corr_img,
-            kernel_slices_img,
-            svd_img,
-        ]
-
-        layer_slider.change(
-            fn=on_render_kernel_structure,
-            inputs=kernel_structure_inputs,
-            outputs=kernel_structure_outputs,
-        )
-        head_slider.change(
-            fn=on_render_kernel_structure,
-            inputs=kernel_structure_inputs,
-            outputs=kernel_structure_outputs,
-        )
-        all_heads_checkbox.change(
-            fn=on_render_kernel_structure,
-            inputs=kernel_structure_inputs,
-            outputs=kernel_structure_outputs,
-        )
-
-        # --- Image Analysis tab: both sliders + image upload ---
-        image_panel_inputs = [
-            image_tensor_state,
-            activations_state,
-            kernels_state,
-            model_state,
-            layer_slider,
-            head_slider,
-        ]
-        image_panel_outputs = [
-            activation_img,
-            kernel_overlay_img,
-            activation_head_img,
-        ]
-
+        # Image upload → forward pass → render image panels
         image_input.change(
             fn=on_image_upload,
             inputs=[image_input, model_state, device],
             outputs=[image_tensor_state, activations_state, img_status],
         ).then(
             fn=on_render_image_panels,
-            inputs=image_panel_inputs,
-            outputs=image_panel_outputs,
+            inputs=[image_tensor_state, activations_state, kernels_state, model_state],
+            outputs=[activation_img, kernel_overlay_img, activation_head_img],
         )
 
-        layer_slider.change(
-            fn=on_render_image_panels,
-            inputs=image_panel_inputs,
-            outputs=image_panel_outputs,
-        )
-        head_slider.change(
-            fn=on_render_image_panels,
-            inputs=image_panel_inputs,
-            outputs=image_panel_outputs,
-        )
-
-        # --- Export button ---
+        # Export
         export_inputs = [
             overview_img, raw_masked_img, gaussian_img,
             pca_img, spectral_img, channel_corr_img, kernel_slices_img, svd_img,
