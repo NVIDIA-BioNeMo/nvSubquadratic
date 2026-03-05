@@ -5,8 +5,8 @@
 import torch
 import torch.nn.functional as F
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -20,26 +20,34 @@ class SoftTargetCrossEntropy(torch.nn.Module):
     """
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Compute soft-target cross-entropy: ``-sum(target * log_softmax(logits))``."""
         loss = torch.sum(-targets * F.log_softmax(logits, dim=-1), dim=-1)
         return loss.mean()
 
 
 class ClassificationWrapper(LightningWrapperBase):
-    """Lightning wrapper for classification tasks."""
+    """Lightning wrapper for classification tasks.
+
+    Loss modes (``loss`` parameter):
+
+    - ``"cross_entropy"`` — standard ``CrossEntropyLoss`` (hard labels).
+    - ``"soft_target_ce"`` — ``SoftTargetCrossEntropy``:
+      ``-sum(target * log_softmax(logits))``.  Classes compete via softmax.
+      Use for **finetuning** with Mixup/CutMix (DeiT III recipe).
+    - ``"bce"`` — ``BCEWithLogitsLoss`` with binarized multi-hot targets.
+      Each class is an independent sigmoid.  Matching the ViT-5 / DeiT III
+      **pretraining** recipe (``--bce-loss``).
+    """
+
+    _VALID_LOSSES = ("cross_entropy", "soft_target_ce", "bce")
 
     def __init__(
         self,
         network: torch.nn.Module,
         cfg: ExperimentConfig,
-        use_bce_loss: bool = False,
+        loss: str = "cross_entropy",
     ):
-        """Initialize the ClassificationWrapper.
-
-        Args:
-            network: Network to wrap.
-            cfg: Configuration.
-            use_bce_loss: Whether to use BCEWithLogitsLoss for classification.
-        """
+        """Initialize classification wrapper with loss mode and metrics."""
         super().__init__(
             network=network,
             cfg=cfg,
@@ -52,13 +60,18 @@ class ClassificationWrapper(LightningWrapperBase):
         # Binary problem?
         self.multiclass = network.out_proj.out_features != 1
 
+        if loss not in self._VALID_LOSSES:
+            raise ValueError(f"loss must be one of {self._VALID_LOSSES}, got '{loss}'")
+        self.loss_mode = loss
+
         # Loss metric
-        self.use_bce_loss = use_bce_loss
-        if self.multiclass and not self.use_bce_loss:
+        if not self.multiclass:
+            self.loss_metric = torch.nn.BCEWithLogitsLoss()
+        elif loss == "cross_entropy":
             self.loss_metric = torch.nn.CrossEntropyLoss()
-        elif self.multiclass and self.use_bce_loss:
+        elif loss == "soft_target_ce":
             self.loss_metric = SoftTargetCrossEntropy()
-        else:
+        elif loss == "bce":
             self.loss_metric = torch.nn.BCEWithLogitsLoss()
 
         # Function to get predictions:
@@ -72,6 +85,9 @@ class ClassificationWrapper(LightningWrapperBase):
         self.best_val_acc = 0.0
         self.best_train_loss = 1e9
         self.best_val_loss = 1e9
+
+        # Suffix appended to validation metric names (set by EMA callbacks to "_ema")
+        self._val_metric_suffix = ""
 
     def _step(
         self, batch: dict[str, torch.Tensor], accuracy_calculator: torchmetrics.Metric
@@ -117,11 +133,21 @@ class ClassificationWrapper(LightningWrapperBase):
             accuracy_calculator(predictions, labels)
             labels = labels.float()
 
-        # SoftTargetCrossEntropy requires soft probability targets [B, C].
-        # During training, Mixup/CutMix already provides soft labels.
-        # During validation/test, labels are integer indices and need one-hot conversion.
-        if self.use_bce_loss and labels.ndim == 1:
-            labels = torch.nn.functional.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
+        # Prepare labels for the chosen loss function.
+        if self.loss_mode == "bce":
+            # BCEWithLogitsLoss expects [B, C] float targets.
+            # During training, Mixup provides soft labels — binarize them
+            # (threshold > 0) to get multi-hot targets, matching the ViT-5
+            # reference (engine.py: targets = targets.gt(0.0).type(targets.dtype)).
+            if labels.ndim == 1:
+                labels = F.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
+            else:
+                labels = labels.gt(0.0).to(labels.dtype)
+        elif self.loss_mode == "soft_target_ce":
+            # SoftTargetCrossEntropy expects [B, C] soft probability targets.
+            # During validation/test, labels are integer indices → one-hot.
+            if labels.ndim == 1:
+                labels = F.one_hot(labels.long(), num_classes=logits.shape[-1]).float()
 
         # Calculate the loss
         loss = self.loss_metric(logits, labels)
@@ -154,9 +180,9 @@ class ClassificationWrapper(LightningWrapperBase):
         """Perform a validation step and log the validation loss & accuracy."""
         # Perform step
         predictions, loss, other_outputs = self._step(batch, self.val_acc)
-        # Log and return loss (Required in training step)
+        s = self._val_metric_suffix
         self.log(
-            "val/loss",
+            f"val/loss{s}",
             loss,
             on_step=False,
             on_epoch=True,
@@ -164,7 +190,7 @@ class ClassificationWrapper(LightningWrapperBase):
             sync_dist=self.distributed,
         )
         self.log(
-            "val/acc",
+            f"val/acc{s}",
             self.val_acc,
             on_step=False,
             on_epoch=True,
@@ -248,6 +274,12 @@ class ClassificationWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log best validation accuracy and loss and logits over the validation set."""
+        # Sanity check runs only a few batches, so metrics are not
+        # representative.  Skip best-metric tracking to avoid inflated values.
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         # Gather logits from validation set and construct a histogram of them.
         validation_step_outputs = self.other_outputs_validation
         validation_step_outputs_keys = validation_step_outputs[0].keys()
@@ -271,27 +303,47 @@ class ClassificationWrapper(LightningWrapperBase):
         self.other_outputs_validation.clear()
 
         # Log best accuracy
-        val_acc = self.trainer.callback_metrics["val/acc"]
+        s = self._val_metric_suffix
+        val_acc = self.trainer.callback_metrics[f"val/acc{s}"]
         if val_acc > self.best_val_acc:
             self.best_val_acc = val_acc.item()
             if self.logger is not None:
                 self.logger.experiment.log(
                     {
-                        "val/best_acc": self.best_val_acc,
+                        f"val/best_acc{s}": self.best_val_acc,
                         "global_step": self.global_step,
                     }
                 )
         # Log best validation loss
-        val_loss = self.trainer.callback_metrics["val/loss"]
+        val_loss = self.trainer.callback_metrics[f"val/loss{s}"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss.item()
             if self.logger is not None:
                 self.logger.experiment.log(
                     {
-                        "val/best_loss": self.best_val_loss,
+                        f"val/best_loss{s}": self.best_val_loss,
                         "global_step": self.global_step,
                     }
                 )
+
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        """Persist best-metric tracking values so they survive resume."""
+        checkpoint["best_metrics"] = {
+            "best_train_acc": self.best_train_acc,
+            "best_train_loss": self.best_train_loss,
+            "best_val_acc": self.best_val_acc,
+            "best_val_loss": self.best_val_loss,
+        }
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """Restore best-metric tracking values and delegate key remapping to base."""
+        super().on_load_checkpoint(checkpoint)
+        metrics = checkpoint.get("best_metrics")
+        if metrics is not None:
+            self.best_train_acc = metrics.get("best_train_acc", 0.0)
+            self.best_train_loss = metrics.get("best_train_loss", 1e9)
+            self.best_val_acc = metrics.get("best_val_acc", 0.0)
+            self.best_val_loss = metrics.get("best_val_loss", 1e9)
 
     @staticmethod
     def multiclass_prediction(logits):

@@ -1,0 +1,51 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=32
+#SBATCH --partition=low
+#SBATCH --gpu-bind=closest
+#SBATCH --container-image=/shared/images/nvsubquadratic_cuda129.sqsh
+#SBATCH --container-writable
+#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch"
+#SBATCH --container-workdir=/home/dwromero/projects/nvSubquadratic-private
+#SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.out
+#SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.err
+
+set -eo pipefail
+
+if [ -z "$1" ]; then
+    echo "Usage: sbatch [--job-name=NAME] scripts/submit_2gpu.sh <config.py> [extra args...]"
+    echo "  e.g. sbatch --job-name=ft-attn scripts/submit_2gpu.sh examples/vit5_imagenet/v2/finetune_vit5_small_attention.py"
+    exit 1
+fi
+
+CONFIG="$1"
+shift
+
+set -a
+source /home/dwromero/projects/nvSubquadratic-private/.env
+set +a
+export IMAGENET_PATH=/shared/data/image_datasets/imagenet
+export IMAGENET_FOLDER_PATH=/shared/data/image_datasets/imagenet_folder
+
+source /home/dwromero/miniconda3/etc/profile.d/conda.sh
+conda activate nv-subq
+
+export SLURM_JOB_NAME=bash
+
+export TORCHINDUCTOR_FX_GRAPH_CACHE=1
+export TRITON_CACHE_DIR=/home/dwromero/.triton/cache_${SLURM_JOB_ID}
+export DALI_NO_MMAP=1
+
+cd /home/dwromero/projects/nvSubquadratic-private
+
+# Triton autotuning needs ldconfig; create symlink if missing in container
+if [ ! -f /sbin/ldconfig ]; then
+    LDCONFIG_PATH=$(which ldconfig 2>/dev/null || find /usr -name ldconfig -type f 2>/dev/null | head -1)
+    if [ -n "$LDCONFIG_PATH" ]; then
+        mkdir -p /sbin && ln -sf "$LDCONFIG_PATH" /sbin/ldconfig
+    fi
+fi
+
+PYTHONPATH=. python experiments/run.py --config "$CONFIG" "$@"

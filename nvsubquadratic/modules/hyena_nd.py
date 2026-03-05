@@ -1,7 +1,36 @@
 # TODO: Add license header here
 
 
-"""Hyena-style global convolutional mixer implementation for ND signals."""
+"""Hyena-ND: gated global convolutional mixer for 1D/2D/3D signals.
+
+Computation graph (per-block):
+
+    Q, K, V ← linear projections of input  (done outside this module)
+         │
+    short_conv([Q; K; V])                   depthwise short conv on concatenated QKV
+         │
+    RoPE(Q, K)                              optional rotary positional encoding
+         │
+    QK-Norm(Q [, K])                        optional per-channel normalization
+         │                                  (K is only normalized when gate_nonlinear is Identity)
+    z = Q ⊙ σ(K)                            first multiplicative gate
+         │
+    PixelHyena-Norm(z)                      optional normalization (GroupNorm / RMSNorm / ...)
+         │
+    h = GlobalConv(z)                       long-range convolution (FFTConv, etc.)
+         │
+    y = h ⊙ σ₂(V)                           second multiplicative gate
+         │
+    Output-Norm(y)                          optional normalization before projection
+         │
+    return y                                [B, *spatial, C]
+
+σ denotes `gate_nonlinear` (first gate) and σ₂ denotes `gate_nonlinear_2`
+(second gate).  By default σ₂ = σ.  When both are Identity the gates
+reduce to plain element-wise products, recovering a linear variant closer
+to Mamba's selective-scan formulation.  Setting σ=SiLU, σ₂=Sigmoid follows
+the gated attention formulation.
+"""
 
 from typing import Optional
 
@@ -19,7 +48,26 @@ from nvsubquadratic.utils import rope
 
 
 class Hyena(torch.nn.Module):
-    """Hyena-style global convolutional mixer."""
+    """Gated global convolutional mixer for ND signals.
+
+    Two multiplicative gates sandwich a long-range (global) convolution:
+
+        z = Q ⊙ σ(K)           — first gate
+        h = GlobalConv(z)
+        y = h ⊙ σ₂(V)          — second gate
+
+    where σ is ``gate_nonlinear`` and σ₂ is ``gate_nonlinear_2`` (defaults
+    to σ when not provided).  Setting both to Identity gives plain
+    element-wise products, recovering a linear gating variant.
+
+    Optional components (each disabled by passing Identity or None):
+        - Short depthwise convolution on concatenated [Q, K, V]
+        - Rotary positional encoding (RoPE) on Q and K (1D/2D/3D)
+        - QK normalization (Q always; K only when σ = Identity)
+        - PixelHyena normalization between first gate and global conv
+        - Output normalization after second gate
+        - Context parallelism via AllToAll communication
+    """
 
     def __init__(
         self,
@@ -31,21 +79,25 @@ class Hyena(torch.nn.Module):
         qk_norm_cfg: Optional[LazyConfig] | None,
         rope_base: float = 10000.0,
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
+        gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
     ):
-        """Initialize the Hyena-style global convolutional mixer.
-
+        """
         Args:
-            global_conv_cfg: LazyConfig - LazyConfig for the global convolutional layer.
-            short_conv_cfg: LazyConfig - LazyConfig for the short convolutional layer.
-            gate_nonlinear_cfg: LazyConfig - LazyConfig for the gate nonlinear layer.
-            pixelhyena_norm_cfg: LazyConfig - LazyConfig for the pixelhyena normalization layer. Use torch.nn.Identity for no normalization.
-            use_rope: bool - Whether to use RoPE.
-            qk_norm_cfg: Optional[LazyConfig] - LazyConfig for Q/K normalization (e.g., L2Norm, RMSNorm). None to disable.
-            rope_base: float - The base of the RoPE (default: 10000.0).
-            output_norm_cfg: LazyConfig - LazyConfig for the output normalization layer. Defaults to torch.nn.Identity.
-
-        Raises:
-            AssertionError: If the short conv is not an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity.
+            global_conv_cfg: Global (long-range) convolutional layer.
+            short_conv_cfg: Short depthwise conv applied to concatenated [Q, K, V].
+                Must produce a ConvNd, DistributedDepthwiseConvNd, or Identity.
+            gate_nonlinear_cfg: Activation for the first multiplicative gate (e.g. SiLU).
+                Use Identity for linear gating.
+            pixelhyena_norm_cfg: Normalization between first gate and global conv.
+                Use Identity to disable.
+            use_rope: Whether to apply rotary positional encoding to Q and K.
+            qk_norm_cfg: Per-channel normalization for Q (and K when gate is Identity).
+                None to disable.  Separate instances are created for Q and K to
+                support stateful norms (e.g. RMSNorm with learnable scale).
+            rope_base: Base frequency for RoPE (default: 10000.0).
+            output_norm_cfg: Normalization after the second gate.  Defaults to Identity.
+            gate_nonlinear_2_cfg: Activation for the second multiplicative gate.
+                If None (default), reuses gate_nonlinear_cfg for both gates.
         """
         super().__init__()
 
@@ -67,8 +119,12 @@ class Hyena(torch.nn.Module):
             f"Short conv must be an instance of torch.nn.ConvNd (1d, 2d, or 3d) or torch.nn.Identity. Current type: {type(self.short_conv)}"
         )
 
-        # Nonlinear gate
+        # Nonlinear gates
         self.gate_nonlinear = instantiate(gate_nonlinear_cfg)
+        if gate_nonlinear_2_cfg is not None:
+            self.gate_nonlinear_2 = instantiate(gate_nonlinear_2_cfg)
+        else:
+            self.gate_nonlinear_2 = self.gate_nonlinear
 
         # Pixelhyena normalization (use torch.nn.Identity for no normalization)
         self.pixelhyena_norm = instantiate(pixelhyena_norm_cfg)
@@ -100,10 +156,13 @@ class Hyena(torch.nn.Module):
 
     def extra_repr(self) -> str:
         """Return extra representation string for the module."""
-        # Get is_causal from global_conv if it has that attribute
         is_causal = getattr(self.global_conv, "is_causal", None)
         qk_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
         parts = [f"qk_norm={qk_norm_str}", f"use_rope={self.use_rope}"]
+        if self.gate_nonlinear is not self.gate_nonlinear_2:
+            g1 = self.gate_nonlinear.__class__.__name__
+            g2 = self.gate_nonlinear_2.__class__.__name__
+            parts.append(f"gates={g1}/{g2}")
         if is_causal is not None:
             parts.append(f"is_causal={is_causal}")
         return ", ".join(parts)
@@ -210,17 +269,21 @@ class Hyena(torch.nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         cp_group: torch.distributed.ProcessGroup = None,
+        **mixer_kwargs,
     ) -> torch.Tensor:
-        """Forward pass of the Hyena-style global convolutional mixer.
+        """Compute  y = OutputNorm( GlobalConv( Norm( Q ⊙ σ(K) ) ) ⊙ σ(V) ).
+
+        All tensors are channel-last on entry and exit.
 
         Args:
-            query: torch.Tensor - The query tensor of shape (batch_size, * spatial_dims, hidden_dim).
-            key: torch.Tensor - The key tensor of shape (batch_size, * spatial_dims, hidden_dim).
-            value: torch.Tensor - The value tensor of shape (batch_size, * spatial_dims, hidden_dim).
-            cp_group: torch.distributed.ProcessGroup - Context parallel process group.
+            query: [B, *spatial, C] query tensor (from linear projection of input).
+            key: [B, *spatial, C] key tensor.
+            value: [B, *spatial, C] value tensor.
+            cp_group: Context-parallel process group.  None disables CP.
+            **mixer_kwargs: Forwarded to the global conv (e.g. ``conditioning`` for FiLM).
 
         Returns:
-            torch.Tensor: The output tensor of shape (batch_size, * spatial_dims, hidden_dim).
+            [B, *spatial, C] output tensor.
         """
         # Reshape query, key, and value to [B, C, * spatial_dims] (Required for short convolutional projections).
         query = rearrange(query, "b ... c -> b c ...")
@@ -303,16 +366,18 @@ class Hyena(torch.nn.Module):
             else:
                 raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
 
-        # Apply QK normalization (after RoPE).
+        # QK normalization (after RoPE).
         # Tensors are BHL: [B, C, *spatial]. Move C to last dim for norms that
         # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
+        # K is only normalized when gate_nonlinear is Identity (linear gating),
+        # because a nonlinear σ(K) already bounds the magnitude.
         if self.q_norm is not None:
             query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
-            key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
+            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+                key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
 
-        # First gate
-        # z = query * key. We remove the nonlinearity here to align more with the Mamba defition.
-        query = query * key
+        # First gate: z = Q ⊙ σ(K)
+        query = query * self.gate_nonlinear(key)
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
@@ -329,19 +394,16 @@ class Hyena(torch.nn.Module):
             query = AllToAllSingleFunction.apply(query, cp_group, "split_to_full", True)
 
         # Apply global convolution
-        y = self.global_conv(query, is_bhl_input=True, cp_group=cp_group)
+        y = self.global_conv(query, is_bhl_input=True, cp_group=cp_group, **mixer_kwargs)
 
         # CP communication - scatter along first spatial dimension while gathering across channels/hidden dimension
         if cp_group is not None and cp_group.size() > 1:
             y = AllToAllSingleFunction.apply(y, cp_group, "full_to_split", True)
 
-        # Second gate
-        y = y * self.gate_nonlinear(value)
+        # Second gate: y = h ⊙ σ₂(V)
+        y = y * self.gate_nonlinear_2(value)
 
-        # Optional value normalization before applying the second gate.
-        # We add a normalization layer at the end of the second gate to align more with the Mamba defition.
-        # In particular, this normalization in combination with the previous nonlinearity could help us get
-        # rid of the problems around using circular convolutions.
+        # Output normalization (after the second gate).
         if not isinstance(self.output_norm, torch.nn.Identity):
             if isinstance(self.output_norm, torch.nn.GroupNorm):
                 y = self.output_norm(y)

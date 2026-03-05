@@ -34,8 +34,12 @@ class TrainConfig:
 class TrainerConfig:
     """Lightning Trainer configuration overrides."""
 
-    # Check once every epoch by default.
-    val_check_interval: float = 1.0
+    # Validate every N training iterations (maps to Lightning's val_check_interval).
+    # None = rely on check_val_every_n_epoch only.
+    check_val_every_n_iterations: Optional[int] = None
+
+    # Validate every N epochs (Lightning's check_val_every_n_epoch). Default: 1.
+    check_val_every_n_epoch: int = 1
 
     # Run through all validation batches every epoch by default.
     limit_val_batches: Union[int, float] = 1.0
@@ -44,6 +48,14 @@ class TrainerConfig:
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None
 
+    # Override the metric monitored by ModelCheckpoint. If None, auto-derived
+    # from scheduler.mode ("val/acc" for max, "val/loss" for min).
+    checkpoint_monitor: Optional[str] = None
+
+    # Enable DDP find_unused_parameters (required when some model parameters
+    # are not part of every forward pass, e.g. multi-head CKConv variants).
+    find_unused_parameters: bool = False
+
 
 @dataclass
 class SchedulerConfig:
@@ -51,7 +63,11 @@ class SchedulerConfig:
 
     name: str = PLACEHOLDER
     warmup_iterations_percentage: float = 0.0
+    stable_iterations_percentage: float = (
+        0.0  # WSD only: fraction of total iters at constant LR between warmup and decay
+    )
     total_iterations: int = PLACEHOLDER
+    eta_min: float = 0.0
     mode: str = "max"
     monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
 
@@ -106,6 +122,9 @@ class ExperimentConfig:
     comment: str = ""
     compile: bool = False  # Whether to compile the model with torch.compile
     compile_mode: Optional[str] = None  # torch.compile mode: None (default), "reduce-overhead", "max-autotune"
+    compile_compatible_fftconv: bool = (
+        False  # Use real-valued complex multiply in FFT conv (needed for torch.compile + FFT models)
+    )
     experiment_dir: Optional[str] = None
     num_nodes: int = 1
 

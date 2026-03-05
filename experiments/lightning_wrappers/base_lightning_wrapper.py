@@ -15,8 +15,9 @@ from experiments.default_cfg import (
     ExperimentConfig,
     SchedulerConfig,
 )
+from experiments.utils.checkpointing import align_compiled_keys
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules import schedulers
+from nvsubquadratic.modules.schedulers import ResumableSequentialLR
 
 
 def construct_optimizer(
@@ -97,8 +98,9 @@ def construct_scheduler(
     Returns:
         torch.optim.lr_scheduler.LRScheduler: The constructed scheduler.
     """
-    assert scheduler_cfg.name in [PLACEHOLDER, "cosine"], (
-        f"scheduler_cfg.name must be either {PLACEHOLDER} or 'cosine'. Got {scheduler_cfg.name}"
+    valid_names = [PLACEHOLDER, "cosine", "constant", "wsd"]
+    assert scheduler_cfg.name in valid_names, (
+        f"scheduler_cfg.name must be one of {valid_names}. Got {scheduler_cfg.name}"
     )
     if scheduler_cfg.name != PLACEHOLDER:
         assert scheduler_cfg.total_iterations != PLACEHOLDER, (
@@ -116,7 +118,15 @@ def construct_scheduler(
     )
     warmup_iterations = int(total_iterations * warmup_iterations_percentage)
 
-    # Create warm_up scheduler
+    # Validate eta_min < base lr to prevent nonsensical cosine schedules
+    base_lr = optimizer.param_groups[0]["lr"]
+    if scheduler_type == "cosine" and scheduler_cfg.eta_min >= base_lr:
+        raise ValueError(
+            f"eta_min ({scheduler_cfg.eta_min}) must be strictly less than the optimizer learning rate ({base_lr})."
+        )
+
+    # Build the warmup scheduler (shared across schedule types)
+    warmup_scheduler = None
     if warmup_iterations != 0:
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
@@ -124,36 +134,84 @@ def construct_scheduler(
             end_factor=1.0,
             total_iters=warmup_iterations,
         )
-    else:
-        warmup_scheduler = None
 
-    # Create main scheduler
-    if scheduler_type == "cosine":
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    # Build the post-warmup scheduler
+    if scheduler_type == "wsd":
+        # Warmup-Stable-Decay: constant LR for stable phase, then linear decay
+        stable_pct = getattr(scheduler_cfg, "stable_iterations_percentage", 0.0)
+        assert 0.0 <= stable_pct < 1.0, f"stable_iterations_percentage must be in [0.0, 1.0). Got {stable_pct}"
+        warmup_pct = warmup_iterations_percentage
+        decay_pct = 1.0 - warmup_pct - stable_pct
+        assert decay_pct > 0, (
+            f"warmup ({warmup_pct}) + stable ({stable_pct}) must be < 1.0, leaving room for decay (got {decay_pct})"
+        )
+        stable_iterations = int(total_iterations * stable_pct)
+        decay_iterations = total_iterations - warmup_iterations - stable_iterations
+
+        schedulers = []
+        milestones = []
+
+        if warmup_scheduler is not None:
+            schedulers.append(warmup_scheduler)
+            milestones.append(warmup_iterations)
+
+        # Stable phase: constant LR
+        stable_scheduler = torch.optim.lr_scheduler.ConstantLR(
+            optimizer,
+            factor=1.0,
+            total_iters=stable_iterations,
+        )
+        schedulers.append(stable_scheduler)
+        milestones.append(milestones[-1] + stable_iterations if milestones else stable_iterations)
+
+        # Decay phase: linear ramp from base_lr to eta_min
+        eta_min = scheduler_cfg.eta_min
+        end_factor = max(eta_min / base_lr, 1e-8) if base_lr > 0 else 1e-8
+        decay_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1.0,
+            end_factor=end_factor,
+            total_iters=decay_iterations,
+        )
+        schedulers.append(decay_scheduler)
+
+        lr_scheduler = ResumableSequentialLR(
+            optimizer,
+            schedulers=schedulers,
+            milestones=milestones,
+        )
+        return lr_scheduler
+
+    elif scheduler_type == "cosine":
+        post_warmup = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
             T_max=total_iterations - warmup_iterations,
-            last_epoch=-warmup_iterations,
+            eta_min=scheduler_cfg.eta_min,
+        )
+    elif scheduler_type == "constant":
+        post_warmup = torch.optim.lr_scheduler.ConstantLR(
+            optimizer,
+            factor=1.0,
+            total_iters=total_iterations,
         )
     else:
-        lr_scheduler = None
+        post_warmup = None
         warnings.warn(
             f"No scheduler will be used. cfg.train.scheduler = {scheduler_type}",
             stacklevel=2,
         )
 
-    # Concatenate schedulers if required
-    if warmup_scheduler is not None:
-        # If both schedulers are defined, concatenate them
-        if lr_scheduler is not None:
-            lr_scheduler = schedulers.ChainedScheduler(
-                [
-                    warmup_scheduler,
-                    lr_scheduler,
-                ]
-            )
-        # Otherwise, return only the warmup scheduler
-        else:
-            lr_scheduler = warmup_scheduler
+    # Combine warmup + post-warmup via SequentialLR
+    if warmup_scheduler is not None and post_warmup is not None:
+        lr_scheduler = ResumableSequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, post_warmup],
+            milestones=[warmup_iterations],
+        )
+    elif warmup_scheduler is not None:
+        lr_scheduler = warmup_scheduler
+    else:
+        lr_scheduler = post_warmup
 
     return lr_scheduler
 
@@ -207,33 +265,34 @@ class LightningWrapperBase(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """Patch checkpoint for cross-optimizer and compiled/non-compiled resume.
 
-        Handles two mismatch scenarios:
+        Handles three mismatch scenarios:
 
         1. **state_dict key prefixes** — ``torch.compile`` wraps modules under
            ``_orig_mod``, so checkpoint keys may differ from the live model.
 
-        2. **optimizer param-group keys** — resuming with a different optimizer
+        2. **current_model_state key prefixes** — when EMA is active, Lightning
+           saves the raw training weights under ``current_model_state``.  The
+           EMA callback later calls ``pl_module.load_state_dict(...)`` with
+           these keys, so they must also be remapped.
+
+        3. **optimizer param-group keys** — resuming with a different optimizer
            (e.g. Apex FusedLAMB vs torch_optimizer.Lamb) may require injecting
            default values for keys the new optimizer expects but the old
            checkpoint lacks (like ``bias_correction``, ``adam_w_mode``, etc.).
         """
+        model_keys = set(self.state_dict().keys())
+
         # --- 1. state_dict key remapping ----------------------------------
         state_dict = checkpoint.get("state_dict")
         if state_dict is not None:
-            model_keys = set(self.state_dict().keys())
-            ckpt_keys = set(state_dict.keys())
-            if model_keys != ckpt_keys:
-                def _strip(key: str) -> str:
-                    return key.replace("._orig_mod.", ".")
+            checkpoint["state_dict"] = align_compiled_keys(state_dict, model_keys)
 
-                model_stripped = {_strip(k): k for k in model_keys}
-                remapped: dict[str, torch.Tensor] = {}
-                for ckpt_key, value in state_dict.items():
-                    target = model_stripped.get(_strip(ckpt_key), ckpt_key)
-                    remapped[target] = value
-                checkpoint["state_dict"] = remapped
+        # --- 2. current_model_state key remapping (EMA) -------------------
+        current_model_state = checkpoint.get("current_model_state")
+        if current_model_state is not None:
+            checkpoint["current_model_state"] = align_compiled_keys(current_model_state, model_keys)
 
-        # --- 2. optimizer param-group patching ----------------------------
+        # --- 3. optimizer param-group patching ----------------------------
         #
         # When resuming with a different optimizer (e.g. Apex FusedLAMB from
         # a torch_optimizer.Lamb checkpoint), the checkpoint's param groups

@@ -33,7 +33,7 @@ class ViT5HyenaAdapter(nn.Module):
         self.inner_mixer = instantiate(inner_mixer_cfg)
         self.grid_w = grid_w
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, **mixer_kwargs) -> torch.Tensor:
         """Forward pass.
 
         Args:
@@ -43,13 +43,14 @@ class ViT5HyenaAdapter(nn.Module):
                 the register tokens.
             
             IMPORTANT: In the future we can have M < grid_w registers by appending grid_w - M zeros to the row.
+            **mixer_kwargs: Forwarded to the inner mixer (e.g. ``conditioning`` for FiLM).
 
         Returns:
             [B, T, C] with tokens mixed via the 2D inner mixer.
         """
         B, T, C = x.shape
         x = x.reshape(B, T // self.grid_w, self.grid_w, C)
-        x = self.inner_mixer(x)
+        x = self.inner_mixer(x, **mixer_kwargs)
         x = x.reshape(B, T, C)
         return x
 

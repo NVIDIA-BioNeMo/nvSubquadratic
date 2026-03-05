@@ -6,14 +6,23 @@ from typing import Literal
 
 import torch
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
 
 class RegressionWrapper(LightningWrapperBase):
-    """Lightning wrapper for regression tasks."""
+    """Lightning wrapper for regression tasks.
+
+    .. TODO(@dwromero/dwessels): Resume support (see ClassificationWrapper for reference)
+        - Add ``on_save_checkpoint`` / ``on_load_checkpoint`` to persist
+          ``best_train_loss`` and ``best_val_loss`` across job resumes.
+          Without this, best-metric tracking silently resets to initial
+          values (1e9) after every SLURM preemption or manual resume.
+        - Add corresponding tests in ``tests/test_checkpoint_resume.py``
+          (see ``TestBestMetricsPersistence`` for the classification pattern).
+    """
 
     def __init__(
         self,
@@ -152,6 +161,10 @@ class RegressionWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log best validation loss and logits over the validation set."""
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         validation_step_outputs = self.other_outputs_validation
         validation_step_outputs_keys = validation_step_outputs[0].keys()
 

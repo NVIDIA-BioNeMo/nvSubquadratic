@@ -15,6 +15,31 @@ from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
 from nvsubquadratic.lazy_config import instantiate
 
 
+def _scheduler_phase_boundaries(cfg: ExperimentConfig) -> dict[str, tuple[int, int]]:
+    """Derive per-phase step boundaries from the scheduler config.
+
+    Returns a mapping ``{phase_name: (start_step, end_step)}`` suitable for
+    :class:`WandbSelectiveCheckpointUploader`.  Warmup is excluded because it
+    is typically too short to warrant dedicated checkpoints.
+    """
+    sched = cfg.scheduler
+    total = sched.total_iterations
+    if total is None or total <= 0:
+        return {}
+    warmup_end = int(sched.warmup_iterations_percentage * total)
+
+    name = getattr(sched, "name", None)
+    if name == "wsd":
+        stable_pct = getattr(sched, "stable_iterations_percentage", 0.0)
+        stable_end = warmup_end + int(stable_pct * total)
+        return {"stable": (warmup_end, stable_end), "decay": (stable_end, total)}
+    if name == "cosine":
+        return {"cosine": (warmup_end, total)}
+    if name == "constant":
+        return {"constant": (warmup_end, total)}
+    return {}
+
+
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,
@@ -44,7 +69,9 @@ def construct_trainer(
         benchmark = True
 
     # Metric to monitor
-    if cfg.scheduler.mode == "max":
+    if cfg.trainer.checkpoint_monitor is not None:
+        monitor = cfg.trainer.checkpoint_monitor
+    elif cfg.scheduler.mode == "max":
         monitor = "val/acc"
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
@@ -77,7 +104,10 @@ def construct_trainer(
 
     device_count = torch.cuda.device_count()
     if device_count > 1:  # Multi-GPU training
-        strategy = "ddp"
+        if cfg.trainer.find_unused_parameters:
+            strategy = "ddp_find_unused_parameters_true"
+        else:
+            strategy = "ddp"
         sync_batchnorm = True
     else:
         strategy = "auto"
@@ -98,12 +128,14 @@ def construct_trainer(
         pl_callbacks.Timer(),
         # Progress bar for SLURM/non-TTY environments - prints training progress with it/s
         pl_callbacks.TQDMProgressBar(refresh_rate=10),
-        # Wandb selective checkpoint uploader
+        # Wandb selective checkpoint uploader (with per-scheduler-phase tracking)
         WandbSelectiveCheckpointUploader(
             upload_best=True,
             upload_last=True,
             remove_local_after_upload=False,
             keep_last_k_versions=2,
+            phase_boundaries=_scheduler_phase_boundaries(cfg),
+            mode=cfg.scheduler.mode,
         ),
         # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
         WandbCacheCleanupCallback(
@@ -146,7 +178,8 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
-        val_check_interval=cfg.trainer.val_check_interval,
+        val_check_interval=cfg.trainer.check_val_every_n_iterations,
+        check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         limit_val_batches=cfg.trainer.limit_val_batches,
         # Logging frequency
         log_every_n_steps=10,

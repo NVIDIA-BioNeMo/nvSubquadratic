@@ -13,6 +13,13 @@ import argparse
 import os
 from pathlib import Path
 
+# Force-initialize PIL plugins in the main process before DataLoader workers
+# are forked.  Prevents crashes from lazy initialization in child processes.
+import PIL.Image
+
+
+PIL.Image.init()
+
 import pytorch_lightning as pl
 import torch
 import wandb
@@ -132,6 +139,13 @@ def main() -> None:
 
     # Construct model
     network = instantiate(config.net)
+
+    # Enable compile-compatible FFT path if requested (needed for models with FFT conv, e.g. Hyena + FiLM)
+    if getattr(config, "compile_compatible_fftconv", False):
+        import nvsubquadratic.ops.fftconv as _fftconv
+
+        _fftconv.COMPILE_COMPATIBLE = True
+        print("[compile] Using compile-compatible FFT convolution (real-valued complex multiply)")
 
     # Compile the model if specified
     if config.compile:

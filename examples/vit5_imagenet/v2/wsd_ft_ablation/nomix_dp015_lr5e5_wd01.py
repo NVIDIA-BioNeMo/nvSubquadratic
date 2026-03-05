@@ -1,0 +1,12 @@
+"""WSD finetuning ablation — no Mixup, drop path 0.15, LR=5e-5, WD=0.1.
+
+Combines dp015 (82.07%), higher LR (dp01_lr5e5 at 82.04%), and higher WD
+(dp01_wd01 at 82.06%).
+"""
+
+from examples.vit5_imagenet.wsd_ft_ablation._base import get_config as _base
+
+
+def get_config():
+    """Return config with no Mixup, dp 0.15, LR=5e-5, WD=0.1."""
+    return _base(lr=5e-5, wd=0.1, mixup=0.0, cutmix=0.0, drop_path_rate=0.15)
