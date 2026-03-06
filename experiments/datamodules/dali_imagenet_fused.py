@@ -386,9 +386,8 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         except OSError as exc:
             raise RuntimeError(f"[data-staging] Cannot access {dst}: {exc}") from exc
 
-        sentinel = dst / ".staging_complete"
-        if sentinel.is_file():
-            print(f"[data-staging] {dst} already staged (sentinel found), skipping copy.", flush=True)
+        if (dst / "train").is_dir() and (dst / "val").is_dir():
+            print(f"[data-staging] {dst} already staged (train/ and val/ found), skipping copy.", flush=True)
             self.imagefolder_dir = dst
             return
 
@@ -402,7 +401,6 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         # jobs staging to the same directory).  Only fail on unexpected codes.
         if result.returncode not in (0, 1):
             raise RuntimeError(f"[data-staging] cp failed with exit code {result.returncode}")
-        sentinel.write_text("ok\n")
         self.imagefolder_dir = dst
         print(f"[data-staging] Done. Using local path: {dst}", flush=True)
 

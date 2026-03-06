@@ -1,8 +1,16 @@
-"""ViT-5-Small + Hyena ImageNet-1k — CLS-row, gated, default init.
+"""ViT-5-Small + Hyena ImageNet-1k — CLS-row, gated, FiLM-conditioned SIREN, RoPE.
 
-Same as v2/vit5_small_pretrain_hyena_cls_row_apex_gated.py but uses
-PyTorch default initialization (Kaiming uniform) instead of small_init /
-Wang init for both QKV projections and MLP layers.
+Extends the gated Hyena config with:
+- Input-dependent SIREN kernels via FiLM conditioning from register tokens.
+- 2D RoPE on Q and K before gating (adds positional bias to Q*SiLU(K) gate).
+
+Each ``ViT5ResidualBlock`` extracts register tokens from the normalized input,
+pools them via a learnable weighted average (``RegisterPooling``), and passes
+the conditioning vector to the SIREN kernel generator where it modulates every
+hidden layer via FiLM (gamma * h + beta).
+
+CLS-row architecture: CLS + 13 registers as extra row -> 15x14 grid.
+Gated variant: SiLU first gate, Sigmoid second gate.
 """
 
 import os
@@ -23,9 +31,11 @@ from experiments.default_cfg import (
     TrainerConfig,
     WandbConfig,
 )
+from experiments.callbacks.model_ema import LabeledEMAWeightAveraging
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.film import KernelFiLMGenerator, RegisterPooling
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
@@ -64,6 +74,9 @@ KERNEL_EMBEDDING_DIM = 32
 KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 
+# ─── FiLM conditioning ──────────────────────────────────────────────────────────
+FILM_HIDDEN_DIM = 64
+
 # ─── Training recipe ────────────────────────────────────────────────────────────
 BATCH_SIZE = 256
 EPOCHS = 800
@@ -83,12 +96,14 @@ NUM_WORKERS = 12
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small + Hyena CLS-row gated config with default init."""
+    """Return the ViT-5-Small + Hyena CLS-row gated + FiLM + RoPE config."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     config.compile = True
     config.compile_mode = "max-autotune"
+    config.compile_compatible_fftconv = True
+
     # ─── Dataset (fused DALI + local NVMe staging) ────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
         data_dir=IMAGENET_PATH,
@@ -119,6 +134,14 @@ def get_config() -> ExperimentConfig:
         local_staging_dir=LOCAL_STAGING_DIR,
     )
 
+    # ─── FiLM generator ──────────────────────────────────────────────────
+    film_cfg = LazyConfig(KernelFiLMGenerator)(
+        cond_dim=HIDDEN_DIM,
+        kernel_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+        num_film_layers=KERNEL_NUM_LAYERS - 1,
+        film_hidden_dim=FILM_HIDDEN_DIM,
+    )
+
     # ─── Network ────────────────────────────────────────────────────────────
     hyena_mixer_cfg = LazyConfig(QKVSequenceMixer)(
         hidden_dim=HIDDEN_DIM,
@@ -133,9 +156,10 @@ def get_config() -> ExperimentConfig:
                     num_layers=KERNEL_NUM_LAYERS,
                     embedding_dim=KERNEL_EMBEDDING_DIM,
                     omega_0=KERNEL_OMEGA_0,
-                    L_cache=NUM_PATCHES_H + 1,  # 15: grid is (H'+1)×W' due to the extra CLS row.
+                    L_cache=NUM_PATCHES_H + 1,
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                    film_cfg=film_cfg,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type="double",
@@ -152,11 +176,13 @@ def get_config() -> ExperimentConfig:
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             qk_norm_cfg=LazyConfig(L2Norm)(),
-            use_rope=False,
+            use_rope=True,
             output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
         ),
     )
+
+    register_pooling_cfg = LazyConfig(RegisterPooling)(num_registers=NUM_REGISTERS)
 
     config.net = LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
@@ -185,6 +211,8 @@ def get_config() -> ExperimentConfig:
             hidden_dim=HIDDEN_DIM,
             layer_scale_init=LAYER_SCALE_INIT,
             drop_path_rate=DROP_PATH_RATE,
+            register_pooling_cfg=register_pooling_cfg,
+            num_registers=NUM_REGISTERS,
         ),
     )
 
@@ -218,6 +246,10 @@ def get_config() -> ExperimentConfig:
         total_iterations="${train.iterations}",
         mode="max",
     )
+
+    # ─── EMA ────────────────────────────────────────────────────────────────
+    config.callbacks = [LazyConfig(LabeledEMAWeightAveraging)(decay=0.99996)]
+    config.trainer.checkpoint_monitor = "val/acc_ema"
 
     # ─── Wandb ──────────────────────────────────────────────────────────────
     config.wandb = WandbConfig(
