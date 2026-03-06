@@ -59,7 +59,7 @@ class ResidualNetwork(nn.Module):
         self.dropout_in = instantiate(dropout_in_cfg)
 
         # Instantiate input projection for the network
-        self.in_proj = instantiate(in_proj_cfg)
+        self.in_proj = instantiate(in_proj_cfg, in_features=in_channels, out_features=hidden_dim)
 
         if condition_in_proj_cfg is not None:
             # Instantiate condition input projection for the network
@@ -79,7 +79,7 @@ class ResidualNetwork(nn.Module):
             param._no_weight_decay = True
 
         # Instantiate output projection
-        self.out_proj = instantiate(out_proj_cfg)
+        self.out_proj = instantiate(out_proj_cfg, in_features=hidden_dim, out_features=out_channels)
 
         # Target size for readout -- only used for spatial recall tasks for now.
         self.target_size = target_size
