@@ -1,10 +1,15 @@
-"""ViT-5-Small ImageNet-1k — Apex FusedLAMB + fused DALI dataloader.
+"""ViT-5-Small + Multi-Head Hyena ImageNet-1k — CLS-row, gated, default init.
 
-All augmentations (ThreeAugment, ColorJitter, normalization) run inside the
-DALI pipeline, eliminating ~25ms of serial GPU augmentation overhead per step.
+Combines the multi-head architecture from v2/vit5_small_pretrain_multihead_hyena_cls_row_apex.py
+with the gated nonlinearities from v2/vit5_small_pretrain_hyena_cls_row_apex_gated.py,
+using PyTorch default initialization (Kaiming uniform) instead of small_init / Wang init.
 
-Based on optimized_plus with the datamodule swapped to DALIImageNetFusedDataModule.
-Requires: pip install nvidia-dali-cuda120
+Key features:
+- CKConvMultiheadND: dense [head_dim x head_dim] channel mixing within heads.
+- NUM_HEADS=6, HEAD_DIM=64.
+- PerHeadRMSNorm for QK normalization.
+- Dual gating: SiLU (first gate) + Sigmoid (second gate).
+- CLS-row architecture: CLS + 13 registers as extra row → 15×14 grid.
 """
 
 import os
@@ -12,8 +17,11 @@ import os
 import torch
 from apex.optimizers import FusedLAMB as Lamb
 
-from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.dali_imagenet_fused import (
+    AugmentConfig,
+    DALIImageNetFusedDataModule,
+    MixupConfig,
+)
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,
@@ -24,9 +32,13 @@ from experiments.default_cfg import (
 )
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.modules.ckconv_multihead_nd import CKConvMultiheadND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.rms_norm import RMSNorm
-from nvsubquadratic.modules.vit5_attention import ViT5Attention
+from nvsubquadratic.modules.rms_norm import PerHeadRMSNorm, RMSNorm
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 
@@ -36,21 +48,30 @@ INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
-IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
-IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
-LOCAL_STAGING_DIR = os.environ.get("LOCAL_STAGING_DIR", f"/scratch-local/{os.environ.get('USER', 'unknown')}/imagenet_dataset")
+IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageNet/")
+IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder")
+LOCAL_STAGING_DIR = os.environ.get("LOCAL_STAGING_DIR", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder")
 
-# ─── Model (ViT-5-Small) ────────────────────────────────────────────────────────
+# ─── Model (ViT-5-Small + Multi-Head Hyena, CLS-row) ────────────────────────────
 HIDDEN_DIM = 384
 NUM_BLOCKS = 12
 NUM_HEADS = 6
+HEAD_DIM = HIDDEN_DIM // NUM_HEADS  # 64
 PATCH_SIZE = 16
-NUM_REGISTERS = 4
 LAYER_SCALE_INIT = 1e-4
 DROP_PATH_RATE = 0.05
 MLP_RATIO = 4
-NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE
-NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE
+NUM_PATCHES_H = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
+NUM_PATCHES_W = FINAL_IMAGE_SIZE // PATCH_SIZE  # 14
+NUM_REGISTERS = NUM_PATCHES_W - 1  # 13 — fills the extra row: [CLS, regs, patches] → (H'+1)×W' grid
+
+# ─── Multi-Head Hyena / SIREN kernel hyperparameters ─────────────────────────────
+KERNEL_MLP_HIDDEN_DIM = 32
+KERNEL_NUM_LAYERS = 3
+KERNEL_EMBEDDING_DIM = 32
+KERNEL_OMEGA_0 = 10.0
+KERNEL_HIDDEN_OMEGA_0 = 1.0
+KERNEL_OUT_DIM = NUM_HEADS * HEAD_DIM * HEAD_DIM  # dense kernel per head
 
 # ─── Training recipe ────────────────────────────────────────────────────────────
 BATCH_SIZE = 256
@@ -71,14 +92,13 @@ NUM_WORKERS = 12
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small config with fused DALI + local NVMe staging."""
+    """Return the ViT-5-Small + Multi-Head Hyena CLS-row gated config with default init."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     config.compile = True
     config.compile_mode = "max-autotune"
-
-    # ─── Dataset (fused DALI + local staging) ─────────────────────────────
+    # ─── Dataset (fused DALI + local NVMe staging) ────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
         data_dir=IMAGENET_PATH,
         imagefolder_dir=IMAGENET_FOLDER_PATH,
@@ -109,6 +129,45 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Network ────────────────────────────────────────────────────────────
+    hyena_mixer_cfg = LazyConfig(QKVSequenceMixer)(
+        hidden_dim=HIDDEN_DIM,
+        mixer_cfg=LazyConfig(Hyena)(
+            global_conv_cfg=LazyConfig(CKConvMultiheadND)(
+                data_dim=2,
+                hidden_dim=HIDDEN_DIM,
+                num_heads=NUM_HEADS,
+                kernel_cfg=LazyConfig(SIRENKernelND)(
+                    data_dim=2,
+                    out_dim=KERNEL_OUT_DIM,
+                    mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+                    num_layers=KERNEL_NUM_LAYERS,
+                    embedding_dim=KERNEL_EMBEDDING_DIM,
+                    omega_0=KERNEL_OMEGA_0,
+                    L_cache=NUM_PATCHES_H + 1,  # 15: grid is (H'+1)×W' due to the extra CLS row.
+                    use_bias=True,
+                    hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                ),
+                mask_cfg=LazyConfig(torch.nn.Identity)(),
+                grid_type="double",
+                fft_padding="zero",
+            ),
+            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                in_channels=3 * HIDDEN_DIM,
+                out_channels=3 * HIDDEN_DIM,
+                kernel_size=3,
+                groups=3 * HIDDEN_DIM,
+                padding=1,
+                bias=False,
+            ),
+            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+            pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            qk_norm_cfg=LazyConfig(PerHeadRMSNorm)(num_heads=NUM_HEADS, head_dim=HEAD_DIM, eps=1e-6),
+            use_rope=False,
+            output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
+        ),
+    )
+
     config.net = LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
         num_classes=NUM_CLASSES,
@@ -118,20 +177,12 @@ def get_config() -> ExperimentConfig:
         image_size=FINAL_IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
+        prepend_registers=True,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
-            sequence_mixer_cfg=LazyConfig(ViT5Attention)(
-                hidden_dim=HIDDEN_DIM,
-                num_heads=NUM_HEADS,
-                num_patches_h=NUM_PATCHES_H,
-                num_patches_w=NUM_PATCHES_W,
-                num_registers=NUM_REGISTERS,
-                qk_norm=LazyConfig(RMSNorm)(dim=HIDDEN_DIM // NUM_HEADS, eps=1e-6),
-                rope_base=10000.0,
-                reg_rope_base=100.0,
-                attn_dropout=0.0,
-                proj_dropout=0.0,
-                qkv_bias=False,
+            sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(
+                inner_mixer_cfg=hyena_mixer_cfg,
+                grid_w=NUM_PATCHES_W,
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
@@ -148,9 +199,6 @@ def get_config() -> ExperimentConfig:
     )
 
     # ─── Lightning wrapper ──────────────────────────────────────────────────
-    # NOTE: The ViT-5 reference uses BCE for pretraining, but we observed that
-    # pretraining with BCE leads to significantly lower finetuning accuracy
-    # (~76%) compared to SoftTargetCE (~82%).
     config.lightning_wrapper_class = LazyConfig(ClassificationWrapper)(loss="soft_target_ce")
 
     # ─── Optimizer (Apex FusedLAMB) ─────────────────────────────────────────
@@ -171,6 +219,7 @@ def get_config() -> ExperimentConfig:
     config.trainer = TrainerConfig(
         check_val_every_n_epoch=4,
         checkpoint_every_n_steps=5000,
+        find_unused_parameters=True,
     )
 
     # ─── Scheduler ──────────────────────────────────────────────────────────
@@ -188,7 +237,7 @@ def get_config() -> ExperimentConfig:
         project="nvsubquadratic",
     )
 
-    # ─── Auto-resume ──────────────────────────────────────────────────────
+    # ─── Auto-resume ────────────────────────────────────────────────────────
     config.autoresume = AutoResumeConfig(
         enabled=False,
     )
