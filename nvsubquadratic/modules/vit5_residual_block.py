@@ -33,6 +33,9 @@ class ViT5ResidualBlock(nn.Module):
             register tokens are extracted from the normalized input and pooled.
         num_registers: Number of register tokens (needed for extraction). Only used
             when register_pooling_cfg is provided.
+        grn_cfg: Optional LazyConfig for GlobalResponseNorm (ConvNeXt V2).
+            When provided, GRN is applied after the sequence mixer output
+            to promote inter-channel feature competition.
     """
 
     def __init__(
@@ -46,6 +49,7 @@ class ViT5ResidualBlock(nn.Module):
         drop_path_rate: float = 0.0,
         register_pooling_cfg: LazyConfig | None = None,
         num_registers: int = 0,
+        grn_cfg: LazyConfig | None = None,
     ):
         super().__init__()
 
@@ -72,6 +76,9 @@ class ViT5ResidualBlock(nn.Module):
         else:
             self.register_pooling = None
 
+        # Optional GRN (Global Response Normalization) after mixer
+        self.grn = instantiate(grn_cfg) if grn_cfg is not None else None
+
     def forward(self, x: torch.Tensor, condition: torch.Tensor = None) -> torch.Tensor:
         """Forward pass.
 
@@ -90,6 +97,9 @@ class ViT5ResidualBlock(nn.Module):
             regs = x_normed[:, 1 : 1 + self.num_registers, :]  # [B, num_registers, C]
             mixer_kwargs["conditioning"] = self.register_pooling(regs)  # [B, C]
 
-        x = x + self.drop_path(self.ls_attn(self.sequence_mixer(x_normed, **mixer_kwargs)))
+        mixer_out = self.sequence_mixer(x_normed, **mixer_kwargs)
+        if self.grn is not None:
+            mixer_out = self.grn(mixer_out)
+        x = x + self.drop_path(self.ls_attn(mixer_out))
         x = x + self.drop_path(self.ls_mlp(self.mlp(self.mlp_norm(x))))
         return x
