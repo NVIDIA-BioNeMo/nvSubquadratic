@@ -100,7 +100,7 @@ class ViT5ClassificationNet(nn.Module):
         for param in self.out_norm.parameters():
             param._no_weight_decay = True
 
-        self.out_proj = nn.Linear(hidden_dim, num_classes)
+        self.out_proj = nn.Linear(hidden_dim, num_classes, bias=False)
 
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
 

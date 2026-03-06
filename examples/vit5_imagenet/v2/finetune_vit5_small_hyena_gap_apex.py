@@ -55,6 +55,7 @@ IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
 IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
+LOCAL_STAGING_DIR = os.environ.get("LOCAL_STAGING_DIR", f"/scratch-local/{os.environ.get('USER', 'unknown')}/imagenet_dataset")
 
 # ─── Model (ViT-5-Small + Hyena GAP, no CLS) ─────────────────────────────────────
 HIDDEN_DIM = 384
@@ -132,7 +133,7 @@ def get_config() -> ExperimentConfig:
             random_erasing_mode="pixel",
         ),
         device_id=0,
-        local_staging_dir=f"/scratch/{os.environ.get('USER', 'unknown')}/imagenet_dataset",
+        local_staging_dir=LOCAL_STAGING_DIR,
     )
 
     # ─── Network (Hyena GAP apex) ────────────────────────────────────────────────
