@@ -48,10 +48,8 @@ INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
-IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageNet/")
-IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder")
-# LOCAL_STAGING_DIR = os.environ.get("LOCAL_STAGING_DIR", f"/scratch-local/{os.environ.get('USER', 'unknown')}/imagenet_dataset")
-LOCAL_STAGING_DIR = os.environ.get("LOCAL_STAGING_DIR", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder")
+IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
+IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
 # ─── Model (ViT-5-Small + Hyena, CLS-row) ───────────────────────────────────────
 HIDDEN_DIM = 384
@@ -123,7 +121,7 @@ def get_config() -> ExperimentConfig:
             color_jitter=0.3,
         ),
         device_id=0,
-        local_staging_dir=LOCAL_STAGING_DIR,
+        local_staging_dir=f"/scratch/{os.environ.get('USER', 'unknown')}/imagenet_dataset",
     )
 
     # ─── Network ────────────────────────────────────────────────────────────

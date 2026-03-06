@@ -374,13 +374,6 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
 
         print(f"[data-staging] local_staging_dir={dst}, checking ...", flush=True)
 
-        # If train/ and val/ already exist at dst, skip staging entirely.
-        # This handles read-only destinations where we can't write a sentinel.
-        if (dst / "train").is_dir() and (dst / "val").is_dir():
-            print(f"[data-staging] {dst} already has train/ and val/, skipping copy.", flush=True)
-            self.imagefolder_dir = dst
-            return
-
         try:
             dst.mkdir(parents=True, exist_ok=True)
             free_bytes = shutil.disk_usage(dst).free
