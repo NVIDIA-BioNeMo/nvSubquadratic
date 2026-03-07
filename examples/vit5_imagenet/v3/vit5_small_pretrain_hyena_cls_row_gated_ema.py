@@ -65,6 +65,7 @@ def get_config() -> ExperimentConfig:
                     L_cache=NUM_PATCHES_H + 1,
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                    weight_decay_on_hidden_layers=False,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type="double",
@@ -101,6 +102,7 @@ def get_config() -> ExperimentConfig:
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
         prepend_registers=True,
+        use_pos_embed=True,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=make_block_cfg(
             sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(

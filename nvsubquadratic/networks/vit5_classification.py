@@ -39,9 +39,12 @@ class ViT5ClassificationNet(nn.Module):
             ([CLS, patches, regs]). This allows the full sequence to be reshaped to a
             contiguous 2D grid for spatial mixers like Hyena. Only takes effect when
             both use_cls_token and num_registers > 0.
+        use_pos_embed: If True (default), add learned absolute positional embeddings to
+            patch tokens. Set to False for mixers like Hyena where the SIREN coordinate
+            grid provides implicit positional encoding.
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         in_channels: int,
         num_classes: int,
@@ -55,6 +58,7 @@ class ViT5ClassificationNet(nn.Module):
         dropout_rate: float = 0.0,
         use_cls_token: bool = True,
         prepend_registers: bool = False,
+        use_pos_embed: bool = True,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -64,6 +68,7 @@ class ViT5ClassificationNet(nn.Module):
         self.image_size = image_size
         self.use_cls_token = use_cls_token
         self.prepend_registers = prepend_registers
+        self.use_pos_embed = use_pos_embed
 
         num_patches_h = image_size // patch_size
         num_patches_w = image_size // patch_size
@@ -71,8 +76,11 @@ class ViT5ClassificationNet(nn.Module):
 
         # Patch embedding (non-overlapping Conv2d)
         self.patch_embed = nn.Conv2d(
-            in_channels, hidden_dim,
-            kernel_size=patch_size, stride=patch_size, padding=0,
+            in_channels,
+            hidden_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+            padding=0,
         )
 
         # Learnable tokens
@@ -83,8 +91,11 @@ class ViT5ClassificationNet(nn.Module):
             self.cls_token = None
 
         # Absolute positional embeddings for patch tokens only (not cls, not registers)
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_dim))
-        self.pos_embed._no_weight_decay = True
+        if use_pos_embed:
+            self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_dim))
+            self.pos_embed._no_weight_decay = True
+        else:
+            self.pos_embed = None
 
         if num_registers > 0:
             self.reg_token = nn.Parameter(torch.zeros(1, num_registers, hidden_dim))
@@ -110,7 +121,8 @@ class ViT5ClassificationNet(nn.Module):
     def _init_weights(self):
         if self.cls_token is not None:
             nn.init.trunc_normal_(self.cls_token, std=0.02)
-        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        if self.pos_embed is not None:
+            nn.init.trunc_normal_(self.pos_embed, std=0.02)
         if self.reg_token is not None:
             nn.init.trunc_normal_(self.reg_token, std=0.02)
 
@@ -138,8 +150,8 @@ class ViT5ClassificationNet(nn.Module):
         x = self.patch_embed(x)  # [B, hidden_dim, H', W']
         x = rearrange(x, "b c h w -> b (h w) c")  # [B, num_patches, hidden_dim]
 
-        # Add absolute positional embeddings
-        x = x + self.pos_embed
+        if self.pos_embed is not None:
+            x = x + self.pos_embed
 
         B = x.shape[0]
 

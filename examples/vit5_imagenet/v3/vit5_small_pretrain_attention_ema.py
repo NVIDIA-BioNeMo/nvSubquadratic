@@ -41,6 +41,7 @@ def get_config() -> ExperimentConfig:
         patch_size=PATCH_SIZE,
         image_size=FINAL_IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
+        use_pos_embed=True,
         dropout_rate=0.0,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=make_block_cfg(

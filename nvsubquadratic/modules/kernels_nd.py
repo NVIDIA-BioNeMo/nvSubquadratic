@@ -413,9 +413,11 @@ class SIRENKernelND(torch.nn.Module):
         hidden_omega_0: Frequency scaling for subsequent SIREN layers.
         film_cfg: Optional LazyConfig for KernelFiLMGenerator. When provided, enables
             input-dependent FiLM conditioning of all hidden SIREN layers.
+        weight_decay_on_hidden_layers: If True, apply weight decay to SIREN hidden layers.
+            Default False preserves the original SIREN init by excluding them.
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         out_dim: int,
         data_dim: int,
@@ -427,6 +429,7 @@ class SIRENKernelND(torch.nn.Module):
         use_bias: bool,
         hidden_omega_0: float = 1.0,
         film_cfg: LazyConfig | None = None,
+        weight_decay_on_hidden_layers: bool = False,
     ):
         super().__init__()
 
@@ -472,9 +475,10 @@ class SIRENKernelND(torch.nn.Module):
 
         # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear)
         # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.
-        for linear in self.hidden_linears:
-            for param in linear.parameters():
-                param._no_weight_decay = True
+        if not weight_decay_on_hidden_layers:
+            for linear in self.hidden_linears:
+                for param in linear.parameters():
+                    param._no_weight_decay = True
 
         # Optional FiLM conditioning
         if film_cfg is not None:
