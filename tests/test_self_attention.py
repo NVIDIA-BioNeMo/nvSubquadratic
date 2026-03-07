@@ -5,7 +5,7 @@
 import pytest
 import torch
 
-from nvsubquadratic.modules.attention import Attention as SelfAttention
+from nvsubq_paper.modules.attention import Attention as SelfAttention
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

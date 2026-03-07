@@ -6,17 +6,17 @@ import warnings
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-import wandb
 from experiments.default_cfg import (
     PLACEHOLDER,
     ExperimentConfig,
     SchedulerConfig,
 )
-from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules import schedulers
+from nvsubq_paper.lazy_config import LazyConfig
+from nvsubq_paper.modules import schedulers
 
 
 def construct_optimizer(
@@ -97,8 +97,8 @@ def construct_scheduler(
     Returns:
         torch.optim.lr_scheduler.LRScheduler: The constructed scheduler.
     """
-    assert scheduler_cfg.name in [PLACEHOLDER, "cosine"], (
-        f"scheduler_cfg.name must be either {PLACEHOLDER} or 'cosine'. Got {scheduler_cfg.name}"
+    assert scheduler_cfg.name in [PLACEHOLDER, "cosine", "wsd"], (
+        f"scheduler_cfg.name must be one of [{PLACEHOLDER}, 'cosine', 'wsd']. Got {scheduler_cfg.name}"
     )
     if scheduler_cfg.name != PLACEHOLDER:
         assert scheduler_cfg.total_iterations != PLACEHOLDER, (
@@ -116,7 +116,19 @@ def construct_scheduler(
     )
     warmup_iterations = int(total_iterations * warmup_iterations_percentage)
 
-    # Create warm_up scheduler
+    # Create WSD scheduler (handles its own warmup)
+    if scheduler_type == "wsd":
+        lr_scheduler = schedulers.WSDScheduler(
+            optimizer=optimizer,
+            total_iterations=total_iterations,
+            warmup_iterations=warmup_iterations,
+            decay_iterations_percentage=scheduler_cfg.decay_iterations_percentage,
+            min_lr_ratio=scheduler_cfg.min_lr_ratio,
+        )
+        # Return immediately as WSD handles everything
+        return lr_scheduler
+
+    # Create warm_up scheduler for other types
     if warmup_iterations != 0:
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
@@ -311,7 +323,8 @@ class LightningWrapperBase(pl.LightningModule):
         """Log the model architecture and parameter count to Weights & Biases once training starts."""
         super().on_fit_start()
 
-        if self.logger is not None:
+        # Only log on rank 0 to avoid DDP issues with WandB
+        if self.logger is not None and self.global_rank == 0:
             model_repr = str(self.network)
             # Log as HTML wrapped in <pre> to preserve formatting in the UI.
             self.logger.experiment.log(

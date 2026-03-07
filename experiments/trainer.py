@@ -12,7 +12,7 @@ from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
 from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
-from nvsubquadratic.lazy_config import instantiate
+from nvsubq_paper.lazy_config import instantiate
 
 
 def construct_trainer(
@@ -58,14 +58,19 @@ def construct_trainer(
     print(f"[checkpoint] Saving checkpoints to: {checkpoint_dir.resolve()}")
 
     # Callback for model checkpointing:
-    checkpoint_callback = pl_callbacks.ModelCheckpoint(
-        dirpath=str(checkpoint_dir),
-        monitor=monitor,
-        mode=cfg.scheduler.mode,  # Save on best validation accuracy
-        save_top_k=1,
-        save_last=True,  # Keep track of the model at the last epoch
-        verbose=True,
-    )
+    checkpoint_kwargs = {
+        "dirpath": str(checkpoint_dir),
+        "monitor": monitor,
+        "mode": cfg.scheduler.mode,  # Save on best validation accuracy
+        "save_top_k": 1,
+        "save_last": True,  # Keep track of the model at the last epoch
+        "verbose": True,
+    }
+    # Add step-based checkpointing if configured (useful for long runs to avoid losing progress)
+    if cfg.trainer.checkpoint_every_n_steps is not None:
+        checkpoint_kwargs["every_n_train_steps"] = cfg.trainer.checkpoint_every_n_steps
+        print(f"[checkpoint] Saving every {cfg.trainer.checkpoint_every_n_steps} steps")
+    checkpoint_callback = pl_callbacks.ModelCheckpoint(**checkpoint_kwargs)
 
     # Distributed training params
     assert cfg.device == "cuda", "Only CUDA training is supported."
@@ -83,7 +88,7 @@ def construct_trainer(
     user_callbacks = [instantiate(cb_cfg) for cb_cfg in cfg.callbacks] if cfg.callbacks else []
 
     callbacks_list = [
-        # Checkpoint callback
+        # Checkpoint callback (local saving — always enabled)
         checkpoint_callback,
         # Model summary callback
         pl_callbacks.ModelSummary(max_depth=-1),
@@ -93,25 +98,32 @@ def construct_trainer(
         pl_callbacks.Timer(),
         # Progress bar for SLURM/non-TTY environments - prints training progress with it/s
         pl_callbacks.TQDMProgressBar(refresh_rate=10),
-        # Wandb selective checkpoint uploader
-        WandbSelectiveCheckpointUploader(
-            upload_best=True,
-            upload_last=True,
-            remove_local_after_upload=False,
-            keep_last_k_versions=2,
-        ),
-        # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
-        WandbCacheCleanupCallback(
-            max_cache_size="5GB",
-            every_n_epochs=2,
-            executable="wandb",
-            run_on_fit_start=True,
-            background=True,
-            timeout=60,
-        ),
         # Append user-defined callbacks
         *user_callbacks,
     ]
+
+    # Optionally add W&B checkpoint upload and cache cleanup callbacks
+    if cfg.trainer.wandb_checkpoint_upload:
+        callbacks_list.extend(
+            [
+                # Wandb selective checkpoint uploader
+                WandbSelectiveCheckpointUploader(
+                    upload_best=True,
+                    upload_last=True,
+                    remove_local_after_upload=False,
+                    keep_last_k_versions=2,
+                ),
+                # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
+                WandbCacheCleanupCallback(
+                    max_cache_size="5GB",
+                    every_n_epochs=2,
+                    executable="wandb",
+                    run_on_fit_start=True,
+                    background=True,
+                    timeout=60,
+                ),
+            ]
+        )
 
     if cfg.train.run_start_time is not None and cfg.train.run_time_limit_hours is not None:
         callbacks_list.append(

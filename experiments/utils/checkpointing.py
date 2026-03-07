@@ -14,7 +14,6 @@ from typing import Dict, Literal
 import pytorch_lightning as pl
 import pytorch_lightning.callbacks as pl_callbacks
 import torch
-
 import wandb
 
 
@@ -432,6 +431,12 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         except Exception as e:
             # Report errors explicitly but do not crash training
             print(f"[checkpoint/prune][error] {type(e).__name__}: {e}")
+        finally:
+            # Explicitly release the API client to free HTTP sessions/caches
+            try:
+                del api
+            except UnboundLocalError:
+                pass
 
     def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         """Upload selected checkpoints at the end of validation if appropriate."""

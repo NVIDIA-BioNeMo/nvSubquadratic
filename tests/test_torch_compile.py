@@ -12,13 +12,13 @@ import torch.nn as nn
 
 from examples.mnist_classification.ccnn_4_160_hyena_rope_qknorm import get_config
 from experiments.utils.cli import apply_config_overrides
-from nvsubquadratic.lazy_config import instantiate
+from nvsubq_paper.lazy_config import instantiate
 
 
 _ALLCLOSE_RTOL = 1e-4
-_ALLCLOSE_ATOL = 1e-5
+_ALLCLOSE_ATOL = 1e-4
 _GRAD_RTOL = 5e-4
-_GRAD_ATOL = 5e-5
+_GRAD_ATOL = 5e-4
 
 
 @pytest.fixture

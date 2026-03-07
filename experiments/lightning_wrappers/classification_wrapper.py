@@ -4,8 +4,8 @@
 
 import torch
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -34,7 +34,7 @@ class ClassificationWrapper(LightningWrapperBase):
         self.train_acc = torchmetrics.Accuracy(task="multiclass", num_classes=network.out_proj.out_features)
         self.val_acc = torchmetrics.Accuracy(task="multiclass", num_classes=network.out_proj.out_features)
         self.test_acc = torchmetrics.Accuracy(task="multiclass", num_classes=network.out_proj.out_features)
-        
+
         # Binary problem?
         self.multiclass = network.out_proj.out_features != 1
 
@@ -80,7 +80,7 @@ class ClassificationWrapper(LightningWrapperBase):
 
         logits = output["logits"].contiguous()  # [B, T, C]
         logits = logits.reshape(-1, logits.shape[-1])  # [B * seq_len, out_channels]
-        
+
         # Handle labels based on their shape (hard indices vs soft probabilities)
         if labels.ndim > 1 and labels.shape[-1] == logits.shape[-1]:
             # Soft labels: [B, C] or [B, T, C] -> [B * T, C]
@@ -107,7 +107,7 @@ class ClassificationWrapper(LightningWrapperBase):
         loss = self.loss_metric(logits, labels)
 
         # Not adding anything here for now, but we could add things to track per epoch, etc.
-        other_outputs = {}  
+        other_outputs = {}
 
         # Return predictions and loss
         return predictions, loss, other_outputs

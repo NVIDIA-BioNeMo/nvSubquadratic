@@ -29,11 +29,11 @@ import torch
 from experiments.callbacks.image_grid_val_visualization import ValidationImageGridCallback
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
-from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.mlp import MLP
-from nvsubquadratic.modules.residual_block import ResidualBlock
-from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubq_paper.modules.mlp import MLP
+from nvsubq_paper.modules.residual_block import ResidualBlock
+from nvsubq_paper.networks.general_purpose_resnet import ResidualNetwork
 
 
 def get_num_workers() -> int:
@@ -66,7 +66,7 @@ def base_experiment_config(
     # Wandb
     wandb_job_group: str = "spatial_recall_2d",
     wandb_entity: str = "implicit-long-convs",
-    wandb_project: str = "nvsubquadratic",
+    wandb_project: str = "nvsubq_paper",
     # Callbacks
     image_grid_every_n_steps: int = 2000,
     image_grid_num_samples: int = 8,

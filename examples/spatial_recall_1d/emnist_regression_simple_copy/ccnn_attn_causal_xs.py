@@ -27,7 +27,7 @@ from examples.spatial_recall_1d.base_config import (
     base_experiment_config as spatial_recall_1d_base_experiment_config,
 )
 from experiments.default_cfg import ExperimentConfig
-from nvsubquadratic.lazy_config import PLACEHOLDER
+from nvsubq_paper.lazy_config import PLACEHOLDER
 
 
 # Dataset-specific parameters
@@ -53,7 +53,7 @@ def get_config() -> ExperimentConfig:
         out_channels=OUTPUT_CHANNELS,
         hidden_dim=HIDDEN_DIM,
         training_iterations=TRAINING_ITERATIONS,
-        wandb_job_group="spatial_recall_1d_emnist_regression_simple_copy_xs",
+        wandb_job_group="spatial_recall_1d_emnist_simple_copy_xs",
     )
 
     # Mixer: Multi-head self-attention

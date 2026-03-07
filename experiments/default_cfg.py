@@ -7,7 +7,7 @@
 from dataclasses import dataclass, field
 from typing import Literal, Optional, Union
 
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubq_paper.lazy_config import LazyConfig
 
 
 PLACEHOLDER = None
@@ -40,6 +40,15 @@ class TrainerConfig:
     # Run through all validation batches every epoch by default.
     limit_val_batches: Union[int, float] = 1.0
 
+    # Checkpoint saving frequency (in training steps). If None, only save after validation.
+    # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
+    checkpoint_every_n_steps: Optional[int] = None
+
+    # Whether to upload checkpoints to W&B and run cache cleanup.
+    # Set to False to disable WandbSelectiveCheckpointUploader and WandbCacheCleanupCallback.
+    # Local ModelCheckpoint saving is unaffected by this flag.
+    wandb_checkpoint_upload: bool = True
+
 
 @dataclass
 class SchedulerConfig:
@@ -49,7 +58,10 @@ class SchedulerConfig:
     warmup_iterations_percentage: float = 0.0
     total_iterations: int = PLACEHOLDER
     mode: str = "max"
-    monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
+    monitor: Optional[str] = None
+    # WSD-specific parameters
+    decay_iterations_percentage: float = 0.1  # Fraction of training for decay phase
+    min_lr_ratio: float = 0.01  # Minimum LR as fraction of peak LR  # in case we'd like to track e.g. val/iou
 
 
 @dataclass
