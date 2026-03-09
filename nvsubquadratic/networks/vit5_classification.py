@@ -177,6 +177,7 @@ class ViT5ClassificationNet(nn.Module):
         elif self.register_head is not None:
             # Mamba-R register recycling: pool prepended registers directly to logits
             regs = x[:, : self.num_registers]  # [B, R, C]
+            regs = self.out_norm(regs)
             logits = self.register_head(regs)
         else:
             # Global average pool over patch tokens, excluding register tokens
