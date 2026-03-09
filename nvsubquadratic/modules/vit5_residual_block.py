@@ -33,6 +33,8 @@ class ViT5ResidualBlock(nn.Module):
             register tokens are extracted from the normalized input and pooled.
         num_registers: Number of register tokens (needed for extraction). Only used
             when register_pooling_cfg is provided.
+        register_start_idx: Start index of register tokens in the sequence. Default 1
+            assumes [CLS, regs, patches] layout. Set to 0 for [regs, patches] (no CLS).
         grn_cfg: Optional LazyConfig for GlobalResponseNorm (ConvNeXt V2).
             When provided, GRN is applied after the sequence mixer output
             to promote inter-channel feature competition.
@@ -49,6 +51,7 @@ class ViT5ResidualBlock(nn.Module):
         drop_path_rate: float = 0.0,
         register_pooling_cfg: LazyConfig | None = None,
         num_registers: int = 0,
+        register_start_idx: int = 1,
         grn_cfg: LazyConfig | None = None,
     ):
         super().__init__()
@@ -71,6 +74,7 @@ class ViT5ResidualBlock(nn.Module):
 
         # Optional register-based FiLM conditioning
         self.num_registers = num_registers
+        self.register_start_idx = register_start_idx
         if register_pooling_cfg is not None and num_registers > 0:
             self.register_pooling = instantiate(register_pooling_cfg)
         else:
@@ -93,8 +97,8 @@ class ViT5ResidualBlock(nn.Module):
 
         mixer_kwargs = {}
         if self.register_pooling is not None:
-            # Registers at positions [1, 1+num_registers) in [CLS, regs, patches] layout
-            regs = x_normed[:, 1 : 1 + self.num_registers, :]  # [B, num_registers, C]
+            s = self.register_start_idx
+            regs = x_normed[:, s : s + self.num_registers, :]  # [B, num_registers, C]
             mixer_kwargs["conditioning"] = self.register_pooling(regs)  # [B, C]
 
         mixer_out = self.sequence_mixer(x_normed, **mixer_kwargs)

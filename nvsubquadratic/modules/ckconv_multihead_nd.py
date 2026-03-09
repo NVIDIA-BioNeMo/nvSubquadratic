@@ -126,8 +126,54 @@ class CKConvMultiheadND(torch.nn.Module):
         )
         return out.to(x_dtype)
 
+    def apply_convolution_batched(
+        self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor
+    ) -> torch.Tensor:
+        """Apply multi-head convolution with per-sample (batched) kernels.
+
+        When FiLM conditioning is used, each sample in the batch has its own kernel.
+        We perform the FFT convolution with a batched einsum.
+
+        Args:
+            x: Input tensor [B, num_heads, head_dim, H, W], float32
+            conv_kernel: Kernel [B, num_heads, head_dim, head_dim, K_x, K_y], float32
+            shortcut: Shortcut tensor [hidden_dim], float32
+
+        Returns:
+            Output tensor [B, num_heads, head_dim, H, W]
+        """
+        x = x.to(torch.float32)
+        conv_kernel = conv_kernel.to(torch.float32)
+        shortcut = shortcut.to(torch.float32)
+
+        B, num_heads, head_dim, H, W = x.shape
+        K_x, K_y = conv_kernel.shape[-2], conv_kernel.shape[-1]
+
+        fft_h = min(H + (K_x + 1) // 2, 2 * H)
+        fft_w = min(W + (K_y + 1) // 2, 2 * W)
+
+        x_fft = torch.fft.rfft2(x, s=(fft_h, fft_w))
+        k_fft = torch.fft.rfft2(conv_kernel, s=(fft_h, fft_w))
+
+        # Batched dense conv: both x and kernel have batch dim
+        out_fft = torch.einsum("bnihw,bnoihw->bnohw", x_fft, k_fft)
+
+        crop_h = K_x // 2
+        crop_w = K_y // 2
+        out_full = torch.fft.irfft2(out_fft, s=(fft_h, fft_w))
+        out = out_full[..., crop_h : crop_h + H, crop_w : crop_w + W]
+
+        shortcut_reshaped = shortcut.view(1, num_heads, head_dim, 1, 1)
+        out = out + x * shortcut_reshaped
+
+        return out
+
     def forward(
-        self, x: torch.Tensor, is_bhl_input: bool = False, cp_group: torch.distributed.ProcessGroup = None
+        self,
+        x: torch.Tensor,
+        is_bhl_input: bool = False,
+        cp_group: torch.distributed.ProcessGroup = None,
+        **mixer_kwargs,
     ) -> torch.Tensor:
         """Forward pass of CKConvMultiheadND.
 
@@ -137,6 +183,8 @@ class CKConvMultiheadND(torch.nn.Module):
                - is_bhl_input=True: [B, hidden_dim, H, W] (BHL format)
             is_bhl_input: Whether input is in BHL format.
             cp_group: Context parallel process group (not supported for multi-head).
+            **mixer_kwargs: Additional keyword arguments forwarded to the kernel generator
+                (e.g. ``conditioning`` for FiLM-enabled SIRENKernelND).
 
         Returns:
             Output tensor in same format as input.
@@ -162,18 +210,27 @@ class CKConvMultiheadND(torch.nn.Module):
         else:  # "double"
             grid_lens = spatial_dims
 
-        # Generate kernel from SIREN
+        # Generate kernel from SIREN (pass conditioning if available for FiLM-enabled kernels)
         # Output: [1, *spatial, num_heads * head_dim * head_dim]
-        conv_kernel_flat, grid = self.kernel(grid_lens)
+        conditioning = mixer_kwargs.get("conditioning", None)
+        conv_kernel_flat, grid = self.kernel(grid_lens, conditioning=conditioning)
 
         # Apply mask if not identity
         if not isinstance(self.mask, torch.nn.Identity):
             conv_kernel_flat = self.mask(grid=grid, x=conv_kernel_flat)
 
-        # Reshape kernel: [1, K_x, K_y, num_heads * head_dim²] -> [num_heads, head_dim, head_dim, K_x, K_y]
-        K_x, K_y = conv_kernel_flat.shape[1], conv_kernel_flat.shape[2]
-        conv_kernel = conv_kernel_flat.view(K_x, K_y, self.num_heads, self.head_dim, self.head_dim)
-        conv_kernel = conv_kernel.permute(2, 3, 4, 0, 1).contiguous()  # [num_heads, head_dim, head_dim, K_x, K_y]
+        # Reshape kernel to [..., num_heads, head_dim, head_dim, K_x, K_y].
+        # conv_kernel_flat is [1, K_x, K_y, D] (no FiLM) or [B, K_x, K_y, D] (with FiLM).
+        K_x, K_y = conv_kernel_flat.shape[-3], conv_kernel_flat.shape[-2]
+        batched_kernel = conv_kernel_flat.shape[0] > 1
+        if batched_kernel:
+            # FiLM-conditioned: [B, K_x, K_y, D] -> [B, num_heads, head_dim, head_dim, K_x, K_y]
+            conv_kernel = conv_kernel_flat.view(B, K_x, K_y, self.num_heads, self.head_dim, self.head_dim)
+            conv_kernel = conv_kernel.permute(0, 3, 4, 5, 1, 2).contiguous()
+        else:
+            # Unbatched: [1, K_x, K_y, D] -> [num_heads, head_dim, head_dim, K_x, K_y]
+            conv_kernel = conv_kernel_flat.view(K_x, K_y, self.num_heads, self.head_dim, self.head_dim)
+            conv_kernel = conv_kernel.permute(2, 3, 4, 0, 1).contiguous()
 
         # Cache kernel stats for debugging (only when enabled by LayerStatsCallback)
         if getattr(self, "_cache_debug_stats", False):
@@ -184,7 +241,10 @@ class CKConvMultiheadND(torch.nn.Module):
                 }
 
         # Apply multi-head convolution
-        out_heads = self.apply_convolution(x_heads, conv_kernel, self.shortcut)
+        if batched_kernel:
+            out_heads = self.apply_convolution_batched(x_heads, conv_kernel, self.shortcut)
+        else:
+            out_heads = self.apply_convolution(x_heads, conv_kernel, self.shortcut)
 
         # Reshape back to original format
         if is_bhl_input:

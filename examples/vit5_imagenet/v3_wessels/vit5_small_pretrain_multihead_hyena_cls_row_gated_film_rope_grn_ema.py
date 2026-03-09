@@ -1,7 +1,7 @@
-"""ViT-5-Small + Hyena ImageNet-1k — CLS-row, FiLM + RoPE + GRN.
+"""ViT-5-Small + Multi-Head Hyena ImageNet-1k — CLS-row, FiLM + RoPE + GRN.
 
-Depthwise FiLM + RoPE + GRN config:
-- CKConvND (depthwise) with global channel mixing.
+Multi-head variant of the depthwise FiLM + RoPE + GRN config:
+- CKConvMultiheadND (6 heads, head_dim=64) with dense within-head channel mixing.
 - FiLM-conditioned SIREN kernels (input-dependent via register pooling).
 - 2D RoPE on Q and K before gating.
 - GRN after mixer output for inter-channel feature competition.
@@ -9,18 +9,18 @@ Depthwise FiLM + RoPE + GRN config:
 - CLS-row architecture: CLS + 13 registers as extra row -> 15x14 grid.
 """
 
-from examples.vit5_imagenet.v3_wessels._base_config import HIDDEN_DIM, build_cls_row_network, build_film_cfg, build_hyena_mixer, get_base_config
+from examples.vit5_imagenet.v3_wessels._base_config import HIDDEN_DIM, build_cls_row_network, build_film_cfg, build_multihead_hyena_mixer, get_base_config
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.grn import GlobalResponseNorm
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small + Hyena CLS-row + FiLM + RoPE + GRN config."""
+    """Return the ViT-5-Small + Multi-Head Hyena CLS-row + FiLM + RoPE + GRN config."""
     config = get_base_config()
 
     film_cfg = build_film_cfg()
-    mixer_cfg = build_hyena_mixer(film_cfg=film_cfg, use_rope=True)
+    mixer_cfg = build_multihead_hyena_mixer(film_cfg=film_cfg, use_rope=True)
     config.net, trainer_overrides = build_cls_row_network(
         mixer_cfg,
         grn_cfg=LazyConfig(GlobalResponseNorm)(dim=HIDDEN_DIM),

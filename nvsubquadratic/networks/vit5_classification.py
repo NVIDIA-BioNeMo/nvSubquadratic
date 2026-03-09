@@ -55,6 +55,7 @@ class ViT5ClassificationNet(nn.Module):
         dropout_rate: float = 0.0,
         use_cls_token: bool = True,
         prepend_registers: bool = False,
+        register_head_cfg: LazyConfig | None = None,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -104,6 +105,9 @@ class ViT5ClassificationNet(nn.Module):
 
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
 
+        # Register reduction head (Mamba-R style); produces logits directly when set
+        self.register_head = instantiate(register_head_cfg) if register_head_cfg is not None else None
+
         # Initialize weights
         self._init_weights()
 
@@ -151,9 +155,13 @@ class ViT5ClassificationNet(nn.Module):
         # Insert register tokens
         if self.reg_token is not None:
             reg_tokens = self.reg_token.expand(B, -1, -1)
-            if self.prepend_registers and self.cls_token is not None:
-                # [CLS, regs, patches] — enables direct 2D reshape for spatial mixers
-                x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
+            if self.prepend_registers:
+                if self.cls_token is not None:
+                    # [CLS, regs, patches] — enables direct 2D reshape for spatial mixers
+                    x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
+                else:
+                    # [regs, patches] — registers fill the first row of the 2D grid
+                    x = torch.cat([reg_tokens, x], dim=1)
             else:
                 x = torch.cat([x, reg_tokens], dim=1)
 
@@ -163,6 +171,13 @@ class ViT5ClassificationNet(nn.Module):
 
         if self.use_cls_token:
             out = x[:, 0]
+            out = self.out_norm(out)
+            out = self.dropout(out)
+            logits = self.out_proj(out)
+        elif self.register_head is not None:
+            # Mamba-R register recycling: pool prepended registers directly to logits
+            regs = x[:, : self.num_registers]  # [B, R, C]
+            logits = self.register_head(regs)
         else:
             # Global average pool over patch tokens, excluding register tokens
             if self.prepend_registers and self.num_registers > 0:
@@ -171,9 +186,8 @@ class ViT5ClassificationNet(nn.Module):
                 out = x[:, : -self.num_registers].mean(dim=1)
             else:
                 out = x.mean(dim=1)
-
-        out = self.out_norm(out)
-        out = self.dropout(out)
-        logits = self.out_proj(out)
+            out = self.out_norm(out)
+            out = self.dropout(out)
+            logits = self.out_proj(out)
 
         return {"logits": logits}
