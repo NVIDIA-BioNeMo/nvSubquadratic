@@ -6,7 +6,6 @@
 #SBATCH --partition=gpu_h100
 #SBATCH --time=48:00:00
 #SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
 
 set -eo pipefail
 
@@ -27,8 +26,8 @@ export IMAGENET_PATH=/scratch-nvme/ml-datasets/imagenet/torchvision_ImageNet/
 export IMAGENET_FOLDER_PATH=/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder
 export LOCAL_STAGING_DIR=/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder
 
-export TORCHINDUCTOR_FX_GRAPH_CACHE=1
-export TRITON_CACHE_DIR=~/.triton/cache_${SLURM_JOB_ID}
+export TORCHINDUCTOR_FX_GRAPH_CACHE=0
+export TRITON_CACHE_DIR=/tmp/triton_nocache_${SLURM_JOB_ID}
 export DALI_NO_MMAP=1
 
 # CUDA module

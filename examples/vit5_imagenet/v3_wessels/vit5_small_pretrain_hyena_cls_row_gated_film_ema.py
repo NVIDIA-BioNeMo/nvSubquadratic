@@ -1,9 +1,8 @@
-"""ViT-5-Small + Hyena ImageNet-1k — CLS-row, FiLM + RoPE.
+"""ViT-5-Small + Hyena ImageNet-1k — CLS-row, FiLM-conditioned SIREN.
 
-Depthwise FiLM + RoPE config:
+Depthwise FiLM config:
 - CKConvND (depthwise) with global channel mixing.
 - FiLM-conditioned SIREN kernels (input-dependent via register pooling).
-- 2D RoPE on Q and K before gating.
 - Dual gating: SiLU (first gate) + Sigmoid (second gate).
 - CLS-row architecture: CLS + 13 registers as extra row -> 15x14 grid.
 """
@@ -18,11 +17,11 @@ from experiments.default_cfg import ExperimentConfig
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small + Hyena CLS-row + FiLM + RoPE config."""
+    """Return the ViT-5-Small + Hyena CLS-row + FiLM config."""
     config = get_base_config()
 
     film_cfg = build_film_cfg()
-    mixer_cfg = build_hyena_mixer(film_cfg=film_cfg, use_rope=True)
+    mixer_cfg = build_hyena_mixer(film_cfg=film_cfg, use_rope=False)
     config.net, trainer_overrides = build_cls_row_network(mixer_cfg)
     for k, v in trainer_overrides.items():
         setattr(config.trainer, k, v)
