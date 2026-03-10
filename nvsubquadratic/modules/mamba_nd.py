@@ -6,7 +6,7 @@
 import torch
 from einops import rearrange
 
-from nvsubq_paper.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class Mamba(torch.nn.Module):

@@ -56,7 +56,7 @@ apptainer build nvsubquadratic.sif nvsubquadratic.def
 apptainer shell --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif
 
 # Run a command inside the image (example: tests)
-apptainer exec --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif python -m pytest nvsubq_paper/ tests/
+apptainer exec --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif python -m pytest nvsubquadratic/ tests/
 
 # Use the default runscript (starts Jupyter Lab as defined in the .def)
 apptainer run --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif --no-browser

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import torch
 
-from nvsubq_paper.networks.huggingface_diffusers import (
+from nvsubquadratic.networks.huggingface_diffusers import (
     DiffusersDiTWrapper,
     DiffusersUVitWrapper,
     HuggingFaceDiTConfig,

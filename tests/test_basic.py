@@ -12,9 +12,9 @@ import pytest
 
 def test_package_import() -> None:
     """Test that the package can be imported successfully."""
-    import nvsubq_paper
+    import nvsubquadratic
 
-    assert nvsubq_paper is not None
+    assert nvsubquadratic is not None
 
 
 def test_torch_import() -> None:

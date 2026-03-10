@@ -15,16 +15,16 @@ from experiments.default_cfg import (
     WandbConfig,
 )
 from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
-from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubq_paper.modules.ckconv_nd import CKConvND
-from nvsubq_paper.modules.hyena_nd import Hyena
-from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubq_paper.modules.kernels_nd import RandomFourierKernelND
-from nvsubq_paper.modules.masks_nd import GaussianModulationND
-from nvsubq_paper.modules.mlp import MLP
-from nvsubq_paper.modules.residual_block import AdaLNZeroResidualBlock
-from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
-from nvsubq_paper.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
 # Dataset parameters
@@ -223,7 +223,7 @@ def get_config() -> DiffusionExperimentConfig:
     config.wandb = WandbConfig(
         job_group="imagenet-diffusion",
         entity="implicit-long-convs",
-        project="nvsubq_paper",
+        project="nvsubquadratic",
     )
 
     return config

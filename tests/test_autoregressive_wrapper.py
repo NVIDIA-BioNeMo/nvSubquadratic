@@ -14,7 +14,7 @@ import torch.nn as nn
 
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.autoregressive_wrapper import AutoregressiveWrapper
-from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
 
 # =============================================================================

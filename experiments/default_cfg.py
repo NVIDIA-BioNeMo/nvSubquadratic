@@ -7,7 +7,7 @@
 from dataclasses import dataclass, field
 from typing import Literal, Optional, Union
 
-from nvsubq_paper.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig
 
 
 PLACEHOLDER = None

@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nvsubq_paper"
+name = "nvsubquadratic"
 version = "0.1.0"
 description = "A unified PyTorch-native library for subquadratic alternatives to quadratic attention method"
 requires-python = ">=3.11"
@@ -31,7 +31,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["nvsubq_paper*"]
+include = ["nvsubquadratic*"]
 
 [tool.ruff]
 line-length = 119
@@ -68,7 +68,7 @@ select = [
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
-known-first-party = ["nvsubq_paper"]
+known-first-party = ["nvsubquadratic"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -78,7 +78,7 @@ xfail_strict = true
 addopts = [
     "--durations-min=30.0",
     "--durations=0",
-    "--cov=nvsubq_paper",
+    "--cov=nvsubquadratic",
     "--cov-report=term",
 ]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
