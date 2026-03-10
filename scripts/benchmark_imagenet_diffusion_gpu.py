@@ -70,9 +70,6 @@ def _prepare_config(base_cfg, spec: ModelSpec, image_size: int):
         f"net.hidden_dim={spec.hidden_dim}",
         f"net.num_blocks={spec.num_layers}",
         f"diffusion.time_embed_dim={spec.hidden_dim}",
-        f"diffusion.cosine_schedule_image_resolution={image_size}",
-        f"diffusion.cosine_schedule_noise_res_low={max(32, image_size // 2)}",
-        f"diffusion.cosine_schedule_noise_res_high={image_size}",
     ]
     overrides.append(f"dataset.image_size={image_size}")
     overrides.append(f"dataset.final_image_size={image_size}")
@@ -128,13 +125,7 @@ def _inference_fn(wrapper, resolution: int, dtype: torch.dtype):
     device = next(wrapper.parameters()).device
     images = _make_images(resolution, device, dtype)
     labels = _make_labels(device)
-    timesteps = torch.randint(
-        0,
-        wrapper.scheduler.config.num_train_timesteps,
-        (BATCH_SIZE,),
-        device=device,
-        dtype=torch.long,
-    )
+    timesteps = torch.rand((BATCH_SIZE,), device=device)
 
     def _run():
         wrapper.eval()
