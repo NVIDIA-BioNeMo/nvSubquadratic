@@ -31,9 +31,9 @@ import datasets
 import numpy as np
 from PIL import Image
 
-HF_DATASET = "ILSVRC/imagenet-1k"
-HF_CACHE = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
-OUTPUT_DIR = "/shared/data/image_datasets/imagenet_folder"
+HF_DATASET = os.environ.get("IMAGENET_HF_DATASET", "imagenet-1k")
+HF_CACHE = os.environ.get("IMAGENET_PATH", "/home/dknigge/project_dir/huggingface/imagenet")
+OUTPUT_DIR = os.environ.get("IMAGENET_OUTPUT_DIR", "/scratch-shared/dknigge/imagenet_imagefolder")
 NUM_VERIFY_SAMPLES = 200
 
 

@@ -87,6 +87,7 @@ class WandbConfig:
     entity: str = "dromeroguzma"
 
     job_group: str = ""
+    tags: list = field(default_factory=list)
     run_id: Optional[str] = None  # Explicit W&B run ID for resuming or linking runs
 
 
@@ -152,28 +153,22 @@ class ExperimentConfig:
 
 @dataclass
 class DiffusionConfig:
-    """Diffusion configuration for schedule, sampling, and EMA."""
+    """Diffusion configuration for JiT-style continuous-time flow matching."""
 
     num_train_timesteps: int = 1_000
-    beta_start: float = 1e-4
-    beta_end: float = 0.02
-    beta_schedule: str = "cosine_interpolated"  # one of "linear", "scaled_linear", "cosine", "cosine_interpolated"
-    cosine_schedule_logsnr_min: float = -10.0
-    cosine_schedule_logsnr_max: float = 10.0
-    cosine_schedule_image_resolution: int = 64
-    cosine_schedule_noise_res_low: int = 32
-    cosine_schedule_noise_res_high: int = 64
-    prediction_type: str = "v_prediction"  # one of "epsilon", "v_prediction", "sample"
     time_embed_dim: Optional[int] = None
     max_period: float = 10_000.0
 
-    num_inference_steps: int = 150
+    # Noise scale for initial sample (1.0 for 256px, 2.0 for 512px per JiT).
+    noise_scale: float = 1.0
+
+    # Logit-normal time sampling parameters (JiT defaults).
+    p_mean: float = -0.8
+    p_std: float = 0.8
+
+    num_inference_steps: int = 50
     num_samples: int = 25
     log_samples: bool = True
-    ddim_eta: float = 0.0
-
-    use_sigmoid_loss_weighting: bool = True
-    sigmoid_loss_bias: float = -1.0
 
     ema_enabled: bool = True
     ema_decay: float = 0.9995
@@ -186,9 +181,16 @@ class DiffusionConfig:
     condition_dropout_prob: float = 0.1
     num_classes: Optional[int] = 1000
 
-    # Online evaluation knobs.
-    fid_enabled: bool = False
-    fid_num_batches: int = 0
+    # CFG time interval: apply guidance only within [start, end].
+    cfg_interval_start: float = 0.1
+    cfg_interval_end: float = 1.0
+
+    # Online FID evaluation (JiT-style).
+    fid_online_jit: bool = False
+    fid_stats_file: str = ""
+    fid_num_samples: int = 50_000
+    fid_interval: int = 100
+    fid_batch_size: int = 512
     fid_num_inference_steps: Optional[int] = None
 
 
