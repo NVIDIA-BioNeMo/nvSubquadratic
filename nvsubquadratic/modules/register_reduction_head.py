@@ -1,10 +1,12 @@
-"""Register Reduction Head for classification.
+"""Register classification heads.
 
-Implements the register recycling classification head from
+RegisterReductionHead: implements the register recycling head from
 "Mamba-R: Vision Mamba ALSO Needs Registers" (arXiv:2405.14858).
-
 Given n d-dimensional register tokens, a linear layer reduces each to d/r,
 then all reduced tokens are concatenated and projected to num_classes.
+
+RegisterGAPHead: simple global average pooling over register tokens,
+followed by a single linear projection to num_classes. Ablation baseline.
 """
 
 import torch
@@ -66,3 +68,35 @@ class RegisterReductionHead(nn.Module):
         reduced = self.reduce.out_features
         n = self.proj.in_features // reduced
         return f"n={n}, d={in_features}, r={in_features // reduced}, num_classes={self.proj.out_features}"
+
+
+class RegisterGAPHead(nn.Module):
+    """Global average pooling over register tokens → linear classification head.
+
+    Averages the R register token representations and projects to class logits.
+    Ablation baseline for RegisterReductionHead.
+
+    Args:
+        hidden_dim: Token embedding dimension d.
+        num_classes: Number of output classes.
+    """
+
+    def __init__(self, hidden_dim: int, num_classes: int):
+        super().__init__()
+        self.proj = nn.Linear(hidden_dim, num_classes, bias=False)
+        nn.init.trunc_normal_(self.proj.weight, std=0.02)
+
+    def forward(self, registers: torch.Tensor) -> torch.Tensor:
+        """Average register tokens and project to logits.
+
+        Args:
+            registers: [B, num_registers, hidden_dim]
+
+        Returns:
+            logits: [B, num_classes]
+        """
+        out = registers.mean(dim=1)  # [B, hidden_dim]
+        return self.proj(out)        # [B, num_classes]
+
+    def extra_repr(self) -> str:
+        return f"d={self.proj.in_features}, num_classes={self.proj.out_features}"
