@@ -1,8 +1,9 @@
-"""Config file for WELL benchmark: active_matter dataset with Hyena.
+"""Config file for WELL benchmark: supernova_explosion_64 dataset with Hyena.
 
-This config uses Hyena as the sequence mixer for the active matter dataset.
-Hyena wraps CKConv with QKV projections, short depthwise convolution,
-gating, and optional RoPE / QK-normalization.
+This is the original ResNet-style supernova Hyena config used before the ViT5
+variants were added. It is kept at this canonical path for reproducibility.
+
+Reference W&B run ID: z6o20go9.
 """
 
 import os
@@ -15,8 +16,6 @@ from experiments.lightning_wrappers.well_lightning_wrapper import WELLRegression
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.utils.qk_norm import L2Norm
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
@@ -24,15 +23,17 @@ from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 PLACEHOLDER = None
 
 # Dataset parameters
-DATA_TYPE = "image"
-DATA_DIM = 2
+DATA_DIM = 3
+SPATIAL_SIZE = 64  # 64^3 spatial domain
 WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "/gpfs/scratch1/shared/dwessels2/data/the_well/datasets")
-WELL_DATASET_NAME = "active_matter"
+WELL_DATASET_NAME = "supernova_explosion_64"
 
 # Data parameters (following WELL benchmark defaults)
 N_STEPS_INPUT = 4  # Number of input timesteps
@@ -40,18 +41,18 @@ N_STEPS_OUTPUT = 1  # Number of output timesteps for training
 MAX_ROLLOUT_STEPS = 1  # Maximum rollout for validation
 
 # Model parameters (overridable via environment variables for sweeps)
-BATCH_SIZE = 16
+BATCH_SIZE = 4
 NUM_HIDDEN_CHANNELS = int(os.environ.get("HYENA_HIDDEN_DIM", 512))
 NUM_BLOCKS = int(os.environ.get("HYENA_DEPTH", 12))
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
-FFT_PADDING = "circular"  # Appropriate for active matter (periodic boundaries)
+FFT_PADDING = "circular"
 OMEGA_0 = 100.0
 PATCH_SIZE = int(os.environ.get("HYENA_PATCH_SIZE", 4))
 
 # TRAINING parameters
-TRAINING_ITERATIONS = 130_000  # ~200 epochs with batch_size=16 (10395 samples / 16 ≈ 650 iters/epoch)
+TRAINING_ITERATIONS = 130_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.1
 NUM_WORKERS = 8
 GRAD_CLIP = 1.0
@@ -59,13 +60,8 @@ GRAD_CLIP = 1.0
 WEIGHT_DECAY = 1e-5
 LEARNING_RATE = 1e-3
 
-
 def get_config() -> ExperimentConfig:
-    """Get the configuration for the WELL active_matter experiment with Hyena.
-
-    Returns:
-        ExperimentConfig: The configuration for the experiment.
-    """
+    """Return the original supernova ResNet-style Hyena config."""
     config = ExperimentConfig()
 
     config.debug = False
@@ -92,12 +88,11 @@ def get_config() -> ExperimentConfig:
         spatial_downsample_factor=1,
     )
 
-    # Create norm config once to reuse
     norm_cfg = LazyConfig(torch.nn.RMSNorm)(normalized_shape=NUM_HIDDEN_CHANNELS)
 
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,  # Will be set from datamodule
-        out_channels=PLACEHOLDER,  # Will be set from datamodule
+        in_channels=PLACEHOLDER,
+        out_channels=PLACEHOLDER,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,
@@ -131,7 +126,7 @@ def get_config() -> ExperimentConfig:
                             num_layers=3,
                             embedding_dim=32,
                             omega_0=OMEGA_0,
-                            L_cache=256 // PATCH_SIZE,  # Matches patched spatial dim
+                            L_cache=SPATIAL_SIZE // PATCH_SIZE,
                             use_bias=True,
                             hidden_omega_0=1.0,
                         ),
@@ -146,7 +141,7 @@ def get_config() -> ExperimentConfig:
                         ),
                         grid_type=GRID_TYPE,
                     ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                    short_conv_cfg=LazyConfig(torch.nn.Conv3d)(
                         in_channels=3 * NUM_HIDDEN_CHANNELS,
                         out_channels=3 * NUM_HIDDEN_CHANNELS,
                         kernel_size=3,
@@ -163,10 +158,8 @@ def get_config() -> ExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             sequence_mixer_norm_cfg=norm_cfg,
-            # Condition mixer
             condition_mixer_cfg=LazyConfig(torch.nn.Identity)(),
             condition_mixer_norm_cfg=LazyConfig(torch.nn.Identity)(),
-            # MLP
             mlp_cfg=LazyConfig(MLP)(
                 dim=NUM_HIDDEN_CHANNELS,
                 activation="glu",
@@ -176,7 +169,6 @@ def get_config() -> ExperimentConfig:
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
             ),
             mlp_norm_cfg=norm_cfg,
-            # Dropout
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
@@ -218,7 +210,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         project="nvsubquadratic-well",
         entity="dafidofff",
-        job_group="active_matter_hyena",
+        job_group="supernova_explosion_64_hyena",
     )
 
     return config
