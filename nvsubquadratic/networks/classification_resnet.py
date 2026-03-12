@@ -6,7 +6,7 @@
 
 import torch
 
-from nvsubq_paper.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 
 
 class ClassificationResNet(ResidualNetwork):

@@ -7,7 +7,7 @@ from typing import Callable
 
 import torch
 
-from nvsubq_paper.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class QKVSequenceMixer(torch.nn.Module):

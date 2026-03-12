@@ -11,7 +11,7 @@ The pretrained checkpoint provides:
 
 Usage:
     Set start_from_checkpoint.run_path to your pretrain W&B run path, e.g.:
-    --start_from_checkpoint.run_path=implicit-long-convs/nvsubq_paper/abc123xyz
+    --start_from_checkpoint.run_path=implicit-long-convs/nvsubquadratic/abc123xyz
 """
 
 from examples.spatial_recall_1d.emnist_regression_simple_copy.ccnn_attn_causal_xs import (
@@ -31,7 +31,7 @@ def get_config():
     # Configure checkpoint loading
     config.start_from_checkpoint = StartFromCheckpointConfig(
         load=True,
-        run_path="implicit-long-convs/nvsubq_paper/iefl9ab8",
+        run_path="implicit-long-convs/nvsubquadratic/iefl9ab8",
         alias="latest",
         strict=True,  # Set to False if output heads differ
         partial_load=False,  # Set to True if shapes differ and you want overlapping slice loading

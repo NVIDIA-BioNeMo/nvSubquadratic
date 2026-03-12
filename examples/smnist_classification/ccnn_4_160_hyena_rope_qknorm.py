@@ -10,16 +10,16 @@ import torch
 from experiments.datamodules.mnist import MNISTDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubq_paper.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubq_paper.modules.ckconv_nd import CKConvND
-from nvsubq_paper.modules.hyena_nd import Hyena
-from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubq_paper.modules.kernels_nd import SIRENKernelND
-from nvsubq_paper.modules.masks_nd import GaussianModulationND
-from nvsubq_paper.modules.mlp import MLP
-from nvsubq_paper.modules.residual_block import ResidualBlock
-from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
-from nvsubq_paper.networks.classification_resnet import ClassificationResNet
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.masks_nd import GaussianModulationND
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 
 
 # Dataset parameters
@@ -177,7 +177,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         job_group="smnist_classification",
         entity="implicit-long-convs",
-        project="nvsubq_paper",
+        project="nvsubquadratic",
     )
 
     return config

@@ -73,11 +73,11 @@ Run only QKVSequenceMixer tests:
 import pytest
 import torch
 
-from nvsubq_paper.lazy_config import LazyConfig
-from nvsubq_paper.modules.causal_conv1d import CausalConv1D
-from nvsubq_paper.modules.ckconv_nd import CKConvND
-from nvsubq_paper.modules.hyena_nd import Hyena
-from nvsubq_paper.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.causal_conv1d import CausalConv1D
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 
 
 ################################################################################
@@ -665,8 +665,8 @@ class TestQKVSequenceMixerHyenaCausality:
     @pytest.fixture
     def mixer_causal(self):
         """Create a causal QKVSequenceMixer with Hyena."""
-        from nvsubq_paper.lazy_config import LazyConfig, instantiate
-        from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
+        from nvsubquadratic.lazy_config import LazyConfig, instantiate
+        from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 
         hidden_dim = 64
         seq_len = 64
@@ -715,8 +715,8 @@ class TestQKVSequenceMixerHyenaCausality:
     @pytest.fixture
     def mixer_non_causal(self):
         """Create a non-causal QKVSequenceMixer with Hyena."""
-        from nvsubq_paper.lazy_config import LazyConfig, instantiate
-        from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
+        from nvsubquadratic.lazy_config import LazyConfig, instantiate
+        from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 
         hidden_dim = 64
         seq_len = 64

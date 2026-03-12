@@ -40,7 +40,7 @@ PYTHONPATH=. python experiments/datamodules/spatial_recall_dataset.py \
 
 ```bash
 # Hyena XS
-python -m nvsubq_paper.train \
+python -m nvsubquadratic.train \
     --config examples/spatial_recall_3d/emnist_regression_simple_copy/ccnn_hyena_xs.py
 ```
 

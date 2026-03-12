@@ -6,7 +6,7 @@
 We only compare against the *_bhl variants, as the fastest *_blh variants use this implementation internally.
 
 Usage:
-    PYTHONPATH=. python nvsubq_paper/ops/fftconv_test.py
+    PYTHONPATH=. python nvsubquadratic/ops/fftconv_test.py
 """
 
 import time
@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 
-from nvsubq_paper.ops.fftconv import causal_fftconv1d_bhl, fftconv1d_bhl, fftconv2d_bhl, fftconv3d_bhl
+from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl, fftconv1d_bhl, fftconv2d_bhl, fftconv3d_bhl
 
 
 def test_fftconv1d():

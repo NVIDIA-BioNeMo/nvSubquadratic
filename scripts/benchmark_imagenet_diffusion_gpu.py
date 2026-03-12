@@ -15,7 +15,7 @@ from typing import Callable, Iterable, List, Optional
 import torch
 
 from experiments.utils.cli import apply_config_overrides, load_config_from_file
-from nvsubq_paper.lazy_config import instantiate
+from nvsubquadratic.lazy_config import instantiate
 
 
 RESOLUTIONS = [64, 128, 256, 1024]

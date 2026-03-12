@@ -8,8 +8,8 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from nvsubq_paper.parallel.utils import zigzag_gather_from_group_ranks, zigzag_split_across_group_ranks
-from nvsubq_paper.utils import qk_norm, rope
+from nvsubquadratic.parallel.utils import zigzag_gather_from_group_ranks, zigzag_split_across_group_ranks
+from nvsubquadratic.utils import qk_norm, rope
 
 
 class Attention(torch.nn.Module):

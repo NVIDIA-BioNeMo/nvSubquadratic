@@ -25,13 +25,13 @@ Usage:
 
 import torch
 
-from nvsubq_paper.lazy_config import LazyConfig
-from nvsubq_paper.modules.attention import Attention
-from nvsubq_paper.modules.ckconv_nd import CKConvND
-from nvsubq_paper.modules.hyena_nd import Hyena
-from nvsubq_paper.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubq_paper.modules.kernels_nd import SIRENKernelND
-from nvsubq_paper.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 
 
 # =============================================================================
@@ -186,7 +186,7 @@ def get_mamba_mixer_cfg(
     # Import here to avoid requiring mamba-ssm if not using Mamba
     from mamba_ssm import Mamba2
 
-    from nvsubq_paper.modules.mamba_nd import Mamba as MambaNDMixer
+    from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
 
     return LazyConfig(MambaNDMixer)(
         mamba_layer_cfg=LazyConfig(Mamba2)(

@@ -14,7 +14,7 @@ from typing import Any
 from rich.tree import Tree
 
 from experiments.default_cfg import ExperimentConfig
-from nvsubq_paper.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig
 
 
 _SHORT_NAME_ALIASES = {

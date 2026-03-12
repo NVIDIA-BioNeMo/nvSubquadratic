@@ -16,8 +16,8 @@ from experiments.utils.cli import (
     load_config_from_file,
     verify_no_interpolator_overwrites,
 )
-from nvsubq_paper.lazy_config import instantiate
-from nvsubq_paper.metrics.cleanfid import compute_folder_fid
+from nvsubquadratic.lazy_config import instantiate
+from nvsubquadratic.metrics.cleanfid import compute_folder_fid
 
 
 # Set high precision for matrix multiplication (tensor cores)

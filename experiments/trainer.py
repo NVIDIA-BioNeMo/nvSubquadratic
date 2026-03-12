@@ -12,7 +12,7 @@ from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
 from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
-from nvsubq_paper.lazy_config import instantiate
+from nvsubquadratic.lazy_config import instantiate
 
 
 def construct_trainer(

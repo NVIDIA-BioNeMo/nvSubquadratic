@@ -179,7 +179,7 @@ def setup_rank0_logging(log_file: str | None = None) -> None:
             The actual filename will have the rank appended (e.g., rank_0.log).
 
     Example:
-        >>> from nvsubq_paper.parallel.utils import setup_rank0_logging
+        >>> from nvsubquadratic.parallel.utils import setup_rank0_logging
         >>> setup_rank0_logging("/tmp/my_test.log")
         >>> logging.info("This only prints to console from rank 0")
     """
