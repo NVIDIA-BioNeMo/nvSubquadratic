@@ -14,13 +14,13 @@ This tracker is for WELL experiments across datasets. The current focus is `supe
 
 ### Config files
 
-| Config | Backbone | Mixer | Registers | FiLM conditioning | Planned duration | W&B run | Final val/VRMSE | Status | Notes |
-|--------|----------|-------|-----------|-------------------|------------------|---------|-----------------|--------|-------|
-| `supernova_explosion_64/cfg_hyena.py` | `ResidualNetwork` | Hyena | 0 | No | ~15 epochs already run | [`z6o20go9`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/z6o20go9) | `0.3266` | Completed baseline | Historical baseline used for reproducibility. This run only trained for ~15 epochs. |
-| `supernova_explosion_64/cfg_attention.py` | `ViT5GeneralPurposeNet` | Attention | 14 | No | 30 epochs | — | — | Planned | ViT5-style dense prediction attention baseline with registers. |
-| `supernova_explosion_64/cfg_vit5_attention.py` | `ViT5GeneralPurposeNet` | Attention | 14 | No | 30 epochs | — | — | Planned | Duplicate named ViT5 attention variant currently present in the repo. |
-| `supernova_explosion_64/cfg_vit5_hyena.py` | `ViT5GeneralPurposeNet` | Hyena | 14 | No | 30 epochs | — | — | Planned | ViT5-style Hyena without FiLM conditioning. |
-| `supernova_explosion_64/cfg_vit5_hyena_film_conditioned.py` | `ViT5GeneralPurposeNet` | Hyena | 14 | Yes | 30 epochs | — | — | Planned | ViT5-style Hyena with FiLM-conditioned kernel generation. |
+| Config | Backbone | Mixer | Registers | FiLM conditioning | Planned duration | W&B run | Final val/VRMSE | test/VRMSE | test/NRMSE | test/PearsonR | Status | Notes |
+|--------|----------|-------|-----------|-------------------|------------------|---------|-----------------|------------|------------|---------------|--------|-------|
+| `supernova_explosion_64/cfg_hyena.py` | `ResidualNetwork` | Hyena | 0 | No | ~15 epochs already run | [`z6o20go9`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/z6o20go9) | `0.3266` | — | — | — | Completed baseline | Historical baseline used for reproducibility. This run only trained for ~15 epochs. |
+| `supernova_explosion_64/cfg_attention.py` | `ViT5GeneralPurposeNet` | Attention | 14 | No | 30 epochs | — | — | — | — | — | Planned | ViT5-style dense prediction attention baseline with registers. |
+| `supernova_explosion_64/cfg_vit5_attention.py` | `ViT5GeneralPurposeNet` | Attention | 14 | No | 30 epochs | — | — | — | — | — | Planned | Duplicate named ViT5 attention variant currently present in the repo. |
+| `supernova_explosion_64/cfg_vit5_hyena.py` | `ViT5GeneralPurposeNet` | Hyena | 14 | No | 30 epochs | [`p7te253r`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/p7te253r) | `0.3561` | `0.3674` | `0.3643` | `0.9165` | Completed | ViT5-style Hyena without FiLM conditioning. |
+| `supernova_explosion_64/cfg_vit5_hyena_film_conditioned.py` | `ViT5GeneralPurposeNet` | Hyena | 14 | Yes | 30 epochs | [`77n2mp0a`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/77n2mp0a) | `0.3615` | `0.3727` | `0.3696` | `0.9146` | Completed | ViT5-style Hyena with FiLM-conditioned kernel generation. |
 
 ### Shared supernova setup
 
@@ -33,6 +33,10 @@ This tracker is for WELL experiments across datasets. The current focus is `supe
 | Rollout during validation | 1 |
 | Spatial size | `64^3` |
 | Precision | `bf16-mixed` |
+
+### Observations
+
+1. **Plain Hyena slightly outperforms FiLM-conditioned Hyena on supernova_explosion_64.** ViT5 Hyena without FiLM ([`p7te253r`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/p7te253r)) achieves test/VRMSE `0.3674` vs FiLM-conditioned ([`77n2mp0a`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/77n2mp0a)) at `0.3727`. The same trend holds across all test metrics (NRMSE `0.3643` vs `0.3696`, PearsonR `0.9165` vs `0.9146`). FiLM conditioning on the Hyena kernel does not appear to help on this dataset.
 
 ### Training schedule
 
