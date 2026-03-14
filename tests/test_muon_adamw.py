@@ -35,11 +35,13 @@ class ToyModel(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.embed = nn.Embedding(100, 32)  # should be AdamW (name contains "embed")
+        self.embed = nn.Embedding(100, 32)
+        self.embed.weight._exclude_from_muon = True  # embedding -> AdamW
         self.linear1 = nn.Linear(32, 64)  # weight: Muon (2D), bias: AdamW (1D)
         self.norm = nn.LayerNorm(64)  # AdamW (1D)
         self.linear2 = nn.Linear(64, 32)  # weight: Muon (2D), bias: AdamW (1D)
-        self.head = nn.Linear(32, 10)  # AdamW (name contains "head")
+        self.head = nn.Linear(32, 10)
+        self.head.weight._exclude_from_muon = True  # classifier head -> AdamW
 
     def forward(self, x):
         x = self.embed(x)
@@ -57,6 +59,7 @@ class ToyModelWithCustomWD(nn.Module):
         self.linear1 = nn.Linear(32, 64)
         self.linear2 = nn.Linear(64, 32)
         self.head = nn.Linear(32, 10)
+        self.head.weight._exclude_from_muon = True  # classifier head -> AdamW
 
         # Mark linear2 weight with custom weight decay
         self.linear2.weight._weight_decay = 1e-3
@@ -113,24 +116,23 @@ class TestMuonEligibility:
         p = nn.Parameter(torch.randn(64, 32, 3, 3))
         assert _is_muon_eligible("conv.weight", p) is False
 
-    def test_embedding_excluded(self):
-        p = nn.Parameter(torch.randn(1000, 384))
-        assert _is_muon_eligible("patch_embed.proj.weight", p) is False
-        assert _is_muon_eligible("token_embedding.weight", p) is False
+    def test_exclude_from_muon_attribute(self):
+        p = nn.Parameter(torch.randn(64, 32))
+        assert _is_muon_eligible("any.name", p) is True
+        p._exclude_from_muon = True
+        assert _is_muon_eligible("any.name", p) is False
 
-    def test_head_excluded(self):
-        p = nn.Parameter(torch.randn(1000, 384))
-        assert _is_muon_eligible("head.weight", p) is False
-        assert _is_muon_eligible("classifier.weight", p) is False
+    def test_exclude_from_muon_false_still_eligible(self):
+        p = nn.Parameter(torch.randn(64, 32))
+        p._exclude_from_muon = False
+        assert _is_muon_eligible("any.name", p) is True
 
-    def test_cls_token_excluded(self):
-        p = nn.Parameter(torch.randn(1, 384))
-        assert _is_muon_eligible("cls_token", p) is False
-
-    def test_hidden_weight_eligible(self):
-        p = nn.Parameter(torch.randn(384, 384))
-        assert _is_muon_eligible("blocks.0.mlp.fc1.weight", p) is True
-        assert _is_muon_eligible("blocks.5.attn.qkv.weight", p) is True
+    def test_name_is_irrelevant(self):
+        """With attribute-based exclusion, names don't affect eligibility."""
+        p = nn.Parameter(torch.randn(64, 32))
+        assert _is_muon_eligible("embed.weight", p) is True
+        assert _is_muon_eligible("head.weight", p) is True
+        assert _is_muon_eligible("film_generator.mlp.0.weight", p) is True
 
 
 # ─── 2. Parameter Splitting Tests ───────────────────────────────────────────────
@@ -351,13 +353,22 @@ class TestEdgeCases:
         _fake_grads(model)
         opt.step()  # should not crash
 
-    def test_embedding_only_model(self):
-        """Embedding inside a named wrapper should go to AdamW."""
+    def test_excluded_embedding_goes_to_adamw(self):
+        """Embedding marked _exclude_from_muon should go to AdamW."""
         model = nn.ModuleDict({"embed": nn.Embedding(100, 32)})
+        model.embed.weight._exclude_from_muon = True
         opt = MuonAdamW(model.named_parameters(), lr=1e-3)
 
         adamw_params = {id(p) for g in opt.param_groups if g["_optimizer"] == "adamw" for p in g["params"]}
         assert id(model.embed.weight) in adamw_params
+
+    def test_unmarked_2d_goes_to_muon(self):
+        """2D param without _exclude_from_muon goes to Muon regardless of name."""
+        model = nn.ModuleDict({"embed": nn.Embedding(100, 32)})
+        opt = MuonAdamW(model.named_parameters(), lr=1e-3)
+
+        muon_params = {id(p) for g in opt.param_groups if g["_optimizer"] == "muon" for p in g["params"]}
+        assert id(model.embed.weight) in muon_params
 
     def test_single_linear(self):
         """Single linear layer: weight -> Muon, bias -> AdamW."""
@@ -407,3 +418,66 @@ class TestConstructOptimizer:
         _fake_grads(toy_model)
         optimizer.step()
         optimizer.zero_grad()
+
+
+# ─── 8. Module-level _exclude_from_muon Tests ──────────────────────────────────
+
+
+class TestModuleExclusions:
+    """Verify that modules correctly mark parameters with _exclude_from_muon."""
+
+    def test_siren_positional_embedding_marks_linear(self):
+        from nvsubquadratic.modules.kernels_nd import SIRENPositionalEmbeddingND
+
+        pos_emb = SIRENPositionalEmbeddingND(data_dim=2, embedding_dim=32, omega_0=10.0, L_cache=14, use_bias=True)
+        assert getattr(pos_emb.linear.weight, "_exclude_from_muon", False) is True
+        assert not getattr(pos_emb.linear.bias, "_exclude_from_muon", False)
+
+    def test_random_fourier_positional_embedding_marks_linear(self):
+        from nvsubquadratic.modules.kernels_nd import RandomFourierPositionalEmbeddingND
+
+        pos_emb = RandomFourierPositionalEmbeddingND(
+            data_dim=2, embedding_dim=32, omega_0=10.0, L_cache=14, use_bias=True
+        )
+        assert getattr(pos_emb.linear.weight, "_exclude_from_muon", False) is True
+
+    def test_film_generator_no_exclusions(self):
+        """All FiLM generator layers are Muon-eligible (2D weights, no exclusion)."""
+        from nvsubquadratic.modules.film import KernelFiLMGenerator
+
+        gen = KernelFiLMGenerator(cond_dim=384, kernel_hidden_dim=32, num_film_layers=3, film_hidden_dim=64)
+        assert not getattr(gen.mlp[0].weight, "_exclude_from_muon", False)
+        assert not getattr(gen.mlp[-1].weight, "_exclude_from_muon", False)
+
+    def test_siren_kernel_hidden_linears_not_excluded(self):
+        """SIREN hidden layers are genuine hidden weights and should be Muon-eligible."""
+        from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+
+        kernel = SIRENKernelND(
+            out_dim=384,
+            data_dim=2,
+            mlp_hidden_dim=32,
+            num_layers=3,
+            embedding_dim=32,
+            omega_0=10.0,
+            L_cache=14,
+            use_bias=True,
+        )
+        for linear in kernel.hidden_linears:
+            assert not getattr(linear.weight, "_exclude_from_muon", False)
+        assert not getattr(kernel.out_linear.weight, "_exclude_from_muon", False)
+
+    def test_siren_kernel_pos_embed_excluded(self):
+        from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+
+        kernel = SIRENKernelND(
+            out_dim=384,
+            data_dim=2,
+            mlp_hidden_dim=32,
+            num_layers=3,
+            embedding_dim=32,
+            omega_0=10.0,
+            L_cache=14,
+            use_bias=True,
+        )
+        assert getattr(kernel.positional_embedding.linear.weight, "_exclude_from_muon", False) is True

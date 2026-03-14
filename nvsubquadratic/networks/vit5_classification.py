@@ -112,6 +112,7 @@ class ViT5ClassificationNet(nn.Module):
             param._no_weight_decay = True
 
         self.out_proj = nn.Linear(hidden_dim, num_classes)
+        self.out_proj.weight._exclude_from_muon = True
 
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
 

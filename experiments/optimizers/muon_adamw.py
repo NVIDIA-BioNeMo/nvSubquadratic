@@ -30,17 +30,16 @@ logger = logging.getLogger(__name__)
 def _is_muon_eligible(name: str, param: nn.Parameter) -> bool:
     """Return True if a parameter should be optimized with Muon.
 
-    Criteria:
-    - Must be 2D (weight matrix)
-    - Must not be an embedding (name contains "embed")
-    - Must not be a classifier head (name contains "head" or "classifier")
-    - Must not be a positional embedding linear (inside SIRENPositionalEmbeddingND)
+    Muon applies Newton-Schulz orthogonalization to the gradient, which is
+    designed for 2D hidden-layer weight matrices.
+
+    Instead of brittle name-pattern matching, modules that need AdamW mark
+    their parameters with ``param._exclude_from_muon = True``.  This function
+    only checks the attribute and the tensor dimensionality.
     """
     if param.ndim != 2:
         return False
-    name_lower = name.lower()
-    exclude_patterns = ("embed", "head", "classifier", "cls_token", "pos_embed")
-    return not any(pat in name_lower for pat in exclude_patterns)
+    return not getattr(param, "_exclude_from_muon", False)
 
 
 class MuonAdamW(torch.optim.Optimizer):

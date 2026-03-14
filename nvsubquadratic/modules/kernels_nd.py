@@ -78,6 +78,9 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
         self.step_size = 1.0 / (L_cache - 1)
 
+        # Exclude from Muon: specialized omega_0-scaled init, extremely rectangular
+        self.linear.weight._exclude_from_muon = True
+
         # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
             param._no_weight_decay = True
@@ -326,6 +329,9 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
             param._no_weight_decay = True
+
+        # Exclude from Muon: omega_0-scaled init, extremely rectangular [emb_dim, data_dim]
+        self.linear.weight._exclude_from_muon = True
 
     def forward(
         self,
