@@ -430,9 +430,13 @@ class SIRENKernelND(torch.nn.Module):
         weight_decay_on_hidden_layers: If True, apply weight decay to SIREN hidden layers.
             Default False preserves the original SIREN init by excluding them.
         film_on_pos_embed: If True, the first FiLM (gamma, beta) pair modulates the
-            positional embedding output before it enters the hidden layers, enabling
+            positional embedding *before* the sine activation, enabling
             input-dependent spatial warping of the kernel coordinates. Requires
             ``embedding_dim == mlp_hidden_dim`` and one extra FiLM layer in ``film_cfg``.
+        film_after_pos_embed: If True, the first FiLM (gamma, beta) pair modulates
+            the positional embedding *after* the sine activation (i.e. scales/shifts
+            the ``sin(omega_0 * x)`` output). Mutually exclusive with ``film_on_pos_embed``.
+            Requires ``embedding_dim == mlp_hidden_dim`` and one extra FiLM layer.
     """
 
     def __init__(  # noqa: D107
@@ -449,6 +453,7 @@ class SIRENKernelND(torch.nn.Module):
         film_cfg: LazyConfig | None = None,
         weight_decay_on_hidden_layers: bool = False,
         film_on_pos_embed: bool = False,
+        film_after_pos_embed: bool = False,
     ):
         super().__init__()
 
@@ -461,10 +466,15 @@ class SIRENKernelND(torch.nn.Module):
         self.hidden_omega_0 = float(hidden_omega_0)
         self.L_cache = L_cache
         self.film_on_pos_embed = film_on_pos_embed
+        self.film_after_pos_embed = film_after_pos_embed
 
-        if film_on_pos_embed:
+        if film_on_pos_embed and film_after_pos_embed:
+            raise ValueError("film_on_pos_embed and film_after_pos_embed are mutually exclusive.")
+
+        if film_on_pos_embed or film_after_pos_embed:
             assert embedding_dim == mlp_hidden_dim, (
-                f"film_on_pos_embed requires embedding_dim == mlp_hidden_dim, got {embedding_dim} != {mlp_hidden_dim}"
+                f"film_on_pos_embed/film_after_pos_embed requires embedding_dim == mlp_hidden_dim, "
+                f"got {embedding_dim} != {mlp_hidden_dim}"
             )
 
         # Construct positional embedding
@@ -538,6 +548,13 @@ class SIRENKernelND(torch.nn.Module):
         pos_film = film_params[0] if (self.film_on_pos_embed and film_params is not None) else None
         pos_emb, grid = self.positional_embedding(seq_lens, film_params=pos_film)
         if pos_film is not None:
+            film_offset = 1
+
+        # Optionally apply FiLM *after* the positional embedding sine
+        if self.film_after_pos_embed and film_params is not None:
+            gamma, beta = film_params[0]
+            shape = [gamma.shape[0]] + [1] * self.data_dim + [gamma.shape[-1]]
+            pos_emb = gamma.view(*shape) * pos_emb + beta.view(*shape)
             film_offset = 1
 
         # Forward through hidden layers with optional FiLM

@@ -29,6 +29,7 @@ from examples.vit5_imagenet.v3._pretrain_base import (
     get_base_config,
     make_block_cfg,
 )
+from experiments.callbacks.film_monitor import FiLMMonitorCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
@@ -54,7 +55,7 @@ KERNEL_HIDDEN_OMEGA_0 = 1.0
 # ─── FiLM conditioning ──────────────────────────────────────────────────────────
 FILM_HIDDEN_DIM = 64
 FILM_PARAMETERIZATION = "direct"  # "residual" or "direct"
-FILM_NO_WEIGHT_DECAY = False
+FILM_NO_WEIGHT_DECAY = 5e-3
 FILM_INIT_TYPE = "identity"  # "identity" or "small_random"
 FILM_INIT_STD = 1e-4
 
@@ -67,7 +68,7 @@ def get_config() -> ExperimentConfig:
     film_cfg = LazyConfig(KernelFiLMGenerator)(
         cond_dim=HIDDEN_DIM,
         kernel_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
-        num_film_layers=KERNEL_NUM_LAYERS - 1,
+        num_film_layers=KERNEL_NUM_LAYERS,
         film_hidden_dim=FILM_HIDDEN_DIM,
         film_parameterization=FILM_PARAMETERIZATION,
         no_weight_decay=FILM_NO_WEIGHT_DECAY,
@@ -92,6 +93,7 @@ def get_config() -> ExperimentConfig:
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                     film_cfg=film_cfg,
+                    film_after_pos_embed=True,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type="double",
@@ -139,6 +141,14 @@ def get_config() -> ExperimentConfig:
             register_pooling_cfg=register_pooling_cfg,
             num_registers=NUM_REGISTERS,
         ),
+    )
+
+    config.callbacks.append(
+        LazyConfig(FiLMMonitorCallback)(
+            log_every_n_steps=50,
+            num_film_layers=KERNEL_NUM_LAYERS,
+            film_on_pos_embed=True,
+        )
     )
 
     return config
