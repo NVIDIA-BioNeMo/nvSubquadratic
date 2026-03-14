@@ -20,27 +20,14 @@ from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.schedulers import ResumableSequentialLR
 
 
-def construct_optimizer(
-    model,
-    optimizer_cfg: LazyConfig,
-):
-    """Constructs an optimizer for a given model given a configuration.
+def _build_param_groups(model, default_weight_decay: float) -> list[dict]:
+    """Partition model parameters into weight-decay groups.
 
-    Args:
-        model: a list of parameters to be trained
-        optimizer_cfg (LazyConfig): The optimizer configuration.
-
-    Returns:
-        torch.optim.Optimizer: The constructed optimizer.
+    Supports three modes per parameter (set via custom attributes):
+      - ``_no_weight_decay = True``  -> weight_decay = 0
+      - ``_weight_decay = <float>``  -> weight_decay = <float> (custom group)
+      - neither                      -> weight_decay = *default_weight_decay*
     """
-    # Create parameter groups based on weight decay flags.
-    # IMPORTANT: Avoid duplicates by iterating parameters ONCE at the top level
-    # and tracking by object identity (id(param)).
-    #
-    # Supports three modes per parameter:
-    #   - _no_weight_decay = True  -> weight_decay = 0
-    #   - _weight_decay = <float>  -> weight_decay = <float> (custom group)
-    #   - neither                  -> weight_decay = optimizer_cfg.weight_decay
     wd_params: list[torch.nn.Parameter] = []
     no_wd_params: list[torch.nn.Parameter] = []
     custom_wd_buckets: dict[float, list[torch.nn.Parameter]] = {}
@@ -62,7 +49,6 @@ def construct_optimizer(
         else:
             wd_params.append(param)
 
-    # Safety: ensure no overlaps and no duplicates
     total_grouped = len(set(map(id, wd_params))) + len(set(map(id, no_wd_params)))
     total_grouped += sum(len(set(map(id, ps))) for ps in custom_wd_buckets.values())
     assert len(seen_param_ids) == total_grouped, (
@@ -70,33 +56,51 @@ def construct_optimizer(
         "parameters were not assigned. Every requires_grad=True parameter must appear in exactly one group."
     )
 
-    # Create parameter groups with appropriate weight decay
     parameters = [
-        {"params": wd_params, "weight_decay": optimizer_cfg.weight_decay},
+        {"params": wd_params, "weight_decay": default_weight_decay},
         {"params": no_wd_params, "weight_decay": 0.0},
     ]
     for wd_val, params in sorted(custom_wd_buckets.items()):
         parameters.append({"params": params, "weight_decay": wd_val})
 
-    # OmegaConf has problems with non-serializable objects. To instantiate the optimizer, we need to do the following:
-    # 1. Convert the optimizer config to a dictionary
-    # 2. Import the optimizer class
-    # 3. Instantiate the optimizer
+    return parameters
 
-    # 1. Convert the optimizer config to a dictionary
+
+def construct_optimizer(
+    model,
+    optimizer_cfg: LazyConfig,
+):
+    """Constructs an optimizer for a given model given a configuration.
+
+    For :class:`~experiments.optimizers.muon_adamw.MuonAdamW`, named parameters
+    are passed so the optimizer can automatically split 2D hidden-layer weights
+    (Muon) from everything else (AdamW).  For all other optimizers, the legacy
+    parameter-group logic is used.
+
+    Args:
+        model: a list of parameters to be trained
+        optimizer_cfg (LazyConfig): The optimizer configuration.
+
+    Returns:
+        torch.optim.Optimizer: The constructed optimizer.
+    """
     _optim_cfg = OmegaConf.to_container(optimizer_cfg, resolve=True)
-
-    # 2. Import the optimizer class
-    _optimizer_cls = _optim_cfg.pop("__target__")
-    module_path, class_name = _optimizer_cls.rsplit(".", 1)
+    _optimizer_cls_path = _optim_cfg.pop("__target__")
+    module_path, class_name = _optimizer_cls_path.rsplit(".", 1)
     module = __import__(module_path, fromlist=[class_name])
     _optimizer_cls = getattr(module, class_name)
 
-    # 3. Instantiate the optimizer with wd=0. Weight decay is calculated over the generated kernels.
-    _optim_cfg["params"] = parameters
-    optimizer = _optimizer_cls(**_optim_cfg)
+    # MuonAdamW handles its own parameter splitting from named_parameters.
+    from experiments.optimizers.muon_adamw import MuonAdamW
 
-    return optimizer
+    if _optimizer_cls is MuonAdamW:
+        _optim_cfg["params"] = list(model.named_parameters())
+        return _optimizer_cls(**_optim_cfg)
+
+    # Legacy path: build weight-decay groups and pass param groups.
+    parameters = _build_param_groups(model, _optim_cfg.get("weight_decay", 0.0))
+    _optim_cfg["params"] = parameters
+    return _optimizer_cls(**_optim_cfg)
 
 
 def construct_scheduler(
@@ -340,6 +344,10 @@ class LightningWrapperBase(pl.LightningModule):
             return
 
         for opt_state in optimizer_states:
+            # Skip composite optimizers (e.g. MuonAdamW) that use a
+            # non-standard state dict format without top-level param_groups.
+            if "param_groups" not in opt_state:
+                continue
             for group in opt_state.get("param_groups", []):
                 for key, val in ref_group.items():
                     if key not in group and key != "params":
