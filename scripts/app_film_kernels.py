@@ -18,7 +18,13 @@ import streamlit as st
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "outputs" / "film_kernel_viz"
 DATASETS = {
-    "FiLM (original)": DATA_DIR / "kernel_data.npz",
+    "FiLM bound-all γ_max=4 ω₀=10 ep143": DATA_DIR / "kernel_data_bound_all_ep143.npz",
+    "FiLM bound-all γ_max=4 ω₀=10 ep135": DATA_DIR / "kernel_data_bound_all_ep135.npz",
+    "FiLM bound-all γ_max=4 ω₀=10 ep95": DATA_DIR / "kernel_data_bound_all_ep95.npz",
+    "FiLM + pos-embed (wd=1e-3, ω₀=10, ep71)": DATA_DIR / "kernel_data_posemb_wd1e3_w10.npz",
+    "FiLM residual (no pos-embed)": DATA_DIR / "kernel_data_residual.npz",
+    "FiLM + pos-embed (wd=1e-3, ω₀=1, ep63)": DATA_DIR / "kernel_data_posemb_wd1e3.npz",
+    "FiLM (original/direct)": DATA_DIR / "kernel_data.npz",
     "FiLM + pos_embed warping": DATA_DIR / "kernel_data_posemb.npz",
 }
 

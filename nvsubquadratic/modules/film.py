@@ -36,8 +36,13 @@ class KernelFiLMGenerator(nn.Module):
               folded into gamma in :meth:`forward`.  Identity = gamma=0, beta=0.
             - ``"direct"``: Modulation is ``gamma * h + beta``.
               Identity = gamma=1, beta=0.
-        no_weight_decay: If True, all parameters are marked with ``_no_weight_decay``
-            to exclude them from the optimizer's weight decay group.
+        no_weight_decay: Controls weight decay for FiLM parameters.
+
+            - ``True``: all parameters excluded from weight decay (``_no_weight_decay=True``).
+            - ``float``: all parameters placed in a dedicated optimizer group
+              with this weight decay value (``_weight_decay=<value>``).
+              Useful for mild regularization (e.g. ``1e-3``) without full WD.
+            - ``False`` (default): parameters use the global optimizer weight decay.
         init_type: How the output layer of the MLP is initialized:
 
             - ``"identity"``: Output weights=0, bias set to the identity point
@@ -48,6 +53,11 @@ class KernelFiLMGenerator(nn.Module):
               Near-identity at init.
         init_std: Standard deviation for output-layer weight init when
             ``init_type="small_random"``.  Ignored for ``"identity"``.
+        gamma_max: When set, applies a soft tanh bound to every gamma output
+            so that the raw deviation from identity stays in
+            ``[-gamma_max, gamma_max]`` (bounded re-parameterization,
+            cf. AdaLN-Zero / DP-aware AdaLN-Zero).  Requires
+            ``film_parameterization="residual"``.
     """
 
     def __init__(  # noqa: D107
@@ -57,14 +67,21 @@ class KernelFiLMGenerator(nn.Module):
         num_film_layers: int,
         film_hidden_dim: int = 64,
         film_parameterization: FiLMParameterization = "residual",
-        no_weight_decay: bool = False,
+        no_weight_decay: bool | float = False,
         init_type: FiLMInitType = "small_random",
         init_std: float = 1e-4,
+        gamma_max: float | None = None,
     ):
         super().__init__()
         self.num_film_layers = num_film_layers
         self.kernel_hidden_dim = kernel_hidden_dim
         self.residual = film_parameterization == "residual"
+        self.gamma_max = gamma_max
+        if gamma_max is not None and not self.residual:
+            raise ValueError(
+                "gamma_max requires film_parameterization='residual' "
+                "(tanh bound is defined around the identity point gamma=1)."
+            )
 
         out_dim = num_film_layers * 2 * kernel_hidden_dim
         self.mlp = nn.Sequential(
@@ -76,8 +93,11 @@ class KernelFiLMGenerator(nn.Module):
         # Initialize the MLP output layer
         self._init_weights(init_type, init_std)
 
-        # Mark parameters to be excluded from weight decay
-        if no_weight_decay:
+        # Mark parameters for weight decay handling
+        if isinstance(no_weight_decay, float):
+            for param in self.parameters():
+                param._weight_decay = no_weight_decay
+        elif no_weight_decay:
             for param in self.parameters():
                 param._no_weight_decay = True
 
@@ -125,7 +145,11 @@ class KernelFiLMGenerator(nn.Module):
         chunks = out.chunk(self.num_film_layers, dim=-1)  # num_film_layers x [B, 2 * kernel_hidden_dim]
         pairs = [c.chunk(2, dim=-1) for c in chunks]  # list of (gamma, beta) tuples
         if self.residual:
-            pairs = [(1 + gamma, beta) for gamma, beta in pairs]
+            if self.gamma_max is not None:
+                gm = self.gamma_max
+                pairs = [(1.0 + gm * torch.tanh(gamma / gm), beta) for gamma, beta in pairs]
+            else:
+                pairs = [(1 + gamma, beta) for gamma, beta in pairs]
         return pairs
 
 

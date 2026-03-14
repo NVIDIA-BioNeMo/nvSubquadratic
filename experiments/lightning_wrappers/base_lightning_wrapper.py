@@ -33,11 +33,17 @@ def construct_optimizer(
     Returns:
         torch.optim.Optimizer: The constructed optimizer.
     """
-    # Create parameter groups based on weight decay flag
+    # Create parameter groups based on weight decay flags.
     # IMPORTANT: Avoid duplicates by iterating parameters ONCE at the top level
     # and tracking by object identity (id(param)).
+    #
+    # Supports three modes per parameter:
+    #   - _no_weight_decay = True  -> weight_decay = 0
+    #   - _weight_decay = <float>  -> weight_decay = <float> (custom group)
+    #   - neither                  -> weight_decay = optimizer_cfg.weight_decay
     wd_params: list[torch.nn.Parameter] = []
     no_wd_params: list[torch.nn.Parameter] = []
+    custom_wd_buckets: dict[float, list[torch.nn.Parameter]] = {}
     seen_param_ids: set[int] = set()
 
     for name, param in model.named_parameters(recurse=True):
@@ -47,13 +53,19 @@ def construct_optimizer(
         if pid in seen_param_ids:
             continue
         seen_param_ids.add(pid)
-        if getattr(param, "_no_weight_decay", False):
+
+        custom_wd = getattr(param, "_weight_decay", None)
+        if custom_wd is not None:
+            custom_wd_buckets.setdefault(custom_wd, []).append(param)
+        elif getattr(param, "_no_weight_decay", False):
             no_wd_params.append(param)
         else:
             wd_params.append(param)
 
     # Safety: ensure no overlaps and no duplicates
-    assert len(seen_param_ids) == len(set(map(id, wd_params))) + len(set(map(id, no_wd_params))), (
+    total_grouped = len(set(map(id, wd_params))) + len(set(map(id, no_wd_params)))
+    total_grouped += sum(len(set(map(id, ps))) for ps in custom_wd_buckets.values())
+    assert len(seen_param_ids) == total_grouped, (
         "Optimizer param group mismatch: duplicate parameters across groups or some trainable "
         "parameters were not assigned. Every requires_grad=True parameter must appear in exactly one group."
     )
@@ -63,6 +75,8 @@ def construct_optimizer(
         {"params": wd_params, "weight_decay": optimizer_cfg.weight_decay},
         {"params": no_wd_params, "weight_decay": 0.0},
     ]
+    for wd_val, params in sorted(custom_wd_buckets.items()):
+        parameters.append({"params": params, "weight_decay": wd_val})
 
     # OmegaConf has problems with non-serializable objects. To instantiate the optimizer, we need to do the following:
     # 1. Convert the optimizer config to a dictionary

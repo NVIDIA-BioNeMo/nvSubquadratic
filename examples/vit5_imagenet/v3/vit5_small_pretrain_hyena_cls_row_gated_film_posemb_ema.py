@@ -31,6 +31,7 @@ from examples.vit5_imagenet.v3._pretrain_base import (
     get_base_config,
     make_block_cfg,
 )
+from experiments.callbacks.film_monitor import FiLMMonitorCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
@@ -55,8 +56,8 @@ KERNEL_HIDDEN_OMEGA_0 = 1.0
 
 # ─── FiLM conditioning ──────────────────────────────────────────────────────────
 FILM_HIDDEN_DIM = 64
-FILM_PARAMETERIZATION = "direct"  # "residual" or "direct"
-FILM_NO_WEIGHT_DECAY = False
+FILM_PARAMETERIZATION = "residual"  # "residual" or "direct"
+FILM_NO_WEIGHT_DECAY = 1e-3
 FILM_INIT_TYPE = "identity"  # "identity" or "small_random"
 FILM_INIT_STD = 1e-4
 
@@ -75,6 +76,7 @@ def get_config() -> ExperimentConfig:
         no_weight_decay=FILM_NO_WEIGHT_DECAY,
         init_type=FILM_INIT_TYPE,
         init_std=FILM_INIT_STD,
+        gamma_max=4.0,
     )
 
     hyena_mixer_cfg = LazyConfig(QKVSequenceMixer)(
@@ -142,6 +144,14 @@ def get_config() -> ExperimentConfig:
             register_pooling_cfg=register_pooling_cfg,
             num_registers=NUM_REGISTERS,
         ),
+    )
+
+    config.callbacks.append(
+        LazyConfig(FiLMMonitorCallback)(
+            log_every_n_steps=50,
+            num_film_layers=KERNEL_NUM_LAYERS,
+            film_on_pos_embed=True,
+        )
     )
 
     return config
