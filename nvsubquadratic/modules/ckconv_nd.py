@@ -21,41 +21,61 @@ from nvsubquadratic.ops.circular_fftconv import (
     circular_fftconv3d_bhl_w_reshape,
 )
 from nvsubquadratic.ops.fftconv import (
-    causal_fftconv1d_bhl,
-    causal_fftconv1d_bhl_w_reshape,
-    fftconv1d_bhl,
-    fftconv1d_bhl_w_reshape,
-    fftconv2d_bhl,
-    fftconv2d_bhl_w_reshape,
-    fftconv3d_bhl,
-    fftconv3d_bhl_w_reshape,
+    causal_fftconv1d_fp32_bhl,
+    causal_fftconv1d_fp32_bhl_w_reshape,
+    fftconv1d_fp32_bhl,
+    fftconv1d_fp32_bhl_w_reshape,
+    fftconv2d_fp32_bhl,
+    fftconv2d_fp32_bhl_w_reshape,
+    fftconv3d_fp32_bhl,
+    fftconv3d_fp32_bhl_w_reshape,
 )
 
 # Chunked (memory-efficient) variants for zero-padded and causal convolutions
 # Note: circular convolutions don't have chunked variants (lower memory overhead already)
 from nvsubquadratic.ops.fftconv_chunked import (
-    causal_fftconv1d_bhl as causal_fftconv1d_bhl_chunked,
+    causal_fftconv1d_fp32_bhl as causal_fftconv1d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    causal_fftconv1d_bhl_w_reshape as causal_fftconv1d_bhl_w_reshape_chunked,
+    causal_fftconv1d_fp32_bhl_w_reshape as causal_fftconv1d_fp32_bhl_w_reshape_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv1d_bhl as fftconv1d_bhl_chunked,
+    fftconv1d_fp32_bhl as fftconv1d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv1d_bhl_w_reshape as fftconv1d_bhl_w_reshape_chunked,
+    fftconv1d_fp32_bhl_w_reshape as fftconv1d_fp32_bhl_w_reshape_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv2d_bhl as fftconv2d_bhl_chunked,
+    fftconv2d_fp32_bhl as fftconv2d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv2d_bhl_w_reshape as fftconv2d_bhl_w_reshape_chunked,
+    fftconv2d_fp32_bhl_w_reshape as fftconv2d_fp32_bhl_w_reshape_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv3d_bhl as fftconv3d_bhl_chunked,
+    fftconv3d_fp32_bhl as fftconv3d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv3d_bhl_w_reshape as fftconv3d_bhl_w_reshape_chunked,
+    fftconv3d_fp32_bhl_w_reshape as fftconv3d_fp32_bhl_w_reshape_chunked,
+)
+
+# FP16 FFT convolutions (power-of-2 padding + ortho normalization)
+from nvsubquadratic.ops.fftconv_fp16 import (
+    causal_fftconv1d_fp16_bhl,
+    causal_fftconv1d_fp16_bhl_chunked,
+    causal_fftconv1d_fp16_bhl_w_reshape,
+    causal_fftconv1d_fp16_bhl_w_reshape_chunked,
+    fftconv1d_fp16_bhl,
+    fftconv1d_fp16_bhl_chunked,
+    fftconv1d_fp16_bhl_w_reshape,
+    fftconv1d_fp16_bhl_w_reshape_chunked,
+    fftconv2d_fp16_bhl,
+    fftconv2d_fp16_bhl_chunked,
+    fftconv2d_fp16_bhl_w_reshape,
+    fftconv2d_fp16_bhl_w_reshape_chunked,
+    fftconv3d_fp16_bhl,
+    fftconv3d_fp16_bhl_chunked,
+    fftconv3d_fp16_bhl_w_reshape,
+    fftconv3d_fp16_bhl_w_reshape_chunked,
 )
 
 
@@ -68,12 +88,12 @@ FFT_FUNCTIONS = {
         3: (circular_fftconv3d_bhl_w_reshape, circular_fftconv3d_bhl),
     },
     "zero": {
-        1: (fftconv1d_bhl_w_reshape, fftconv1d_bhl),
-        2: (fftconv2d_bhl_w_reshape, fftconv2d_bhl),
-        3: (fftconv3d_bhl_w_reshape, fftconv3d_bhl),
+        1: (fftconv1d_fp32_bhl_w_reshape, fftconv1d_fp32_bhl),
+        2: (fftconv2d_fp32_bhl_w_reshape, fftconv2d_fp32_bhl),
+        3: (fftconv3d_fp32_bhl_w_reshape, fftconv3d_fp32_bhl),
     },
     "causal": {
-        1: (causal_fftconv1d_bhl_w_reshape, causal_fftconv1d_bhl),
+        1: (causal_fftconv1d_fp32_bhl_w_reshape, causal_fftconv1d_fp32_bhl),
         # Causal is only supported for 1D (sequences)
     },
 }
@@ -83,12 +103,40 @@ FFT_FUNCTIONS = {
 # memory overhead since they don't require padding.
 FFT_FUNCTIONS_CHUNKED = {
     "zero": {
-        1: (fftconv1d_bhl_w_reshape_chunked, fftconv1d_bhl_chunked),
-        2: (fftconv2d_bhl_w_reshape_chunked, fftconv2d_bhl_chunked),
-        3: (fftconv3d_bhl_w_reshape_chunked, fftconv3d_bhl_chunked),
+        1: (fftconv1d_fp32_bhl_w_reshape_chunked, fftconv1d_fp32_bhl_chunked),
+        2: (fftconv2d_fp32_bhl_w_reshape_chunked, fftconv2d_fp32_bhl_chunked),
+        3: (fftconv3d_fp32_bhl_w_reshape_chunked, fftconv3d_fp32_bhl_chunked),
     },
     "causal": {
-        1: (causal_fftconv1d_bhl_w_reshape_chunked, causal_fftconv1d_bhl_chunked),
+        1: (causal_fftconv1d_fp32_bhl_w_reshape_chunked, causal_fftconv1d_fp32_bhl_chunked),
+        # Causal is only supported for 1D (sequences)
+    },
+}
+
+# FP16 versions (power-of-2 padding + ortho normalization to prevent overflow)
+# Note: circular convolutions are not supported in fp16 — cuFFT half-precision
+# requires power-of-2 sizes which circular padding cannot guarantee.
+FFT_FUNCTIONS_FP16 = {
+    "zero": {
+        1: (fftconv1d_fp16_bhl_w_reshape, fftconv1d_fp16_bhl),
+        2: (fftconv2d_fp16_bhl_w_reshape, fftconv2d_fp16_bhl),
+        3: (fftconv3d_fp16_bhl_w_reshape, fftconv3d_fp16_bhl),
+    },
+    "causal": {
+        1: (causal_fftconv1d_fp16_bhl_w_reshape, causal_fftconv1d_fp16_bhl),
+        # Causal is only supported for 1D (sequences)
+    },
+}
+
+# FP16 + chunked: combines fp16 memory savings with channel-chunking savings
+FFT_FUNCTIONS_FP16_CHUNKED = {
+    "zero": {
+        1: (fftconv1d_fp16_bhl_w_reshape_chunked, fftconv1d_fp16_bhl_chunked),
+        2: (fftconv2d_fp16_bhl_w_reshape_chunked, fftconv2d_fp16_bhl_chunked),
+        3: (fftconv3d_fp16_bhl_w_reshape_chunked, fftconv3d_fp16_bhl_chunked),
+    },
+    "causal": {
+        1: (causal_fftconv1d_fp16_bhl_w_reshape_chunked, causal_fftconv1d_fp16_bhl_chunked),
         # Causal is only supported for 1D (sequences)
     },
 }
@@ -107,6 +155,7 @@ class CKConvND(torch.nn.Module):
         fft_padding: Literal["zero", "circular"],
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
+        use_fp16_fft: bool = False,
     ):
         """Initialize the CKConvND.
 
@@ -127,6 +176,11 @@ class CKConvND(torch.nn.Module):
                 intermediates. Typical savings: ~26% memory with ~11% compute overhead.
                 Useful for memory-constrained training with large spatial dimensions
                 in 2D/3D. Default is False.
+            use_fp16_fft: If True, use fp16 FFT convolutions. Pads to power-of-2
+                sizes (cuFFT requirement) and uses ortho normalization to prevent
+                overflow. Saves ~36% peak memory per convolution with ~0.8% mean
+                relative error vs f32. Supported for 1D/2D/3D with zero or causal
+                padding (not circular). Default is False.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
@@ -150,12 +204,19 @@ class CKConvND(torch.nn.Module):
                 "Circular convolutions already have lower memory overhead due to no padding."
             )
 
+        if use_fp16_fft:
+            assert fft_padding != "circular", (
+                "use_fp16_fft does not support circular padding — cuFFT half-precision "
+                "requires power-of-2 sizes which circular padding cannot guarantee."
+            )
+
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
+        self.use_fp16_fft = use_fp16_fft
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
@@ -170,12 +231,19 @@ class CKConvND(torch.nn.Module):
         # Causal mode overrides fft_padding for 1D
         effective_padding = "causal" if is_causal else self.fft_padding
 
-        # Choose between standard and chunked FFT functions
-        fft_fn_table = FFT_FUNCTIONS_CHUNKED if use_chunked_fftconv else FFT_FUNCTIONS
+        # Choose FFT functions: fp16+chunked > fp16 > chunked > standard
+        if use_fp16_fft and use_chunked_fftconv:
+            fft_fn_table = FFT_FUNCTIONS_FP16_CHUNKED
+        elif use_fp16_fft:
+            fft_fn_table = FFT_FUNCTIONS_FP16
+        elif use_chunked_fftconv:
+            fft_fn_table = FFT_FUNCTIONS_CHUNKED
+        else:
+            fft_fn_table = FFT_FUNCTIONS
         try:
             self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
         except KeyError:
-            valid_dims = sorted(FFT_FUNCTIONS.get(effective_padding, {}).keys())
+            valid_dims = sorted(fft_fn_table.get(effective_padding, {}).keys())
             raise ValueError(
                 f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
                 f"Valid dimensions for '{effective_padding}': {valid_dims}"
@@ -189,7 +257,7 @@ class CKConvND(torch.nn.Module):
         return (
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
-            f"use_chunked_fftconv={self.use_chunked_fftconv}"
+            f"use_chunked_fftconv={self.use_chunked_fftconv}, use_fp16_fft={self.use_fp16_fft}"
         )
 
     def apply_convolution(
@@ -207,25 +275,15 @@ class CKConvND(torch.nn.Module):
             torch.Tensor: Output tensor after applying convolution.
         """
         if is_bhl_input:
-            # Apply kernel
             conv_kernel = rearrange(
                 conv_kernel, "b ... c -> b c ..."
             )  # Reshape kernel to [B, C, * spatial_dims] (Kernels are always in BLH format)
             x_dtype = x.dtype
-            x = self.fftconv_fn_bhl_input(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
+            x = self.fftconv_fn_bhl_input(x, conv_kernel, shortcut)
             return x.to(x_dtype)
         else:
-            # Apply kernel
             x_dtype = x.dtype
-            x = self.fftconv_fn(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
+            x = self.fftconv_fn(x, conv_kernel, shortcut)
             return x.to(x_dtype)
 
     def forward(

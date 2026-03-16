@@ -15,7 +15,12 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 
-from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl, fftconv1d_bhl, fftconv2d_bhl, fftconv3d_bhl
+from nvsubquadratic.ops.fftconv import (
+    causal_fftconv1d_fp32_bhl,
+    fftconv1d_fp32_bhl,
+    fftconv2d_fp32_bhl,
+    fftconv3d_fp32_bhl,
+)
 
 
 def test_fftconv1d():
@@ -63,14 +68,14 @@ def test_fftconv1d():
     kernel = rearrange(kernel, "h k -> 1 h k")
     # Warm-up
     for _ in range(5):
-        _ = fftconv1d_bhl(input_tensor, kernel)
+        _ = fftconv1d_fp32_bhl(input_tensor, kernel)
 
     total_time = 0
     for _ in range(repetitions):
         start_time = time.perf_counter()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
-        fft_output = fftconv1d_bhl(input_tensor, kernel)
+        fft_output = fftconv1d_fp32_bhl(input_tensor, kernel)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         end_time = time.perf_counter()
@@ -78,7 +83,7 @@ def test_fftconv1d():
 
     # Average time per iteration
     average_time_fftconv_nd = total_time / repetitions
-    print(f"fftconv1d_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
+    print(f"fftconv1d_fp32_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
 
     print(f"Speedup: {average_time_ndconv / average_time_fftconv_nd:.2f}x")
 
@@ -151,14 +156,14 @@ def test_causal_fftconv1d():
     kernel_fft = rearrange(kernel, "h k -> 1 h k")
     # Warm-up
     for _ in range(5):
-        _ = causal_fftconv1d_bhl(input_tensor, kernel_fft)
+        _ = causal_fftconv1d_fp32_bhl(input_tensor, kernel_fft)
 
     total_time = 0
     for _ in range(repetitions):
         start_time = time.perf_counter()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
-        fft_output = causal_fftconv1d_bhl(input_tensor, kernel_fft)
+        fft_output = causal_fftconv1d_fp32_bhl(input_tensor, kernel_fft)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         end_time = time.perf_counter()
@@ -166,7 +171,7 @@ def test_causal_fftconv1d():
 
     # Average time per iteration
     average_time_fftconv_nd = total_time / repetitions
-    print(f"causal_fftconv1d_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
+    print(f"causal_fftconv1d_fp32_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
 
     print(f"Speedup: {average_time_ndconv / average_time_fftconv_nd:.2f}x")
 
@@ -233,21 +238,21 @@ def test_fftconv2d():
     kernel_fft = rearrange(kernel, "h kx ky -> 1 h kx ky")
     # Warm-up
     for _ in range(5):
-        _ = fftconv2d_bhl(input_tensor, kernel_fft)
+        _ = fftconv2d_fp32_bhl(input_tensor, kernel_fft)
 
     total_time = 0
     for _ in range(repetitions):
         start_time = time.perf_counter()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
-        fft_output = fftconv2d_bhl(input_tensor, kernel_fft)
+        fft_output = fftconv2d_fp32_bhl(input_tensor, kernel_fft)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         end_time = time.perf_counter()
         total_time += end_time - start_time
 
     average_time_fftconv_nd = total_time / repetitions
-    print(f"fftconv2d_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
+    print(f"fftconv2d_fp32_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
 
     print(f"Speedup: {average_time_ndconv / average_time_fftconv_nd:.2f}x")
 
@@ -315,21 +320,21 @@ def test_fftconv3d():
     kernel_fft = rearrange(kernel, "h kx ky kz -> 1 h kx ky kz")
     # Warm-up
     for _ in range(5):
-        _ = fftconv3d_bhl(input_tensor, kernel_fft)
+        _ = fftconv3d_fp32_bhl(input_tensor, kernel_fft)
 
     total_time = 0
     for _ in range(repetitions):
         start_time = time.perf_counter()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
-        fft_output = fftconv3d_bhl(input_tensor, kernel_fft)
+        fft_output = fftconv3d_fp32_bhl(input_tensor, kernel_fft)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         end_time = time.perf_counter()
         total_time += end_time - start_time
 
     average_time_fftconv_nd = total_time / repetitions
-    print(f"fftconv3d_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
+    print(f"fftconv3d_fp32_bhl took: {average_time_fftconv_nd:.4f} seconds on average")
 
     print(f"Speedup: {average_time_ndconv / average_time_fftconv_nd:.2f}x")
 
