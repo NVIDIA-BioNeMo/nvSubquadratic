@@ -102,6 +102,18 @@ pipenv lock
 # Note: Continue using pip for actual installations (pip install -e .)
 ```
 
+### Testing
+
+See [`tests/README.md`](tests/README.md) for full details on test suites, markers, and SLURM usage.
+
+```bash
+# Unit tests (CPU-safe, no external data needed)
+PYTHONPATH=. python -m pytest tests/ -m "not nightly" -v -o addopts=""
+
+# Nightly validation (requires GPU, DALI, ImageNet, wandb)
+source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
+```
+
 ### Pre-commit Hooks
 
 **On commit:**

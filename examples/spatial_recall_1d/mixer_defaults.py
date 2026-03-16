@@ -26,9 +26,9 @@ from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.causal_conv1d import CausalConv1D
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 
 
 # =============================================================================
