@@ -81,4 +81,7 @@ addopts = [
     "--cov=nvsubquadratic",
     "--cov-report=term",
 ]
-markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "nightly: full model validation against ImageNet (requires GPU, DALI, ImageNet data, wandb)",
+]

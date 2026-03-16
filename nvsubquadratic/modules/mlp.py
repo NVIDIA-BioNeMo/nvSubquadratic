@@ -47,8 +47,6 @@ class MLP(nn.Module):
             init_method_in: Optional initialization method for the first layer.
             init_method_out: Optional initialization method for the second layer.
         """
-        assert bias is False, f"Modern MLPs do not use bias. Got {bias}"
-
         super().__init__()
         self.hidden_dim = int(dim * expansion_factor)
         self.activation = activation
@@ -61,6 +59,8 @@ class MLP(nn.Module):
         self.layer1 = nn.Linear(dim, self.hidden_dim * glu_factor, bias=bias)
         if init_method_in is not None:
             init_method_in(self.hidden_dim * glu_factor)(self.layer1.weight.data)
+            if self.layer1.bias is not None:
+                nn.init.zeros_(self.layer1.bias)
 
         # Construct dropout
         self.dropout = instantiate(dropout_cfg)
@@ -69,6 +69,8 @@ class MLP(nn.Module):
         self.layer2 = nn.Linear(self.hidden_dim, dim, bias=bias)
         if init_method_out is not None:
             init_method_out(dim)(self.layer2.weight.data)
+            if self.layer2.bias is not None:
+                nn.init.zeros_(self.layer2.bias)
 
     def _apply_activation(self, x: torch.Tensor) -> torch.Tensor:
         """Apply the activation function to the input."""

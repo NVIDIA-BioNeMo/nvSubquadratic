@@ -224,11 +224,12 @@ class RandomFourierKernelND(torch.nn.Module):
         with torch.no_grad():
             self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))
 
-    def forward(self, seq_lens: tuple[int, ...]) -> torch.Tensor:
+    def forward(self, seq_lens: tuple[int, ...], conditioning: torch.Tensor | None = None) -> torch.Tensor:
         """Computes the random Fourier kernel for a given grid of spatial dimensions.
 
         Args:
             seq_lens (tuple[int, ...]): Lengths of the input grid for which to compute the positional embeddings.
+            conditioning: Unused. Accepted for API compatibility with FiLM-enabled kernels.
 
         Returns:
             tuple[torch.Tensor, torch.Tensor]: The computed random Fourier kernel and the corresponding grid values.
@@ -396,6 +397,10 @@ class SIRENKernelND(torch.nn.Module):
     """Kernel parameterized by a SIREN (sinusoidal representation network) MLP.
 
     The network maps coordinates in an N-D grid directly to kernel values.
+    Optionally supports FiLM (Feature-wise Linear Modulation) conditioning:
+    when ``film_cfg`` is provided, a ``KernelFiLMGenerator`` produces per-layer
+    (gamma, beta) pairs that modulate hidden activations, making the kernel
+    input-dependent.
 
     Args:
         out_dim: Number of output channels for the generated kernel.
@@ -406,6 +411,8 @@ class SIRENKernelND(torch.nn.Module):
         use_bias: Whether to include biases in linear layers.
         omega_0: Frequency scaling for the first SIREN layer.
         hidden_omega_0: Frequency scaling for subsequent SIREN layers.
+        film_cfg: Optional LazyConfig for KernelFiLMGenerator. When provided, enables
+            input-dependent FiLM conditioning of all hidden SIREN layers.
     """
 
     def __init__(
@@ -419,20 +426,8 @@ class SIRENKernelND(torch.nn.Module):
         L_cache: int,
         use_bias: bool,
         hidden_omega_0: float = 1.0,
+        film_cfg: LazyConfig | None = None,
     ):
-        """Initialize the SIRENKernelND class.
-
-        Args:
-            out_dim: Number of output channels for the generated kernel.
-            data_dim: Number of spatial/temporal input dimensions (size of coordinate vector).
-            mlp_hidden_dim: Hidden width of the SIREN network.
-            num_layers: Total number of layers including the first and hidden layers (>= 2).
-            embedding_dim: Dimensionality of the positional embeddings.
-            omega_0: Frequency scaling for the first SIREN layer.
-            L_cache: Cache extent controlling the maximum supported grid size before cache growth.
-            use_bias: Whether to include biases in linear layers.
-            hidden_omega_0: Frequency scaling for subsequent SIREN layers.
-        """
         super().__init__()
 
         self.out_dim = out_dim
@@ -453,22 +448,23 @@ class SIRENKernelND(torch.nn.Module):
             use_bias=use_bias,
         )
 
-        # Construct kernel network
-        self.kernel_network = torch.nn.Sequential(
-            torch.nn.Linear(embedding_dim, mlp_hidden_dim, bias=use_bias),
-            Sine(),
-        )
+        # Construct kernel network as ModuleList of (Linear, Sine) pairs
+        # so FiLM can be interleaved between layers.
+        self.hidden_linears = torch.nn.ModuleList()
+        self.hidden_linears.append(torch.nn.Linear(embedding_dim, mlp_hidden_dim, bias=use_bias))
         for _ in range(num_layers - 2):
-            self.kernel_network.append(torch.nn.Linear(mlp_hidden_dim, mlp_hidden_dim, bias=use_bias))
-            self.kernel_network.append(Sine())
+            self.hidden_linears.append(torch.nn.Linear(mlp_hidden_dim, mlp_hidden_dim, bias=use_bias))
+        self.sine = Sine()
+
+        # Number of hidden layers that can be FiLM-conditioned (all of them)
+        self.num_film_layers = len(self.hidden_linears)
 
         # Construct output linear layer of the kernel network
         self.out_linear = torch.nn.Linear(mlp_hidden_dim, out_dim, bias=use_bias)
 
         # SIREN-initialize weights of the kernel network
-        for layer in self.kernel_network:
-            if isinstance(layer, torch.nn.Linear):
-                _init_siren_weights(layer, is_first_layer=False, w0=self.hidden_omega_0)
+        for linear in self.hidden_linears:
+            _init_siren_weights(linear, is_first_layer=False, w0=self.hidden_omega_0)
         _init_siren_weights(self.out_linear, is_first_layer=False, w0=self.hidden_omega_0)
         # Add Wang initialization to the output layer (to account for the fact that the output is used as a convolutional kernel)
         with torch.no_grad():
@@ -476,24 +472,53 @@ class SIRENKernelND(torch.nn.Module):
 
         # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear)
         # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.
-        for param in self.kernel_network.parameters():
-            param._no_weight_decay = True
+        for linear in self.hidden_linears:
+            for param in linear.parameters():
+                param._no_weight_decay = True
 
-    def forward(self, seq_lens: tuple[int, ...]) -> torch.Tensor:
-        """Computes the random Fourier kernel for a given grid of spatial dimensions.
+        # Optional FiLM conditioning
+        if film_cfg is not None:
+            self.film_generator = instantiate(film_cfg)
+        else:
+            self.film_generator = None
+
+    def forward(
+        self, seq_lens: tuple[int, ...], conditioning: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the SIREN kernel for a given grid of spatial dimensions.
 
         Args:
-            seq_lens (tuple[int, ...]): Lengths of the input grid for which to compute the positional embeddings.
+            seq_lens: Lengths of the input grid for which to compute the positional embeddings.
+            conditioning: Optional [B, C] conditioning vector for FiLM modulation.
+                When provided and a film_generator exists, SIREN hidden layers are
+                modulated, making the output kernel batch-dependent: [B, *spatial, out_dim].
+                When None, behaves identically to the original SIREN: [1, *spatial, out_dim].
 
         Returns:
-            tuple[torch.Tensor, torch.Tensor]: The computed random Fourier kernel and the corresponding grid values.
-                The kernel is a tensor of shape (1, * spatial_dims, out_dim)
-                The grid is a tensor of shape (1, * spatial_dims, data_dim)
+            tuple: (kernel, grid) where kernel has shape [1|B, *spatial, out_dim]
+                and grid has shape [1, *spatial, data_dim].
         """
         # Generate positional embeddings and corresponding grid values
-        pos_emb, grid = self.positional_embedding(seq_lens)
-        # Pass embeddings through the kernel network and output layer
-        kernel = self.out_linear(self.kernel_network(pos_emb))
+        pos_emb, grid = self.positional_embedding(seq_lens)  # [1, *spatial, emb], [1, *spatial, data_dim]
+
+        # Generate FiLM parameters if conditioning is available
+        film_params = None
+        if conditioning is not None and self.film_generator is not None:
+            film_params = self.film_generator(conditioning)  # list of (gamma, beta), each [B, hidden_dim]
+
+        # Forward through hidden layers with optional FiLM
+        h = pos_emb
+        for i, linear in enumerate(self.hidden_linears):
+            h = self.sine(linear(h))
+            if film_params is not None:
+                gamma, beta = film_params[i]
+                # Reshape [B, hidden_dim] -> [B, 1, ..., 1, hidden_dim] for broadcasting over spatial dims
+                shape = [gamma.shape[0]] + [1] * self.data_dim + [gamma.shape[-1]]
+                gamma = gamma.view(*shape)
+                beta = beta.view(*shape)
+                h = gamma * h + beta
+
+        kernel = self.out_linear(h)
         return kernel, grid
 
 

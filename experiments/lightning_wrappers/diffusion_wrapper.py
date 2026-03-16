@@ -51,7 +51,21 @@ class _FallbackFIDMetric:
 
 
 class DiffusionWrapper(LightningWrapperBase):
-    """Lightning module for DDPM/DDIM-style training with CKConv backbones."""
+    """Lightning module for DDPM/DDIM-style training with CKConv backbones.
+
+    .. TODO(@dmknigge): Resume support (critical for long diffusion runs)
+        - The manual EMA model (``self._ema_model``) is NOT saved or restored
+          in checkpoints. On resume, the EMA shadow copy is re-initialized
+          from ``deepcopy(self.network)`` (i.e., the *resumed* weights), losing
+          all accumulated averaging. Add ``on_save_checkpoint`` /
+          ``on_load_checkpoint`` hooks to serialize ``_ema_model.state_dict()``
+          and ``_ema_has_been_updated`` into the checkpoint.
+          Alternatively, migrate to the ``LabeledEMAWeightAveraging`` callback
+          used by the classification pipeline, which handles this correctly.
+        - Persist ``example_input_shape`` so that sampling works immediately
+          after resume without waiting for the first training batch.
+        - Add corresponding tests in ``tests/test_checkpoint_resume.py``.
+    """
 
     def __init__(
         self,
@@ -721,6 +735,9 @@ class DiffusionWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self, outputs=None):
         """Compute and log validation summary metrics and sample grids."""
+        if self.trainer.sanity_checking:
+            return
+
         if self.fid_metric is not None and self._fid_batches_seen > 0:
             fid_value = self.fid_metric.compute()
             self.log("metrics/fid", fid_value, prog_bar=False, sync_dist=self.distributed)

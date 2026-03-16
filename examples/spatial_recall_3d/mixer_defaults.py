@@ -24,15 +24,17 @@ Usage:
     )
 """
 
+from typing import Optional
+
 import torch
 
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 
 
 # =============================================================================
@@ -51,7 +53,7 @@ def get_hyena_mixer_cfg(
     grid_type: str = "double",
     fft_padding: str = "zero",
     # Hyena params
-    apply_qk_norm: bool = True,
+    qk_norm_cfg: Optional[LazyConfig] = None,
     use_rope: bool = False,
     rope_base: float = 10000.0,
 ) -> LazyConfig:
@@ -67,7 +69,7 @@ def get_hyena_mixer_cfg(
         kernel_hidden_omega_0: SIREN omega_0 for hidden layers.
         grid_type: Grid type for CKConvND ("single" or "double").
         fft_padding: FFT padding mode ("zero" or "circular").
-        apply_qk_norm: Whether to apply QK normalization.
+        qk_norm_cfg: Optional LazyConfig for QK normalization (e.g. LazyConfig(L2Norm)()).
         use_rope: Whether to use rotary position embeddings.
         rope_base: Base for rotary position embeddings.
 
@@ -105,7 +107,7 @@ def get_hyena_mixer_cfg(
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-            apply_qk_norm=apply_qk_norm,
+            qk_norm_cfg=qk_norm_cfg,
             use_rope=use_rope,
             rope_base=rope_base,
         ),

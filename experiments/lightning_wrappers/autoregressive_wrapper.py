@@ -26,6 +26,14 @@ from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapp
 class AutoregressiveWrapper(LightningWrapperBase):
     """Lightning wrapper for autoregressive (next-token prediction) tasks.
 
+    .. todo:: Resume support (see ClassificationWrapper for reference)
+        - Add ``on_save_checkpoint`` / ``on_load_checkpoint`` to persist
+          ``best_train_loss`` and ``best_val_loss`` across job resumes.
+          Without this, best-metric tracking silently resets to ``inf``
+          after every SLURM preemption or manual resume.
+        - Add corresponding tests in ``tests/test_checkpoint_resume.py``
+          (see ``TestBestMetricsPersistence`` for the classification pattern).
+
     Args:
         network: Network to wrap. Should output logits of shape [B, L, vocab_size] for
             discrete tokens or [B, L, C] for continuous values.
@@ -255,6 +263,10 @@ class AutoregressiveWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log metrics at end of validation epoch."""
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         validation_step_outputs = self.other_outputs_validation
         if len(validation_step_outputs) == 0:
             # When autoresuming, the first epoch step outputs is empty, which would otherwise raise an error.

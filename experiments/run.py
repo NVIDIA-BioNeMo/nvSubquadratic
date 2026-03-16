@@ -13,6 +13,13 @@ import argparse
 import os
 from pathlib import Path
 
+# Force-initialize PIL plugins in the main process before DataLoader workers
+# are forked.  Prevents crashes from lazy initialization in child processes.
+import PIL.Image
+
+
+PIL.Image.init()
+
 import pytorch_lightning as pl
 import torch
 import wandb
@@ -119,6 +126,12 @@ def main() -> None:
     # Set float32 matmul precision
     torch.set_float32_matmul_precision("high")
 
+    # Isolate Triton cache per DDP rank to prevent file-lock races during
+    # concurrent compilation (all ranks compile the same kernels in parallel).
+    local_rank = os.environ.get("LOCAL_RANK", "0")
+    base_triton_dir = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
+    os.environ["TRITON_CACHE_DIR"] = os.path.join(base_triton_dir, f"rank_{local_rank}")
+
     # Construct data_module, prepare and setup
     datamodule = instantiate(config.dataset)
     datamodule.prepare_data()
@@ -127,10 +140,20 @@ def main() -> None:
     # Construct model
     network = instantiate(config.net)
 
+    # Enable compile-compatible FFT path if requested (needed for models with FFT conv, e.g. Hyena + FiLM)
+    if getattr(config, "compile_compatible_fftconv", False):
+        import nvsubquadratic.ops.fftconv as _fftconv
+
+        _fftconv.COMPILE_COMPATIBLE = True
+        print("[compile] Using compile-compatible FFT convolution (real-valued complex multiply)")
+
     # Compile the model if specified
     if config.compile:
-        print("Compiling model with torch.compile...")
-        network = torch.compile(network)
+        mode = getattr(config, "compile_mode", None)
+        mode_str = f" (mode={mode})" if mode else ""
+        print(f"Compiling model with torch.compile{mode_str}...")
+        compile_kwargs = {"mode": mode} if mode else {}
+        network = torch.compile(network, **compile_kwargs)
 
     # Wrap network in a pl.LightningModule
     model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
@@ -202,7 +225,11 @@ def main() -> None:
 
     # Generate or reuse run ID
     run_id_file = experiment_dir / "run.id"
-    if attach_run_id is not None:
+    if config.wandb.run_id is not None:
+        # Explicit run_id provided via config override
+        attach_run_id = config.wandb.run_id
+        run_id_file.write_text(attach_run_id)
+    elif attach_run_id is not None:
         # Use the run ID from W&B and save it locally
         run_id_file.write_text(attach_run_id)
     elif run_id_file.exists():

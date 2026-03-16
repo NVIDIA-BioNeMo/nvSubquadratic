@@ -37,10 +37,11 @@ from experiments.default_cfg import (
 )
 from experiments.lightning_wrappers.autoregressive_wrapper import AutoregressiveWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset-specific parameters
@@ -105,7 +106,7 @@ def get_config() -> ExperimentConfig:
     # Mixer: Hyena with causal convolutions for autoregressive
     config.net.block_cfg.sequence_mixer_cfg = spatial_recall_1d_mixer_defaults.get_hyena_mixer_cfg(
         is_causal=True,  # Causal for autoregressive!
-        apply_qk_norm=True,
+        qk_norm_cfg=LazyConfig(L2Norm)(),
     )
 
     # =========================================================================
