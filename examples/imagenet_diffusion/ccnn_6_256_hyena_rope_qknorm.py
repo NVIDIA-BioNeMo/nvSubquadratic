@@ -6,7 +6,7 @@ import os
 
 import torch
 
-from experiments.datamodules.imagenet import ImageNetDataModule
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,

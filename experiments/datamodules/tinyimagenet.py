@@ -6,12 +6,13 @@ import torch
 from datasets import load_dataset
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
+from timm.data.auto_augment import rand_augment_transform
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ThreeAugment
-from timm.data.auto_augment import rand_augment_transform
+from experiments.datamodules._deprecated.ref_imagenet import ThreeAugment
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 
 
 # TinyImageNet statistics

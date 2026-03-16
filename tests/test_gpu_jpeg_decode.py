@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
+from torchvision import datasets as tv_datasets
 from torchvision import transforms
 from torchvision.io import decode_jpeg, read_file
 from torchvision.transforms import InterpolationMode
@@ -29,12 +30,35 @@ from torchvision.transforms import v2 as transforms_v2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from experiments.datamodules.imagenet import (
+from experiments.datamodules.dali_imagenet_fused import (
     DEFAULT_IMAGENET_MEAN,
     DEFAULT_IMAGENET_STD,
-    _ImageNetRawBytesDataset,
-    _raw_bytes_collate,
 )
+
+
+class _ImageNetRawBytesDataset(torch.utils.data.Dataset):
+    """Reads raw JPEG bytes from an ImageFolder layout for GPU-side decoding."""
+
+    def __init__(self, root: Path, split: str) -> None:
+        super().__init__()
+        folder = "train" if split == "train" else "val"
+        ds = tv_datasets.ImageFolder(root / folder)
+        self.samples = ds.samples
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int):
+        path, label = self.samples[index]
+        raw_bytes = read_file(path)
+        return raw_bytes, label
+
+
+def _raw_bytes_collate(batch):
+    """Collate that keeps variable-length byte tensors as a list."""
+    bytes_list = [b for b, _ in batch]
+    labels = torch.tensor([lbl for _, lbl in batch], dtype=torch.long)
+    return bytes_list, labels
 
 
 IMAGENET_FOLDER = Path("/shared/data/image_datasets/imagenet_folder")

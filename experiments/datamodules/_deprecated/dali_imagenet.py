@@ -14,24 +14,24 @@ from typing import Literal, Optional
 
 import pytorch_lightning as pl
 import torch
+from nvidia.dali import fn, pipeline_def, types
+from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
 
-from nvidia.dali import fn, pipeline_def, types
-from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
-
-from experiments.datamodules.imagenet import (
-    AugmentConfig,
-    MixupConfig,
+from experiments.datamodules.dali_imagenet_fused import (
     DEFAULT_IMAGENET_MEAN,
     DEFAULT_IMAGENET_STD,
     IMAGENET_MEAN_STD_BY_SIZE,
+    AugmentConfig,
+    MixupConfig,
 )
 
 
 # ---------------------------------------------------------------------------
 # DALI pipelines
 # ---------------------------------------------------------------------------
+
 
 @pipeline_def
 def _train_pipeline(
@@ -98,6 +98,7 @@ def _val_pipeline(
 # Thin wrapper so DALI iterators look like PyTorch DataLoaders to Lightning
 # ---------------------------------------------------------------------------
 
+
 class _DALILoaderWrapper:
     """Wraps ``DALIGenericIterator`` to yield ``(images, labels)`` tuples."""
 
@@ -107,8 +108,8 @@ class _DALILoaderWrapper:
     def __iter__(self):
         for batch in self._iter:
             data = batch[0]  # single-GPU → list of len 1
-            images = data["images"]                       # (B, H, W, C) uint8 GPU
-            labels = data["labels"].squeeze(-1).long()    # (B,)
+            images = data["images"]  # (B, H, W, C) uint8 GPU
+            labels = data["labels"].squeeze(-1).long()  # (B,)
             yield images, labels
 
     def __len__(self):
@@ -118,6 +119,7 @@ class _DALILoaderWrapper:
 # ---------------------------------------------------------------------------
 # Batched PyTorch augmentations (run after DALI on uniform GPU tensors)
 # ---------------------------------------------------------------------------
+
 
 class _BatchThreeAugment(torch.nn.Module):
     """Batched DeiT III 3-Augment on (B, C, H, W) uint8 tensors."""
@@ -140,9 +142,12 @@ class _BatchThreeAugment(torch.nn.Module):
         blur_mask = choice == 2
         if blur_mask.any():
             from torchvision.transforms.v2.functional import gaussian_blur
+
             sigma = torch.rand(1).item() * 1.9 + 0.1
             images[blur_mask] = gaussian_blur(
-                images[blur_mask], kernel_size=[5, 5], sigma=sigma,
+                images[blur_mask],
+                kernel_size=[5, 5],
+                sigma=sigma,
             )
 
         return images
@@ -214,6 +219,7 @@ class _BatchColorJitter(torch.nn.Module):
 # ---------------------------------------------------------------------------
 # Main DataModule
 # ---------------------------------------------------------------------------
+
 
 class DALIImageNetDataModule(pl.LightningDataModule):
     """DALI-accelerated ImageNet datamodule.
@@ -316,7 +322,9 @@ class DALIImageNetDataModule(pl.LightningDataModule):
             if self.augment_cfg.color_jitter > 0:
                 cj = self.augment_cfg.color_jitter
                 self._color_jitter = _BatchColorJitter(
-                    brightness=cj, contrast=cj, saturation=cj,
+                    brightness=cj,
+                    contrast=cj,
+                    saturation=cj,
                 )
 
         self._train_pipe = None
@@ -371,22 +379,26 @@ class DALIImageNetDataModule(pl.LightningDataModule):
             self._val_pipe.build()
 
     def train_dataloader(self):
-        return _DALILoaderWrapper(DALIGenericIterator(
-            self._train_pipe,
-            output_map=["images", "labels"],
-            reader_name="reader",
-            last_batch_policy=LastBatchPolicy.DROP,
-            auto_reset=True,
-        ))
+        return _DALILoaderWrapper(
+            DALIGenericIterator(
+                self._train_pipe,
+                output_map=["images", "labels"],
+                reader_name="reader",
+                last_batch_policy=LastBatchPolicy.DROP,
+                auto_reset=True,
+            )
+        )
 
     def val_dataloader(self):
-        return _DALILoaderWrapper(DALIGenericIterator(
-            self._val_pipe,
-            output_map=["images", "labels"],
-            reader_name="reader",
-            last_batch_policy=LastBatchPolicy.PARTIAL,
-            auto_reset=True,
-        ))
+        return _DALILoaderWrapper(
+            DALIGenericIterator(
+                self._val_pipe,
+                output_map=["images", "labels"],
+                reader_name="reader",
+                last_batch_policy=LastBatchPolicy.PARTIAL,
+                auto_reset=True,
+            )
+        )
 
     def test_dataloader(self):
         return self.val_dataloader()
