@@ -55,6 +55,10 @@ class TrainerConfig:
     # Enable DDP find_unused_parameters (required when some model parameters
     # are not part of every forward pass, e.g. multi-head CKConv variants).
     find_unused_parameters: bool = False
+    # Whether to upload checkpoints to W&B and run cache cleanup.
+    # Set to False to disable WandbSelectiveCheckpointUploader and WandbCacheCleanupCallback.
+    # Local ModelCheckpoint saving is unaffected by this flag.
+    wandb_checkpoint_upload: bool = True
 
 
 @dataclass
@@ -69,7 +73,10 @@ class SchedulerConfig:
     total_iterations: int = PLACEHOLDER
     eta_min: float = 0.0
     mode: str = "max"
-    monitor: Optional[str] = None  # in case we'd like to track e.g. val/iou
+    monitor: Optional[str] = None
+    # WSD-specific parameters
+    decay_iterations_percentage: float = 0.1  # Fraction of training for decay phase
+    min_lr_ratio: float = 0.01  # Minimum LR as fraction of peak LR  # in case we'd like to track e.g. val/iou
 
 
 @dataclass
