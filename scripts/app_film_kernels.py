@@ -18,6 +18,7 @@ import streamlit as st
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "outputs" / "film_kernel_viz"
 DATASETS = {
+    "LAMB direct wd=0.05 ep615": DATA_DIR / "kernel_data_lamb_di_wd005_ep615.npz",
     "FiLM bound-all γ_max=4 ω₀=10 ep143": DATA_DIR / "kernel_data_bound_all_ep143.npz",
     "FiLM bound-all γ_max=4 ω₀=10 ep135": DATA_DIR / "kernel_data_bound_all_ep135.npz",
     "FiLM bound-all γ_max=4 ω₀=10 ep95": DATA_DIR / "kernel_data_bound_all_ep95.npz",
