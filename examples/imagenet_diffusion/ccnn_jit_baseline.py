@@ -125,6 +125,7 @@ def get_config() -> DiffusionExperimentConfig:
             data_dim="${net.data_dim}",
             patch_size="${net.in_proj_cfg.patch_size}",
             stride="${net.in_proj_cfg.stride}",
+            weight_init="zeros",
         ),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(AdaLNZeroResidualBlock)(
