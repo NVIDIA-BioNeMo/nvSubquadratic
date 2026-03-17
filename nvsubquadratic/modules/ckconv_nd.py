@@ -223,7 +223,7 @@ class CKConvND(torch.nn.Module):
         self.mask = instantiate(mask_cfg)
 
         # Construct shortcut projection
-        self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim, dtype=torch.float32))
+        self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim))
         bounds = math.sqrt(1.0 / hidden_dim)
         self.shortcut.data.uniform_(-bounds, bounds)
 
