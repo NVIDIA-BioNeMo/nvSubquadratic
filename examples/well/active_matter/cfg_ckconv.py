@@ -72,6 +72,7 @@ class SimpleCKConvMixer(torch.nn.Module):
         """
         super().__init__()
         from nvsubquadratic.lazy_config import instantiate
+
         self.ckconv = instantiate(ckconv_cfg)
 
     def forward(self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None) -> torch.Tensor:
@@ -226,8 +227,8 @@ def get_config() -> ExperimentConfig:
 
     # Add wandb config
     config.wandb = WandbConfig(
-        project="nvsubquadratic-well",
-        entity="maxxxzdn",
+        entity="implicit-long-convs",
+        project="nvsubquadratic",
         job_group="active_matter_ckconv",
     )
 

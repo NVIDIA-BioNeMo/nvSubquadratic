@@ -62,6 +62,7 @@ LEARNING_RATE = 1e-3
 
 
 def get_config() -> ExperimentConfig:
+    """Returns the experiment configuration."""
     config = ExperimentConfig()
 
     config.debug = False
@@ -200,8 +201,8 @@ def get_config() -> ExperimentConfig:
     )
 
     config.wandb = WandbConfig(
-        project="nvsubquadratic-well",
-        entity="maxxxzdn",
+        entity="implicit-long-convs",
+        project="nvsubquadratic",
         job_group="MHD_64_hyena",
     )
 

@@ -220,8 +220,8 @@ def get_config() -> ExperimentConfig:
     )
 
     config.wandb = WandbConfig(
-        project="nvsubquadratic-well",
-        entity="dafidofff",
+        entity="implicit-long-convs",
+        project="nvsubquadratic",
         job_group="MHD_64_vit5_hyena_film",
     )
 
