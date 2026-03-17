@@ -278,13 +278,11 @@ class CKConvND(torch.nn.Module):
             conv_kernel = rearrange(
                 conv_kernel, "b ... c -> b c ..."
             )  # Reshape kernel to [B, C, * spatial_dims] (Kernels are always in BLH format)
-            x_dtype = x.dtype
-            x = self.fftconv_fn_bhl_input(x, conv_kernel, shortcut)
-            return x.to(x_dtype)
+            _conv_fn = self.fftconv_fn_bhl_input
         else:
-            x_dtype = x.dtype
-            x = self.fftconv_fn(x, conv_kernel, shortcut)
-            return x.to(x_dtype)
+            _conv_fn = self.fftconv_fn
+
+        return _conv_fn(x, conv_kernel, shortcut)
 
     def forward(
         self,
