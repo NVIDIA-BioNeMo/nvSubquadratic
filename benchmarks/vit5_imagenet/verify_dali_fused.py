@@ -19,10 +19,8 @@ import torch
 os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
-
 from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
-from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, DALIImageNetFusedDataModule, MixupConfig
 
 
 BATCH_SIZE = 32
@@ -60,7 +58,6 @@ def check_shapes_and_dtypes(name, batch):
     labels = batch["label"]
 
     assert images.ndim == 4, f"{name}: expected 4D tensor, got {images.ndim}D"
-    _B = images.shape[0]
 
     # NHWC layout (channels_first=False default)
     assert images.shape[-1] == 3 or images.shape[1] == 3, f"{name}: unexpected shape {images.shape}"
@@ -186,7 +183,7 @@ def save_visual_comparison(opt_img, fused_img, path="benchmarks/vit5_imagenet/da
 
 
 def main():
-    """Verify DALIImageNetFusedDataModule produces correct outputs."""
+    """Run DALI fused datamodule verification checks."""
     print("=" * 60)
     print("DALI Fused DataModule Verification")
     print("=" * 60)

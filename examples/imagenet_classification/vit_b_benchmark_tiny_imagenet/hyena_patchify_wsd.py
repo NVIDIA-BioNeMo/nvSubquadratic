@@ -1,22 +1,22 @@
 # TODO: Add license header here
 
-"""ImageNet Classification - Hyena (ViT-B scale, no patchification).
+"""ImageNet Classification - Hyena with Patchification (ViT-B scale) using WSD Scheduler.
 
 Model Size: ViT-B
 - Hidden dim: 768
 - Num blocks: 12
-- No patchification (pixel-level, 224x224 = 50176 tokens)
+- Patchification: patch_size=16 (224/16 = 14x14 = 196 tokens)
 
 This config uses Hyena (continuous kernel convolution) as the sequence mixer,
-operating on the full pixel sequence without any spatial downsampling.
+with ViT-style patchification to reduce sequence length, and the WSD scheduler.
 """
 
 import os
 
 import torch
 
-from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
 from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
+from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
@@ -24,25 +24,25 @@ from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.patchify import Patchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
 from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset parameters
 INPUT_CHANNELS = 3  # RGB images
-OUTPUT_CHANNELS = NUM_CLASSES = 1000  # ImageNet classes
+OUTPUT_CHANNELS = NUM_CLASSES = 200  # TinyImageNet classes
 DATA_DIM = 2
 
 # Training parameters
-BATCH_SIZE = 32
-IMAGENET_PATH = os.environ.get("IMAGENET_CACHE", "/projects/0/prjs1161/imagenet")
-HF_DATASET_NAME = "ILSVRC/imagenet-1k"
+BATCH_SIZE = 64
+IMAGENET_PATH = os.environ.get("TINYIMAGENET_CACHE", "data/tinyimagenet")
+HF_DATASET_NAME = "zh-plus/tiny-imagenet"
 HF_DATASET_CONFIG = None
-IMAGE_SIZE = 256
-FINAL_IMAGE_SIZE = 224
+IMAGE_SIZE = 64
+FINAL_IMAGE_SIZE = 64
 PRECISION = "bf16-mixed"
 
 # Model parameters - ViT-B scale
@@ -50,8 +50,12 @@ NUM_HIDDEN_CHANNELS = 768
 NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
-GRID_TYPE = "single"
-FFT_PADDING = "circular"
+GRID_TYPE = "double"  # "single"
+FFT_PADDING = "zero"  # "circular"
+
+# Patchification parameters
+PATCH_SIZE = 4  # 64/4 = 16x16 = 256 tokens
+STRIDE = 4  # Non-overlapping patches (ViT-style)
 
 # SIREN kernel parameters
 KERNEL_MLP_HIDDEN_DIM = 64
@@ -64,20 +68,22 @@ L_CACHE = 64
 # Optimisation parameters
 TRAINING_ITERATIONS = 600_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
+DECAY_ITERATIONS_PERCENTAGE = 0.1
+MIN_LR_RATIO = 0.01
 NUM_WORKERS = os.cpu_count() // torch.cuda.device_count() if torch.cuda.is_available() else os.cpu_count()
-LEARNING_RATE = 3e-4
-WEIGHT_DECAY = 0.05
+LEARNING_RATE = 8e-3
+WEIGHT_DECAY = 0.0
 GRAD_CLIP = 1.0
 
 
 def get_config() -> ExperimentConfig:
-    """Return the TinyImageNet classification configuration with Hyena (no patchify)."""
+    """Return the TinyImageNet classification configuration with Hyena + Patchify and WSD Scheduler."""
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
     hf_token = os.environ.get("HF_TOKEN")
 
-    config.dataset = LazyConfig(ImageNetDataModule)(
+    config.dataset = LazyConfig(TinyImageNetDataModule)(
         data_dir=IMAGENET_PATH,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
@@ -85,7 +91,7 @@ def get_config() -> ExperimentConfig:
         seed=config.seed,
         image_size=IMAGE_SIZE,
         final_image_size=FINAL_IMAGE_SIZE,
-        center_crop=True,
+        center_crop=False,
         num_classes=NUM_CLASSES,
         drop_labels=False,
         hf_dataset_name=HF_DATASET_NAME,
@@ -112,7 +118,15 @@ def get_config() -> ExperimentConfig:
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        # Use Patchify for input projection (Conv2d with kernel=stride=patch_size)
+        in_proj_cfg=LazyConfig(Patchify)(
+            in_features="${net.in_channels}",
+            out_features="${net.hidden_dim}",
+            data_dim="${net.data_dim}",
+            patch_size=PATCH_SIZE,
+            stride=STRIDE,
+        ),
+        # For classification, output projection is just a linear layer (after global avg pool)
         out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
@@ -147,7 +161,7 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
-                    qk_norm_cfg=LazyConfig(L2Norm)(),
+                    apply_qk_norm=True,
                     use_rope=False,
                     rope_base=10000.0,
                 ),
@@ -187,14 +201,15 @@ def get_config() -> ExperimentConfig:
     )
 
     config.scheduler = SchedulerConfig(
-        name="cosine",
+        name="wsd",
         warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
         total_iterations="${train.iterations}",
-        mode="max",
+        decay_iterations_percentage=DECAY_ITERATIONS_PERCENTAGE,
+        min_lr_ratio=MIN_LR_RATIO,
     )
 
     config.wandb = WandbConfig(
-        job_group="tinyimagenet_vit_b_benchmark",
+        job_group="tinyimagenet_vit_b_benchmark_wsd",
         entity="implicit-long-convs",
         project="nvsubquadratic",
     )

@@ -118,7 +118,6 @@ def verify_split(split: str) -> bool:
 
     folder_name = "train" if split == "train" else "val"
     from torchvision import transforms
-    from torchvision.datasets import ImageFolder
 
     ds_folder = ImageFolder(
         str(Path(OUTPUT_DIR) / folder_name),

@@ -131,7 +131,7 @@ if __name__ == "__main__":
     h100_peak = 989.0  # BF16 tensor core peak TFLOPS
     mfu = achieved_tflops / h100_peak * 100
 
-    print("\n--- FLOP Analysis ---")
+    print(f"\n--- FLOP Analysis ---")
     print(f"  FLOPs/sample (fwd):   {flops_fwd / 1e9:.2f} GFLOPs")
     print(f"  FLOPs/sample (train): {flops_train / 1e9:.2f} GFLOPs")
     print(f"  FLOPs/step (B={BATCH_SIZE}): {flops_per_step / 1e12:.2f} TFLOPs")

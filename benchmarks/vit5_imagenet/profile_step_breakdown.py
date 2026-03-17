@@ -34,9 +34,9 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -72,7 +72,7 @@ MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob
 
 
 def build_model(preset):
-    """Build and return ViT-5 model for the given preset config dict."""
+    """Instantiate a ViT-5 model from a size preset dict."""
     hd = preset["hidden_dim"]
     return instantiate(
         LazyConfig(ViT5ClassificationNet)(
@@ -111,7 +111,7 @@ def build_model(preset):
 
 
 def build_dali_loader(optimized, device_id, prefetch_factor=3, num_workers=12):
-    """Build and return a DALI dataloader and its datamodule."""
+    """Build a DALI dataloader for ImageNet."""
     common = {
         "data_dir": os.environ["IMAGENET_PATH"],
         "imagefolder_dir": os.environ.get("IMAGENET_FOLDER_PATH"),
@@ -145,7 +145,7 @@ def build_dali_loader(optimized, device_id, prefetch_factor=3, num_workers=12):
 
 
 def main(args):
-    """Run the fine-grained step breakdown profiler."""
+    """Run the profiling session."""
     preset = MODEL_PRESETS[args.model_size]
 
     use_ddp = args.ddp

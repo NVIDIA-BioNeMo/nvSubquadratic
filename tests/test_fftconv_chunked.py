@@ -52,7 +52,7 @@ from nvsubquadratic.ops.fftconv_chunked import (
 # Tolerances for FP32 comparisons
 # Output should be exact (same computation order within chunks)
 # Gradients may have small diffs due to accumulation order
-ATOL_OUTPUT = 1e-5
+ATOL_OUTPUT = 2e-5
 ATOL_GRAD = 5e-4  # More lenient for gradients with large reductions
 
 

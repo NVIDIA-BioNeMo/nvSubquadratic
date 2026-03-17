@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ThreeAugment
+from experiments.datamodules._deprecated.ref_imagenet import ThreeAugment
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 
 
 # TinyImageNet statistics

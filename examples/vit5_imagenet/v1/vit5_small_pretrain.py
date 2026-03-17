@@ -18,7 +18,6 @@ Pretraining recipe (from ViT-5 paper, Table 12):
 import os
 
 import torch
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 
 # NOTE: Apex FusedLAMB is faster but its optimizer state is incompatible with
 # torch_optimizer.Lamb for checkpoint resume.  Use Lamb for runs that need to
@@ -36,6 +35,8 @@ from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, 
 #     from torch_optimizer import Lamb
 from torch_optimizer import Lamb
 
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,

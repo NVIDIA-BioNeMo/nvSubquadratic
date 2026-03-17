@@ -15,18 +15,18 @@ operating on the full pixel sequence without any spatial downsampling.
 import os
 
 import torch
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.datamodules.tinyimagenet import TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.attention import Attention
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.classification_resnet import ClassificationResNet
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 
 
 # Dataset parameters

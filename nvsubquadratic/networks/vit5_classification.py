@@ -56,7 +56,7 @@ class ViT5ClassificationNet(nn.Module):
         use_cls_token: bool = True,
         prepend_registers: bool = False,
     ):
-        """Initialize ViT5ClassificationNet."""
+        """Initialize ViT-5 classification network (see class docstring for args)."""
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
@@ -169,7 +169,7 @@ class ViT5ClassificationNet(nn.Module):
             out = x[:, 0]
         else:
             # Global average pool over patch tokens, excluding register tokens
-            if self.prepend_registers and self.num_registers > 0:
+            if self.prepend_registers and self.num_registers > 0 and self.cls_token is not None:
                 out = x[:, self.num_registers :].mean(dim=1)
             elif self.num_registers > 0:
                 out = x[:, : -self.num_registers].mean(dim=1)

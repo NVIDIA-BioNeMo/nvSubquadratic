@@ -19,9 +19,10 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -62,7 +63,7 @@ MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob
 
 
 def build_model():
-    """Build and return the ViT-5 model based on current global preset constants."""
+    """Instantiate a ViT-5-Small model for benchmarking."""
     net_cfg = LazyConfig(ViT5ClassificationNet)(
         in_channels=3,
         num_classes=1000,
@@ -130,9 +131,9 @@ def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optim
 
     Args:
         prefetch_factor: Number of batches to prefetch.
-        num_workers: Number of DALI worker threads.
+        num_workers: Number of data loading workers.
         optimized: "" for original DALI, "v2" for optimised, "v3" for v3.
-        device_id: CUDA device index for the DALI pipeline.
+        device_id: CUDA device index.
     """
     common = {
         "data_dir": os.environ["IMAGENET_PATH"],
@@ -207,7 +208,7 @@ def prepare_batch(raw_batch, dm, device, use_dali):
 
 
 def main(args):
-    """Run the training pipeline bottleneck profiler."""
+    """Run the bottleneck profiling session."""
     global HIDDEN_DIM, NUM_HEADS, NUM_BLOCKS, NUM_REGISTERS
     preset = MODEL_PRESETS[args.model_size]
     HIDDEN_DIM = preset["hidden_dim"]
