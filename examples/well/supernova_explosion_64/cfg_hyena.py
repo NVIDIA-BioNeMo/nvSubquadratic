@@ -52,13 +52,14 @@ OMEGA_0 = 100.0
 PATCH_SIZE = int(os.environ.get("HYENA_PATCH_SIZE", 4))
 
 # TRAINING parameters
-TRAINING_ITERATIONS = 130_000
+TRAINING_ITERATIONS = 260_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.1
 NUM_WORKERS = 8
 GRAD_CLIP = 1.0
 
 WEIGHT_DECAY = 1e-5
 LEARNING_RATE = 1e-3
+
 
 def get_config() -> ExperimentConfig:
     """Return the original supernova ResNet-style Hyena config."""
