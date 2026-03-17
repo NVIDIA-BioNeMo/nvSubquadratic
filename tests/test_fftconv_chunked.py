@@ -13,24 +13,24 @@ import pytest
 import torch
 
 from nvsubquadratic.ops.fftconv import (
-    causal_fftconv1d_bhl as causal_fftconv1d_std,
+    causal_fftconv1d_fp32_bhl as causal_fftconv1d_std,
 )
 from nvsubquadratic.ops.fftconv import (
-    fftconv1d_bhl as fftconv1d_std,
+    fftconv1d_fp32_bhl as fftconv1d_std,
 )
 from nvsubquadratic.ops.fftconv import (
-    fftconv2d_bhl as fftconv2d_std,
+    fftconv2d_fp32_bhl as fftconv2d_std,
 )
 from nvsubquadratic.ops.fftconv import (
-    fftconv3d_bhl as fftconv3d_std,
+    fftconv3d_fp32_bhl as fftconv3d_std,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
     # Explicit chunked functions
-    causal_fftconv1d_bhl_chunked,
+    causal_fftconv1d_fp32_bhl_chunked,
     chunking_enabled,
-    fftconv1d_bhl_chunked,
-    fftconv2d_bhl_chunked,
-    fftconv3d_bhl_chunked,
+    fftconv1d_fp32_bhl_chunked,
+    fftconv2d_fp32_bhl_chunked,
+    fftconv3d_fp32_bhl_chunked,
     # Configuration
     get_default_chunk_size,
     is_chunking_enabled,
@@ -39,13 +39,13 @@ from nvsubquadratic.ops.fftconv_chunked import (
 )
 from nvsubquadratic.ops.fftconv_chunked import (
     # Drop-in replacements (auto-select based on global flag)
-    fftconv1d_bhl as fftconv1d_bhl_dropin,
+    fftconv1d_fp32_bhl as fftconv1d_bhl_dropin,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv2d_bhl as fftconv2d_bhl_dropin,
+    fftconv2d_fp32_bhl as fftconv2d_bhl_dropin,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv3d_bhl as fftconv3d_bhl_dropin,
+    fftconv3d_fp32_bhl as fftconv3d_bhl_dropin,
 )
 
 
@@ -96,7 +96,7 @@ class TestChunkedFFTConv1D:
         k_chunk = kernel.detach().clone().requires_grad_(True)
         s_chunk = shortcut.detach().clone().requires_grad_(True)
 
-        y_chunk = fftconv1d_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
+        y_chunk = fftconv1d_fp32_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
         y_chunk.sum().backward()
 
         # Compare
@@ -128,7 +128,7 @@ class TestChunkedFFTConv1D:
         k_chunk = kernel.detach().clone().requires_grad_(True)
         s_chunk = shortcut.detach().clone().requires_grad_(True)
 
-        y_chunk = causal_fftconv1d_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
+        y_chunk = causal_fftconv1d_fp32_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
         y_chunk.sum().backward()
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_OUTPUT, rtol=0)
@@ -168,7 +168,7 @@ class TestChunkedFFTConv2D:
         k_chunk = kernel.detach().clone().requires_grad_(True)
         s_chunk = shortcut.detach().clone().requires_grad_(True)
 
-        y_chunk = fftconv2d_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
+        y_chunk = fftconv2d_fp32_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
         y_chunk.sum().backward()
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_OUTPUT, rtol=0)
@@ -211,7 +211,7 @@ class TestChunkedFFTConv3D:
         k_chunk = kernel.detach().clone().requires_grad_(True)
         s_chunk = shortcut.detach().clone().requires_grad_(True)
 
-        y_chunk = fftconv3d_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
+        y_chunk = fftconv3d_fp32_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=chunk_size)
         y_chunk.sum().backward()
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_OUTPUT, rtol=0)
@@ -239,7 +239,7 @@ class TestChunkedFFTConv3D:
         x_chunk = x.detach().clone().requires_grad_(True)
         k_chunk = kernel.detach().clone().requires_grad_(True)
 
-        y_chunk = fftconv3d_bhl_chunked(x_chunk, k_chunk, None, chunk_size=64)
+        y_chunk = fftconv3d_fp32_bhl_chunked(x_chunk, k_chunk, None, chunk_size=64)
         y_chunk.sum().backward()
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_OUTPUT, rtol=0)
@@ -276,7 +276,7 @@ class TestChunkSizeConfig:
         shortcut = torch.randn(64, device=device, dtype=torch.float32)
 
         y_std = fftconv3d_std(x, kernel, shortcut)
-        y_chunk = fftconv3d_bhl_chunked(x, kernel, shortcut, chunk_size=128)
+        y_chunk = fftconv3d_fp32_bhl_chunked(x, kernel, shortcut, chunk_size=128)
 
         # Should be exactly equal (same code path)
         torch.testing.assert_close(y_chunk, y_std, atol=0, rtol=0)
@@ -306,7 +306,7 @@ class TestChunkSizeConfig:
         k_chunk = kernel.detach().clone().requires_grad_(True)
         s_chunk = shortcut.detach().clone().requires_grad_(True)
 
-        y_chunk = fftconv2d_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=64)
+        y_chunk = fftconv2d_fp32_bhl_chunked(x_chunk, k_chunk, s_chunk, chunk_size=64)
         y_chunk.sum().backward()
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_OUTPUT, rtol=0)

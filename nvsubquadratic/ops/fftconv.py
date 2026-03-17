@@ -11,18 +11,18 @@ This module provides fast FFT convolutions for both common memory layouts:
 Families provided
 -----------------
 - 1D convolutions (causal and non-causal) with optional per-channel shortcut
-  - BLH: ``causal_fftconv1d_blh``, ``fftconv1d_blh``
-  - BHL: ``causal_fftconv1d_bhl``, ``fftconv1d_bhl``
+  - BLH: ``causal_fftconv1d_fp32_blh``, ``fftconv1d_fp32_blh``
+  - BHL: ``causal_fftconv1d_fp32_bhl``, ``fftconv1d_fp32_bhl``
 - 2D convolutions with optional per-channel shortcut
-  - BLH: ``fftconv2d_blh``
-  - BHL: ``fftconv2d_bhl``
+  - BLH: ``fftconv2d_fp32_blh``
+  - BHL: ``fftconv2d_fp32_bhl``
 - 3D convolutions with optional per-channel shortcut
-  - BLH: ``fftconv3d_blh``
-  - BHL: ``fftconv3d_bhl``
+  - BLH: ``fftconv3d_fp32_blh``
+  - BHL: ``fftconv3d_fp32_bhl``
 
 Wrapper variants (recommended for BLH inputs)
 --------------------------------------------
-- ``*_bhl_w_reshape`` wrappers accept BLH inputs, internally reshape to BHL for
+- ``*_fp32_bhl_w_reshape`` wrappers accept BLH inputs, internally reshape to BHL for
   faster execution, apply the BHL operator, and then reshape back. They return
   tensors in the same layout they received (BLH).
 
@@ -50,27 +50,29 @@ Shortcuts and dtype
 -------------------
 - Optional ``shortcut: [H]`` scales the input per-channel and is added to the
   convolution output: ``y += shortcut * x`` (broadcasted along spatial dims).
-- All operators expect ``float32`` inputs, kernels, and shortcut.
+- All operators accept any input dtype. Internally, ``x`` and ``kernel`` are
+  cast to ``float32`` for numerical stability; the output is returned in the
+  original dtype of ``x``.
 
 Performance
 -----------
-- For BLH inputs, prefer the ``*_bhl_w_reshape`` wrappers; benchmarks show they
+- For BLH inputs, prefer the ``*_fp32_bhl_w_reshape`` wrappers; benchmarks show they
   are faster than operating directly in BLH layout.
 """
 
 __all__ = [
-    "causal_fftconv1d_bhl",
-    "causal_fftconv1d_bhl_w_reshape",
-    "causal_fftconv1d_blh",
-    "fftconv1d_bhl",
-    "fftconv1d_bhl_w_reshape",
-    "fftconv1d_blh",
-    "fftconv2d_bhl",
-    "fftconv2d_bhl_w_reshape",
-    "fftconv2d_blh",
-    "fftconv3d_bhl",
-    "fftconv3d_bhl_w_reshape",
-    "fftconv3d_blh",
+    "causal_fftconv1d_fp32_bhl",
+    "causal_fftconv1d_fp32_bhl_w_reshape",
+    "causal_fftconv1d_fp32_blh",
+    "fftconv1d_fp32_bhl",
+    "fftconv1d_fp32_bhl_w_reshape",
+    "fftconv1d_fp32_blh",
+    "fftconv2d_fp32_bhl",
+    "fftconv2d_fp32_bhl_w_reshape",
+    "fftconv2d_fp32_blh",
+    "fftconv3d_fp32_bhl",
+    "fftconv3d_fp32_bhl_w_reshape",
+    "fftconv3d_fp32_blh",
 ]
 
 import torch
@@ -108,12 +110,15 @@ def _complex_mul_real(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 ###############################################################################
 
 
-def causal_fftconv1d_blh(
+def causal_fftconv1d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """1D FFT convolution with optional shortcut. When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
 
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, seq_len, hidden_dim).
@@ -121,12 +126,12 @@ def causal_fftconv1d_blh(
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim).
+        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
 
     batch_size, seq_len, hidden_dim = x.shape
 
@@ -144,8 +149,8 @@ def causal_fftconv1d_blh(
     fft_len = min(seq_len + kernel_len, 2 * seq_len)
 
     fft_x, fft_kernel = (
-        torch.fft.rfft(x, n=fft_len, dim=1),
-        torch.fft.rfft(kernel, n=fft_len, dim=1),
+        torch.fft.rfft(x_fp32, n=fft_len, dim=1),
+        torch.fft.rfft(k_fp32, n=fft_len, dim=1),
     )
 
     # 3. Apply the Convolution Theorem
@@ -156,18 +161,23 @@ def causal_fftconv1d_blh(
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=1)[:, :seq_len, :]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 1 h") * x)
+        y = y + rearrange(shortcut, "h -> 1 1 h") * x
     return y
 
 
-def fftconv1d_blh(
+def fftconv1d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """1D FFT convolution with optional shortcut. When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
 
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, seq_len, hidden_dim).
@@ -175,12 +185,12 @@ def fftconv1d_blh(
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim).
+        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
 
     batch_size, seq_len, hidden_dim = x.shape
 
@@ -196,8 +206,8 @@ def fftconv1d_blh(
     fft_len = min(seq_len + (kernel_len + 1) // 2, 2 * seq_len)
 
     fft_x, fft_kernel = (
-        torch.fft.rfft(x, n=fft_len, dim=1),
-        torch.fft.rfft(kernel, n=fft_len, dim=1),
+        torch.fft.rfft(x_fp32, n=fft_len, dim=1),
+        torch.fft.rfft(k_fp32, n=fft_len, dim=1),
     )
 
     # 3. Apply the Convolution Theorem
@@ -209,18 +219,23 @@ def fftconv1d_blh(
     crop_start = (kernel_len) // 2
     y = torch.fft.irfft(fft_x, n=fft_len, dim=1)[:, crop_start : crop_start + seq_len, :]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 1 h") * x)
+        y = y + rearrange(shortcut, "h -> 1 1 h") * x
     return y
 
 
-def fftconv2d_blh(
+def fftconv2d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """2D FFT convolution with optional shortcut. When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
 
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, X_in, Y_in, hidden_dim).
@@ -228,12 +243,12 @@ def fftconv2d_blh(
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, hidden_dim).
+        torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
 
     B, X_in, Y_in, hidden_dim = x.shape
 
@@ -255,8 +270,8 @@ def fftconv2d_blh(
     )
 
     # 2. Compute 2D FFT of the input and kernel
-    fft_x = torch.fft.rfft2(x, s=fft_shape, dim=(1, 2))
-    fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(1, 2))
+    fft_x = torch.fft.rfft2(x_fp32, s=fft_shape, dim=(1, 2))
+    fft_kernel = torch.fft.rfft2(k_fp32, s=fft_shape, dim=(1, 2))
 
     # 3. Apply the Convolution Theorem
     if COMPILE_COMPATIBLE:
@@ -276,19 +291,24 @@ def fftconv2d_blh(
         :, crop_start_x : crop_start_x + X_in, crop_start_y : crop_start_y + Y_in, :
     ]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 1 1 h") * x)
+        y = y + rearrange(shortcut, "h -> 1 1 1 h") * x
 
     return y
 
 
-def fftconv3d_blh(
+def fftconv3d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """3D FFT convolution with optional shortcut. When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
 
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, X_in, Y_in, Z_in, hidden_dim).
@@ -296,8 +316,13 @@ def fftconv3d_blh(
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, Z_in, hidden_dim).
+        torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, Z_in, hidden_dim), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
+
     B, X_in, Y_in, Z_in, hidden_dim = x.shape
 
     assert len(kernel.shape) == 5, f"Unexpected kernel shape: {kernel.shape}."
@@ -320,8 +345,8 @@ def fftconv3d_blh(
     )
 
     # 2. Compute 3D FFT of the input and kernel
-    fft_x = torch.fft.rfftn(x, s=fft_shape, dim=(1, 2, 3))
-    fft_kernel = torch.fft.rfftn(kernel, s=fft_shape, dim=(1, 2, 3))
+    fft_x = torch.fft.rfftn(x_fp32, s=fft_shape, dim=(1, 2, 3))
+    fft_kernel = torch.fft.rfftn(k_fp32, s=fft_shape, dim=(1, 2, 3))
 
     # 3. Apply the Convolution Theorem
     if COMPILE_COMPATIBLE:
@@ -346,14 +371,16 @@ def fftconv3d_blh(
         :,
     ]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 1 1 1 h") * x)
+        y = y + rearrange(shortcut, "h -> 1 1 1 1 h") * x
 
     return y
 
 
-def causal_fftconv1d_bhl_w_reshape(
+def causal_fftconv1d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -362,7 +389,7 @@ def causal_fftconv1d_bhl_w_reshape(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
-    This is a wrapper around fftconv1d_bhl that reshapes the input and kernel to (batch, hidden, length)
+    This is a wrapper around causal_fftconv1d_fp32_bhl that reshapes the input and kernel to (batch, hidden, length)
     and (1, hidden, kernel_len) respectively as our benchmarking results show that this is faster than processing
     with the original layout (batch, length, hidden) and (1, kernel_len, hidden) directly.
 
@@ -376,11 +403,11 @@ def causal_fftconv1d_bhl_w_reshape(
     """
     x = rearrange(x, "b l h -> b h l")
     kernel = rearrange(kernel, "b l h -> b h l")
-    y = causal_fftconv1d_bhl(x, kernel, shortcut)
+    y = causal_fftconv1d_fp32_bhl(x, kernel, shortcut)
     return rearrange(y, "b h l -> b l h")
 
 
-def fftconv1d_bhl_w_reshape(
+def fftconv1d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -389,7 +416,7 @@ def fftconv1d_bhl_w_reshape(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
-    This is a wrapper around fftconv1d_bhl that reshapes the input and kernel to (batch, hidden, length)
+    This is a wrapper around fftconv1d_fp32_bhl that reshapes the input and kernel to (batch, hidden, length)
     and (1, hidden, kernel_len) respectively as our benchmarking results show that this is faster than processing
     with the original layout (batch, length, hidden) and (1, kernel_len, hidden) directly.
 
@@ -403,11 +430,11 @@ def fftconv1d_bhl_w_reshape(
     """
     x = rearrange(x, "b l h -> b h l")
     kernel = rearrange(kernel, "b l h -> b h l")
-    y = fftconv1d_bhl(x, kernel, shortcut)
+    y = fftconv1d_fp32_bhl(x, kernel, shortcut)
     return rearrange(y, "b h l -> b l h")
 
 
-def fftconv2d_bhl_w_reshape(
+def fftconv2d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -416,17 +443,17 @@ def fftconv2d_bhl_w_reshape(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
-    This is a wrapper around fftconv2d_bhl that reshapes the input and kernel to (batch, hidden, height, width)
+    This is a wrapper around fftconv2d_fp32_bhl that reshapes the input and kernel to (batch, hidden, height, width)
     and (1, hidden, K_x, K_y) respectively as our benchmarking results show that this is faster than processing
     with the original layout (batch, height, width, hidden) and (1, K_x, K_y, hidden) directly.
     """
     x = rearrange(x, "b x y h -> b h x y")
     kernel = rearrange(kernel, "b x y h -> b h x y")
-    y = fftconv2d_bhl(x, kernel, shortcut)
+    y = fftconv2d_fp32_bhl(x, kernel, shortcut)
     return rearrange(y, "b h x y -> b x y h")
 
 
-def fftconv3d_bhl_w_reshape(
+def fftconv3d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -435,13 +462,13 @@ def fftconv3d_bhl_w_reshape(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
-    This is a wrapper around fftconv3d_bhl that reshapes the input and kernel to (batch, hidden, depth, height, width)
+    This is a wrapper around fftconv3d_fp32_bhl that reshapes the input and kernel to (batch, hidden, depth, height, width)
     and (1, hidden, K_x, K_y, K_z) respectively as our benchmarking results show that this is faster than processing
     with the original layout (batch, depth, height, width, hidden) and (1, K_x, K_y, K_z, hidden) directly.
     """
     x = rearrange(x, "b x y z h -> b h x y z")
     kernel = rearrange(kernel, "b x y z h -> b h x y z")
-    y = fftconv3d_bhl(x, kernel, shortcut)
+    y = fftconv3d_fp32_bhl(x, kernel, shortcut)
     return rearrange(y, "b h x y z -> b x y z h")
 
 
@@ -450,7 +477,7 @@ def fftconv3d_bhl_w_reshape(
 ###############################################################################
 
 
-def causal_fftconv1d_bhl(
+def causal_fftconv1d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -459,18 +486,21 @@ def causal_fftconv1d_bhl(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
+
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, hidden_dim, seq_len).
         kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, kernel_len).
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len).
+        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len), in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
 
     batch_size, hidden_dim, seq_len = x.shape
 
@@ -486,8 +516,8 @@ def causal_fftconv1d_bhl(
     fft_len = min(seq_len + kernel_len, 2 * seq_len)
 
     fft_x, fft_kernel = (
-        torch.fft.rfft(x, n=fft_len, dim=2),
-        torch.fft.rfft(kernel, n=fft_len, dim=2),
+        torch.fft.rfft(x_fp32, n=fft_len, dim=2),
+        torch.fft.rfft(k_fp32, n=fft_len, dim=2),
     )
 
     # Apply the Convolution Theorem
@@ -498,13 +528,15 @@ def causal_fftconv1d_bhl(
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=2)[..., :seq_len]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1") * x
     return y
 
 
-def fftconv1d_bhl(
+def fftconv1d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -513,18 +545,21 @@ def fftconv1d_bhl(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
+
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, hidden_dim, seq_len).
         kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, kernel_len).
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len).
+        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len), in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
 
     batch_size, hidden_dim, seq_len = x.shape
 
@@ -540,8 +575,8 @@ def fftconv1d_bhl(
     fft_len = min(seq_len + (kernel_len + 1) // 2, 2 * seq_len)
 
     fft_x, fft_kernel = (
-        torch.fft.rfft(x, n=fft_len, dim=2),
-        torch.fft.rfft(kernel, n=fft_len, dim=2),
+        torch.fft.rfft(x_fp32, n=fft_len, dim=2),
+        torch.fft.rfft(k_fp32, n=fft_len, dim=2),
     )
 
     # Apply the Convolution Theorem
@@ -554,13 +589,15 @@ def fftconv1d_bhl(
 
     y = torch.fft.irfft(fft_x, n=fft_len, dim=2)[..., crop_start : crop_start + seq_len]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1") * x
     return y
 
 
-def fftconv2d_bhl(
+def fftconv2d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -569,18 +606,21 @@ def fftconv2d_bhl(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
+
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, hidden_dim, X_in, Y_in).
         kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, K_x, K_y).
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in).
+        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in), in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
 
     B, hidden_dim, X_in, Y_in = x.shape
 
@@ -602,8 +642,8 @@ def fftconv2d_bhl(
     )
 
     # 2. Compute 2D FFT of the input and kernel
-    fft_x = torch.fft.rfft2(x, s=fft_shape, dim=(2, 3))
-    fft_kernel = torch.fft.rfft2(kernel, s=fft_shape, dim=(2, 3))
+    fft_x = torch.fft.rfft2(x_fp32, s=fft_shape, dim=(2, 3))
+    fft_kernel = torch.fft.rfft2(k_fp32, s=fft_shape, dim=(2, 3))
 
     # 3. Apply the Convolution Theorem
     if COMPILE_COMPATIBLE:
@@ -624,14 +664,16 @@ def fftconv2d_bhl(
         ..., crop_start_x : crop_start_x + X_in, crop_start_y : crop_start_y + Y_in
     ]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
 
     return y
 
 
-def fftconv3d_bhl(
+def fftconv3d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -640,14 +682,22 @@ def fftconv3d_bhl(
 
     When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
 
+    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
+    numerical stability and returns the result in the original dtype of ``x``.
+
     Args:
         x (torch.Tensor): Input tensor of shape (batch_size, hidden_dim, X_in, Y_in, Z_in).
         kernel (torch.Tensor): Kernel tensor of shape (1, hidden_dim, K_x, K_y, K_z).
         shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in, Z_in).
+        torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in, Z_in), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
+
     B, hidden_dim, X_in, Y_in, Z_in = x.shape
 
     assert len(kernel.shape) == 5, f"Unexpected kernel shape: {kernel.shape}."
@@ -670,8 +720,8 @@ def fftconv3d_bhl(
     )
 
     # 2. Compute 3D FFT of the input and kernel
-    fft_x = torch.fft.rfftn(x, s=fft_shape, dim=(2, 3, 4))
-    fft_kernel = torch.fft.rfftn(kernel, s=fft_shape, dim=(2, 3, 4))
+    fft_x = torch.fft.rfftn(x_fp32, s=fft_shape, dim=(2, 3, 4))
+    fft_kernel = torch.fft.rfftn(k_fp32, s=fft_shape, dim=(2, 3, 4))
 
     # 3. Apply the Convolution Theorem
     if COMPILE_COMPATIBLE:
@@ -696,7 +746,9 @@ def fftconv3d_bhl(
         crop_start_z : crop_start_z + Z_in,
     ]
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
-        y.add_(rearrange(shortcut, "h -> 1 h 1 1 1") * x)
+        y = y + rearrange(shortcut, "h -> 1 h 1 1 1") * x
     return y
