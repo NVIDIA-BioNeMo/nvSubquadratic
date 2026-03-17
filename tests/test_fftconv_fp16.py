@@ -136,26 +136,37 @@ class TestFP16FFTConv1D:
         assert y.dtype == torch.float32
         assert y.shape == (2, 32, 64)
 
-    def test_returns_in_caller_dtype_and_shortcut_not_cast(self, device: str) -> None:
-        """Output dtype matches x's dtype; shortcut may be any dtype."""
+    def test_returns_in_caller_dtype(self, device: str) -> None:
+        """Output dtype matches x's dtype when all inputs share the same dtype."""
         torch.manual_seed(42)
 
-        # fp16 input → fp16 output, regardless of shortcut dtype
+        # fp16 inputs → fp16 output
         x_fp16 = torch.randn(2, 32, 64, device=device, dtype=torch.float16)
         kernel_fp16 = torch.randn(1, 32, 7, device=device, dtype=torch.float16)
-        shortcut_f32 = torch.randn(32, device=device, dtype=torch.float32)
-        shortcut_bf16 = shortcut_f32.bfloat16()
+        shortcut_fp16 = torch.randn(32, device=device, dtype=torch.float16)
 
-        y1 = fftconv1d_fp16_bhl(x_fp16, kernel_fp16, shortcut_f32)
-        y2 = fftconv1d_fp16_bhl(x_fp16, kernel_fp16, shortcut_bf16)
+        y1 = fftconv1d_fp16_bhl(x_fp16, kernel_fp16, shortcut_fp16)
         assert y1.dtype == torch.float16
-        assert y2.dtype == torch.float16
 
-        # f32 input → f32 output
+        # f32 inputs → f32 output
         x_f32 = torch.randn(2, 32, 64, device=device, dtype=torch.float32)
         kernel_f32 = torch.randn(1, 32, 7, device=device, dtype=torch.float32)
-        y3 = fftconv1d_fp16_bhl(x_f32, kernel_f32, shortcut_f32)
-        assert y3.dtype == torch.float32
+        shortcut_f32 = torch.randn(32, device=device, dtype=torch.float32)
+        y2 = fftconv1d_fp16_bhl(x_f32, kernel_f32, shortcut_f32)
+        assert y2.dtype == torch.float32
+
+    def test_rejects_mismatched_dtypes(self, device: str) -> None:
+        """Mismatched dtypes between x, kernel, or shortcut raise AssertionError."""
+        x = torch.randn(2, 32, 64, device=device, dtype=torch.float16)
+        kernel_f32 = torch.randn(1, 32, 7, device=device, dtype=torch.float32)
+        kernel_fp16 = kernel_f32.half()
+        shortcut_f32 = torch.randn(32, device=device, dtype=torch.float32)
+
+        with pytest.raises(AssertionError, match="kernel.dtype"):
+            fftconv1d_fp16_bhl(x, kernel_f32, None)
+
+        with pytest.raises(AssertionError, match="shortcut.dtype"):
+            fftconv1d_fp16_bhl(x, kernel_fp16, shortcut_f32)
 
     @pytest.mark.parametrize("chunk_size", [16, 32, 64])
     def test_chunked_matches_standard(self, device: str, chunk_size: int) -> None:
@@ -163,7 +174,7 @@ class TestFP16FFTConv1D:
         torch.manual_seed(42)
         x = torch.randn(2, 128, 256, device=device, dtype=torch.float16)
         kernel = torch.randn(1, 128, 32, device=device, dtype=torch.float16)
-        shortcut = torch.randn(128, device=device, dtype=torch.float32)
+        shortcut = torch.randn(128, device=device, dtype=torch.float16)
 
         y_std = fftconv1d_fp16_bhl(x, kernel, shortcut)
         y_chunk = fftconv1d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=chunk_size)
@@ -175,7 +186,7 @@ class TestFP16FFTConv1D:
         torch.manual_seed(42)
         x = torch.randn(2, 100, 128, device=device, dtype=torch.float16)
         kernel = torch.randn(1, 100, 16, device=device, dtype=torch.float16)
-        shortcut = torch.randn(100, device=device, dtype=torch.float32)
+        shortcut = torch.randn(100, device=device, dtype=torch.float16)
 
         y_std = fftconv1d_fp16_bhl(x, kernel, shortcut)
         y_chunk = fftconv1d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=64)
@@ -253,7 +264,7 @@ class TestFP16CausalFFTConv1D:
         torch.manual_seed(42)
         x = torch.randn(2, 64, 128, device=device, dtype=torch.float16)
         kernel = torch.randn(1, 64, 16, device=device, dtype=torch.float16)
-        shortcut = torch.randn(64, device=device, dtype=torch.float32)
+        shortcut = torch.randn(64, device=device, dtype=torch.float16)
 
         y_std = causal_fftconv1d_fp16_bhl(x, kernel, shortcut)
         y_chunk = causal_fftconv1d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=chunk_size)
@@ -322,7 +333,7 @@ class TestFP16FFTConv2D:
         torch.manual_seed(42)
         x = torch.randn(2, 128, 14, 14, device=device, dtype=torch.float16)
         kernel = torch.randn(1, 128, 7, 7, device=device, dtype=torch.float16)
-        shortcut = torch.randn(128, device=device, dtype=torch.float32)
+        shortcut = torch.randn(128, device=device, dtype=torch.float16)
 
         y_std = fftconv2d_fp16_bhl(x, kernel, shortcut)
         y_chunk = fftconv2d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=chunk_size)
@@ -334,7 +345,7 @@ class TestFP16FFTConv2D:
         torch.manual_seed(42)
         x = torch.randn(2, 100, 14, 14, device=device, dtype=torch.float16)
         kernel = torch.randn(1, 100, 7, 7, device=device, dtype=torch.float16)
-        shortcut = torch.randn(100, device=device, dtype=torch.float32)
+        shortcut = torch.randn(100, device=device, dtype=torch.float16)
 
         y_std = fftconv2d_fp16_bhl(x, kernel, shortcut)
         y_chunk = fftconv2d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=64)
@@ -413,7 +424,7 @@ class TestFP16FFTConv3D:
         torch.manual_seed(42)
         x = torch.randn(2, 32, 8, 8, 8, device=device, dtype=torch.float16)
         kernel = torch.randn(1, 32, 3, 3, 3, device=device, dtype=torch.float16)
-        shortcut = torch.randn(32, device=device, dtype=torch.float32)
+        shortcut = torch.randn(32, device=device, dtype=torch.float16)
 
         y_std = fftconv3d_fp16_bhl(x, kernel, shortcut)
         y_chunk = fftconv3d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=chunk_size)

@@ -128,6 +128,8 @@ def causal_fftconv1d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -161,9 +163,10 @@ def causal_fftconv1d_fp32_blh(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 1 h") * x
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv1d_fp32_blh(
@@ -184,6 +187,8 @@ def fftconv1d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -216,9 +221,10 @@ def fftconv1d_fp32_blh(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 1 h") * x
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv2d_fp32_blh(
@@ -239,6 +245,8 @@ def fftconv2d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, hidden_dim), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -285,10 +293,11 @@ def fftconv2d_fp32_blh(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 1 1 h") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv3d_fp32_blh(
@@ -309,6 +318,8 @@ def fftconv3d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, Z_in, hidden_dim), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -362,10 +373,11 @@ def fftconv3d_fp32_blh(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 1 1 1 h") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def causal_fftconv1d_fp32_bhl_w_reshape(
@@ -485,6 +497,8 @@ def causal_fftconv1d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -516,9 +530,10 @@ def causal_fftconv1d_fp32_bhl(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 h 1") * x
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv1d_fp32_bhl(
@@ -541,6 +556,8 @@ def fftconv1d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -574,9 +591,10 @@ def fftconv1d_fp32_bhl(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 h 1") * x
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv2d_fp32_bhl(
@@ -599,6 +617,8 @@ def fftconv2d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -646,10 +666,11 @@ def fftconv2d_fp32_bhl(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv3d_fp32_bhl(
@@ -672,6 +693,8 @@ def fftconv3d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in, Z_in), in the original dtype of ``x``.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -725,6 +748,7 @@ def fftconv3d_fp32_bhl(
 
     y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (hidden_dim,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1 1") * x
-    return y.to(x.dtype)
+    return y

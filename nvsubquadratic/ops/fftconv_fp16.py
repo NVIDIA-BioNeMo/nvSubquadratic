@@ -55,12 +55,14 @@ def fftconv1d_fp16_bhl(
 
     Args:
         x: Input tensor ``[B, H, L]`` (any dtype).
-        kernel: Kernel tensor ``[1, H, K]`` or ``[B, H, K]`` (any dtype).
-        shortcut: Optional per-channel shortcut ``[H]`` (any dtype, not cast).
+        kernel: Kernel tensor ``[1, H, K]`` or ``[B, H, K]`` (same dtype as *x*).
+        shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
 
     Returns:
         Tensor ``[B, H, L]`` in the original dtype of *x*.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -81,9 +83,10 @@ def fftconv1d_fp16_bhl(
     y = y.to(x.dtype)
     y = y * sqrt_N
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         y = y + rearrange(shortcut, "h -> 1 h 1") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv1d_fp16_bhl_w_reshape(
@@ -118,12 +121,14 @@ def causal_fftconv1d_fp16_bhl(
 
     Args:
         x: Input tensor ``[B, H, L]`` (any dtype).
-        kernel: Kernel tensor ``[1, H, K]`` or ``[B, H, K]`` (any dtype).
-        shortcut: Optional per-channel shortcut ``[H]`` (any dtype, not cast).
+        kernel: Kernel tensor ``[1, H, K]`` or ``[B, H, K]`` (same dtype as *x*).
+        shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
 
     Returns:
         Tensor ``[B, H, L]`` in the original dtype of *x*.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -144,9 +149,10 @@ def causal_fftconv1d_fp16_bhl(
     y = y.to(x.dtype)
     y = y * sqrt_N
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         y = y + rearrange(shortcut, "h -> 1 h 1") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def causal_fftconv1d_fp16_bhl_w_reshape(
@@ -181,12 +187,14 @@ def fftconv2d_fp16_bhl(
 
     Args:
         x: Input tensor ``[B, H, X_in, Y_in]`` (any dtype).
-        kernel: Kernel tensor ``[1, H, K_x, K_y]`` or ``[B, H, K_x, K_y]`` (any dtype).
-        shortcut: Optional per-channel shortcut ``[H]`` (any dtype, not cast).
+        kernel: Kernel tensor ``[1, H, K_x, K_y]`` or ``[B, H, K_x, K_y]`` (same dtype as *x*).
+        shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
 
     Returns:
         Tensor ``[B, H, X_in, Y_in]`` in the original dtype of *x*.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -217,9 +225,10 @@ def fftconv2d_fp16_bhl(
     y = y.to(x.dtype)
     y = y * sqrt_N
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv2d_fp16_bhl_w_reshape(
@@ -254,12 +263,14 @@ def fftconv3d_fp16_bhl(
 
     Args:
         x: Input tensor ``[B, H, X_in, Y_in, Z_in]`` (any dtype).
-        kernel: Kernel tensor ``[1, H, K_x, K_y, K_z]`` or ``[B, H, K_x, K_y, K_z]`` (any dtype).
-        shortcut: Optional per-channel shortcut ``[H]`` (any dtype, not cast).
+        kernel: Kernel tensor ``[1, H, K_x, K_y, K_z]`` or ``[B, H, K_x, K_y, K_z]`` (same dtype as *x*).
+        shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
 
     Returns:
         Tensor ``[B, H, X_in, Y_in, Z_in]`` in the original dtype of *x*.
     """
+    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
+
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -294,9 +305,10 @@ def fftconv3d_fp16_bhl(
     y = y.to(x.dtype)
     y = y * sqrt_N
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         y = y + rearrange(shortcut, "h -> 1 h 1 1 1") * x
 
-    return y.to(x.dtype)
+    return y
 
 
 def fftconv3d_fp16_bhl_w_reshape(
