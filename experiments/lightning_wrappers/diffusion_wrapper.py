@@ -634,6 +634,9 @@ class DiffusionWrapper(LightningWrapperBase):
         self.eval()
 
         samples_generated = 0
+        # Ensure unique, well-defined filename indices per rank.
+        # Each rank writes a contiguous block of size `samples_per_rank`.
+        start_idx = global_rank * samples_per_rank
         batch_iterator = range(batches)
         if global_rank == 0:
             batch_iterator = tqdm(batch_iterator, total=batches, desc="FID sample generation", leave=True)
