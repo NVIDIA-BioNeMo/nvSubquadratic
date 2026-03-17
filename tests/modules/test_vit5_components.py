@@ -11,7 +11,7 @@ Tests verify:
 8. GAP readout & token layout (use_cls_token / prepend_registers)
 
 Run:
-    PYTHONPATH=. python -m pytest tests/test_vit5_components.py -v -o addopts=""
+    PYTHONPATH=. python -m pytest tests/modules/test_vit5_components.py -v -o addopts=""
 
 See tests/README.md for all test suites and markers.
 """

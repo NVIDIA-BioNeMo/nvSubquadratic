@@ -7,7 +7,7 @@ Tests verify:
 4. ViT5HyenaAdapter: reshape round-trip, mixer_kwargs forwarding
 
 Run:
-    PYTHONPATH=. python -m pytest tests/test_hyena_film.py -v -o addopts=""
+    PYTHONPATH=. python -m pytest tests/modules/test_hyena_film.py -v -o addopts=""
 
 See tests/README.md for all test suites and markers.
 """

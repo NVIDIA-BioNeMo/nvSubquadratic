@@ -4,7 +4,11 @@
 """Test the 2D circular FFT convolution against reference circular padded conv2d.
 
 Usage:
+<<<<<<<< HEAD:tests/test_circular_fftconv.py
     PYTHONPATH=. python tests/test_circular_fftconv.py
+========
+    PYTHONPATH=. python tests/ops/test_circular_fftconv.py
+>>>>>>>> 72eb3d9 (refactor: restructure tests/ to mirror nvsubquadratic/ package layout):tests/ops/test_circular_fftconv.py
 """
 
 import time

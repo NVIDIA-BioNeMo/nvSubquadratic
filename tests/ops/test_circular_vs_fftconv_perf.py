@@ -4,7 +4,11 @@
 """Performance and memory comparison: circular vs conventional FFT conv2d (BHL).
 
 Usage:
+<<<<<<<< HEAD:tests/test_circular_vs_fftconv_perf.py
     PYTHONPATH=. python tests/test_circular_vs_fftconv_perf.py
+========
+    PYTHONPATH=. python tests/ops/test_circular_vs_fftconv_perf.py
+>>>>>>>> 72eb3d9 (refactor: restructure tests/ to mirror nvsubquadratic/ package layout):tests/ops/test_circular_vs_fftconv_perf.py
 """
 
 import time
