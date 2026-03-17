@@ -1,7 +1,7 @@
-"""Config file for WELL benchmark: gray_scott_reaction_diffusion dataset with Hyena.
+"""Config file for WELL benchmark: MHD_64 dataset with Attention.
 
-Gray-Scott reaction-diffusion: 128x128 spatial resolution, 2 fields.
-Periodic boundary conditions -> circular FFT padding.
+Magneto-hydrodynamic turbulence: 64x64x64 spatial resolution (3D), 4 fields.
+Same architecture as cfg_hyena.py but with multi-head attention replacing Hyena.
 """
 
 import os
@@ -12,11 +12,8 @@ from experiments.datamodules.pde.well import WellDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.well_lightning_wrapper import WELLRegressionWrapper
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
@@ -27,10 +24,10 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 PLACEHOLDER = None
 
 # Dataset parameters
-DATA_TYPE = "image"
-DATA_DIM = 2
+DATA_TYPE = "volume"
+DATA_DIM = 3
 WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "./data/the_well")
-WELL_DATASET_NAME = "gray_scott_reaction_diffusion"
+WELL_DATASET_NAME = "MHD_64"
 
 # Data parameters
 N_STEPS_INPUT = 4
@@ -38,16 +35,14 @@ N_STEPS_OUTPUT = 1
 MAX_ROLLOUT_STEPS = 1
 
 # Model parameters
-BATCH_SIZE = 64
-NUM_HIDDEN_CHANNELS = 512
-NUM_BLOCKS = 12
+BATCH_SIZE = 2
+NUM_HIDDEN_CHANNELS = 256
+NUM_BLOCKS = 8
+NUM_HEADS = 8
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
-GRID_TYPE = "single"
-FFT_PADDING = "circular"  # Periodic boundary conditions
-OMEGA_0 = 100.0
 PATCH_SIZE = 4
-SPATIAL_RESOLUTION = 128  # Native resolution
+SPATIAL_RESOLUTION = 64
 
 # Training parameters
 TRAINING_ITERATIONS = 130_000
@@ -60,6 +55,7 @@ LEARNING_RATE = 1e-3
 
 
 def get_config() -> ExperimentConfig:
+    """Returns the experiment configuration."""
     config = ExperimentConfig()
 
     config.debug = False
@@ -109,45 +105,13 @@ def get_config() -> ExperimentConfig:
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim=NUM_HIDDEN_CHANNELS,
-                mixer_cfg=LazyConfig(Hyena)(
-                    global_conv_cfg=LazyConfig(CKConvND)(
-                        data_dim=DATA_DIM,
-                        hidden_dim=NUM_HIDDEN_CHANNELS,
-                        fft_padding=FFT_PADDING,
-                        kernel_cfg=LazyConfig(SIRENKernelND)(
-                            data_dim=DATA_DIM,
-                            out_dim=NUM_HIDDEN_CHANNELS,
-                            mlp_hidden_dim=96,
-                            num_layers=3,
-                            embedding_dim=32,
-                            omega_0=OMEGA_0,
-                            L_cache=SPATIAL_RESOLUTION // PATCH_SIZE,
-                            use_bias=True,
-                            hidden_omega_0=1.0,
-                        ),
-                        mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim=DATA_DIM,
-                            num_channels=NUM_HIDDEN_CHANNELS,
-                            min_std=0.025,
-                            max_std=1.25,
-                            init_std_low=0.05,
-                            init_std_high=1.0,
-                            parametrization="direct",
-                        ),
-                        grid_type=GRID_TYPE,
-                    ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
-                        in_channels=3 * NUM_HIDDEN_CHANNELS,
-                        out_channels=3 * NUM_HIDDEN_CHANNELS,
-                        kernel_size=3,
-                        groups=3 * NUM_HIDDEN_CHANNELS,
-                        padding=1,
-                        bias=False,
-                    ),
-                    gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-                    pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=NUM_HIDDEN_CHANNELS),
+                mixer_cfg=LazyConfig(Attention)(
+                    hidden_dim=NUM_HIDDEN_CHANNELS,
+                    num_heads=NUM_HEADS,
                     apply_qk_norm=True,
                     use_rope=False,
+                    is_causal=False,
+                    attn_dropout=0.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
@@ -200,7 +164,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         project="nvsubquadratic-well",
         entity="maxxxzdn",
-        job_group="gray_scott_hyena",
+        job_group="MHD_64_attention",
     )
 
     return config

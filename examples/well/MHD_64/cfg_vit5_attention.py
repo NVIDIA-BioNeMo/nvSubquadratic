@@ -1,6 +1,4 @@
-# examples/well/supernova_explosion_64/cfg_attention.py
-
-"""Supernova ViT5-style attention config."""
+"""MHD_64 ViT5-style attention config."""
 
 import os
 
@@ -25,17 +23,17 @@ PLACEHOLDER = None
 DATA_DIM = 3
 SPATIAL_SIZE = 64
 WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "/gpfs/scratch1/shared/dwessels2/data/the_well/datasets")
-WELL_DATASET_NAME = "supernova_explosion_64"
+WELL_DATASET_NAME = "MHD_64"
 
 N_STEPS_INPUT = 4
 N_STEPS_OUTPUT = 1
 MAX_ROLLOUT_STEPS = 1
 
-BATCH_SIZE = int(os.environ.get("SUPERNOVA_VIT5_ATTN_BATCH_SIZE", 1))
-HIDDEN_DIM = int(os.environ.get("SUPERNOVA_VIT5_ATTN_HIDDEN_DIM", 384))
-NUM_BLOCKS = int(os.environ.get("SUPERNOVA_VIT5_ATTN_DEPTH", 12))
-PATCH_SIZE = int(os.environ.get("SUPERNOVA_VIT5_ATTN_PATCH_SIZE", 8))
-NUM_HEADS = int(os.environ.get("SUPERNOVA_VIT5_ATTN_NUM_HEADS", 6))
+BATCH_SIZE = int(os.environ.get("MHD_VIT5_ATTN_BATCH_SIZE", 1))
+HIDDEN_DIM = int(os.environ.get("MHD_VIT5_ATTN_HIDDEN_DIM", 384))
+NUM_BLOCKS = int(os.environ.get("MHD_VIT5_ATTN_DEPTH", 12))
+PATCH_SIZE = int(os.environ.get("MHD_VIT5_ATTN_PATCH_SIZE", 8))
+NUM_HEADS = int(os.environ.get("MHD_VIT5_ATTN_NUM_HEADS", 6))
 NUM_REGISTERS = 14
 DROPOUT_RATE = 0.0
 DROP_PATH_RATE = 0.05
@@ -53,7 +51,7 @@ INIT_FN_FACTORY = trunc_normal_init_factory(std=0.02)
 
 
 def get_config() -> ExperimentConfig:
-    """Return the supernova ViT5-style attention config."""
+    """Return the MHD_64 ViT5-style attention config."""
     config = ExperimentConfig()
 
     config.debug = False
@@ -174,7 +172,7 @@ def get_config() -> ExperimentConfig:
     config.wandb = WandbConfig(
         project="nvsubquadratic-well",
         entity="dafidofff",
-        job_group="supernova_explosion_64_vit5_attention",
+        job_group="MHD_64_vit5_attention",
     )
 
     return config

@@ -539,14 +539,9 @@ def apply_rope_1d_blh(x: torch.Tensor, rope_1d_cache: tuple[torch.Tensor, torch.
     cos = rearrange(cos, "t d -> 1 t d")
     sin = rearrange(sin, "t d -> 1 t d")
 
-    out_x = x
-
-    # Apply RoPE in-place
-    # x = x * cos + rotate_half(x) * sin
+    # Apply RoPE (out-of-place for torch.compile compatibility with views)
     rot_x = rotate_half_blh(x)
-    out_x.mul_(cos)
-    out_x.addcmul_(rot_x, sin, value=1.0)
-    return out_x
+    return x * cos + rot_x * sin
 
 
 def apply_rope_2d_blh(
@@ -582,18 +577,13 @@ def apply_rope_2d_blh(
     x_y = x[..., :hidden_dim_half]
     x_x = x[..., hidden_dim_half:]
 
-    # Apply RoPE to each axis with in-place fused ops to reduce allocations
-    # x_y = x_y * cos_y + self._rotate_half(x_y) * sin_y
+    # Apply RoPE per-axis (out-of-place for torch.compile compatibility with views)
     rot_y = rotate_half_blh(x_y)
-    x_y.mul_(cos_y)
-    x_y.addcmul_(rot_y, sin_y, value=1.0)
+    x_y = x_y * cos_y + rot_y * sin_y
 
-    # x_x = x_x * cos_x + self._rotate_half(x_x) * sin_x
     rot_x = rotate_half_blh(x_x)
-    x_x.mul_(cos_x)
-    x_x.addcmul_(rot_x, sin_x, value=1.0)
+    x_x = x_x * cos_x + rot_x * sin_x
 
-    # Results are written back into x
     return torch.cat([x_y, x_x], dim=-1)
 
 
@@ -638,21 +628,14 @@ def apply_rope_3d_blh(
     x_y = x[..., hidden_dim_third : 2 * hidden_dim_third]
     x_x = x[..., 2 * hidden_dim_third :]
 
-    # Apply RoPE per-axis with in-place fused ops
-    # x_z = x_z * cos_z + rotate_half(x_z) * sin_z
+    # Apply RoPE per-axis (out-of-place for torch.compile compatibility with views)
     rot_z = rotate_half_blh(x_z)
-    x_z.mul_(cos_z)
-    x_z.addcmul_(rot_z, sin_z, value=1.0)
+    x_z = x_z * cos_z + rot_z * sin_z
 
-    # x_y = x_y * cos_y + rotate_half(x_y) * sin_y
     rot_y = rotate_half_blh(x_y)
-    x_y.mul_(cos_y)
-    x_y.addcmul_(rot_y, sin_y, value=1.0)
+    x_y = x_y * cos_y + rot_y * sin_y
 
-    # x_x = x_x * cos_x + rotate_half(x_x) * sin_x
     rot_x = rotate_half_blh(x_x)
-    x_x.mul_(cos_x)
-    x_x.addcmul_(rot_x, sin_x, value=1.0)
+    x_x = x_x * cos_x + rot_x * sin_x
 
-    # Results are written back into x
     return torch.cat([x_z, x_y, x_x], dim=-1)
