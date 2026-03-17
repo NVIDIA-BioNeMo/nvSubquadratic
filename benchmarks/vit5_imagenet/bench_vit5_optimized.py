@@ -1,4 +1,5 @@
 """Benchmark optimized ViT-5-Small: correctness check + throughput measurement."""
+
 import sys
 import torch
 import torch.nn.functional as F
@@ -23,24 +24,43 @@ NUM_PATCHES_H = IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = IMAGE_SIZE // PATCH_SIZE
 BATCH_SIZE = 256
 
+
 def build_model():
     net = ViT5ClassificationNet(
-        in_channels=3, num_classes=1000, hidden_dim=HIDDEN_DIM, num_blocks=NUM_BLOCKS,
-        patch_size=PATCH_SIZE, image_size=IMAGE_SIZE, num_registers=NUM_REGISTERS, dropout_rate=0.0,
+        in_channels=3,
+        num_classes=1000,
+        hidden_dim=HIDDEN_DIM,
+        num_blocks=NUM_BLOCKS,
+        patch_size=PATCH_SIZE,
+        image_size=IMAGE_SIZE,
+        num_registers=NUM_REGISTERS,
+        dropout_rate=0.0,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
-                hidden_dim=HIDDEN_DIM, num_heads=NUM_HEADS, num_patches_h=NUM_PATCHES_H,
-                num_patches_w=NUM_PATCHES_W, num_registers=NUM_REGISTERS, qk_norm=LazyConfig(RMSNorm)(dim=64, eps=1e-6),
-                rope_base=10000.0, reg_rope_base=100.0, attn_dropout=0.0, proj_dropout=0.0, qkv_bias=False,
+                hidden_dim=HIDDEN_DIM,
+                num_heads=NUM_HEADS,
+                num_patches_h=NUM_PATCHES_H,
+                num_patches_w=NUM_PATCHES_W,
+                num_registers=NUM_REGISTERS,
+                qk_norm=LazyConfig(RMSNorm)(dim=64, eps=1e-6),
+                rope_base=10000.0,
+                reg_rope_base=100.0,
+                attn_dropout=0.0,
+                proj_dropout=0.0,
+                qkv_bias=False,
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
-                dim=HIDDEN_DIM, activation="gelu", expansion_factor=4.0,
+                dim=HIDDEN_DIM,
+                activation="gelu",
+                expansion_factor=4.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
-            hidden_dim=HIDDEN_DIM, layer_scale_init=1e-4, drop_path_rate=0.05,
+            hidden_dim=HIDDEN_DIM,
+            layer_scale_init=1e-4,
+            drop_path_rate=0.05,
         ),
     )
     return net.cuda().to(torch.bfloat16)
@@ -120,10 +140,18 @@ if __name__ == "__main__":
     print("  [PASS] CLS token has identity RoPE")
 
     # 6. Zero registers
-    attn_no_reg = ViT5Attention(
-        hidden_dim=384, num_heads=6, num_patches_h=14, num_patches_w=14,
-        num_registers=0, qk_norm=LazyConfig(RMSNorm)(dim=64, eps=1e-6),
-    ).cuda().to(torch.bfloat16)
+    attn_no_reg = (
+        ViT5Attention(
+            hidden_dim=384,
+            num_heads=6,
+            num_patches_h=14,
+            num_patches_w=14,
+            num_registers=0,
+            qk_norm=LazyConfig(RMSNorm)(dim=64, eps=1e-6),
+        )
+        .cuda()
+        .to(torch.bfloat16)
+    )
     x_no_reg = torch.randn(2, 1 + 196, 384, device="cuda", dtype=torch.bfloat16)
     with torch.amp.autocast("cuda", dtype=torch.bfloat16):
         out_no_reg = attn_no_reg(x_no_reg)
