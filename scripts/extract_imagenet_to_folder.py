@@ -19,17 +19,14 @@ Usage:
     PYTHONPATH=. python scripts/extract_imagenet_to_folder.py
 """
 
-import io
 import os
-import sys
 import time
 from collections import defaultdict
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 import datasets
 import numpy as np
-from PIL import Image
+
 
 HF_DATASET = os.environ.get("IMAGENET_HF_DATASET", "imagenet-1k")
 HF_CACHE = os.environ.get("IMAGENET_PATH", "/home/dknigge/project_dir/huggingface/imagenet")
@@ -39,15 +36,18 @@ NUM_VERIFY_SAMPLES = 200
 
 def extract_split(split: str) -> None:
     """Extract one split (train or validation) to ImageFolder layout."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Extracting split: {split}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     hf_token = os.environ.get("HF_TOKEN")
 
     ds = datasets.load_dataset(
-        HF_DATASET, split=split, streaming=False,
-        cache_dir=HF_CACHE, token=hf_token,
+        HF_DATASET,
+        split=split,
+        streaming=False,
+        cache_dir=HF_CACHE,
+        token=hf_token,
     )
     ds_raw = ds.cast_column("image", datasets.Image(decode=False))
 
@@ -80,44 +80,46 @@ def extract_split(split: str) -> None:
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed
             eta = (total - i - 1) / rate
-            print(f"  [{split}] {i+1:>8d}/{total}  "
-                  f"({rate:.0f} img/s, ETA {eta/60:.1f} min)")
+            print(f"  [{split}] {i + 1:>8d}/{total}  ({rate:.0f} img/s, ETA {eta / 60:.1f} min)")
 
     elapsed = time.time() - t0
     num_classes = len(class_counters)
-    print(f"  [{split}] Done: {total} images, {num_classes} classes "
-          f"in {elapsed:.0f}s ({total/elapsed:.0f} img/s)")
+    print(f"  [{split}] Done: {total} images, {num_classes} classes in {elapsed:.0f}s ({total / elapsed:.0f} img/s)")
 
     return total, num_classes
 
 
 def _guess_ext(raw_bytes: bytes) -> str:
     """Determine file extension from magic bytes."""
-    if raw_bytes[:2] == b'\xff\xd8':
+    if raw_bytes[:2] == b"\xff\xd8":
         return ".jpg"
-    if raw_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+    if raw_bytes[:8] == b"\x89PNG\r\n\x1a\n":
         return ".png"
-    if raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
+    if raw_bytes[:4] == b"RIFF" and raw_bytes[8:12] == b"WEBP":
         return ".webp"
     return ".jpg"
 
 
 def verify_split(split: str) -> bool:
     """Verify that ImageFolder labels and pixels match the HF dataset."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Verifying split: {split}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     hf_token = os.environ.get("HF_TOKEN")
 
     ds_hf = datasets.load_dataset(
-        HF_DATASET, split=split, streaming=False,
-        cache_dir=HF_CACHE, token=hf_token,
+        HF_DATASET,
+        split=split,
+        streaming=False,
+        cache_dir=HF_CACHE,
+        token=hf_token,
     )
 
     folder_name = "train" if split == "train" else "val"
-    from torchvision.datasets import ImageFolder
     from torchvision import transforms
+    from torchvision.datasets import ImageFolder
+
     ds_folder = ImageFolder(
         str(Path(OUTPUT_DIR) / folder_name),
         transform=transforms.ToTensor(),
@@ -141,10 +143,9 @@ def verify_split(split: str) -> bool:
     for class_idx, class_name in enumerate(ds_folder.classes):
         expected = f"{class_idx:04d}"
         if class_name != expected:
-            print(f"  LABEL MAPPING ERROR: class_idx={class_idx}, "
-                  f"folder={class_name}, expected={expected}")
+            print(f"  LABEL MAPPING ERROR: class_idx={class_idx}, folder={class_name}, expected={expected}")
             return False
-    print(f"  Label mapping verified: folder names match class indices")
+    print("  Label mapping verified: folder names match class indices")
 
     # Spot-check random samples: compare HF pixels to saved file pixels
     rng = np.random.RandomState(42)
@@ -200,9 +201,9 @@ def verify_split(split: str) -> bool:
 
     ok = (n_label_match == n_checked) and (n_pixel_match == n_checked)
     if ok:
-        print(f"  VERIFICATION PASSED")
+        print("  VERIFICATION PASSED")
     else:
-        print(f"  VERIFICATION FAILED")
+        print("  VERIFICATION FAILED")
     return ok
 
 

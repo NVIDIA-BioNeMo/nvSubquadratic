@@ -15,9 +15,9 @@
 
 import numpy as np
 import torch
+from experiments.datamodules.imagenet import ImageNetDataModule
 from PIL import Image
 
-from experiments.datamodules.imagenet import ImageNetDataModule
 from experiments.datamodules.mnist import MNISTDataModule
 
 

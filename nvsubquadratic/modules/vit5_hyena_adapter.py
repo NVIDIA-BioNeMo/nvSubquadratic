@@ -29,6 +29,7 @@ class ViT5HyenaAdapter(nn.Module):
         inner_mixer_cfg: LazyConfig,
         grid_w: int,
     ):
+        """Initialize ViT5HyenaAdapter."""
         super().__init__()
         self.inner_mixer = instantiate(inner_mixer_cfg)
         self.grid_w = grid_w
@@ -41,7 +42,7 @@ class ViT5HyenaAdapter(nn.Module):
                 When registers are present, Hyena accomodates them at the first row of the 2D grid,
                 making the token at position (0, 0) the CLS token, and the (0, 1), ..., (0, num_registers-1)
                 the register tokens.
-            
+
             IMPORTANT: In the future we can have M < grid_w registers by appending grid_w - M zeros to the row.
             **mixer_kwargs: Forwarded to the inner mixer (e.g. ``conditioning`` for FiLM).
 
@@ -55,4 +56,5 @@ class ViT5HyenaAdapter(nn.Module):
         return x
 
     def extra_repr(self) -> str:
+        """Return extra representation string."""
         return f"grid_w={self.grid_w}"

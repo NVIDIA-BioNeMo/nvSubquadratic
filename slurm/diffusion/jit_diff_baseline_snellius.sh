@@ -9,34 +9,36 @@
 #SBATCH --dependency=singleton
 
 source /home/dknigge/.bashrc
-# mamba activate nvsq
 source /gpfs/home1/dknigge/nvsq_update_branch/.venv/bin/activate
 
-LOCAL_IMAGENET_ROOT="/scratch-local/${USER}"
-LOCAL_IMAGENET_DIR="${LOCAL_IMAGENET_ROOT}/imagenet_imagefolder"
-SENTINEL="${LOCAL_IMAGENET_DIR}/.imagenet_complete"
-mkdir -p "${LOCAL_IMAGENET_ROOT}"
+# HF dataset env vars (mirrors extract_imagenet_to_tar.py defaults)
+HF_DATASET="${IMAGENET_HF_DATASET:-imagenet-1k}"
+HF_CACHE="${IMAGENET_PATH:-$HOME/project_dir/huggingface/imagenet}"
+
+LOCAL_SCRATCH="/scratch-local/${USER}"
+LOCAL_HF_CACHE="${LOCAL_SCRATCH}/hf_cache"
+SENTINEL="${LOCAL_HF_CACHE}/.hf_cache_complete"
+mkdir -p "${LOCAL_HF_CACHE}"
 
 # Capture the start time before staging so walltime budget is accurate
 JOB_START_TIMESTAMP=$(date +%s)
 
-echo "Staging ImageNet to node-local storage: ${LOCAL_IMAGENET_DIR}"
+echo "Staging HF cache to node-local storage: ${LOCAL_HF_CACHE}"
 if [ -f "${SENTINEL}" ]; then
-  echo "Sentinel found — local ImageNet copy is complete; skipping staging."
+  echo "Sentinel found — local HF cache is complete; skipping staging."
 else
-  echo "No complete local ImageNet copy found; staging from pre-packed tar."
-  rm -rf "${LOCAL_IMAGENET_DIR}"
-  PACKED_TAR="/scratch-shared/dknigge/imagenet_imagefolder.tar"
-  if [ ! -f "${PACKED_TAR}" ]; then
-    echo "ERROR: Pre-packed tar not found at ${PACKED_TAR}. Run slurm/pack_imagenet_tar.sh first."
+  if [ ! -d "${HF_CACHE}" ]; then
+    echo "ERROR: HF cache not found at ${HF_CACHE}."
     exit 1
   fi
-  tar xf "${PACKED_TAR}" -C "${LOCAL_IMAGENET_ROOT}/"
+  echo "Copying HF cache to local NVMe..."
+  rsync -a --info=progress2 "${HF_CACHE}/" "${LOCAL_HF_CACHE}/"
   touch "${SENTINEL}"
   echo "Staging complete."
 fi
 
-export IMAGENET_DIR="${LOCAL_IMAGENET_DIR}"
+export IMAGENET_HF_DATASET="${HF_DATASET}"
+export IMAGENET_PATH="${LOCAL_HF_CACHE}"
 echo "Start time captured: ${JOB_START_TIMESTAMP}"
 WORKDIR="/gpfs/home1/dknigge/nvsq_update_branch"
 TIME_LIMIT_HOURS=48
@@ -73,6 +75,12 @@ AUTORESUME_OVERRIDES=("autoresume.enabled=False" "experiment_dir=${EXPERIMENT_DI
 echo "Starting fresh with autoresume disabled for this launch"
 
 export PYTHONPATH="${WORKDIR}:${PYTHONPATH:-}"
+
+# Redirect W&B cache to node-local scratch to avoid filling home quota
+export WANDB_CACHE_DIR="${LOCAL_SCRATCH}/wandb_cache"
+export WANDB_DATA_DIR="${LOCAL_SCRATCH}/wandb_data"
+mkdir -p "${WANDB_CACHE_DIR}" "${WANDB_DATA_DIR}"
+
 echo "Running on node: $SLURM_NODELIST"
 
 # NOTE: run.py does NOT support --experiment_dir flag in argparse. 

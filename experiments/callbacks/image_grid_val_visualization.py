@@ -8,10 +8,9 @@ from typing import Optional
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import wandb
 from einops import rearrange
 from torchvision.utils import make_grid
-
-import wandb
 
 
 class ValidationImageGridCallback(pl.callbacks.Callback):
@@ -537,7 +536,7 @@ class ValidationVolumeGridCallback(pl.callbacks.Callback):
         # Get volume dimensions
         # x is [B, D, H, W, C] in volume format
         if x_np.ndim == 5:
-            B, D, H, W, C = x_np.shape
+            _B, D, H, W, C = x_np.shape
         else:
             raise ValueError(f"Expected 5D volume tensor, got shape {x_np.shape}")
 

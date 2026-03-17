@@ -13,7 +13,6 @@ Run:
     PYTHONPATH=. python -m pytest tests/test_vit5_components.py -v
 """
 
-import math
 import sys
 from pathlib import Path
 
@@ -21,19 +20,21 @@ import pytest
 import torch
 import torch.nn as nn
 
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.drop_path import DropPath
 from nvsubquadratic.modules.layer_scale import LayerScale
+from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
-from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.mlp import MLP
 
 
 # ─── Fixtures ───────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def device():
@@ -43,19 +44,20 @@ def device():
 
 @pytest.fixture
 def vit5_small_params():
-    return dict(
-        hidden_dim=384,
-        num_heads=6,
-        num_blocks=12,
-        patch_size=16,
-        image_size=224,
-        num_registers=4,
-        mlp_ratio=4,
-        head_dim=64,  # 384 / 6
-    )
+    return {
+        "hidden_dim": 384,
+        "num_heads": 6,
+        "num_blocks": 12,
+        "patch_size": 16,
+        "image_size": 224,
+        "num_registers": 4,
+        "mlp_ratio": 4,
+        "head_dim": 64,  # 384 / 6
+    }
 
 
 # ─── 1. RMSNorm Tests ──────────────────────────────────────────────────────────
+
 
 class TestRMSNorm:
     def test_output_shape(self, device):
@@ -100,6 +102,7 @@ class TestRMSNorm:
 
 # ─── 2. LayerScale Tests ───────────────────────────────────────────────────────
 
+
 class TestLayerScale:
     def test_output_shape(self):
         ls = LayerScale(384, init_value=1e-4)
@@ -109,9 +112,7 @@ class TestLayerScale:
 
     def test_init_value(self):
         ls = LayerScale(384, init_value=1e-4)
-        torch.testing.assert_close(
-            ls.gamma.data, torch.full((384,), 1e-4)
-        )
+        torch.testing.assert_close(ls.gamma.data, torch.full((384,), 1e-4))
 
     def test_scaling_effect(self):
         ls = LayerScale(4, init_value=0.5)
@@ -148,6 +149,7 @@ class TestLayerScale:
 
 
 # ─── 3. DropPath Tests ─────────────────────────────────────────────────────────
+
 
 class TestDropPath:
     def test_identity_when_zero(self):
@@ -187,16 +189,22 @@ class TestDropPath:
 
 # ─── 4. ViT5Attention Tests ────────────────────────────────────────────────────
 
+
 class TestViT5Attention:
     def _make_attn(self, device, **kwargs):
-        defaults = dict(
-            hidden_dim=384, num_heads=6,
-            num_patches_h=14, num_patches_w=14,
-            num_registers=4,
-            qk_norm=LazyConfig(RMSNorm)(dim=64, eps=1e-6),
-            rope_base=10000.0, reg_rope_base=100.0,
-            attn_dropout=0.0, proj_dropout=0.0, qkv_bias=False,
-        )
+        defaults = {
+            "hidden_dim": 384,
+            "num_heads": 6,
+            "num_patches_h": 14,
+            "num_patches_w": 14,
+            "num_registers": 4,
+            "qk_norm": LazyConfig(RMSNorm)(dim=64, eps=1e-6),
+            "rope_base": 10000.0,
+            "reg_rope_base": 100.0,
+            "attn_dropout": 0.0,
+            "proj_dropout": 0.0,
+            "qkv_bias": False,
+        }
         defaults.update(kwargs)
         return ViT5Attention(**defaults).to(device)
 
@@ -286,17 +294,22 @@ class TestViT5Attention:
 
 # ─── 5. ViT5ResidualBlock Tests ────────────────────────────────────────────────
 
+
 class TestViT5ResidualBlock:
     def _make_block(self, device, hidden_dim=384, num_heads=6, drop_path=0.0, layer_scale_init=1e-4):
         block = ViT5ResidualBlock(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
-                hidden_dim=hidden_dim, num_heads=num_heads,
-                num_patches_h=14, num_patches_w=14,
-                num_registers=4, qk_norm=LazyConfig(RMSNorm)(dim=hidden_dim // num_heads, eps=1e-6),
+                hidden_dim=hidden_dim,
+                num_heads=num_heads,
+                num_patches_h=14,
+                num_patches_w=14,
+                num_registers=4,
+                qk_norm=LazyConfig(RMSNorm)(dim=hidden_dim // num_heads, eps=1e-6),
             ),
             sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
             mlp_cfg=LazyConfig(MLP)(
-                dim=hidden_dim, activation="gelu",
+                dim=hidden_dim,
+                activation="gelu",
                 expansion_factor=4.0,
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
             ),
@@ -367,6 +380,7 @@ class TestViT5ResidualBlock:
 
 # ─── 6. ViT5ClassificationNet Tests ────────────────────────────────────────────
 
+
 class TestViT5ClassificationNet:
     def _make_net(self, device, hidden_dim=384, num_blocks=2, num_registers=4, image_size=224):
         """Build a small ViT-5 net (2 blocks for speed)."""
@@ -382,13 +396,18 @@ class TestViT5ClassificationNet:
             norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
                 sequence_mixer_cfg=LazyConfig(ViT5Attention)(
-                    hidden_dim=hidden_dim, num_heads=6,
-                    num_patches_h=image_size // 16, num_patches_w=image_size // 16,
-                    num_registers=num_registers, qk_norm=LazyConfig(RMSNorm)(dim=hidden_dim // 6, eps=1e-6),
+                    hidden_dim=hidden_dim,
+                    num_heads=6,
+                    num_patches_h=image_size // 16,
+                    num_patches_w=image_size // 16,
+                    num_registers=num_registers,
+                    qk_norm=LazyConfig(RMSNorm)(dim=hidden_dim // 6, eps=1e-6),
                 ),
                 sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
                 mlp_cfg=LazyConfig(MLP)(
-                    dim=hidden_dim, activation="gelu", expansion_factor=4.0,
+                    dim=hidden_dim,
+                    activation="gelu",
+                    expansion_factor=4.0,
                     dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
                 ),
                 mlp_norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
@@ -471,10 +490,12 @@ class TestViT5ClassificationNet:
 
 # ─── 7. Cross-validation against reference ViT-5 ───────────────────────────────
 
+
 class TestCrossValidation:
     def test_vit5_small_architecture_matches_paper(self):
         """Verify our ViT-5-Small matches Table 4 of the paper."""
         from examples.vit5_imagenet.vit5_small_pretrain import get_config
+
         from nvsubquadratic.lazy_config import instantiate
 
         config = get_config()
@@ -496,6 +517,7 @@ class TestCrossValidation:
     def test_no_qkv_bias(self):
         """ViT-5 removes QKV bias (Section 3.7)."""
         from examples.vit5_imagenet.vit5_small_pretrain import get_config
+
         from nvsubquadratic.lazy_config import instantiate
 
         config = get_config()
@@ -506,7 +528,7 @@ class TestCrossValidation:
     def test_uses_soft_target_loss(self):
         """ViT-5 pretraining uses SoftTargetCrossEntropy for multiclass with soft labels."""
         from examples.vit5_imagenet.vit5_small_pretrain import get_config
-        from experiments.lightning_wrappers.classification_wrapper import SoftTargetCrossEntropy
+
         from nvsubquadratic.lazy_config import instantiate
 
         config = get_config()
@@ -518,6 +540,7 @@ class TestCrossValidation:
     def test_uses_gelu_not_swiglu(self):
         """ViT-5 uses GeLU MLP, not SwiGLU (Section 3.3 - over-gating issue)."""
         from examples.vit5_imagenet.vit5_small_pretrain import get_config
+
         from nvsubquadratic.lazy_config import instantiate
 
         config = get_config()
@@ -539,6 +562,7 @@ class TestCrossValidation:
     def test_register_rope_base(self):
         """Registers should use high-frequency RoPE (theta=100, not 10000)."""
         from examples.vit5_imagenet.vit5_small_pretrain import get_config
+
         from nvsubquadratic.lazy_config import instantiate
 
         config = get_config()

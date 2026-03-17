@@ -20,9 +20,11 @@ class LayerScale(nn.Module):
     """
 
     def __init__(self, dim: int, init_value: float = 1e-4):
+        """Initialize LayerScale."""
         super().__init__()
         self.gamma = nn.Parameter(init_value * torch.ones(dim))
         self.gamma._no_weight_decay = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply forward pass."""
         return x * self.gamma

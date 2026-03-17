@@ -1,19 +1,25 @@
 """Validate a ViT-5 checkpoint and print metrics for comparison with W&B."""
+
 import sys
+
+
 sys.path.insert(0, ".")
 
-import torch
 import pytorch_lightning as pl
-
+import torch
 from examples.vit5_imagenet.vit5_small_pretrain import get_config
+
 from nvsubquadratic.lazy_config import instantiate
+
 
 CKPT_PATH = "runs/DW_examples_vit5_imagenet_vit5_small_pretrain_2026-02-21-05-14-44/checkpoints/last.ckpt"
 
 EXPECTED_VAL_ACC = 0.2385
 EXPECTED_VAL_LOSS = 3.958
 
+
 def main():
+    """Validate a ViT-5 checkpoint and compare metrics against expected W&B values."""
     config = get_config()
 
     print("=" * 60)
@@ -80,6 +86,7 @@ def main():
                 print(f"  acc diff: {abs(val_acc - EXPECTED_VAL_ACC):.6f}")
             if not loss_match:
                 print(f"  loss diff: {abs(val_loss - EXPECTED_VAL_LOSS):.6f}")
+
 
 if __name__ == "__main__":
     main()

@@ -14,12 +14,13 @@ from typing import Any
 import torch
 from omegaconf import OmegaConf
 
+
 # Ensure repository root is importable when running `python scripts/...`.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from nvsubquadratic.lazy_config import instantiate
+from nvsubquadratic.lazy_config import instantiate  # noqa: E402
 
 
 def _load_config(config_path: str, config_fn: str) -> Any:
@@ -96,10 +97,9 @@ def _checkpoint_training_commit(run_dir: Path) -> tuple[str | None, Path | None]
 
 def _head_commit() -> str | None:
     try:
-        return (
-            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(REPO_ROOT), text=True, stderr=subprocess.DEVNULL)
-            .strip()
-        )
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=str(REPO_ROOT), text=True, stderr=subprocess.DEVNULL
+        ).strip()
     except Exception:
         return None
 
@@ -114,7 +114,14 @@ def _print_logged_reference_metrics(run_dir: Path) -> None:
         return
 
     print(f"[ref] summary_file: {summary_path}")
-    for key in ("global_step", "train/loss_step", "train/loss_epoch", "val/loss", "metrics/fid_online", "metrics/is_online"):
+    for key in (
+        "global_step",
+        "train/loss_step",
+        "train/loss_epoch",
+        "val/loss",
+        "metrics/fid_online",
+        "metrics/is_online",
+    ):
         value = summary.get(key)
         if value is not None:
             print(f"[ref] {key}: {value}")

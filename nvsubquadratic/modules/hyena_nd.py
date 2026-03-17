@@ -81,23 +81,24 @@ class Hyena(torch.nn.Module):
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
         gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
     ):
-        """
+        """Initialize HyenaND.
+
         Args:
-            global_conv_cfg: Global (long-range) convolutional layer.
-            short_conv_cfg: Short depthwise conv applied to concatenated [Q, K, V].
-                Must produce a ConvNd, DistributedDepthwiseConvNd, or Identity.
-            gate_nonlinear_cfg: Activation for the first multiplicative gate (e.g. SiLU).
-                Use Identity for linear gating.
-            pixelhyena_norm_cfg: Normalization between first gate and global conv.
-                Use Identity to disable.
-            use_rope: Whether to apply rotary positional encoding to Q and K.
-            qk_norm_cfg: Per-channel normalization for Q (and K when gate is Identity).
-                None to disable.  Separate instances are created for Q and K to
-                support stateful norms (e.g. RMSNorm with learnable scale).
-            rope_base: Base frequency for RoPE (default: 10000.0).
-            output_norm_cfg: Normalization after the second gate.  Defaults to Identity.
-            gate_nonlinear_2_cfg: Activation for the second multiplicative gate.
-                If None (default), reuses gate_nonlinear_cfg for both gates.
+        global_conv_cfg: Global (long-range) convolutional layer.
+        short_conv_cfg: Short depthwise conv applied to concatenated [Q, K, V].
+            Must produce a ConvNd, DistributedDepthwiseConvNd, or Identity.
+        gate_nonlinear_cfg: Activation for the first multiplicative gate (e.g. SiLU).
+            Use Identity for linear gating.
+        pixelhyena_norm_cfg: Normalization between first gate and global conv.
+            Use Identity to disable.
+        use_rope: Whether to apply rotary positional encoding to Q and K.
+        qk_norm_cfg: Per-channel normalization for Q (and K when gate is Identity).
+            None to disable.  Separate instances are created for Q and K to
+            support stateful norms (e.g. RMSNorm with learnable scale).
+        rope_base: Base frequency for RoPE (default: 10000.0).
+        output_norm_cfg: Normalization after the second gate.  Defaults to Identity.
+        gate_nonlinear_2_cfg: Activation for the second multiplicative gate.
+            If None (default), reuses gate_nonlinear_cfg for both gates.
         """
         super().__init__()
 

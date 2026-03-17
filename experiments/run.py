@@ -16,10 +16,6 @@ from pathlib import Path
 # Force-initialize PIL plugins in the main process before DataLoader workers
 # are forked.  Prevents crashes from lazy initialization in child processes.
 import PIL.Image
-
-
-PIL.Image.init()
-
 import pytorch_lightning as pl
 import torch
 import wandb
@@ -44,6 +40,8 @@ from experiments.utils.cli import (
 )
 from nvsubquadratic.lazy_config import instantiate
 
+
+PIL.Image.init()
 
 torch._dynamo.config.cache_size_limit = 32
 

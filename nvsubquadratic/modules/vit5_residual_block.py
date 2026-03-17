@@ -47,6 +47,7 @@ class ViT5ResidualBlock(nn.Module):
         register_pooling_cfg: LazyConfig | None = None,
         num_registers: int = 0,
     ):
+        """Initialize ViT5ResidualBlock."""
         super().__init__()
 
         self.input_norm = instantiate(sequence_mixer_norm_cfg)

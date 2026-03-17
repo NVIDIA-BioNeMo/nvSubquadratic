@@ -11,9 +11,9 @@ import os
 
 import torch
 from apex.optimizers import FusedLAMB as Lamb
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 
 from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,

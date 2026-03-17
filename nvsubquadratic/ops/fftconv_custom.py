@@ -41,7 +41,7 @@ def fftconv2d_bhl(
 
     assert x.ndim == 4, f"Expected x with 4 dims (B, H, X, Y). Got {x.shape}."
     assert kernel.ndim == 4, f"Expected kernel with 4 dims (1|B, H, K_x, K_y). Got {kernel.shape}."
-    B, H, X_in, Y_in = x.shape
+    _B, H, X_in, Y_in = x.shape
     assert x.is_cuda, "Custom CUDA kernel requires CUDA tensors."
     assert kernel.shape[0] == 1, "Custom CUDA kernel only supports shared kernels (kernel.shape[0] == 1)."
     _, H_k, K_x, K_y = kernel.shape

@@ -56,6 +56,7 @@ class ViT5ClassificationNet(nn.Module):
         use_cls_token: bool = True,
         prepend_registers: bool = False,
     ):
+        """Initialize ViT5ClassificationNet."""
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
@@ -71,8 +72,11 @@ class ViT5ClassificationNet(nn.Module):
 
         # Patch embedding (non-overlapping Conv2d)
         self.patch_embed = nn.Conv2d(
-            in_channels, hidden_dim,
-            kernel_size=patch_size, stride=patch_size, padding=0,
+            in_channels,
+            hidden_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+            padding=0,
         )
 
         # Learnable tokens

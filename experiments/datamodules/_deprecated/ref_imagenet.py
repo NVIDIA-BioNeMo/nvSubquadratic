@@ -1,18 +1,13 @@
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
+from datasets import load_dataset
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
-from timm.data.auto_augment import rand_augment_transform
-from timm.data.random_erasing import RandomErasing
-from timm.data.transforms import RandomResizedCropAndInterpolation
 from torch.utils.data import DataLoader, Dataset
-from torchvision import datasets as tv_datasets
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
@@ -51,9 +46,7 @@ class AugmentConfig:
 
     use_three_augment: bool = False
     color_jitter: float = 0.4
-    rand_augment: Optional[str] = None  # e.g., 'rand-m9-n3-mstd0.5'
-    random_erasing_prob: float = 0.0
-    random_erasing_mode: str = "pixel"
+    # Future expansion: use_simple_random_crop, etc.
 
 
 class ThreeAugment(torch.nn.Module):
@@ -104,8 +97,6 @@ class _ImageNetDataset(Dataset):
         self.transform = transform
         self.drop_labels = drop_labels
 
-        from datasets import load_dataset
-
         self.dataset = load_dataset(
             path=dataset_name,
             name=dataset_config,
@@ -134,16 +125,7 @@ class _ImageNetDataset(Dataset):
 
 
 class ImageNetDataModule(pl.LightningDataModule):
-    """Lightning DataModule for ImageNet.
-
-    Supports two backends:
-    - **ImageFolder** (preferred): set ``imagefolder_dir`` to a directory
-      containing ``train/`` and ``val/`` subdirectories in the standard
-      torchvision ImageFolder layout.  Much faster than HF datasets.
-    - **HuggingFace datasets** (fallback): uses Arrow-backed storage via
-      ``data_dir``.  Slower due to per-sample Arrow deserialization + PIL
-      decode overhead.
-    """
+    """Lightning DataModule that outputs MNIST-style dict batches."""
 
     def __init__(
         self,
@@ -162,10 +144,6 @@ class ImageNetDataModule(pl.LightningDataModule):
         hf_auth_token: Optional[str] = None,
         num_classes: int = 1000,
         task: Literal["classification", "generation"],
-        imagefolder_dir: Optional[str] = None,
-        prefetch_factor: int = 2,
-        eval_crop_ratio: float = 1.0,
-        local_staging_dir: Optional[str] = None,
         # Augmentations
         mixup_cfg: Optional[MixupConfig] = None,
         augment_cfg: Optional[AugmentConfig] = None,
@@ -173,10 +151,6 @@ class ImageNetDataModule(pl.LightningDataModule):
         """Initialize the ImageNet datamodule and cache configuration values."""
         super().__init__()
         self.data_dir = Path(data_dir).expanduser()
-        self.imagefolder_dir = Path(imagefolder_dir) if imagefolder_dir else None
-        self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
-        self.prefetch_factor = prefetch_factor
-        self.eval_crop_ratio = eval_crop_ratio
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
@@ -235,8 +209,8 @@ class ImageNetDataModule(pl.LightningDataModule):
                 num_classes=num_classes,
             )
 
-        self.train_dataset: Optional[Dataset] = None
-        self.val_dataset: Optional[Dataset] = None
+        self.train_dataset: Optional[_ImageNetDataset] = None
+        self.val_dataset: Optional[_ImageNetDataset] = None
 
     def _build_transform(self, *, train: bool) -> transforms.Compose:
         mean, std = IMAGENET_MEAN_STD_BY_SIZE.get(
@@ -250,23 +224,30 @@ class ImageNetDataModule(pl.LightningDataModule):
             mean = self.normalization_mean
             std = self.normalization_std
 
+        # Initialize ops with Simple Random Crop logic: Resize -> RandomCrop
+        # For SRC, we typically resize to slightly larger than crop size (e.g. 256 for 224 crop) or
+        # resize shortest edge to target size.
+        # Original code used Resize(image_size + 32). This is standard SRC.
         ops: list[transforms.Transform] = []
 
-        if train:
-            ops.append(
-                RandomResizedCropAndInterpolation(
-                    self.image_size,
-                    scale=(0.08, 1.0),
-                    interpolation="bicubic",
-                )
-            )
+        if self.task == "generation":
+            # For diffusion/generation, we strictly use CenterCrop to preserve spatial framing.
+            # No RandomCrop or destructive augmentations.
+            ops.append(transforms.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC))
+            ops.append(transforms.CenterCrop(self.image_size))
+            if train:
+                ops.append(transforms.RandomHorizontalFlip())
+        elif train:
+            # Simple Random Crop
+            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
+            ops.append(transforms.RandomCrop(self.image_size))
 
+            # Manual augmentation pipeline matching DeiT III / User request
+            # "ColorJitter Grayscale Gaussian Blur Solarization"
             ops.append(transforms.RandomHorizontalFlip())
 
             if self.augment_cfg is not None and self.augment_cfg.use_three_augment:
-                ops.append(ThreeAugment())
-
-            if self.augment_cfg is not None and self.augment_cfg.color_jitter > 0:
+                # Standard Color Jitter
                 ops.append(
                     transforms.ColorJitter(
                         brightness=self.augment_cfg.color_jitter,
@@ -274,18 +255,15 @@ class ImageNetDataModule(pl.LightningDataModule):
                         saturation=self.augment_cfg.color_jitter,
                     )
                 )
-
-            if self.augment_cfg is not None and self.augment_cfg.rand_augment:
-                ops.append(
-                    rand_augment_transform(
-                        config_str=self.augment_cfg.rand_augment,
-                        hparams={"img_mean": tuple([int(x * 255) for x in mean])},
-                    )
-                )
+                # 3-Augment (Gray, Solar, Blur)
+                ops.append(ThreeAugment())
         else:
-            eval_size = int(self.image_size / self.eval_crop_ratio)
-            ops.append(transforms.Resize(eval_size, interpolation=InterpolationMode.BICUBIC))
-            ops.append(transforms.CenterCrop(self.image_size))
+            # Validation: Resize + CenterCrop or Resize
+            ops.append(transforms.Resize(self.image_size + 32, interpolation=InterpolationMode.BICUBIC))
+            if self.center_crop:
+                ops.append(transforms.CenterCrop(self.image_size))
+            else:
+                ops.append(transforms.Resize(self.image_size, interpolation=InterpolationMode.BICUBIC))
 
         if self.final_image_size != self.image_size:
             ops.append(
@@ -297,72 +275,10 @@ class ImageNetDataModule(pl.LightningDataModule):
 
         ops.append(transforms.ToTensor())
         ops.append(transforms.Normalize(mean=mean, std=std))
-
-        if train and self.augment_cfg is not None and self.augment_cfg.random_erasing_prob > 0:
-            ops.append(
-                RandomErasing(
-                    probability=self.augment_cfg.random_erasing_prob,
-                    mode=self.augment_cfg.random_erasing_mode,
-                    device="cpu",
-                )
-            )
-
         return transforms.Compose(ops)
 
-    def _stage_to_local(self) -> None:
-        """Copy ImageFolder data to fast local storage (e.g. NVMe).
-
-        Idempotent: uses a ``.staging_complete`` sentinel so partial copies
-        are retried and completed copies are skipped.  Raises on failure.
-        """
-        src = self.imagefolder_dir
-        dst = self._local_staging_dir
-
-        print(f"[data-staging] local_staging_dir={dst}, checking ...", flush=True)
-
-        try:
-            dst.mkdir(parents=True, exist_ok=True)
-            free_bytes = shutil.disk_usage(dst).free
-            min_bytes = 160 * (1024**3)
-            if free_bytes < min_bytes:
-                raise RuntimeError(
-                    f"[data-staging] {dst} has only "
-                    f"{free_bytes / (1024**3):.1f} GB free (need {min_bytes / (1024**3):.0f} GB)"
-                )
-        except OSError as exc:
-            raise RuntimeError(f"[data-staging] Cannot access {dst}: {exc}") from exc
-
-        sentinel = dst / ".staging_complete"
-        if sentinel.is_file():
-            print(f"[data-staging] {dst} already staged (sentinel found), skipping copy.", flush=True)
-            self.imagefolder_dir = dst
-            return
-
-        print(f"[data-staging] Copying {src} -> {dst} (this may take 10-20 min) ...", flush=True)
-        subprocess.run(
-            ["cp", "-a", "--no-clobber", "-r", str(src / "train"), str(src / "val"), str(dst)],
-            check=True,
-            timeout=3600,
-        )
-        sentinel.write_text("ok\n")
-        self.imagefolder_dir = dst
-        print(f"[data-staging] Done. Using local path: {dst}", flush=True)
-
     def prepare_data(self) -> None:
-        """Download / stage data before training.
-
-        When ``local_staging_dir`` is set and ``imagefolder_dir`` points to a
-        network path, stage data to fast local storage first.
-        """
-        if self._local_staging_dir is not None and self.imagefolder_dir is not None:
-            self._stage_to_local()
-            return
-
-        if self.imagefolder_dir is not None:
-            return
-
-        from datasets import load_dataset
-
+        """Download the train/validation splits if they are not already cached locally."""
         load_dataset(
             path=self.hf_dataset_name,
             name=self.hf_dataset_config,
@@ -381,41 +297,52 @@ class ImageNetDataModule(pl.LightningDataModule):
             token=self.hf_auth_token,
         )
 
-    def _make_folder_dataset(self, split: str, train: bool) -> Dataset:
-        folder = "train" if split == "train" else "val"
-        root = self.imagefolder_dir / folder
-        return tv_datasets.ImageFolder(root, transform=self._build_transform(train=train))
-
-    def _make_hf_dataset(self, split: str, train: bool) -> Dataset:
-        return _ImageNetDataset(
-            split=split,
-            dataset_name=self.hf_dataset_name,
-            dataset_config=self.hf_dataset_config,
-            cache_dir=self.data_dir,
-            hf_token=self.hf_auth_token,
-            transform=self._build_transform(train=train),
-            drop_labels=self.drop_labels,
-        )
-
     def setup(self, stage: Optional[str] = None) -> None:
         """Construct the datasets for the requested stage."""
-        use_folder = self.imagefolder_dir is not None
-
         if stage in ("fit", None):
-            if use_folder:
-                self.train_dataset = self._make_folder_dataset("train", train=True)
-                self.val_dataset = self._make_folder_dataset("validation", train=False)
-            else:
-                self.train_dataset = self._make_hf_dataset("train", train=True)
-                self.val_dataset = self._make_hf_dataset("validation", train=False)
+            self.train_dataset = _ImageNetDataset(
+                split="train",
+                dataset_name=self.hf_dataset_name,
+                dataset_config=self.hf_dataset_config,
+                cache_dir=self.data_dir,
+                hf_token=self.hf_auth_token,
+                transform=self._build_transform(train=True),
+                drop_labels=self.drop_labels,
+            )
 
-        elif stage in ("validate", "test"):
-            if use_folder:
-                self.val_dataset = self._make_folder_dataset("validation", train=False)
-            else:
-                self.val_dataset = self._make_hf_dataset("validation", train=False)
+            self.val_dataset = _ImageNetDataset(
+                split="validation",
+                dataset_name=self.hf_dataset_name,
+                dataset_config=self.hf_dataset_config,
+                cache_dir=self.data_dir,
+                hf_token=self.hf_auth_token,
+                transform=self._build_transform(train=False),
+                drop_labels=self.drop_labels,
+            )
 
-    def _build_loader(self, dataset: Dataset, shuffle: bool, drop_last: bool) -> DataLoader:
+        elif stage == "validate":
+            self.val_dataset = _ImageNetDataset(
+                split="validation",
+                dataset_name=self.hf_dataset_name,
+                dataset_config=self.hf_dataset_config,
+                cache_dir=self.data_dir,
+                hf_token=self.hf_auth_token,
+                transform=self._build_transform(train=False),
+                drop_labels=self.drop_labels,
+            )
+
+        elif stage == "test":
+            self.val_dataset = _ImageNetDataset(
+                split="validation",
+                dataset_name=self.hf_dataset_name,
+                dataset_config=self.hf_dataset_config,
+                cache_dir=self.data_dir,
+                hf_token=self.hf_auth_token,
+                transform=self._build_transform(train=False),
+                drop_labels=self.drop_labels,
+            )
+
+    def _build_loader(self, dataset: _ImageNetDataset, shuffle: bool, drop_last: bool) -> DataLoader:
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -424,7 +351,6 @@ class ImageNetDataModule(pl.LightningDataModule):
             pin_memory=self.pin_memory,
             drop_last=drop_last,
             persistent_workers=self.num_workers > 0,
-            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def train_dataloader(self) -> DataLoader:
