@@ -602,11 +602,12 @@ class DiffusionWrapper(LightningWrapperBase):
         global_rank = self.global_rank
 
         total_samples = self.fid_num_samples
-        samples_per_rank = total_samples // world_size
+        base_samples = total_samples // world_size
         remainder = total_samples % world_size
 
-        if global_rank < remainder:
-            samples_per_rank += 1
+        # Non-overlapping slice [start_idx, start_idx + my_count) for this rank.
+        start_idx = base_samples * global_rank + min(global_rank, remainder)
+        my_count = base_samples + (1 if global_rank < remainder else 0)
 
         if self.num_classes is not None:
             samples_per_class = total_samples // self.num_classes
@@ -617,10 +618,7 @@ class DiffusionWrapper(LightningWrapperBase):
             if remainder_classes > 0:
                 class_labels = np.concatenate([class_labels, np.zeros(remainder_classes, dtype=int)])
 
-            start_idx = sum([samples_per_rank + (1 if r < remainder else 0) for r in range(global_rank)])
-            my_count = samples_per_rank + (1 if global_rank < remainder else 0)
             end_idx = start_idx + my_count
-
             my_labels = class_labels[start_idx:end_idx]
             my_labels = torch.tensor(my_labels, device=self.device, dtype=torch.long)
 
@@ -630,7 +628,7 @@ class DiffusionWrapper(LightningWrapperBase):
         batches = (
             math.ceil(len(my_labels) / self.fid_batch_size)
             if my_labels is not None
-            else math.ceil(samples_per_rank / self.fid_batch_size)
+            else math.ceil(my_count / self.fid_batch_size)
         )
 
         self.eval()
@@ -644,7 +642,7 @@ class DiffusionWrapper(LightningWrapperBase):
             current_batch_size = (
                 min(self.fid_batch_size, len(my_labels) - samples_generated)
                 if my_labels is not None
-                else min(self.fid_batch_size, samples_per_rank - samples_generated)
+                else min(self.fid_batch_size, my_count - samples_generated)
             )
 
             batch_labels = (
@@ -676,39 +674,39 @@ class DiffusionWrapper(LightningWrapperBase):
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
 
-        try:
-            from torch_fidelity.metric_fid import fid_featuresdict_to_statistics, fid_statistics_to_metric
-            from torch_fidelity.metric_isc import isc_featuresdict_to_metric
-            from torch_fidelity.utils import (
-                create_feature_extractor,
-                extract_featuresdict_from_input_id,
-                resolve_feature_layer_for_metric,
-            )
+        if global_rank == 0:
+            try:
+                from torch_fidelity.metric_fid import fid_featuresdict_to_statistics, fid_statistics_to_metric
+                from torch_fidelity.metric_isc import isc_featuresdict_to_metric
+                from torch_fidelity.utils import (
+                    create_feature_extractor,
+                    extract_featuresdict_from_input_id,
+                    resolve_feature_layer_for_metric,
+                )
 
-            feat_layer_fid = resolve_feature_layer_for_metric("fid", fid=True)
-            feat_layer_isc = resolve_feature_layer_for_metric("isc", isc=True)
-            feat_layers = list({feat_layer_fid, feat_layer_isc})
+                feat_layer_fid = resolve_feature_layer_for_metric("fid", fid=True)
+                feat_layer_isc = resolve_feature_layer_for_metric("isc", isc=True)
+                feat_layers = list({feat_layer_fid, feat_layer_isc})
 
-            feat_extractor = create_feature_extractor("inception-v3-compat", feat_layers, cuda=True, verbose=False)
+                feat_extractor = create_feature_extractor("inception-v3-compat", feat_layers, cuda=True, verbose=False)
 
-            featuresdict = extract_featuresdict_from_input_id(
-                input_id=1, feat_extractor=feat_extractor, input1=fid_run_dir, cuda=True, verbose=False
-            )
+                featuresdict = extract_featuresdict_from_input_id(
+                    input_id=1, feat_extractor=feat_extractor, input1=fid_run_dir, cuda=True, verbose=False
+                )
 
-            stats_1 = fid_featuresdict_to_statistics(featuresdict, feat_layer_fid)
-            f = np.load(self.fid_stats_file)
-            stats_2 = {"mu": f["mu"], "sigma": f["sigma"]}
-            f.close()
+                stats_1 = fid_featuresdict_to_statistics(featuresdict, feat_layer_fid)
+                f = np.load(self.fid_stats_file)
+                stats_2 = {"mu": f["mu"], "sigma": f["sigma"]}
+                f.close()
 
-            stats_1["mu"] = stats_1["mu"].astype(np.float64)
-            stats_1["sigma"] = stats_1["sigma"].astype(np.float64)
-            stats_2["mu"] = stats_2["mu"].astype(np.float64)
-            stats_2["sigma"] = stats_2["sigma"].astype(np.float64)
+                stats_1["mu"] = stats_1["mu"].astype(np.float64)
+                stats_1["sigma"] = stats_1["sigma"].astype(np.float64)
+                stats_2["mu"] = stats_2["mu"].astype(np.float64)
+                stats_2["sigma"] = stats_2["sigma"].astype(np.float64)
 
-            metrics_fid = fid_statistics_to_metric(stats_1, stats_2, verbose=False)
-            metrics_isc = isc_featuresdict_to_metric(featuresdict, feat_layer_isc, isc_splits=10)
+                metrics_fid = fid_statistics_to_metric(stats_1, stats_2, verbose=False)
+                metrics_isc = isc_featuresdict_to_metric(featuresdict, feat_layer_isc, isc_splits=10)
 
-            if global_rank == 0:
                 fid = metrics_fid["frechet_inception_distance"]
                 isc = metrics_isc["inception_score_mean"]
 
@@ -722,11 +720,11 @@ class DiffusionWrapper(LightningWrapperBase):
                         {"metrics/fid_online": fid, "metrics/is_online": isc, "global_step": self.global_step}
                     )
 
-        except Exception as e:
-            print(f"Error calculating FID: {e}")
-        finally:
-            print(f"Removing temporary FID directory: {fid_run_dir}")
-            shutil.rmtree(fid_run_dir, ignore_errors=True)
+            except Exception as e:
+                print(f"Error calculating FID: {e}")
+            finally:
+                print(f"Removing temporary FID directory: {fid_run_dir}")
+                shutil.rmtree(fid_run_dir, ignore_errors=True)
 
         if torch.distributed.is_initialized():
             torch.distributed.barrier()

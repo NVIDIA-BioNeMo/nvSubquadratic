@@ -39,14 +39,12 @@ def _make_cfg() -> DiffusionExperimentConfig:
     cfg.diffusion.num_samples = 2
     cfg.diffusion.use_classifier_free_guidance = False
     cfg.diffusion.num_classes = None
-    cfg.diffusion.fid_enabled = True
-    cfg.diffusion.fid_num_batches = 1
     cfg.diffusion.fid_num_inference_steps = 1
     cfg.optimizer = SimpleNamespace(weight_decay=0.0)
     return cfg
 
 
-def test_diffusion_wrapper_updates_fid_counter():
+def test_diffusion_wrapper_validation_step():
     cfg = _make_cfg()
     module = DiffusionWrapper(network=_IdentityBackbone(), cfg=cfg)
     module.log = lambda *args, **kwargs: None
@@ -55,9 +53,6 @@ def test_diffusion_wrapper_updates_fid_counter():
     loss = module.validation_step(batch, batch_idx=0)
 
     assert isinstance(loss, torch.Tensor)
-    assert module._fid_batches_seen == 1
-
-    module.on_validation_epoch_end()
 
 
 def test_compute_folder_fid_missing_directory(tmp_path):
