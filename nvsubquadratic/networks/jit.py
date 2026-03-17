@@ -1,4 +1,8 @@
-# TODO: Add license header here
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2023 The JiT authors and contributors.
+# 
+# This file includes a port of code from the JiT project:
+# https://github.com/LTH14/JiT
 
 """JiT model implementation.
 
