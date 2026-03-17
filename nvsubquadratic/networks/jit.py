@@ -41,7 +41,7 @@ class BottleneckPatchEmbed(nn.Module):
 
     def forward(self, x):
         """Project an input image batch into patch tokens."""
-        B, C, H, W = x.shape
+        _B, _C, H, W = x.shape
         assert H == self.img_size[0] and W == self.img_size[1], (
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
         )

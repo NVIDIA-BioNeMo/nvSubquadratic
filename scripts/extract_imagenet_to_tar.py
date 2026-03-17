@@ -31,11 +31,11 @@ TAR_ROOT = "imagenet_imagefolder"
 
 
 def _guess_ext(raw_bytes: bytes) -> str:
-    if raw_bytes[:2] == b'\xff\xd8':
+    if raw_bytes[:2] == b"\xff\xd8":
         return ".jpg"
-    if raw_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+    if raw_bytes[:8] == b"\x89PNG\r\n\x1a\n":
         return ".png"
-    if raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
+    if raw_bytes[:4] == b"RIFF" and raw_bytes[8:12] == b"WEBP":
         return ".webp"
     return ".jpg"
 
@@ -43,14 +43,17 @@ def _guess_ext(raw_bytes: bytes) -> str:
 def extract_split_to_tar(split: str, tf: tarfile.TarFile) -> None:
     import datasets
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Extracting split: {split}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     hf_token = os.environ.get("HF_TOKEN")
     ds = datasets.load_dataset(
-        HF_DATASET, split=split, streaming=False,
-        cache_dir=HF_CACHE, token=hf_token,
+        HF_DATASET,
+        split=split,
+        streaming=False,
+        cache_dir=HF_CACHE,
+        token=hf_token,
     )
     ds_raw = ds.cast_column("image", datasets.Image(decode=False))
 
@@ -78,11 +81,13 @@ def extract_split_to_tar(split: str, tf: tarfile.TarFile) -> None:
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed
             eta = (total - i - 1) / rate
-            print(f"  [{split}] {i+1:>8d}/{total}  ({rate:.0f} img/s, ETA {eta/60:.1f} min)", flush=True)
+            print(f"  [{split}] {i + 1:>8d}/{total}  ({rate:.0f} img/s, ETA {eta / 60:.1f} min)", flush=True)
 
     elapsed = time.time() - t0
-    print(f"  [{split}] Done: {total} images, {len(class_counters)} classes "
-          f"in {elapsed:.0f}s ({total/elapsed:.0f} img/s)")
+    print(
+        f"  [{split}] Done: {total} images, {len(class_counters)} classes "
+        f"in {elapsed:.0f}s ({total / elapsed:.0f} img/s)"
+    )
 
 
 def main():

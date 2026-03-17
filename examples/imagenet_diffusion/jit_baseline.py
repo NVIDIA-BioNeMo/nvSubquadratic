@@ -17,7 +17,7 @@ import os
 
 import torch
 
-from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,
@@ -38,9 +38,8 @@ BATCH_SIZE = 256  # Per GPU (Total 1024 with accumulation)
 NUM_WORKERS = min(12, os.cpu_count() - 2 or 4)
 FINAL_IMAGE_SIZE = 64
 PATCH_SIZE = FINAL_IMAGE_SIZE // 16  # 4 -> JiT-B/4
-IMAGENET_DIR = os.environ.get("IMAGENET_DIR")
-if IMAGENET_DIR is None:
-    raise ValueError("Please set the IMAGENET_DIR environment variable to point to the ImageNet dataset directory.")
+HF_DATASET = os.environ.get("IMAGENET_HF_DATASET", "imagenet-1k")
+HF_CACHE = os.environ.get("IMAGENET_PATH", "/scratch-shared/dknigge/hf_cache")
 
 # Optimisation -----------------------------------------------------------------
 # 200 epochs * 1.28M images / 1024 batch size = 250,000 iterations
@@ -74,14 +73,16 @@ def get_config() -> DiffusionExperimentConfig:
     config.debug = False
     config.seed = 42
 
-    config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
-        data_dir=IMAGENET_DIR,
-        imagefolder_dir=IMAGENET_DIR,
+    config.dataset = LazyConfig(ImageNetDataModule)(
+        data_dir=HF_CACHE,
+        hf_dataset_name=HF_DATASET,
         image_size=FINAL_IMAGE_SIZE,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
+        pin_memory=True,
+        seed=42,
         task="generation",  # normalizes to [-1, 1]
-        channels_first=False,
+        drop_labels=False,
     )
 
     # JiT Model

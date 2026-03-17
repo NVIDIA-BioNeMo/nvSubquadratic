@@ -141,7 +141,7 @@ class VisionRotaryEmbeddingFast(nn.Module):
             sin_img = freqs_flat.sin()
 
             # prepend in-context cls token
-            N_img, D = cos_img.shape
+            _N_img, D = cos_img.shape
             cos_pad = torch.ones(num_cls_token, D, dtype=cos_img.dtype, device=cos_img.device)
             sin_pad = torch.zeros(num_cls_token, D, dtype=sin_img.dtype, device=sin_img.device)
 

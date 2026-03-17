@@ -17,7 +17,7 @@ import os
 
 import torch
 
-from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,
@@ -29,14 +29,14 @@ from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.utils.qk_norm import L2Norm
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 WANDB_ENTITY = "dafidofff"
@@ -46,9 +46,8 @@ BATCH_SIZE = 256  # Per GPU (Total 1024 with accumulation)
 NUM_WORKERS = min(12, os.cpu_count() - 2 or 4)
 FINAL_IMAGE_SIZE = 64
 PATCH_SIZE = int(FINAL_IMAGE_SIZE / 16)  # 4 -> patch_size 4
-IMAGENET_DIR = os.environ.get("IMAGENET_DIR")
-if IMAGENET_DIR is None:
-    raise ValueError("Please set the IMAGENET_DIR environment variable to point to the ImageNet dataset directory.")
+HF_DATASET = os.environ.get("IMAGENET_HF_DATASET", "imagenet-1k")
+HF_CACHE = os.environ.get("IMAGENET_PATH", "/scratch-shared/dknigge/hf_cache")
 
 # Network params (CCNN matching JiT-B)
 INPUT_CHANNELS = 3
@@ -93,14 +92,16 @@ def get_config() -> DiffusionExperimentConfig:
     config.debug = False
     config.seed = 42
 
-    config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
-        data_dir=IMAGENET_DIR,
-        imagefolder_dir=IMAGENET_DIR,
+    config.dataset = LazyConfig(ImageNetDataModule)(
+        data_dir=HF_CACHE,
+        hf_dataset_name=HF_DATASET,
         image_size=FINAL_IMAGE_SIZE,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
+        pin_memory=True,
+        seed=42,
         task="generation",  # normalizes to [-1, 1]
-        channels_first=False,
+        drop_labels=False,
     )
 
     # CCNN Model
@@ -193,6 +194,7 @@ def get_config() -> DiffusionExperimentConfig:
         params=PLACEHOLDER,
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
+        betas=(0.9, 0.95),
     )
 
     config.train = TrainConfig(
