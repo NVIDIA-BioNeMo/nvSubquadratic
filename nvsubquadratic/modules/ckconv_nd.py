@@ -156,6 +156,7 @@ class CKConvND(torch.nn.Module):
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
         use_fp16_fft: bool = False,
+        fft_backend: Literal["torch_fft", "subq_ops"] = "torch_fft",
     ):
         """Initialize the CKConvND.
 
@@ -181,10 +182,19 @@ class CKConvND(torch.nn.Module):
                 overflow. Saves ~36% peak memory per convolution with ~0.8% mean
                 relative error vs f32. Supported for 1D/2D/3D with zero or causal
                 padding (not circular). Default is False.
+            fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
+                uses the torch.fft-based implementations. ``'subq_ops'`` uses the
+                optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
+                backend currently only supports 2D, zero-padded, non-causal
+                convolutions and does not support fp16 FFT. It supports chunked
+                convolutions via channel-wise chunking.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
             f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
+        )
+        assert fft_backend in ["torch_fft", "subq_ops"], (
+            f"Invalid fft_backend: {fft_backend!r}. Must be 'torch_fft' or 'subq_ops'."
         )
         if is_causal:
             assert data_dim == 1, f"Causal CKConvND only supports 1D inputs. Got {data_dim}D."
@@ -210,6 +220,18 @@ class CKConvND(torch.nn.Module):
                 "requires power-of-2 sizes which circular padding cannot guarantee."
             )
 
+        # subq_ops backend constraints
+        if fft_backend == "subq_ops":
+            assert data_dim == 2, f"fft_backend='subq_ops' only supports 2D convolutions. Got data_dim={data_dim}."
+            assert fft_padding == "zero", (
+                f"fft_backend='subq_ops' only supports zero-padded convolutions. Got fft_padding='{fft_padding}'."
+            )
+            assert not is_causal, "fft_backend='subq_ops' does not support causal convolutions (causal is 1D only)."
+            assert not use_fp16_fft, (
+                "fft_backend='subq_ops' does not support fp16 FFT — the CUDA kernel "
+                "manages its own precision internally. Use use_fp16_fft=False."
+            )
+
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
@@ -217,6 +239,7 @@ class CKConvND(torch.nn.Module):
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
         self.use_fp16_fft = use_fp16_fft
+        self.fft_backend = fft_backend
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
@@ -227,27 +250,43 @@ class CKConvND(torch.nn.Module):
         bounds = math.sqrt(1.0 / hidden_dim)
         self.shortcut.data.uniform_(-bounds, bounds)
 
-        # Define FFT operation depending on padding and dimensionality
-        # Causal mode overrides fft_padding for 1D
-        effective_padding = "causal" if is_causal else self.fft_padding
-
-        # Choose FFT functions: fp16+chunked > fp16 > chunked > standard
-        if use_fp16_fft and use_chunked_fftconv:
-            fft_fn_table = FFT_FUNCTIONS_FP16_CHUNKED
-        elif use_fp16_fft:
-            fft_fn_table = FFT_FUNCTIONS_FP16
-        elif use_chunked_fftconv:
-            fft_fn_table = FFT_FUNCTIONS_CHUNKED
-        else:
-            fft_fn_table = FFT_FUNCTIONS
-        try:
-            self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
-        except KeyError:
-            valid_dims = sorted(fft_fn_table.get(effective_padding, {}).keys())
-            raise ValueError(
-                f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
-                f"Valid dimensions for '{effective_padding}': {valid_dims}"
+        # Select FFT convolution functions based on backend
+        if fft_backend == "subq_ops":
+            from nvsubquadratic.ops.fftconv_custom import (
+                fftconv2d_bhl,
+                fftconv2d_bhl_chunked,
+                fftconv2d_bhl_w_reshape,
+                fftconv2d_bhl_w_reshape_chunked,
             )
+
+            if use_chunked_fftconv:
+                self.fftconv_fn = fftconv2d_bhl_w_reshape_chunked
+                self.fftconv_fn_bhl_input = fftconv2d_bhl_chunked
+            else:
+                self.fftconv_fn = fftconv2d_bhl_w_reshape
+                self.fftconv_fn_bhl_input = fftconv2d_bhl
+        else:
+            # torch_fft backend: use lookup tables
+            # Causal mode overrides fft_padding for 1D
+            effective_padding = "causal" if is_causal else self.fft_padding
+
+            # Choose FFT functions: fp16+chunked > fp16 > chunked > standard
+            if use_fp16_fft and use_chunked_fftconv:
+                fft_fn_table = FFT_FUNCTIONS_FP16_CHUNKED
+            elif use_fp16_fft:
+                fft_fn_table = FFT_FUNCTIONS_FP16
+            elif use_chunked_fftconv:
+                fft_fn_table = FFT_FUNCTIONS_CHUNKED
+            else:
+                fft_fn_table = FFT_FUNCTIONS
+            try:
+                self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
+            except KeyError:
+                valid_dims = sorted(fft_fn_table.get(effective_padding, {}).keys())
+                raise ValueError(
+                    f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
+                    f"Valid dimensions for '{effective_padding}': {valid_dims}"
+                )
 
         # Define the grid type
         self.grid_type = grid_type
@@ -257,7 +296,8 @@ class CKConvND(torch.nn.Module):
         return (
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
-            f"use_chunked_fftconv={self.use_chunked_fftconv}, use_fp16_fft={self.use_fp16_fft}"
+            f"use_chunked_fftconv={self.use_chunked_fftconv}, use_fp16_fft={self.use_fp16_fft}, "
+            f"fft_backend={self.fft_backend!r}"
         )
 
     def apply_convolution(
