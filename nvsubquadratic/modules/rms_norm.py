@@ -15,10 +15,18 @@ import torch.nn as nn
 try:
     from quack import rmsnorm as _quack_rmsnorm
 
-    _has_quack = True
+    _quack_available = True
 except ImportError:
-    _has_quack = False
     _quack_rmsnorm = None
+    _quack_available = False
+
+
+def _cuda_supports_quack(device: torch.device) -> bool:
+    """QuACK kernels are built for Hopper/Blackwell (SM 9.x). Ampere (8.x) and older fail in forward or backward."""
+    if not device.type == "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device)
+    return major >= 9
 
 
 def _rmsnorm_pytorch(x: torch.Tensor, weight: torch.nn.Parameter, eps: float) -> torch.Tensor:
@@ -42,7 +50,9 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize over last dimension and scale by weight."""
-        if _has_quack and x.is_cuda:
+        # Only use quack on GPUs that support it (SM 9+). On Ampere (8.x), quack backward fails;
+        # we must not call quack at all so autograd never invokes its backward.
+        if _quack_available and x.is_cuda and _cuda_supports_quack(x.device):
             try:
                 return _quack_rmsnorm(x, self.weight, eps=self.eps)
             except RuntimeError as e:
