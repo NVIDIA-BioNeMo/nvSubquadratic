@@ -64,7 +64,8 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 # Install development dependencies first (as root, system-wide)
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-# Install the package (as root, system-wide)
+# Install the package (as root, system-wide). Apex and quack are not installed;
+# tests that need apex are skipped; RMSNorm uses the pure-PyTorch fallback.
 RUN pip install --no-cache-dir --no-build-isolation .
 
 # Set up ubuntu user's home directory and permissions

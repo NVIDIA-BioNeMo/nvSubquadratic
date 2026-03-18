@@ -50,6 +50,7 @@ def test_diffusion_wrapper_updates_fid_counter():
     cfg = _make_cfg()
     module = DiffusionWrapper(network=_IdentityBackbone(), cfg=cfg)
     module.log = lambda *args, **kwargs: None
+    module.trainer = SimpleNamespace(sanity_checking=False)
 
     batch = {"input": torch.zeros(2, 4, 4, 1)}
     loss = module.validation_step(batch, batch_idx=0)

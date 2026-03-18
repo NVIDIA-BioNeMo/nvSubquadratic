@@ -1,11 +1,29 @@
 """RMSNorm — Root Mean Square Layer Normalization.
 
-Uses QuACK's fused Triton kernel on CUDA, with a pure-PyTorch fallback for CPU.
+Uses QuACK's fused Triton kernel on CUDA when available, with a pure-PyTorch
+fallback otherwise (CPU or when quack is not installed).
 """
 
 import torch
 import torch.nn as nn
-from quack import rmsnorm as _quack_rmsnorm
+
+
+try:
+    from quack import rmsnorm as _quack_rmsnorm
+
+    _has_quack = True
+except ImportError:
+    _has_quack = False
+    _quack_rmsnorm = None
+
+
+def _rmsnorm_pytorch(x: torch.Tensor, weight: torch.nn.Parameter, eps: float) -> torch.Tensor:
+    """Pure PyTorch RMSNorm (used when quack is unavailable or on CPU)."""
+    input_dtype = x.dtype
+    x = x.to(torch.float32)
+    variance = x.pow(2).mean(-1, keepdim=True)
+    x = x * torch.rsqrt(variance + eps)
+    return (weight * x).to(input_dtype)
 
 
 class RMSNorm(nn.Module):
@@ -20,13 +38,9 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize over last dimension and scale by weight."""
-        if x.is_cuda:
+        if _has_quack and x.is_cuda:
             return _quack_rmsnorm(x, self.weight, eps=self.eps)
-        input_dtype = x.dtype
-        x = x.to(torch.float32)
-        variance = x.pow(2).mean(-1, keepdim=True)
-        x = x * torch.rsqrt(variance + self.eps)
-        return (self.weight * x).to(input_dtype)
+        return _rmsnorm_pytorch(x, self.weight, self.eps)
 
 
 class PerHeadRMSNorm(nn.Module):
