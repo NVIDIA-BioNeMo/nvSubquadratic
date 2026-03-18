@@ -2,25 +2,8 @@
 
 """Shared pytest fixtures for all test files."""
 
-import functools
-
 import pytest
 import torch
-
-
-def skip_on_cuda_kernel_unsupported(test_fn):
-    """Decorator: skip (do not fail) when GPU raises cudaErrorInvalidDeviceFunction."""
-
-    @functools.wraps(test_fn)
-    def wrapper(*args, **kwargs):
-        try:
-            return test_fn(*args, **kwargs)
-        except RuntimeError as e:
-            if "cudaErrorInvalidDeviceFunction" in str(e):
-                pytest.skip(reason=f"GPU does not support required CUDA kernels: {e}")
-            raise
-
-    return wrapper
 
 
 @pytest.fixture

@@ -30,6 +30,11 @@ dependencies = [
     "nvidia-dali-cuda120",
 ]
 
+[project.optional-dependencies]
+# Optional: use QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
+# On Ampere and older GPUs the kernel is not available; RMSNorm uses PyTorch fallback.
+quack = ["quack-kernels"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["nvsubquadratic*"]

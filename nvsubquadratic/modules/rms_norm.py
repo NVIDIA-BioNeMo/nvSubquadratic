@@ -1,7 +1,9 @@
 """RMSNorm — Root Mean Square Layer Normalization.
 
-Uses QuACK's fused Triton kernel on CUDA when available, with a pure-PyTorch
-fallback otherwise (CPU or when quack is not installed).
+Uses QuACK's fused kernel on CUDA when available (Hopper/Blackwell: H100, B200, B300 only).
+On other GPUs (e.g. Ampere), when quack is not installed, or on CPU, uses a pure-PyTorch
+fallback. There is no quack-kernels build for Ampere; install quack only on H100/B200
+for acceleration.
 """
 
 import warnings

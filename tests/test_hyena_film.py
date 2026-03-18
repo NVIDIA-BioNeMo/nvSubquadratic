@@ -20,7 +20,6 @@ from pathlib import Path
 import pytest
 import torch
 import torch.nn as nn
-from conftest import skip_on_cuda_kernel_unsupported
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -313,12 +312,11 @@ class TestResidualBlockFiLM:
         out = block(x)
         assert out.shape == (2, T, 384)
 
-    @skip_on_cuda_kernel_unsupported
-    def test_gradient_flow_through_pooling(self, device: torch.device) -> None:
-        """Gradients flow from the output through register pooling logits."""
-        block = self._make_block_with_pooling(device, num_registers=4)
+    def test_gradient_flow_through_pooling(self, device_cpu: torch.device) -> None:
+        """Gradients flow from the output through register pooling logits (runs on CPU for compatibility)."""
+        block = self._make_block_with_pooling(device_cpu, num_registers=4)
         T = 1 + 4 + 196
-        x = torch.randn(2, T, 384, device=device, requires_grad=True)
+        x = torch.randn(2, T, 384, device=device_cpu, requires_grad=True)
         out = block(x)
         out.sum().backward()
         assert x.grad is not None
