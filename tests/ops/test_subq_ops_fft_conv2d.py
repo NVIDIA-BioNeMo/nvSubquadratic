@@ -279,6 +279,34 @@ class TestBackward:
         # kernel grads have different shapes: [H, Kx, Ky] vs [1, H, Kx, Ky]
         torch.testing.assert_close(k_subq.grad, k_ref.grad.squeeze(0), atol=ATOL_GRAD, rtol=RTOL_GRAD)
 
+    @pytest.mark.parametrize(
+        "B, H, X, Y, Kx, Ky",
+        [
+            (4, 32, 16, 16, 5, 5),
+            (2, 64, 14, 14, 7, 7),
+        ],
+    )
+    def test_backward_matches_reference_film(
+        self, device: str, B: int, H: int, X: int, Y: int, Kx: int, Ky: int
+    ) -> None:
+        """Gradients from CUDA kernel match torch.fft reference for FiLM (per-sample) kernels."""
+        torch.manual_seed(42)
+
+        # Reference (torch.fft)
+        x_ref = torch.randn(B, H, X, Y, device=device, dtype=torch.float32, requires_grad=True)
+        k_ref = torch.randn(B, H, Kx, Ky, device=device, dtype=torch.float32, requires_grad=True)
+        y_ref = _ref_fftconv2d_bhl(x_ref, k_ref, shortcut=None)
+        y_ref.sum().backward()
+
+        # CUDA kernel (subq_ops)
+        x_subq = x_ref.detach().clone().requires_grad_(True)
+        k_subq = k_ref.detach().clone().requires_grad_(True)
+        y_subq = _subq_fftconv2d(x_subq, k_subq)
+        y_subq.sum().backward()
+
+        torch.testing.assert_close(x_subq.grad, x_ref.grad, atol=ATOL_GRAD, rtol=RTOL_GRAD)
+        torch.testing.assert_close(k_subq.grad, k_ref.grad, atol=ATOL_GRAD, rtol=RTOL_GRAD)
+
 
 # ---------------------------------------------------------------------------
 # Dtype handling
