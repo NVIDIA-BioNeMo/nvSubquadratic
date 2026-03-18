@@ -4,6 +4,8 @@ Uses QuACK's fused Triton kernel on CUDA when available, with a pure-PyTorch
 fallback otherwise (CPU or when quack is not installed).
 """
 
+import warnings
+
 import torch
 import torch.nn as nn
 
@@ -39,7 +41,18 @@ class RMSNorm(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize over last dimension and scale by weight."""
         if _has_quack and x.is_cuda:
-            return _quack_rmsnorm(x, self.weight, eps=self.eps)
+            try:
+                return _quack_rmsnorm(x, self.weight, eps=self.eps)
+            except RuntimeError as e:
+                if "cudaErrorInvalidDeviceFunction" in str(e) or "CUDA" in str(e):
+                    warnings.warn(
+                        f"QuACK RMSNorm kernel failed ({e}); falling back to PyTorch. "
+                        "Install quack-kernels for a GPU that supports it, or use CPU.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    return _rmsnorm_pytorch(x, self.weight, self.eps)
+                raise
         return _rmsnorm_pytorch(x, self.weight, self.eps)
 
 

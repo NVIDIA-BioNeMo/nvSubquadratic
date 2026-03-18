@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 import torch
 import torch.nn as nn
+from conftest import skip_on_cuda_kernel_unsupported
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -419,6 +420,7 @@ class TestViT5ResidualBlock:
         block = self._make_block(device, drop_path=0.0)
         assert isinstance(block.drop_path, nn.Identity)
 
+    @skip_on_cuda_kernel_unsupported
     def test_gradient_flow_through_all_components(self, device: torch.device) -> None:
         """Gradients reach the input and both LayerScale gamma parameters."""
         block = self._make_block(device)
@@ -544,6 +546,7 @@ class TestViT5ClassificationNet:
             out = net(x)
         assert out["logits"].shape == (1, 1000)
 
+    @skip_on_cuda_kernel_unsupported
     def test_gradient_flow_end_to_end(self, device: torch.device) -> None:
         """Gradients propagate from logits back to the raw image input."""
         net = self._make_net(device, num_blocks=1)
@@ -791,6 +794,7 @@ class TestGAPReadoutAndTokenLayout:
         net = self._make_net(device, use_cls_token=False)
         assert net.cls_token is None
 
+    @skip_on_cuda_kernel_unsupported
     def test_gradient_flow_gap_mode(self, device: torch.device) -> None:
         """Gradients propagate through GAP readout back to the image input."""
         net = self._make_net(device, use_cls_token=False, num_registers=4)
