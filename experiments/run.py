@@ -20,21 +20,21 @@ import PIL.Image
 
 PIL.Image.init()
 
-import pytorch_lightning as pl
-import torch
-import wandb
-from pytorch_lightning.loggers import WandbLogger
-from rich import print as rprint
-from rich.tree import Tree
+import pytorch_lightning as pl  # noqa: E402
+import torch  # noqa: E402
+from pytorch_lightning.loggers import WandbLogger  # noqa: E402
+from rich import print as rprint  # noqa: E402
+from rich.tree import Tree  # noqa: E402
 
-from experiments.trainer import construct_trainer
-from experiments.utils.checkpointing import (
+import wandb  # noqa: E402
+from experiments.trainer import construct_trainer  # noqa: E402
+from experiments.utils.checkpointing import (  # noqa: E402
     download_checkpoint,
     load_checkpoint_state_dict,
     load_state_dict_partially,
     preview_state_dict_compatibility,
 )
-from experiments.utils.cli import (
+from experiments.utils.cli import (  # noqa: E402
     add_to_tree,
     apply_config_overrides,
     config_to_dict,
@@ -42,7 +42,7 @@ from experiments.utils.cli import (
     load_config_from_file,
     verify_no_interpolator_overwrites,
 )
-from nvsubquadratic.lazy_config import instantiate
+from nvsubquadratic.lazy_config import instantiate  # noqa: E402
 
 
 torch._dynamo.config.cache_size_limit = 32

@@ -402,7 +402,7 @@ class UCF101DataModule(pl.LightningDataModule):
         video, label = batch
         # Must reshape the frames
         if self.frame_transform is not None:
-            batch_size, channels, temporal_length, height, width = video.shape
+            batch_size, channels, temporal_length, _height, _width = video.shape
             video = rearrange(video, "b c t h w -> (b c t) h w")
             # Apply frame transform
             video = self.frame_transform(video)

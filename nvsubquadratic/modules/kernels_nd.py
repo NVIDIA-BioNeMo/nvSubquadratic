@@ -428,6 +428,7 @@ class SIRENKernelND(torch.nn.Module):
         hidden_omega_0: float = 1.0,
         film_cfg: LazyConfig | None = None,
     ):
+        """Build SIREN MLP and optional FiLM conditioner."""
         super().__init__()
 
         self.out_dim = out_dim

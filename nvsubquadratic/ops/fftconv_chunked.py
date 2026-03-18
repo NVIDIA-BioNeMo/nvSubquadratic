@@ -252,7 +252,7 @@ def fftconv1d_fp32_bhl_chunked(
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, L = x.shape
+    _B, H, _L = x.shape
 
     if H <= chunk_size:
         return _fftconv1d_bhl_std(x, kernel, shortcut)
@@ -292,7 +292,7 @@ def causal_fftconv1d_fp32_bhl_chunked(
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, L = x.shape
+    _B, H, _L = x.shape
 
     if H <= chunk_size:
         return _causal_fftconv1d_bhl_std(x, kernel, shortcut)
@@ -335,7 +335,7 @@ def fftconv2d_fp32_bhl_chunked(
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, X_in, Y_in = x.shape
+    _B, H, _X_in, Y_in = x.shape
 
     if H <= chunk_size:
         return _fftconv2d_bhl_std(x, kernel, shortcut)

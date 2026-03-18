@@ -5,8 +5,8 @@
 import torch
 import torch.nn.functional as F
 import torchmetrics
-import wandb
 
+import wandb
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -161,7 +161,7 @@ class ClassificationWrapper(LightningWrapperBase):
     def training_step(self, batch, batch_idx):
         """Perform a training step and log the training loss & accuracy."""
         # Perform step
-        predictions, loss, other_outputs = self._step(batch, self.train_acc)
+        _predictions, loss, other_outputs = self._step(batch, self.train_acc)
         # Log and return loss (Required in training step)
         self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         self.log(
@@ -179,7 +179,7 @@ class ClassificationWrapper(LightningWrapperBase):
     def validation_step(self, batch, batch_idx):
         """Perform a validation step and log the validation loss & accuracy."""
         # Perform step
-        predictions, loss, other_outputs = self._step(batch, self.val_acc)
+        _predictions, loss, other_outputs = self._step(batch, self.val_acc)
         s = self._val_metric_suffix
         self.log(
             f"val/loss{s}",
@@ -205,7 +205,7 @@ class ClassificationWrapper(LightningWrapperBase):
     def test_step(self, batch, batch_idx):
         """Perform a test step and log the test loss & accuracy."""
         # Perform step
-        predictions, loss, _ = self._step(batch, self.test_acc)
+        _predictions, loss, _ = self._step(batch, self.test_acc)
         # Log and return loss (Required in training step)
         self.log(
             "test/loss",

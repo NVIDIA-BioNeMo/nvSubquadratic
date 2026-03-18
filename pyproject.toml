@@ -27,6 +27,8 @@ dependencies = [
     "huggingface_hub",
     "subquadratic-ops-torch-cu12",
     "timm==1.0.22",
+    "nvidia-dali-cuda120",
+    "quack-kernels",
 ]
 
 [tool.setuptools.packages.find]

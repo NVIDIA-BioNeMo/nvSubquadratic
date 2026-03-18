@@ -6,8 +6,8 @@ from typing import Literal
 
 import torch
 import torchmetrics
-import wandb
 
+import wandb
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
@@ -97,7 +97,7 @@ class RegressionWrapper(LightningWrapperBase):
         # Start timing (CUDA events)
         self._start_timing()
         # Perform step
-        predictions, loss, other_outputs = self._step(batch, self.train_metric)
+        _predictions, loss, other_outputs = self._step(batch, self.train_metric)
         # Log loss
         self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Add other outputs to the list of other outputs. This is used for end of epoch logging.
@@ -108,7 +108,7 @@ class RegressionWrapper(LightningWrapperBase):
     def validation_step(self, batch, batch_idx):
         """Perform a validation step and log the validation loss."""
         # Perform step
-        predictions, loss, other_outputs = self._step(batch, self.val_metric)
+        _predictions, loss, other_outputs = self._step(batch, self.val_metric)
         # Log loss
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Add other outputs to the list of other outputs. This is used for end of epoch logging.
@@ -119,7 +119,7 @@ class RegressionWrapper(LightningWrapperBase):
     def test_step(self, batch, batch_idx):
         """Perform a test step and log the test loss."""
         # Perform step
-        predictions, loss, _ = self._step(batch, self.test_metric)
+        _predictions, loss, _ = self._step(batch, self.test_metric)
         # Log loss
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
 

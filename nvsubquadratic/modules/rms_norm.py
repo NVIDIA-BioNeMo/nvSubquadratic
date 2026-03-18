@@ -12,13 +12,15 @@ class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization."""
 
     def __init__(self, dim: int, eps: float = 1e-6):
+        """Set dimension and epsilon for normalization."""
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.weight._no_weight_decay = True
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if _quack_rmsnorm is not None and x.is_cuda:
+        """Normalize over last dimension and scale by weight."""
+        if x.is_cuda:
             return _quack_rmsnorm(x, self.weight, eps=self.eps)
         input_dtype = x.dtype
         x = x.to(torch.float32)
@@ -36,16 +38,19 @@ class PerHeadRMSNorm(nn.Module):
     """
 
     def __init__(self, num_heads: int, head_dim: int, eps: float = 1e-6):
+        """Store head layout and create per-head RMSNorm."""
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.norm = RMSNorm(dim=head_dim, eps=eps)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Normalize each head independently over head_dim."""
         shape = x.shape
         x = x.view(*shape[:-1], self.num_heads, self.head_dim)
         x = self.norm(x)
         return x.view(shape)
 
     def extra_repr(self) -> str:
+        """Return head layout for repr()."""
         return f"num_heads={self.num_heads}, head_dim={self.head_dim}"
