@@ -27,8 +27,8 @@ from examples.spatial_recall_1d.base_config import (
 )
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
-from nvsubquadratic.utils.qk_norm import L2Norm
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # Dataset-specific parameters

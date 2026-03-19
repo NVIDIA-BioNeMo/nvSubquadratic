@@ -81,7 +81,8 @@ class Hyena(torch.nn.Module):
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
         gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
     ):
-        """
+        """Constructor.
+
         Args:
             global_conv_cfg: Global (long-range) convolutional layer.
             short_conv_cfg: Short depthwise conv applied to concatenated [Q, K, V].

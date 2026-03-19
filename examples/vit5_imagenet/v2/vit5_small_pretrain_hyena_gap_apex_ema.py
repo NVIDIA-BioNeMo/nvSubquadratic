@@ -11,6 +11,7 @@ from nvsubquadratic.lazy_config import LazyConfig
 
 
 def get_config() -> ExperimentConfig:
+    """Return base GAP pretrain config with EMA weight averaging."""
     config = _base_get_config()
     config.callbacks = [LazyConfig(LabeledEMAWeightAveraging)(decay=0.99996)]
     config.trainer.checkpoint_monitor = "val/acc_ema"

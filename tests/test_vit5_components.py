@@ -38,6 +38,14 @@ from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 
 
+try:
+    import apex  # noqa: F401
+
+    _has_apex = True
+except ImportError:
+    _has_apex = False
+
+
 # ─── Fixtures ───────────────────────────────────────────────────────────────────
 
 
@@ -566,6 +574,7 @@ class TestViT5ClassificationNet:
 # ─── 7. Cross-validation against reference ViT-5 ───────────────────────────────
 
 
+@pytest.mark.skipif(not _has_apex, reason="apex not installed (install from source or NGC container)")
 class TestCrossValidation:
     """Cross-validate our implementation against the ViT-5 paper specs.
 
