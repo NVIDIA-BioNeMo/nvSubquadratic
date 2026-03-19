@@ -26,6 +26,7 @@ from torchvision.io import decode_jpeg, read_file
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import v2 as transforms_v2
 
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from experiments.datamodules.imagenet import (
@@ -34,6 +35,7 @@ from experiments.datamodules.imagenet import (
     _ImageNetRawBytesDataset,
     _raw_bytes_collate,
 )
+
 
 IMAGENET_FOLDER = Path("/shared/data/image_datasets/imagenet_folder")
 NEEDS_DATA = pytest.mark.skipif(
@@ -66,6 +68,7 @@ def sample_paths():
 # 1. Raw decode equivalence
 # ---------------------------------------------------------------------------
 
+
 @NEEDS_DATA
 @NEEDS_CUDA
 class TestRawDecodeEquivalence:
@@ -76,12 +79,7 @@ class TestRawDecodeEquivalence:
         identical = 0
         for p in sample_paths:
             pil_np = np.array(Image.open(p).convert("RGB"))
-            gpu_np = (
-                decode_jpeg(read_file(str(p)), device="cuda:0")
-                .permute(1, 2, 0)
-                .cpu()
-                .numpy()
-            )
+            gpu_np = decode_jpeg(read_file(str(p)), device="cuda:0").permute(1, 2, 0).cpu().numpy()
             if np.array_equal(pil_np, gpu_np):
                 identical += 1
         ratio = identical / len(sample_paths)
@@ -91,13 +89,7 @@ class TestRawDecodeEquivalence:
         """Max per-pixel difference should stay below 50/255 for all images."""
         for p in sample_paths:
             pil_np = np.array(Image.open(p).convert("RGB"), dtype=np.float32)
-            gpu_np = (
-                decode_jpeg(read_file(str(p)), device="cuda:0")
-                .permute(1, 2, 0)
-                .cpu()
-                .numpy()
-                .astype(np.float32)
-            )
+            gpu_np = decode_jpeg(read_file(str(p)), device="cuda:0").permute(1, 2, 0).cpu().numpy().astype(np.float32)
             max_diff = np.abs(pil_np - gpu_np).max()
             assert max_diff < 50, f"{p.name}: max pixel diff {max_diff} ≥ 50"
 
@@ -106,13 +98,7 @@ class TestRawDecodeEquivalence:
         l1s = []
         for p in sample_paths:
             pil_np = np.array(Image.open(p).convert("RGB"), dtype=np.float32)
-            gpu_np = (
-                decode_jpeg(read_file(str(p)), device="cuda:0")
-                .permute(1, 2, 0)
-                .cpu()
-                .numpy()
-                .astype(np.float32)
-            )
+            gpu_np = decode_jpeg(read_file(str(p)), device="cuda:0").permute(1, 2, 0).cpu().numpy().astype(np.float32)
             l1s.append(np.abs(pil_np - gpu_np).mean())
         assert np.mean(l1s) < 1.0, f"Mean L1 = {np.mean(l1s):.3f} (expected < 1.0)"
 
@@ -121,6 +107,7 @@ class TestRawDecodeEquivalence:
 # 2. Deterministic val transform equivalence
 # ---------------------------------------------------------------------------
 
+
 @NEEDS_DATA
 @NEEDS_CUDA
 class TestValTransformEquivalence:
@@ -128,26 +115,32 @@ class TestValTransformEquivalence:
 
     @pytest.fixture(scope="class")
     def pil_val_transform(self):
-        return transforms.Compose([
-            transforms.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC),
-            transforms.CenterCrop(IMAGE_SIZE),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=MEAN, std=STD),
-        ])
+        return transforms.Compose(
+            [
+                transforms.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC),
+                transforms.CenterCrop(IMAGE_SIZE),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=MEAN, std=STD),
+            ]
+        )
 
     @pytest.fixture(scope="class")
     def gpu_per_img(self):
-        return transforms_v2.Compose([
-            transforms_v2.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC, antialias=True),
-            transforms_v2.CenterCrop(IMAGE_SIZE),
-        ])
+        return transforms_v2.Compose(
+            [
+                transforms_v2.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC, antialias=True),
+                transforms_v2.CenterCrop(IMAGE_SIZE),
+            ]
+        )
 
     @pytest.fixture(scope="class")
     def gpu_batch(self):
-        return transforms_v2.Compose([
-            transforms_v2.ToDtype(torch.float32, scale=True),
-            transforms_v2.Normalize(mean=MEAN, std=STD),
-        ])
+        return transforms_v2.Compose(
+            [
+                transforms_v2.ToDtype(torch.float32, scale=True),
+                transforms_v2.Normalize(mean=MEAN, std=STD),
+            ]
+        )
 
     def test_output_shapes_match(self, sample_paths, pil_val_transform, gpu_per_img, gpu_batch):
         p = sample_paths[0]
@@ -191,6 +184,7 @@ class TestValTransformEquivalence:
 # 3. Split pipeline consistency (per-image + batch == single-pass)
 # ---------------------------------------------------------------------------
 
+
 @NEEDS_DATA
 @NEEDS_CUDA
 class TestSplitPipelineConsistency:
@@ -198,20 +192,26 @@ class TestSplitPipelineConsistency:
     a single composed pipeline applied image-by-image."""
 
     def test_split_equals_combined(self, sample_paths):
-        per_img = transforms_v2.Compose([
-            transforms_v2.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC, antialias=True),
-            transforms_v2.CenterCrop(IMAGE_SIZE),
-        ])
-        batch_ops = transforms_v2.Compose([
-            transforms_v2.ToDtype(torch.float32, scale=True),
-            transforms_v2.Normalize(mean=MEAN, std=STD),
-        ])
-        combined = transforms_v2.Compose([
-            transforms_v2.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC, antialias=True),
-            transforms_v2.CenterCrop(IMAGE_SIZE),
-            transforms_v2.ToDtype(torch.float32, scale=True),
-            transforms_v2.Normalize(mean=MEAN, std=STD),
-        ])
+        per_img = transforms_v2.Compose(
+            [
+                transforms_v2.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC, antialias=True),
+                transforms_v2.CenterCrop(IMAGE_SIZE),
+            ]
+        )
+        batch_ops = transforms_v2.Compose(
+            [
+                transforms_v2.ToDtype(torch.float32, scale=True),
+                transforms_v2.Normalize(mean=MEAN, std=STD),
+            ]
+        )
+        combined = transforms_v2.Compose(
+            [
+                transforms_v2.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC, antialias=True),
+                transforms_v2.CenterCrop(IMAGE_SIZE),
+                transforms_v2.ToDtype(torch.float32, scale=True),
+                transforms_v2.Normalize(mean=MEAN, std=STD),
+            ]
+        )
 
         for p in sample_paths[:10]:
             gpu_img = decode_jpeg(read_file(str(p)), device="cuda:0")
@@ -225,6 +225,7 @@ class TestSplitPipelineConsistency:
 # ---------------------------------------------------------------------------
 # 4. Dataset and collate utilities
 # ---------------------------------------------------------------------------
+
 
 @NEEDS_DATA
 class TestRawBytesDatasetAndCollate:
@@ -269,6 +270,7 @@ class TestRawBytesDatasetAndCollate:
 # 5. Augmentation noise dominates decoder noise
 # ---------------------------------------------------------------------------
 
+
 @NEEDS_DATA
 @NEEDS_CUDA
 class TestAugmentationDominatesDecoderNoise:
@@ -276,10 +278,12 @@ class TestAugmentationDominatesDecoderNoise:
     the nvJPEG-vs-libjpeg decoder difference."""
 
     def test_crop_noise_exceeds_decoder_noise(self, sample_paths):
-        resize = transforms.Compose([
-            transforms.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC),
-            transforms.ToTensor(),
-        ])
+        resize = transforms.Compose(
+            [
+                transforms.Resize(IMAGE_SIZE + 32, interpolation=InterpolationMode.BICUBIC),
+                transforms.ToTensor(),
+            ]
+        )
         crop = transforms.RandomCrop(IMAGE_SIZE)
 
         decoder_l1s = []
@@ -288,10 +292,7 @@ class TestAugmentationDominatesDecoderNoise:
         for p in sample_paths[:20]:
             pil_img = Image.open(p).convert("RGB")
             pil_np = np.array(pil_img, dtype=np.float32)
-            gpu_np = (
-                decode_jpeg(read_file(str(p)), device="cuda:0")
-                .permute(1, 2, 0).cpu().numpy().astype(np.float32)
-            )
+            gpu_np = decode_jpeg(read_file(str(p)), device="cuda:0").permute(1, 2, 0).cpu().numpy().astype(np.float32)
             decoder_l1s.append(np.abs(pil_np - gpu_np).mean() / 255.0)
 
             resized = resize(pil_img)

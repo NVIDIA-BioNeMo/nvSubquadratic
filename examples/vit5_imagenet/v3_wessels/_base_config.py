@@ -14,16 +14,15 @@ from examples.vit5_imagenet.v3._pretrain_base import (
     HIDDEN_DIM,
     INIT_FN_FACTORY,
     INPUT_CHANNELS,
-    LAYER_SCALE_INIT,
-    MLP_RATIO,
     NUM_BLOCKS,
     NUM_CLASSES,
     NUM_PATCHES_H,
     NUM_PATCHES_W,
     PATCH_SIZE,
-    DROP_PATH_RATE,
-    get_base_config as _get_v3_base_config,
     make_block_cfg,
+)
+from examples.vit5_imagenet.v3._pretrain_base import (
+    get_base_config as _get_v3_base_config,
 )
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
@@ -38,18 +37,19 @@ from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
 from nvsubquadratic.utils.qk_norm import L2Norm
 
+
 # Re-export constants used by individual configs
 __all__ = [
     "HIDDEN_DIM",
     "NUM_CLASSES",
     "NUM_REGISTERS_CLS",
     "NUM_REGISTERS_NO_CLS",
-    "get_base_config",
-    "build_film_cfg",
+    "build_cls_row_network",
     "build_depthwise_hyena_mixer",
+    "build_film_cfg",
     "build_hyena_mixer",
     "build_multihead_hyena_mixer",
-    "build_cls_row_network",
+    "get_base_config",
 ]
 
 # ─── Snellius data paths ─────────────────────────────────────────────────────
@@ -57,9 +57,7 @@ IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/scratch-nvme/ml-datasets/image
 IMAGENET_FOLDER_PATH = os.environ.get(
     "IMAGENET_FOLDER_PATH", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder"
 )
-LOCAL_STAGING_DIR = os.environ.get(
-    "LOCAL_STAGING_DIR", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder"
-)
+LOCAL_STAGING_DIR = os.environ.get("LOCAL_STAGING_DIR", "/scratch-nvme/ml-datasets/imagenet/torchvision_ImageFolder")
 
 # ─── Multi-head dimensions ────────────────────────────────────────────────────
 NUM_HEADS = 6

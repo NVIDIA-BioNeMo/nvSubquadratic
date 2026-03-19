@@ -9,7 +9,13 @@ Depthwise FiLM + RoPE + GRN config:
 - CLS-row architecture: CLS + 13 registers as extra row -> 15x14 grid.
 """
 
-from examples.vit5_imagenet.v3_wessels._base_config import HIDDEN_DIM, build_cls_row_network, build_film_cfg, build_hyena_mixer, get_base_config
+from examples.vit5_imagenet.v3_wessels._base_config import (
+    HIDDEN_DIM,
+    build_cls_row_network,
+    build_film_cfg,
+    build_hyena_mixer,
+    get_base_config,
+)
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.grn import GlobalResponseNorm

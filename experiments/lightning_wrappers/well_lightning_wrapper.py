@@ -1,14 +1,14 @@
 """Lightning wrapper for WELL benchmark tasks."""
 
-import torch
-import wandb
 from typing import Literal
-from einops import rearrange
 
-from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
-from experiments.default_cfg import ExperimentConfig
+import torch
+from einops import rearrange
 from the_well.benchmark.metrics import validation_metric_suite
 from the_well.data.data_formatter import DefaultChannelsLastFormatter
+
+from experiments.default_cfg import ExperimentConfig
+from experiments.lightning_wrappers.regression_wrapper import RegressionWrapper
 
 
 class WELLRegressionWrapper(RegressionWrapper):
@@ -62,7 +62,7 @@ class WELLRegressionWrapper(RegressionWrapper):
         self.formatter = DefaultChannelsLastFormatter(metadata)
 
         # Track best validation loss
-        self.best_val_loss = float('inf')
+        self.best_val_loss = float("inf")
 
         # Normalization object (will be set from datamodule)
         self.normalization = None
@@ -185,10 +185,13 @@ class WELLRegressionWrapper(RegressionWrapper):
 
             # Update input for next step: drop oldest, append prediction
             if step < num_steps - 1:
-                current_input = torch.cat([
-                    current_input[:, 1:],  # Drop first timestep
-                    pred.unsqueeze(1)  # Add prediction as new timestep
-                ], dim=1)
+                current_input = torch.cat(
+                    [
+                        current_input[:, 1:],  # Drop first timestep
+                        pred.unsqueeze(1),  # Add prediction as new timestep
+                    ],
+                    dim=1,
+                )
 
         predictions = torch.cat(predictions, dim=1)  # [B, num_steps, H, W, C]
         return predictions, y_ref

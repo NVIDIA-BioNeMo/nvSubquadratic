@@ -14,9 +14,8 @@ Usage in experiment config::
     config.callbacks = [LazyConfig(LabeledEMAWeightAveraging)(decay=0.99996)]
 """
 
-from typing import Any
-
 import pytorch_lightning as pl
+
 
 try:
     from pytorch_lightning.callbacks import EMAWeightAveraging
@@ -33,16 +32,12 @@ class LabeledEMAWeightAveraging(EMAWeightAveraging):
     ``val/acc``.
     """
 
-    def on_validation_epoch_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
-    ) -> None:
+    def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_validation_epoch_start(trainer, pl_module)
         if self._average_model is not None:
             pl_module._val_metric_suffix = "_ema"
 
-    def on_validation_epoch_end(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
-    ) -> None:
+    def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         # Don't reset suffix here — PL calls callback hooks before module hooks,
         # so the module's on_validation_epoch_end still needs the suffix to read
         # the correct metric keys.  The suffix is re-set every epoch in

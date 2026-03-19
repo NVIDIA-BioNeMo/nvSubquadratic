@@ -49,11 +49,12 @@ All components use `LazyConfig` (in `nvsubquadratic/lazy_config.py`) for deferre
 ### Training Flow
 
 `experiments/run.py` orchestrates everything:
+
 1. Loads a Python config file → `ExperimentConfig` dataclass (`experiments/default_cfg.py`)
-2. Applies CLI overrides via dot notation
-3. Instantiates: datamodule → network → lightning wrapper → trainer
-4. Handles checkpoint resume (W&B autoresume or explicit checkpoint path)
-5. Runs `trainer.fit()` → `trainer.validate()` → `trainer.test()`
+1. Applies CLI overrides via dot notation
+1. Instantiates: datamodule → network → lightning wrapper → trainer
+1. Handles checkpoint resume (W&B autoresume or explicit checkpoint path)
+1. Runs `trainer.fit()` → `trainer.validate()` → `trainer.test()`
 
 `experiments/trainer.py` constructs the PyTorch Lightning `Trainer` with callbacks (checkpointing, W&B upload, walltime shutdown for SLURM, cache cleanup).
 

@@ -1,8 +1,7 @@
 """DataModule for WELL benchmark datasets."""
 
-import torch
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+import torch
 from the_well.data import WellDataModule as BaseWellDataModule
 
 
@@ -108,7 +107,7 @@ class WellDataModule(pl.LightningDataModule):
 
         # BUGFIX: The WELL library doesn't apply normalization to val/test datasets
         # We need to manually set it using the train dataset's normalization
-        if self.use_normalization and hasattr(self._well_datamodule.train_dataset, 'norm'):
+        if self.use_normalization and hasattr(self._well_datamodule.train_dataset, "norm"):
             train_normalization = self._well_datamodule.train_dataset.norm
 
             # Apply same normalization to val dataset
@@ -156,22 +155,22 @@ class WellDataModule(pl.LightningDataModule):
 
         for key, value in batch.items():
             if isinstance(value, torch.Tensor):
-                if value.ndim >= 4 and key in ['input_fields', 'output_fields', 'constant_fields', 'space_grid']:
-                    if key in ['input_fields', 'output_fields']:
+                if value.ndim >= 4 and key in ["input_fields", "output_fields", "constant_fields", "space_grid"]:
+                    if key in ["input_fields", "output_fields"]:
                         if value.ndim == 5:  # 2D: [B, T, H, W, C]
                             downsampled_batch[key] = value[:, :, ::stride, ::stride, :]
                         elif value.ndim == 6:  # 3D: [B, T, D, H, W, C]
                             downsampled_batch[key] = value[:, :, ::stride, ::stride, ::stride, :]
                         else:
                             downsampled_batch[key] = value
-                    elif key == 'constant_fields':
+                    elif key == "constant_fields":
                         if value.ndim == 4:  # 2D: [B, H, W, C]
                             downsampled_batch[key] = value[:, ::stride, ::stride, :]
                         elif value.ndim == 5:  # 3D: [B, D, H, W, C]
                             downsampled_batch[key] = value[:, ::stride, ::stride, ::stride, :]
                         else:
                             downsampled_batch[key] = value
-                    elif key == 'space_grid':
+                    elif key == "space_grid":
                         if value.ndim == 4:  # 2D: [B, H, W, D]
                             downsampled_batch[key] = value[:, ::stride, ::stride, :]
                         elif value.ndim == 5:  # 3D: [B, D, H, W, D]

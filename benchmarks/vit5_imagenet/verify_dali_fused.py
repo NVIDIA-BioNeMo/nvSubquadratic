@@ -12,17 +12,16 @@ Usage:
 """
 
 import os
-import sys
 
 import torch
-import numpy as np
+
 
 os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
 from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
+from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 
 
 BATCH_SIZE = 32
@@ -32,8 +31,7 @@ SEED = 42
 DEVICE_ID = 0
 
 AUGMENT_CFG = AugmentConfig(use_three_augment=True, color_jitter=0.3)
-MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0,
-                         mixup_switch_prob=0.5, smoothing=0.0)
+MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob=0.5, smoothing=0.0)
 
 COMMON = dict(
     data_dir=os.environ["IMAGENET_PATH"],
@@ -64,13 +62,14 @@ def check_shapes_and_dtypes(name, batch):
     B = images.shape[0]
 
     # NHWC layout (channels_first=False default)
-    assert images.shape[-1] == 3 or images.shape[1] == 3, \
-        f"{name}: unexpected shape {images.shape}"
+    assert images.shape[-1] == 3 or images.shape[1] == 3, f"{name}: unexpected shape {images.shape}"
     assert images.dtype == torch.float32, f"{name}: expected float32, got {images.dtype}"
     assert images.is_cuda, f"{name}: expected CUDA tensor"
 
-    print(f"  [{name}] shape={tuple(images.shape)}, dtype={images.dtype}, "
-          f"device={images.device}, labels shape={tuple(labels.shape)}")
+    print(
+        f"  [{name}] shape={tuple(images.shape)}, dtype={images.dtype}, "
+        f"device={images.device}, labels shape={tuple(labels.shape)}"
+    )
     return images, labels
 
 
@@ -118,8 +117,10 @@ def compare_validation(optimized_dm, fused_dm):
     if max_diff < 0.01:
         print("  PASS: Validation outputs match closely")
     else:
-        print(f"  WARNING: Validation diff is {max_diff:.4f} — may be acceptable "
-              "due to DALI pipeline differences (interpolation, rounding)")
+        print(
+            f"  WARNING: Validation diff is {max_diff:.4f} — may be acceptable "
+            "due to DALI pipeline differences (interpolation, rounding)"
+        )
 
 
 def check_training(dm, name):
@@ -143,6 +144,7 @@ def save_visual_comparison(opt_img, fused_img, path="benchmarks/vit5_imagenet/da
     """Save a side-by-side visual comparison of the two pipelines."""
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
@@ -190,13 +192,17 @@ def main():
     # Build both datamodules
     print("\nBuilding optimized (old) datamodule...")
     opt_dm = DALIImageNetOptimizedDataModule(
-        **COMMON, augment_cfg=AUGMENT_CFG, mixup_cfg=MIXUP_CFG,
+        **COMMON,
+        augment_cfg=AUGMENT_CFG,
+        mixup_cfg=MIXUP_CFG,
     )
     opt_dm.setup("fit")
 
     print("Building fused (new) datamodule...")
     fused_dm = DALIImageNetFusedDataModule(
-        **COMMON, augment_cfg=AUGMENT_CFG, mixup_cfg=MIXUP_CFG,
+        **COMMON,
+        augment_cfg=AUGMENT_CFG,
+        mixup_cfg=MIXUP_CFG,
     )
     fused_dm.setup("fit")
 
@@ -213,6 +219,7 @@ def main():
     # 4. Quick speed comparison (10 batches each)
     print("\n== Quick speed check (10 batches) ==")
     import time
+
     for dm, name in [(opt_dm, "optimized"), (fused_dm, "fused")]:
         dm.trainer = type("_Mock", (), {"training": True, "local_rank": 0, "world_size": 1})()
         loader = dm.train_dataloader()

@@ -20,6 +20,7 @@ from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.register_reduction_head import RegisterReductionHead
 
+
 REDUCTION_FACTOR = 4
 
 

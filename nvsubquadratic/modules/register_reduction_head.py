@@ -58,10 +58,11 @@ class RegisterReductionHead(nn.Module):
             logits: [B, num_classes]
         """
         out = self.reduce(registers)  # [B, R, d/r]
-        out = out.flatten(1)          # [B, R * d/r]
-        return self.proj(out)         # [B, num_classes]
+        out = out.flatten(1)  # [B, R * d/r]
+        return self.proj(out)  # [B, num_classes]
 
     def extra_repr(self) -> str:
+        """Provides a string representation of the head's configuration for debugging."""
         in_features = self.reduce.in_features
         reduced = self.reduce.out_features
         n = self.proj.in_features // reduced

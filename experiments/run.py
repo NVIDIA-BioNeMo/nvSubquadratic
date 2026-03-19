@@ -16,10 +16,6 @@ from pathlib import Path
 # Force-initialize PIL plugins in the main process before DataLoader workers
 # are forked.  Prevents crashes from lazy initialization in child processes.
 import PIL.Image
-
-
-PIL.Image.init()
-
 import pytorch_lightning as pl
 import torch
 import wandb
@@ -103,6 +99,9 @@ def main() -> None:
     7.  Constructing the PyTorch Lightning trainer with appropriate callbacks.
     8.  Executing the training, validation, and testing phases of the experiment.
     """
+    # Initialize PIL plugins in the main process before any dataloader workers are created.
+    PIL.Image.init()
+
     # Parse command line arguments
     args = parse_args()
 
@@ -156,10 +155,10 @@ def main() -> None:
         network = torch.compile(network, **compile_kwargs)
 
     # Wrap network in a pl.LightningModule
-    if hasattr(datamodule, 'metadata'):
+    if hasattr(datamodule, "metadata"):
         model = instantiate(config.lightning_wrapper_class, network=network, cfg=config, metadata=datamodule.metadata)
         # Set normalization object for denormalizing metrics (if available)
-        if hasattr(datamodule, '_well_datamodule') and hasattr(datamodule._well_datamodule.train_dataset, 'norm'):
+        if hasattr(datamodule, "_well_datamodule") and hasattr(datamodule._well_datamodule.train_dataset, "norm"):
             model.normalization = datamodule._well_datamodule.train_dataset.norm
     else:
         model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)

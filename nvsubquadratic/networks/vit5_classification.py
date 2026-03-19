@@ -72,8 +72,11 @@ class ViT5ClassificationNet(nn.Module):
 
         # Patch embedding (non-overlapping Conv2d)
         self.patch_embed = nn.Conv2d(
-            in_channels, hidden_dim,
-            kernel_size=patch_size, stride=patch_size, padding=0,
+            in_channels,
+            hidden_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+            padding=0,
         )
 
         # Learnable tokens
