@@ -61,8 +61,6 @@ def fftconv1d_fp16_bhl(
     Returns:
         Tensor ``[B, H, L]`` in the original dtype of *x*.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -127,8 +125,6 @@ def causal_fftconv1d_fp16_bhl(
     Returns:
         Tensor ``[B, H, L]`` in the original dtype of *x*.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -193,8 +189,6 @@ def fftconv2d_fp16_bhl(
     Returns:
         Tensor ``[B, H, X_in, Y_in]`` in the original dtype of *x*.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
@@ -269,8 +263,6 @@ def fftconv3d_fp16_bhl(
     Returns:
         Tensor ``[B, H, X_in, Y_in, Z_in]`` in the original dtype of *x*.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
