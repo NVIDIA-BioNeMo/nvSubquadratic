@@ -21,7 +21,7 @@ def get_config() -> ExperimentConfig:
     config = get_base_config()
 
     film_cfg = build_film_cfg()
-    mixer_cfg = build_multihead_hyena_mixer(film_cfg=film_cfg, use_rope=False)
+    mixer_cfg = build_multihead_hyena_mixer(film_cfg=film_cfg, use_rope=False, kernel_rank=8)
     config.net, trainer_overrides = build_cls_row_network(mixer_cfg)
     for k, v in trainer_overrides.items():
         setattr(config.trainer, k, v)

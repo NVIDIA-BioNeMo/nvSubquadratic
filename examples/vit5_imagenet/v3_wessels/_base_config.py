@@ -2,7 +2,7 @@
 
 Builds on the v3 pretrain base config, adding Snellius-specific paths,
 compile_compatible_fftconv, and builder helpers for FiLM, multihead,
-register-head, and CLS-row network variants.
+register-head, CLS-row, and distributed-register network variants.
 """
 
 import os
@@ -42,6 +42,7 @@ from nvsubquadratic.utils.qk_norm import L2Norm
 __all__ = [
     "HIDDEN_DIM",
     "NUM_CLASSES",
+    "NUM_PATCHES",
     "NUM_REGISTERS_CLS",
     "NUM_REGISTERS_NO_CLS",
     "get_base_config",
@@ -49,7 +50,9 @@ __all__ = [
     "build_depthwise_hyena_mixer",
     "build_hyena_mixer",
     "build_multihead_hyena_mixer",
+    "build_grouped_hyena_mixer",
     "build_cls_row_network",
+    "build_distributed_reg_network",
 ]
 
 # ─── Snellius data paths ─────────────────────────────────────────────────────
@@ -64,6 +67,9 @@ LOCAL_STAGING_DIR = os.environ.get(
 # ─── Multi-head dimensions ────────────────────────────────────────────────────
 NUM_HEADS = 6
 HEAD_DIM = HIDDEN_DIM // NUM_HEADS  # 64
+
+# Total patch count
+NUM_PATCHES = NUM_PATCHES_H * NUM_PATCHES_W  # 196
 
 # CLS-row layout: [CLS, reg×13, patch×196] = 210 tokens = 15×14
 NUM_REGISTERS_CLS = NUM_PATCHES_W - 1  # 13
@@ -163,16 +169,84 @@ def build_depthwise_hyena_mixer(
 build_hyena_mixer = build_depthwise_hyena_mixer
 
 
+def build_grouped_hyena_mixer(
+    *,
+    num_groups: int = NUM_HEADS,
+    film_cfg: LazyConfig | None = None,
+    use_rope: bool = False,
+) -> LazyConfig:
+    """Build grouped CKConvND-based Hyena mixer (QKVSequenceMixer).
+
+    Uses weight-shared depthwise convolution where ``num_groups`` filters are
+    shared across ``hidden_dim`` channels (each group of ``hidden_dim // num_groups``
+    adjacent channels shares the same filter).  Inspired by Evo-2.
+    """
+    return LazyConfig(QKVSequenceMixer)(
+        hidden_dim=HIDDEN_DIM,
+        mixer_cfg=LazyConfig(Hyena)(
+            global_conv_cfg=LazyConfig(CKConvND)(
+                data_dim=2,
+                hidden_dim=HIDDEN_DIM,
+                num_groups=num_groups,
+                kernel_cfg=LazyConfig(SIRENKernelND)(
+                    data_dim=2,
+                    out_dim=num_groups,
+                    mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+                    num_layers=KERNEL_NUM_LAYERS,
+                    embedding_dim=KERNEL_EMBEDDING_DIM,
+                    omega_0=KERNEL_OMEGA_0,
+                    L_cache=NUM_PATCHES_H + 1,
+                    use_bias=True,
+                    hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                    film_cfg=film_cfg,
+                ),
+                mask_cfg=LazyConfig(torch.nn.Identity)(),
+                grid_type="double",
+                fft_padding="zero",
+            ),
+            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                in_channels=3 * HIDDEN_DIM,
+                out_channels=3 * HIDDEN_DIM,
+                kernel_size=3,
+                groups=3 * HIDDEN_DIM,
+                padding=1,
+                bias=False,
+            ),
+            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+            pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            qk_norm_cfg=LazyConfig(L2Norm)(),
+            use_rope=use_rope,
+            output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
+        ),
+        qkv_bias=False,
+        out_proj_bias=False,
+        init_method_in=INIT_FN_FACTORY,
+        init_method_out=INIT_FN_FACTORY,
+    )
+
+
 def build_multihead_hyena_mixer(
     *,
     film_cfg: LazyConfig | None = None,
     use_rope: bool = False,
+    kernel_rank: int | None = None,
 ) -> LazyConfig:
     """Build multi-head CKConvMultiheadND-based Hyena mixer (QKVSequenceMixer).
 
     6 heads, head_dim=64, dense within-head channel mixing.
+
+    Args:
+        film_cfg: Optional FiLM conditioning config.
+        use_rope: Whether to use rotary positional encoding.
+        kernel_rank: Low-rank factorization rank. When None, uses full-rank
+            [head_dim x head_dim] kernels. When set, factorizes into U @ V^T
+            with the given rank, reducing SIREN output and FFT conv cost.
     """
-    kernel_out_dim = NUM_HEADS * HEAD_DIM * HEAD_DIM  # dense kernel per head
+    if kernel_rank is not None:
+        kernel_out_dim = NUM_HEADS * 2 * kernel_rank * HEAD_DIM
+    else:
+        kernel_out_dim = NUM_HEADS * HEAD_DIM * HEAD_DIM  # dense kernel per head
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=HIDDEN_DIM,
         mixer_cfg=LazyConfig(Hyena)(
@@ -195,6 +269,7 @@ def build_multihead_hyena_mixer(
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type="double",
                 fft_padding="zero",
+                kernel_rank=kernel_rank,
             ),
             short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                 in_channels=3 * HIDDEN_DIM,
@@ -265,6 +340,136 @@ def build_cls_row_network(
         dropout_rate=0.0,
         use_cls_token=use_cls_token,
         prepend_registers=True,
+        norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+        register_head_cfg=register_head_cfg,
+        block_cfg=block_cfg,
+    )
+
+    trainer_overrides = {}
+    if find_unused_parameters:
+        trainer_overrides["find_unused_parameters"] = True
+
+    return net_cfg, trainer_overrides
+
+
+def build_depthwise_hyena_mixer_patches_only(
+    *,
+    film_cfg: LazyConfig | None = None,
+    use_rope: bool = False,
+) -> LazyConfig:
+    """Build depthwise Hyena mixer for a pure-patch grid (no register row).
+
+    Identical to ``build_depthwise_hyena_mixer`` except ``L_cache=NUM_PATCHES_H``
+    (14) instead of ``NUM_PATCHES_H + 1`` (15), since registers are stripped
+    before the 2D reshape when using distributed registers.
+    """
+    return LazyConfig(QKVSequenceMixer)(
+        hidden_dim=HIDDEN_DIM,
+        mixer_cfg=LazyConfig(Hyena)(
+            global_conv_cfg=LazyConfig(CKConvND)(
+                data_dim=2,
+                hidden_dim=HIDDEN_DIM,
+                kernel_cfg=LazyConfig(SIRENKernelND)(
+                    data_dim=2,
+                    out_dim=HIDDEN_DIM,
+                    mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+                    num_layers=KERNEL_NUM_LAYERS,
+                    embedding_dim=KERNEL_EMBEDDING_DIM,
+                    omega_0=KERNEL_OMEGA_0,
+                    L_cache=NUM_PATCHES_H,
+                    use_bias=True,
+                    hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                    film_cfg=film_cfg,
+                ),
+                mask_cfg=LazyConfig(torch.nn.Identity)(),
+                grid_type="double",
+                fft_padding="zero",
+            ),
+            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                in_channels=3 * HIDDEN_DIM,
+                out_channels=3 * HIDDEN_DIM,
+                kernel_size=3,
+                groups=3 * HIDDEN_DIM,
+                padding=1,
+                bias=False,
+            ),
+            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+            pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            qk_norm_cfg=LazyConfig(L2Norm)(),
+            use_rope=use_rope,
+            output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
+        ),
+        qkv_bias=False,
+        out_proj_bias=False,
+        init_method_in=INIT_FN_FACTORY,
+        init_method_out=INIT_FN_FACTORY,
+    )
+
+
+def build_distributed_reg_network(
+    mixer_cfg: LazyConfig,
+    *,
+    num_registers: int = NUM_REGISTERS_NO_CLS,
+    register_head_cfg: LazyConfig | None = None,
+    register_comm_cfg: LazyConfig | None = None,
+    grn_cfg: LazyConfig | None = None,
+    find_unused_parameters: bool = False,
+) -> tuple[LazyConfig, dict]:
+    """Build ViT5ClassificationNet with evenly distributed registers (Mamba-R style).
+
+    Registers are interleaved among patches and stripped before Hyena's 2D
+    convolution. A register communication module (cross-attention or local
+    pooling) updates registers from mixed patch features.
+
+    Args:
+        mixer_cfg: LazyConfig for the inner 2D mixer (QKVSequenceMixer).
+        num_registers: Number of register tokens.
+        register_head_cfg: LazyConfig for the register classification head.
+        register_comm_cfg: LazyConfig for the register-patch communication module
+            (RegisterCrossAttention or RegisterLocalPooling).
+        grn_cfg: Optional LazyConfig for GlobalResponseNorm.
+        find_unused_parameters: If True, set DDP find_unused_parameters=True.
+
+    Returns:
+        (net_cfg, trainer_overrides) tuple.
+    """
+    register_pooling_cfg = LazyConfig(RegisterPooling)(num_registers=num_registers)
+
+    block_kwargs = dict(
+        register_pooling_cfg=register_pooling_cfg,
+        num_registers=num_registers,
+        register_start_idx=0,
+        distribute_registers=True,
+        num_patches=NUM_PATCHES,
+    )
+    if grn_cfg is not None:
+        block_kwargs["grn_cfg"] = grn_cfg
+
+    block_cfg = make_block_cfg(
+        sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(
+            inner_mixer_cfg=mixer_cfg,
+            grid_w=NUM_PATCHES_W,
+            distribute_registers=True,
+            num_registers=num_registers,
+            num_patches=NUM_PATCHES,
+            register_comm_cfg=register_comm_cfg,
+        ),
+        **block_kwargs,
+    )
+
+    net_cfg = LazyConfig(ViT5ClassificationNet)(
+        in_channels=INPUT_CHANNELS,
+        num_classes=NUM_CLASSES,
+        hidden_dim=HIDDEN_DIM,
+        num_blocks=NUM_BLOCKS,
+        patch_size=PATCH_SIZE,
+        image_size=FINAL_IMAGE_SIZE,
+        num_registers=num_registers,
+        dropout_rate=0.0,
+        use_cls_token=False,
+        prepend_registers=False,
+        distribute_registers=True,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         register_head_cfg=register_head_cfg,
         block_cfg=block_cfg,

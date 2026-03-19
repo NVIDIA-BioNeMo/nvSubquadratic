@@ -107,6 +107,7 @@ class CKConvND(torch.nn.Module):
         fft_padding: Literal["zero", "circular"],
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
+        num_groups: int | None = None,
     ):
         """Initialize the CKConvND.
 
@@ -127,6 +128,11 @@ class CKConvND(torch.nn.Module):
                 intermediates. Typical savings: ~26% memory with ~11% compute overhead.
                 Useful for memory-constrained training with large spatial dimensions
                 in 2D/3D. Default is False.
+            num_groups: Number of groups for weight-shared depthwise convolution. When set,
+                the kernel network outputs ``num_groups`` channels and the filter is expanded
+                via ``repeat_interleave`` to ``hidden_dim`` before the FFT convolution. Each
+                group of ``hidden_dim // num_groups`` adjacent channels shares the same filter.
+                When None (default), behaves as standard depthwise (one filter per channel).
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
@@ -150,12 +156,19 @@ class CKConvND(torch.nn.Module):
                 "Circular convolutions already have lower memory overhead due to no padding."
             )
 
+        if num_groups is not None:
+            assert hidden_dim % num_groups == 0, (
+                f"hidden_dim ({hidden_dim}) must be divisible by num_groups ({num_groups})"
+            )
+
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
+        self.num_groups = num_groups
+        self.group_dim = hidden_dim // num_groups if num_groups is not None else 1
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
@@ -186,11 +199,14 @@ class CKConvND(torch.nn.Module):
 
     def extra_repr(self) -> str:
         """Return extra representation string for the module."""
-        return (
+        parts = (
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
             f"use_chunked_fftconv={self.use_chunked_fftconv}"
         )
+        if self.num_groups is not None:
+            parts += f", num_groups={self.num_groups}, group_dim={self.group_dim}"
+        return parts
 
     def apply_convolution(
         self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
@@ -282,6 +298,10 @@ class CKConvND(torch.nn.Module):
             # Crop to [1, kernel_len // 2, hidden_dim] keeping the second half
             kernel_len = conv_kernel.shape[-2]
             conv_kernel = conv_kernel[..., kernel_len // 2 :, :]
+
+        # Expand grouped kernel: [1|B, *spatial, num_groups] -> [1|B, *spatial, hidden_dim]
+        if self.num_groups is not None:
+            conv_kernel = conv_kernel.repeat_interleave(self.group_dim, dim=-1)
 
         # Handle context parallelism by slicing the kernel to match input channel dimensions
         if cp_group is not None and cp_group.size() > 1:
