@@ -13,7 +13,16 @@ standard v2 CLS-row config.
 import os
 
 import torch
-from apex.optimizers import FusedLAMB as Lamb
+
+
+try:
+    from apex.multi_tensor_apply import multi_tensor_applier
+
+    if not multi_tensor_applier.available:
+        raise ImportError("apex CUDA extensions not compiled")
+    from apex.optimizers import FusedLAMB as Lamb
+except (ImportError, ModuleNotFoundError):
+    from timm.optim import Lamb
 
 from experiments.datamodules.dali_imagenet_fused import (
     AugmentConfig,
@@ -32,7 +41,6 @@ from experiments.lightning_wrappers.classification_wrapper import Classification
 from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.init_functions import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -40,6 +48,7 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
@@ -48,8 +57,10 @@ INPUT_CHANNELS = 3
 NUM_CLASSES = 1000
 IMAGE_SIZE = 224
 FINAL_IMAGE_SIZE = 224
-IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
-IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
+IMAGENET_PATH = os.environ.get("IMAGENET_PATH", "/local_scratch/imagenet/ilsvrc2012/")
+IMAGENET_FOLDER_PATH = os.environ.get("IMAGENET_FOLDER_PATH", "/local_scratch/imagenet/ilsvrc2012/")
+LOCAL_STAGING_DIR = "/local_scratch/imagenet/ilsvrc2012/"
+# LOCAL_STAGING_DIR = "/ivi/zfs/s0/original_homes/dwessel/imagenet_folder"
 
 # ─── Model (ViT-5-Small + Hyena, CLS-row) ───────────────────────────────────────
 HIDDEN_DIM = 384
@@ -70,7 +81,12 @@ KERNEL_OMEGA_0 = 10.0
 KERNEL_HIDDEN_OMEGA_0 = 1.0
 
 # ─── Training recipe ────────────────────────────────────────────────────────────
-BATCH_SIZE = 256
+EFFECTIVE_BATCH_SIZE = 2048
+BATCH_SIZE = 128
+NUM_GPUS = 4
+NUM_ACCUM_STEPS = EFFECTIVE_BATCH_SIZE // (
+    BATCH_SIZE * NUM_GPUS
+)  # 2: gradient accumulation to achieve effective batch size of 2048
 EPOCHS = 800
 IMAGENET_TRAIN_SIZE = 1_281_167
 EFFECTIVE_BATCH_SIZE = 2048
@@ -84,7 +100,7 @@ WEIGHT_DECAY = 0.05
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
 
-NUM_WORKERS = 12
+NUM_WORKERS = 12  # os.cpu_count() -1  // NUM_GPUS  # number of workers per GPU for data loading
 
 
 def get_config() -> ExperimentConfig:
@@ -93,7 +109,7 @@ def get_config() -> ExperimentConfig:
     config.debug = False
     config.seed = 42
     config.compile = True
-    config.compile_mode = "max-autotune"
+    config.compile_mode = "max-autotune-no-cudagraphs"
     # ─── Dataset (fused DALI + local NVMe staging) ────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
         data_dir=IMAGENET_PATH,

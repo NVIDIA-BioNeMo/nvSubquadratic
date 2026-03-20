@@ -20,8 +20,7 @@ os.environ.setdefault("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 os.environ.setdefault("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 
 from experiments.datamodules._deprecated.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
-from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, DALIImageNetFusedDataModule, MixupConfig
 
 
 BATCH_SIZE = 32
@@ -33,20 +32,20 @@ DEVICE_ID = 0
 AUGMENT_CFG = AugmentConfig(use_three_augment=True, color_jitter=0.3)
 MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob=0.5, smoothing=0.0)
 
-COMMON = dict(
-    data_dir=os.environ["IMAGENET_PATH"],
-    imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
-    batch_size=BATCH_SIZE,
-    num_workers=NUM_WORKERS,
-    pin_memory=True,
-    seed=SEED,
-    image_size=IMAGE_SIZE,
-    final_image_size=IMAGE_SIZE,
-    num_classes=1000,
-    drop_labels=False,
-    task="classification",
-    device_id=DEVICE_ID,
-)
+COMMON = {
+    "data_dir": os.environ["IMAGENET_PATH"],
+    "imagefolder_dir": os.environ.get("IMAGENET_FOLDER_PATH"),
+    "batch_size": BATCH_SIZE,
+    "num_workers": NUM_WORKERS,
+    "pin_memory": True,
+    "seed": SEED,
+    "image_size": IMAGE_SIZE,
+    "final_image_size": IMAGE_SIZE,
+    "num_classes": 1000,
+    "drop_labels": False,
+    "task": "classification",
+    "device_id": DEVICE_ID,
+}
 
 
 def check_shapes_and_dtypes(name, batch):
@@ -59,7 +58,6 @@ def check_shapes_and_dtypes(name, batch):
     labels = batch["label"]
 
     assert images.ndim == 4, f"{name}: expected 4D tensor, got {images.ndim}D"
-    B = images.shape[0]
 
     # NHWC layout (channels_first=False default)
     assert images.shape[-1] == 3 or images.shape[1] == 3, f"{name}: unexpected shape {images.shape}"
@@ -185,6 +183,7 @@ def save_visual_comparison(opt_img, fused_img, path="benchmarks/vit5_imagenet/da
 
 
 def main():
+    """Run DALI fused datamodule verification checks."""
     print("=" * 60)
     print("DALI Fused DataModule Verification")
     print("=" * 60)
@@ -226,12 +225,12 @@ def main():
         it = iter(loader)
         # warmup
         for _ in range(3):
-            batch = dm.on_before_batch_transfer(next(it), 0)
+            dm.on_before_batch_transfer(next(it), 0)
         torch.cuda.synchronize()
 
         t0 = time.perf_counter()
         for _ in range(10):
-            batch = dm.on_before_batch_transfer(next(it), 0)
+            dm.on_before_batch_transfer(next(it), 0)
         torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         ms = elapsed / 10 * 1000

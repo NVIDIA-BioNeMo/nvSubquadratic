@@ -262,6 +262,14 @@ class LightningWrapperBase(pl.LightningModule):
         self._cuda_forward_end_event = None
         self._cuda_backward_end_event = None
 
+    @property
+    def logger(self):
+        """Return the first logger (Lightning 2.x uses a loggers list)."""
+        loggers = getattr(self, "loggers", None)
+        if loggers and len(loggers) > 0:
+            return loggers[0]
+        return getattr(super(), "logger", None)
+
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """Patch checkpoint for cross-optimizer and compiled/non-compiled resume.
 

@@ -21,7 +21,8 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -62,6 +63,7 @@ MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob
 
 
 def build_model():
+    """Instantiate a ViT-5-Small model for benchmarking."""
     net_cfg = LazyConfig(ViT5ClassificationNet)(
         in_channels=3,
         num_classes=1000,
@@ -128,24 +130,27 @@ def build_dali_dataloader(prefetch_factor: int = 2, num_workers: int = 14, optim
     """NVIDIA DALI GPU-pipelined dataloader.
 
     Args:
+        prefetch_factor: Number of batches to prefetch.
+        num_workers: Number of data loading workers.
         optimized: "" for original DALI, "v2" for optimised, "v3" for v3.
+        device_id: CUDA device index.
     """
-    common = dict(
-        data_dir=os.environ["IMAGENET_PATH"],
-        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
-        prefetch_factor=prefetch_factor,
-        batch_size=BATCH_SIZE,
-        num_workers=num_workers,
-        pin_memory=True,
-        seed=42,
-        image_size=IMAGE_SIZE,
-        final_image_size=IMAGE_SIZE,
-        num_classes=1000,
-        drop_labels=False,
-        task="classification",
-        augment_cfg=AUGMENT_CFG,
-        device_id=device_id,
-    )
+    common = {
+        "data_dir": os.environ["IMAGENET_PATH"],
+        "imagefolder_dir": os.environ.get("IMAGENET_FOLDER_PATH"),
+        "prefetch_factor": prefetch_factor,
+        "batch_size": BATCH_SIZE,
+        "num_workers": num_workers,
+        "pin_memory": True,
+        "seed": 42,
+        "image_size": IMAGE_SIZE,
+        "final_image_size": IMAGE_SIZE,
+        "num_classes": 1000,
+        "drop_labels": False,
+        "task": "classification",
+        "augment_cfg": AUGMENT_CFG,
+        "device_id": device_id,
+    }
     if optimized == "fused":
         from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
 
@@ -173,7 +178,7 @@ def _build_loader(use_dali: bool, optimized: str = "", device_id: int = 0, **kwa
 
 def bench_dataloader(prefetch_factor, num_workers, use_dali=False, optimized=False, warmup=5):
     """Benchmark pure data loading for a single (prefetch, workers) combo."""
-    loader, dm = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
+    loader, _ = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
     it = iter(loader)
     for _ in range(warmup):
         next(it)
@@ -203,6 +208,7 @@ def prepare_batch(raw_batch, dm, device, use_dali):
 
 
 def main(args):
+    """Run the bottleneck profiling session."""
     global HIDDEN_DIM, NUM_HEADS, NUM_BLOCKS, NUM_REGISTERS
     preset = MODEL_PRESETS[args.model_size]
     HIDDEN_DIM = preset["hidden_dim"]

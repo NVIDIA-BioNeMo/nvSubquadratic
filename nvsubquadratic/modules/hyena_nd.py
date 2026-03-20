@@ -37,8 +37,8 @@ from typing import Optional
 import torch
 from einops import rearrange
 
-from nvsubq_paper.lazy_config import LazyConfig, instantiate
-from nvsubq_paper.modules.distributed_depthwise_conv_nd import (
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv1d,
     DistributedDepthwiseConv2d,
     DistributedDepthwiseConv3d,

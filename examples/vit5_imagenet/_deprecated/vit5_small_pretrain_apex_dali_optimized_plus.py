@@ -10,8 +10,8 @@ import os
 
 import torch
 
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.datamodules.dali_imagenet_optimized import DALIImageNetOptimizedDataModule
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,

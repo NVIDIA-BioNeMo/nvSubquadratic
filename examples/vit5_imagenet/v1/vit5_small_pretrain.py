@@ -35,7 +35,8 @@ import torch
 #     from torch_optimizer import Lamb
 from torch_optimizer import Lamb
 
-from experiments.datamodules.imagenet import AugmentConfig, ImageNetDataModule, MixupConfig
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.default_cfg import (
     AutoResumeConfig,
     ExperimentConfig,

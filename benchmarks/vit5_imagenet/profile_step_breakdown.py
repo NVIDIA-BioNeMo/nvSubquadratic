@@ -1,4 +1,4 @@
-"""Fine-grained per-phase profiling of a single training step.
+r"""Fine-grained per-phase profiling of a single training step.
 
 Unlike profile_training_bottleneck.py (which measures each component
 *independently*), this script instruments a real training loop to
@@ -36,7 +36,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -72,6 +72,7 @@ MIXUP_CFG = MixupConfig(mixup=0.8, cutmix=1.0, mixup_prob=1.0, mixup_switch_prob
 
 
 def build_model(preset):
+    """Instantiate a ViT-5 model from a size preset dict."""
     hd = preset["hidden_dim"]
     return instantiate(
         LazyConfig(ViT5ClassificationNet)(
@@ -110,22 +111,23 @@ def build_model(preset):
 
 
 def build_dali_loader(optimized, device_id, prefetch_factor=3, num_workers=12):
-    common = dict(
-        data_dir=os.environ["IMAGENET_PATH"],
-        imagefolder_dir=os.environ.get("IMAGENET_FOLDER_PATH"),
-        prefetch_factor=prefetch_factor,
-        batch_size=BATCH_SIZE,
-        num_workers=num_workers,
-        pin_memory=True,
-        seed=42,
-        image_size=IMAGE_SIZE,
-        final_image_size=IMAGE_SIZE,
-        num_classes=1000,
-        drop_labels=False,
-        task="classification",
-        augment_cfg=AUGMENT_CFG,
-        device_id=device_id,
-    )
+    """Build a DALI dataloader for ImageNet."""
+    common = {
+        "data_dir": os.environ["IMAGENET_PATH"],
+        "imagefolder_dir": os.environ.get("IMAGENET_FOLDER_PATH"),
+        "prefetch_factor": prefetch_factor,
+        "batch_size": BATCH_SIZE,
+        "num_workers": num_workers,
+        "pin_memory": True,
+        "seed": 42,
+        "image_size": IMAGE_SIZE,
+        "final_image_size": IMAGE_SIZE,
+        "num_classes": 1000,
+        "drop_labels": False,
+        "task": "classification",
+        "augment_cfg": AUGMENT_CFG,
+        "device_id": device_id,
+    }
     if optimized == "fused":
         from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
 
@@ -143,6 +145,7 @@ def build_dali_loader(optimized, device_id, prefetch_factor=3, num_workers=12):
 
 
 def main(args):
+    """Run the profiling session."""
     preset = MODEL_PRESETS[args.model_size]
 
     use_ddp = args.ddp

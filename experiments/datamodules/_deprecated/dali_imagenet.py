@@ -19,7 +19,7 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
 
-from experiments.datamodules.imagenet import (
+from experiments.datamodules.dali_imagenet_fused import (
     DEFAULT_IMAGENET_MEAN,
     DEFAULT_IMAGENET_STD,
     IMAGENET_MEAN_STD_BY_SIZE,
