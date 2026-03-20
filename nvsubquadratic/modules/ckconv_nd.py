@@ -9,10 +9,10 @@ from typing import Literal
 import torch
 from einops import rearrange
 
-from nvsubq_paper.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 # Standard FFT convolutions
-from nvsubq_paper.ops.circular_fftconv import (
+from nvsubquadratic.ops.circular_fftconv import (
     circular_fftconv1d_bhl,
     circular_fftconv1d_bhl_w_reshape,
     circular_fftconv2d_bhl,
@@ -20,7 +20,7 @@ from nvsubq_paper.ops.circular_fftconv import (
     circular_fftconv3d_bhl,
     circular_fftconv3d_bhl_w_reshape,
 )
-from nvsubq_paper.ops.fftconv import (
+from nvsubquadratic.ops.fftconv import (
     causal_fftconv1d_bhl,
     causal_fftconv1d_bhl_w_reshape,
     fftconv1d_bhl,
@@ -33,28 +33,28 @@ from nvsubq_paper.ops.fftconv import (
 
 # Chunked (memory-efficient) variants for zero-padded and causal convolutions
 # Note: circular convolutions don't have chunked variants (lower memory overhead already)
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     causal_fftconv1d_bhl as causal_fftconv1d_bhl_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     causal_fftconv1d_bhl_w_reshape as causal_fftconv1d_bhl_w_reshape_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     fftconv1d_bhl as fftconv1d_bhl_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     fftconv1d_bhl_w_reshape as fftconv1d_bhl_w_reshape_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     fftconv2d_bhl as fftconv2d_bhl_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     fftconv2d_bhl_w_reshape as fftconv2d_bhl_w_reshape_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     fftconv3d_bhl as fftconv3d_bhl_chunked,
 )
-from nvsubq_paper.ops.fftconv_chunked import (
+from nvsubquadratic.ops.fftconv_chunked import (
     fftconv3d_bhl_w_reshape as fftconv3d_bhl_w_reshape_chunked,
 )
 
