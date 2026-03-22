@@ -1,14 +1,16 @@
-"""Adapter to plug 2D sequence mixers (e.g. Hyena) into the ViT5 token-sequence architecture.
+"""Adapters to plug ND sequence mixers (e.g. Hyena) into the ViT5 token-sequence architecture.
 
-The ViT5 architecture processes [B, T, C] sequences. 2D mixers like Hyena expect
-[B, H, W, C] spatial grids. This adapter reshapes the flat token sequence to a 2D
-grid, applies the inner mixer, and reshapes back.
+The ViT5 architecture processes [B, T, C] sequences. ND mixers like Hyena expect
+[B, *spatial_dims, C] spatial grids. These adapters reshape the flat token sequence
+to an ND grid, apply the inner mixer, and reshape back.
 
 All token ordering (CLS position, register placement) is handled upstream by the
-network (e.g. ViT5ClassificationNet with prepend_registers=True), so this adapter
-treats the entire sequence as a flat spatial grid — it does not know or care about
+network (e.g. ViT5ClassificationNet with prepend_registers=True), so these adapters
+treat the entire sequence as a flat spatial grid — they do not know or care about
 which tokens are CLS, registers, or patches.
 """
+
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -78,3 +80,64 @@ class ViT5HyenaAdapter(nn.Module):
     def extra_repr(self) -> str:
         """Return grid width for repr()."""
         return f"grid_w={self.grid_w}"
+
+
+class ViT5HyenaAdapterND(nn.Module):
+    """Bridges ViT5's [B, T, C] token sequences and Hyena's [B, *spatial_dims, C] spatial interface.
+
+    Generalizes ViT5HyenaAdapter to arbitrary spatial dimensions (1D, 2D, 3D).
+    Optionally strips prefix tokens (e.g. registers) before reshaping, applies the
+    ND mixer to patch tokens only, then re-prepends the prefix unchanged. This is
+    useful when the prefix tokens cannot be cleanly tiled into the ND grid (e.g. 14
+    registers with an 8x8x8 3D patch grid).
+
+    Args:
+        inner_mixer_cfg: LazyConfig for the ND sequence mixer (e.g. QKVSequenceMixer wrapping Hyena).
+        grid_shape: Spatial grid shape as a tuple, e.g. (D, H, W) for 3D or (H, W) for 2D.
+            The product must equal the number of patch tokens (T - num_prefix_tokens).
+        num_prefix_tokens: Number of tokens at the start of the sequence to exclude
+            from the spatial reshape (e.g. CLS + registers). These are re-prepended
+            after the mixer. Default: 0 (all tokens are spatial).
+    """
+
+    def __init__(
+        self,
+        inner_mixer_cfg: LazyConfig,
+        grid_shape: Sequence[int],
+        num_prefix_tokens: int = 0,
+    ):
+        """Store grid shape and instantiate the inner ND mixer."""
+        super().__init__()
+        self.inner_mixer = instantiate(inner_mixer_cfg)
+        self.grid_shape = tuple(grid_shape)
+        self.num_prefix_tokens = num_prefix_tokens
+
+    def forward(self, x: torch.Tensor, **mixer_kwargs) -> torch.Tensor:
+        """Forward pass.
+
+        Args:
+            x: [B, T, C] token sequence. T - num_prefix_tokens must equal prod(grid_shape).
+            **mixer_kwargs: Forwarded to the inner mixer (e.g. ``conditioning`` for FiLM).
+
+        Returns:
+            [B, T, C] with patch tokens mixed via the ND inner mixer and prefix
+            tokens re-prepended unchanged.
+        """
+        B, T, C = x.shape
+
+        if self.num_prefix_tokens > 0:
+            prefix = x[:, : self.num_prefix_tokens, :]
+            x = x[:, self.num_prefix_tokens :, :]
+
+        x = x.reshape(B, *self.grid_shape, C)
+        x = self.inner_mixer(x, **mixer_kwargs)
+        x = x.reshape(B, -1, C)
+
+        if self.num_prefix_tokens > 0:
+            x = torch.cat([prefix, x], dim=1)
+
+        return x
+
+    def extra_repr(self) -> str:
+        """Return grid shape and prefix info for repr()."""
+        return f"grid_shape={self.grid_shape}, num_prefix_tokens={self.num_prefix_tokens}"

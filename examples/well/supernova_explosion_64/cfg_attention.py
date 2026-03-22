@@ -61,7 +61,9 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
 
     config.debug = False
-    config.compile = False
+    config.compile_compatible_fftconv = True
+    config.compile = True
+    config.compile_mode = "max-autotune"
 
     config.dataset = LazyConfig(WellDataModule)(
         well_base_path=WELL_BASE_PATH,
@@ -111,10 +113,9 @@ def get_config() -> ExperimentConfig:
                     hidden_dim=NUM_HIDDEN_CHANNELS,
                     num_heads=NUM_HEADS,
                     apply_qk_norm=True,
-                    use_rope=True,
+                    use_rope=False,
                     is_causal=False,
                     attn_dropout=0.0,
-                    rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
