@@ -71,6 +71,9 @@ select = [
 "conftest.py" = ["D"]
 "scripts/*.py" = ["D"]
 "**/*.ipynb" = ["D"]
+"experiments/datamodules/pde/well.py" = ["D"]
+"experiments/lightning_wrappers/well_lightning_wrapper.py" = ["D", "D417"]
+"nvsubquadratic/networks/vit5_general_purpose.py" = ["D107"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
