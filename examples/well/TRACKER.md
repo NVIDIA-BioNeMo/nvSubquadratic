@@ -1,81 +1,85 @@
 # The WELL Experiments Tracker
 
-W&B project:
+W&B project: [nvsubquadratic-well](https://wandb.ai/dafidofff/nvsubquadratic-well)
 
 ## Goal
 
 We evaluate **Hyena** (subquadratic, global convolution-based) and **attention** (quadratic) as sequence mixers on [The Well](https://polymathic-ai.org/the_well/) PDE benchmark. The Well contains 23 datasets spanning diverse physical systems (fluid dynamics, MHD, astrophysics, reaction-diffusion, etc.) in 2D and 3D, making it a broad testbed for neural PDE solvers.
 
-Both models share the same overall architecture: a patchified encoder, a stack of residual blocks (each containing a sequence mixer + MLP), and an unpatchified decoder. The only difference is the mixer inside each block — Hyena uses a gated long convolution with a learned implicit kernel (SIREN), while attention uses standard scaled dot-product attention with QK-norm. By keeping everything else identical, we isolate the effect of the mixing mechanism on forecasting accuracy across physical domains.
+Both models share the same overall architecture (ViT5): a patchified encoder, a stack of residual blocks (each containing a sequence mixer + MLP), and an unpatchified decoder. The only difference is the mixer inside each block — Hyena uses a gated long convolution with a learned implicit kernel (SIREN), while attention uses standard scaled dot-product attention with QK-norm. By keeping everything else identical, we isolate the effect of the mixing mechanism on forecasting accuracy across physical domains.
 
 The primary metric is **test/VRMSE** (variable-weighted root mean squared error), which normalizes across fields with different scales within each dataset.
 
 ### Experiment 1: Hyena vs Attention across datasets
 
-Run both models on all 23 Well datasets with matched hyperparameters. The leaderboard below tracks the best result per dataset.
+Run both models on all Well datasets with matched hyperparameters. The leaderboard below tracks the best result per dataset.
 
 ### Experiment 2: Patch-size scaling (TBA)
 
-Smaller patch sizes yield longer token sequences, which is where Hyena's subquadratic complexity should shine relative to attention's O(n^2) cost. We ablate both models across decreasing patch sizes on one 2D dataset (TBA) and one 3D dataset (TBA), measuring test/VRMSE, throughput (samples/sec), and peak GPU memory. This tests the hypothesis that Hyena's advantage grows as sequence length increases.
+Smaller patch sizes yield longer token sequences, which is where Hyena's subquadratic complexity should shine relative to attention's O(n^2) cost. Ablate both models across decreasing patch sizes, measuring test/VRMSE, throughput (samples/sec), and peak GPU memory.
+
+______________________________________________________________________
+
+## Ablation: `supernova_explosion_64`
+
+Supernova serves as the initial ablation dataset before scaling to other Well datasets. It is a 3D dataset (64^3) with 5 physical fields — small enough for fast iteration but representative of 3D PDE dynamics.
+
+**Ablation axes:**
+
+1. **Backbone**: ResNet (`ResidualNetwork`) vs ViT5 (`ViT5GeneralPurposeNet`) — tests whether the ViT5 architecture (registers, layer scale, drop path) improves over the simpler ResNet.
+1. **Sequence mixer**: Hyena vs Attention — the core comparison. Hyena uses a gated long convolution with a learned SIREN kernel; Attention uses scaled dot-product attention with QK-norm and RoPE.
+1. **FiLM conditioning** (ViT5 + Hyena only): Tests whether conditioning the SIREN kernel via FiLM (register-pooled context) improves over the unconditioned variant.
+
+**Shared hyperparameters (all configs):** patch_size=8, depth=10, LR=1e-3, 260k iterations, cosine schedule, 10% warmup, AdamW, bf16-mixed, weight_decay=1e-5, grad_clip=1.0. Patch size and depth chosen based on active_matter scaling results (see README).
+
+| Config group | Hidden | MLP        | Batch | Notes                                  |
+| ------------ | ------ | ---------- | ----- | -------------------------------------- |
+| ResNet       | 512    | GLU exp=1  | 4     |                                        |
+| ViT5         | 384    | GELU exp=4 | 2     | + 14 registers, layer scale, drop path |
+
+> **TODO:** Align all supernova configs to patch_size=8, depth=10, LR=1e-3 before running.
+
+### Ablation Results
+
+| #   | Config                               | Model               | Params | FLOPs | W&B ID                                                                          | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Notes                              |
+| --- | ------------------------------------ | ------------------- | ------ | ----- | ------------------------------------------------------------------------------- | ------ | --------- | ---------- | ---------- | ---------------------------------- |
+| A1  | `cfg_hyena.py`                       | ResNet + Hyena      | 26.0M  | 26.4G | [`2xgyax2l`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2xgyax2l) | —      | —         | —          | —          | SLURM 147901, ivi-h1 geodude 2×GPU |
+| A2  | `cfg_attention.py`                   | ResNet + Attention  | 24.9M  | 25.5G | [`58lsi3l0`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/58lsi3l0) | —      | —         | —          | —          | SLURM 147900, ivi-h1 geodude 2×GPU |
+| A3  | `cfg_vit5_hyena.py`                  | ViT5 + Hyena        | 23.0M  | 23.8G | [`5qhyl902`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5qhyl902) | —      | —         | —          | —          | SLURM 147905, ivi-h1 all6000 1×GPU |
+| A4  | `cfg_vit5_attention.py`              | ViT5 + Attention    | 22.8M  | 23.6G | [`8ygteq44`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8ygteq44) | —      | —         | —          | —          | SLURM 147904, ivi-h1 all6000 1×GPU |
+| A5  | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | 23.4M  | 23.8G | —                                                                               | —      | —         | —          | —          |                                    |
+| A6  | `cfg_vit5_hyena_3d.py`               | ViT5 + Hyena 3D     | 23.3M  | 23.9G | —                                                                               | —      | —         | —          | —          |                                    |
 
 ______________________________________________________________________
 
 ## Leaderboard (Best per Dataset)
 
-Each row tracks the **best-scoring model** for a dataset. Two runs per row: one Hyena, one Attention.
+Each row tracks the **best-scoring run** for a dataset. Only datasets with configs are listed.
 
-| Dataset                             | Dim | Resolution  | Hyena test/VRMSE | Hyena W&B                                                                  | Attn test/VRMSE | Attn W&B                                                                   | Notes                      |
-| ----------------------------------- | --- | ----------- | ---------------- | -------------------------------------------------------------------------- | --------------- | -------------------------------------------------------------------------- | -------------------------- |
-| `acoustic_scattering_discontinuous` | 2D  | 256x256     | —                | —                                                                          | —               | —                                                                          |                            |
-| `acoustic_scattering_inclusions`    | 2D  | 256x256     | —                | —                                                                          | —               | —                                                                          |                            |
-| `acoustic_scattering_maze`          | 2D  | 256x256     | —                | —                                                                          | —               | —                                                                          |                            |
-| `active_matter`                     | 2D  | 256x256     | —                | —                                                                          | —               | —                                                                          |                            |
-| `convective_envelope_rsg`           | 3D  | 256x128x256 | —                | —                                                                          | —               | —                                                                          | Spherical coords           |
-| `euler_multi_quadrants_openBC`      | 2D  | 512x512     | —                | —                                                                          | —               | —                                                                          |                            |
-| `euler_multi_quadrants_periodicBC`  | 2D  | 512x512     | —                | —                                                                          | —               | —                                                                          |                            |
-| `gray_scott_reaction_diffusion`     | 2D  | 128x128     | —                | —                                                                          | —               | —                                                                          |                            |
-| `helmholtz_staircase`               | 2D  | 1024x256    | —                | —                                                                          | —               | —                                                                          | Non-square                 |
-| `MHD_64`                            | 3D  | 64^3        | —                | —                                                                          | —               | —                                                                          | Periodic BC                |
-| `MHD_256`                           | 3D  | 256^3       | —                | —                                                                          | —               | —                                                                          | Periodic BC, large         |
-| `planetswe`                         | 2D  | 256x512     | —                | —                                                                          | —               | —                                                                          | Angular coords             |
-| `post_neutron_star_merger`          | 3D  | 192x128x66  | —                | —                                                                          | —               | —                                                                          | Log-spherical              |
-| `rayleigh_benard`                   | 2D  | 512x128     | —                | —                                                                          | —               | —                                                                          |                            |
-| `rayleigh_benard_uniform`           | 2D  | —           | —                | —                                                                          | —               | —                                                                          |                            |
-| `rayleigh_taylor_instability`       | 3D  | 128^3       | —                | —                                                                          | —               | —                                                                          |                            |
-| `shear_flow`                        | 2D  | 128x256     | —                | —                                                                          | —               | —                                                                          |                            |
-| `supernova_explosion_64`            | 3D  | 64^3        | 0.3674           | [`p7te253r`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/p7te253r) | 0.6380          | [`4p3b9i6y`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/4p3b9i6y) | Hyena wins by large margin |
-| `supernova_explosion_128`           | 3D  | 128^3       | —                | —                                                                          | —               | —                                                                          |                            |
-| `turbulence_gravity_cooling`        | 3D  | 64^3        | —                | —                                                                          | —               | —                                                                          |                            |
-| `turbulent_radiative_layer_2D`      | 2D  | 128x384     | —                | —                                                                          | —               | —                                                                          |                            |
-| `turbulent_radiative_layer_3D`      | 3D  | 128x128x256 | —                | —                                                                          | —               | —                                                                          |                            |
-| `viscoelastic_instability`          | 2D  | 512x512     | —                | —                                                                          | —               | —                                                                          |                            |
+| Dataset                  | Dim | Resolution | Hyena test/VRMSE | Hyena W&B | Attn test/VRMSE | Attn W&B | Notes |
+| ------------------------ | --- | ---------- | ---------------- | --------- | --------------- | -------- | ----- |
+| `supernova_explosion_64` | 3D  | 64^3       | —                | —         | —               | —        |       |
+| `MHD_64`                 | 3D  | 64^3       | —                | —         | —               | —        |       |
+| `active_matter`          | 2D  | 256x256    | —                | —         | —               | —        |       |
 
 ______________________________________________________________________
 
 ## Job Log
 
-All runs (including ablations, reruns, and failed jobs). Tracks every experiment launched.
+All completed runs. Failed, cancelled, and incomplete runs should be purged periodically.
 
-| #   | Dataset                  | Config                               | Model               | W&B ID                                                                     | SLURM Job ID | Iterations | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Status    | Who   | Notes                               |
-| --- | ------------------------ | ------------------------------------ | ------------------- | -------------------------------------------------------------------------- | ------------ | ---------- | ------ | --------- | ---------- | ---------- | --------- | ----- | ----------------------------------- |
-| 1   | `supernova_explosion_64` | `cfg_hyena.py`                       | ResNet + Hyena      | [`z6o20go9`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/z6o20go9) | —            | 130k       | ~15    | 0.3266    | —          | —          | Completed | David | Historical baseline, only 15 epochs |
-| 2   | `supernova_explosion_64` | `cfg_vit5_hyena.py`                  | ViT5 + Hyena        | [`p7te253r`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/p7te253r) | —            | 260k       | ~30    | 0.3561    | 0.3674     | 0.3643     | Completed | David | Best Hyena result on supernova      |
-| 3   | `supernova_explosion_64` | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | [`77n2mp0a`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/77n2mp0a) | —            | 260k       | ~30    | 0.3615    | 0.3727     | 0.3696     | Completed | David | FiLM did not help on this dataset   |
-| 4   | `supernova_explosion_64` | `cfg_vit5_attention.py`              | ViT5 + Attention    | [`4p3b9i6y`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/4p3b9i6y) | 146390       | 260k       | ~15    | 0.6233    | 0.6380     | 0.6289     | Completed | David | Attention baseline on supernova     |
-| 5   | `supernova_explosion_64` | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | [`c5dej2je`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/c5dej2je) | 146273       | —          | ~2     | —         | —          | —          | Failed    | David | SIGABRT at epoch 2                  |
-| 6   | `supernova_explosion_64` | `cfg_vit5_attention.py`              | ViT5 + Attention    | [`r6vio2e0`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/r6vio2e0) | 146276       | —          | ~0     | —         | —          | —          | Cancelled | David | Cancelled shortly after launch      |
-| 7   | `supernova_explosion_64` | `cfg_vit5_attention.py`              | ViT5 + Attention    | [`2sh14s0h`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/2sh14s0h) | 146277       | —          | ~2     | —         | —          | —          | Failed    | David | Hit walltime, relaunched as #4      |
-| 8   | `supernova_explosion_64` | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | [`nle27om2`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/nle27om2) | 146391       | 146k       | ~18    | —         | —          | —          | Failed    | David | Hit walltime at epoch 18            |
-| 9   | `MHD_64`                 | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | [`gjdrzmyr`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/gjdrzmyr) | 147027       | 114k+      | ~31+   | —         | —          | —          | Running   | David | First MHD_64 run, on all6000        |
-| 10  | `supernova_explosion_64` | (resumed `cfg_hyena.py`)             | ResNet + Hyena      | [`hxnbm8gt`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/hxnbm8gt) | 147046       | —          | ~3+    | —         | —          | —          | Running   | David | Resuming z6o20go9 on geodude        |
+| #   | Dataset                | Config                  | Model              | SLURM ID | Cluster              | W&B ID                                                                          | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Who | Notes   |
+| --- | ---------------------- | ----------------------- | ------------------ | -------- | -------------------- | ------------------------------------------------------------------------------- | ------ | --------- | ---------- | ---------- | --- | ------- |
+| A1  | supernova_explosion_64 | `cfg_hyena.py`          | ResNet + Hyena     | 147901   | ivi-h1 geodude 2×GPU | [`2xgyax2l`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2xgyax2l) | —      | —         | —          | —          | DW  | running |
+| A2  | supernova_explosion_64 | `cfg_attention.py`      | ResNet + Attention | 147900   | ivi-h1 geodude 2×GPU | [`58lsi3l0`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/58lsi3l0) | —      | —         | —          | —          | DW  | running |
+| A3  | supernova_explosion_64 | `cfg_vit5_hyena.py`     | ViT5 + Hyena       | 147905   | ivi-h1 all6000 1×GPU | [`5qhyl902`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5qhyl902) | —      | —         | —          | —          | DW  | running |
+| A4  | supernova_explosion_64 | `cfg_vit5_attention.py` | ViT5 + Attention   | 147904   | ivi-h1 all6000 1×GPU | [`8ygteq44`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8ygteq44) | —      | —         | —          | —          | DW  | running |
 
 ______________________________________________________________________
 
 ## Observations
 
-1. **Plain Hyena > FiLM-conditioned Hyena on supernova_explosion_64.** ViT5 Hyena ([`p7te253r`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/p7te253r)) test/VRMSE `0.3674` vs FiLM ([`77n2mp0a`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/77n2mp0a)) `0.3727`. FiLM conditioning on the kernel does not appear to help here.
-
-1. **Hyena >> Attention on supernova_explosion_64.** ViT5 Hyena test/VRMSE `0.3674` vs ViT5 Attention ([`4p3b9i6y`](https://wandb.ai/dafidofff/nvsubquadratic-well/runs/4p3b9i6y)) test/VRMSE `0.6380`. Hyena outperforms attention by a large margin (~42% lower VRMSE) on this 3D dataset with matched architecture and training.
+(none yet)
 
 ______________________________________________________________________
 

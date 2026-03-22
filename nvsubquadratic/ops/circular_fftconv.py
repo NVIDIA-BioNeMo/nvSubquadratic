@@ -338,18 +338,19 @@ def circular_fftconv1d_bhl(
       across all layers/callers within the same process.
 
     Args:
-        x (Tensor): ``[B, H, L]``, dtype float32.
-        kernel (Tensor): ``[1|B, H, K]``, dtype float32.
+        x (Tensor): ``[B, H, L]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, H, K]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, H, L]``
+        Tensor: ``[B, H, L]``, in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
+    orig_dtype = x.dtype
+    x = x.to(torch.float32)
+    kernel = kernel.to(torch.float32)
     if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+        shortcut = shortcut.to(torch.float32)
 
     B, H, L = x.shape
     assert len(kernel.shape) == 3, f"Unexpected kernel shape: {kernel.shape}."
@@ -389,7 +390,7 @@ def circular_fftconv1d_bhl(
         assert shortcut.shape == (H,)
         y = y + rearrange(shortcut, "h -> 1 h 1") * x
 
-    return y
+    return y.to(orig_dtype)
 
 
 def circular_fftconv2d_bhl(
@@ -410,14 +411,14 @@ def circular_fftconv2d_bhl(
     By doing so, this makes the convolution faster and more memory efficient.
 
     Args:
-        x: Tensor of shape (B, H, X_in, Y_in), dtype float32.
-        kernel: Tensor of shape (1|B, H, K_x, K_y), dtype float32.
-        shortcut: Optional tensor of shape (H,), dtype float32.
+        x: Tensor of shape (B, H, X_in, Y_in), any dtype (internally cast to float32).
+        kernel: Tensor of shape (1|B, H, K_x, K_y), any dtype (internally cast to float32).
+        shortcut: Optional tensor of shape (H,).
         use_phase_shift: If True, apply alignment via frequency-domain phase ramp.
             If False, align via spatial torch.roll after iFFT.
 
     Returns:
-        Tensor of shape (B, H, X_in, Y_in).
+        Tensor of shape (B, H, X_in, Y_in), in the original dtype of ``x``.
 
     Notes:
         When ``use_phase_shift=True``, the phase ramp is retrieved from a global,
@@ -425,10 +426,11 @@ def circular_fftconv2d_bhl(
         Python process). This avoids recomputing the ramp for repeated sizes and
         shifts on the same device/dtype.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
+    orig_dtype = x.dtype
+    x = x.to(torch.float32)
+    kernel = kernel.to(torch.float32)
     if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+        shortcut = shortcut.to(torch.float32)
 
     B, H, X_in, Y_in = x.shape
 
@@ -473,7 +475,7 @@ def circular_fftconv2d_bhl(
         assert shortcut.shape == (H,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
 
-    return y
+    return y.to(orig_dtype)
 
 
 def circular_fftconv3d_bhl(
@@ -521,18 +523,19 @@ def circular_fftconv3d_bhl(
       shared across all layers/callers within the same process.
 
     Args:
-        x (Tensor): ``[B, H, X, Y, Z]``, dtype float32.
-        kernel (Tensor): ``[1|B, H, Kx, Ky, Kz]``, dtype float32.
+        x (Tensor): ``[B, H, X, Y, Z]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, H, Kx, Ky, Kz]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, H, X, Y, Z]``
+        Tensor: ``[B, H, X, Y, Z]``, in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
+    orig_dtype = x.dtype
+    x = x.to(torch.float32)
+    kernel = kernel.to(torch.float32)
     if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
+        shortcut = shortcut.to(torch.float32)
 
     B, H, X, Y, Z = x.shape
     assert len(kernel.shape) == 5, f"Unexpected kernel shape: {kernel.shape}."
@@ -575,7 +578,7 @@ def circular_fftconv3d_bhl(
         assert shortcut.shape == (H,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1 1") * x
 
-    return y
+    return y.to(orig_dtype)
 
 
 def circular_fftconv1d_bhl_w_reshape(
@@ -589,13 +592,13 @@ def circular_fftconv1d_bhl_w_reshape(
     This reshapes BLH -> BHL, calls ``circular_fftconv1d_bhl``, and reshapes back.
 
     Args:
-        x (Tensor): ``[B, L, H]``, dtype float32.
-        kernel (Tensor): ``[1|B, K, H]``, dtype float32.
+        x (Tensor): ``[B, L, H]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, K, H]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, L, H]``
+        Tensor: ``[B, L, H]``, in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     kernel_bhl = rearrange(kernel, "b k h -> b h k")
@@ -614,13 +617,13 @@ def circular_fftconv2d_bhl_w_reshape(
     This reshapes BLH -> BHL, calls ``circular_fftconv2d_bhl``, and reshapes back.
 
     Args:
-        x (Tensor): ``[B, X, Y, H]``, dtype float32.
-        kernel (Tensor): ``[1|B, Kx, Ky, H]``, dtype float32.
+        x (Tensor): ``[B, X, Y, H]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, Kx, Ky, H]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, X, Y, H]``
+        Tensor: ``[B, X, Y, H]``, in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     kernel_bhl = rearrange(kernel, "b kx ky h -> b h kx ky")
@@ -639,13 +642,13 @@ def circular_fftconv3d_bhl_w_reshape(
     This reshapes BLH -> BHL, calls ``circular_fftconv3d_bhl``, and reshapes back.
 
     Args:
-        x (Tensor): ``[B, X, Y, Z, H]``, dtype float32.
-        kernel (Tensor): ``[1|B, Kx, Ky, Kz, H]``, dtype float32.
+        x (Tensor): ``[B, X, Y, Z, H]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, Kx, Ky, Kz, H]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, X, Y, Z, H]``
+        Tensor: ``[B, X, Y, Z, H]``, in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y z h -> b h x y z")
     kernel_bhl = rearrange(kernel, "b kx ky kz h -> b h kx ky kz")
