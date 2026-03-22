@@ -43,10 +43,10 @@ Supernova serves as the initial ablation dataset before scaling to other Well da
 
 | #   | Config                               | Model               | Params | FLOPs | W&B ID                                                                          | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Notes                              |
 | --- | ------------------------------------ | ------------------- | ------ | ----- | ------------------------------------------------------------------------------- | ------ | --------- | ---------- | ---------- | ---------------------------------- |
-| A1  | `cfg_hyena.py`                       | ResNet + Hyena      | 26.0M  | 26.4G | [`2xgyax2l`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2xgyax2l) | —      | —         | —          | —          | SLURM 147901, ivi-h1 geodude 2×GPU |
-| A2  | `cfg_attention.py`                   | ResNet + Attention  | 24.9M  | 25.5G | [`58lsi3l0`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/58lsi3l0) | —      | —         | —          | —          | SLURM 147900, ivi-h1 geodude 2×GPU |
-| A3  | `cfg_vit5_hyena.py`                  | ViT5 + Hyena        | 23.0M  | 23.8G | [`5qhyl902`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5qhyl902) | —      | —         | —          | —          | SLURM 147905, ivi-h1 all6000 1×GPU |
-| A4  | `cfg_vit5_attention.py`              | ViT5 + Attention    | 22.8M  | 23.6G | [`8ygteq44`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8ygteq44) | —      | —         | —          | —          | SLURM 147904, ivi-h1 all6000 1×GPU |
+| A1  | `cfg_hyena.py`                       | ResNet + Hyena      | 26.0M  | 26.4G | [`vlzxxwp9`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/vlzxxwp9) | —      | —         | —          | —          | SLURM 147963, ivi-h1 geodude 2×GPU |
+| A2  | `cfg_attention.py`                   | ResNet + Attention  | 24.9M  | 25.5G | [`f6ud6ris`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/f6ud6ris) | —      | —         | —          | —          | SLURM 147964, ivi-h1 geodude 2×GPU |
+| A3  | `cfg_vit5_hyena.py`                  | ViT5 + Hyena        | 23.0M  | 23.8G | [`lycw7w1j`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/lycw7w1j) | —      | —         | —          | —          | SLURM 147968, ivi-h1 all6000 1×GPU |
+| A4  | `cfg_vit5_attention.py`              | ViT5 + Attention    | 22.8M  | 23.6G | [`8ygl9vn1`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8ygl9vn1) | —      | —         | —          | —          | SLURM 147961, ivi-h1 all6000 1×GPU |
 | A5  | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | 23.4M  | 23.8G | —                                                                               | —      | —         | —          | —          |                                    |
 | A6  | `cfg_vit5_hyena_3d.py`               | ViT5 + Hyena 3D     | 23.3M  | 23.9G | —                                                                               | —      | —         | —          | —          |                                    |
 
@@ -70,10 +70,10 @@ All completed runs. Failed, cancelled, and incomplete runs should be purged peri
 
 | #   | Dataset                | Config                  | Model              | SLURM ID | Cluster              | W&B ID                                                                          | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Who | Notes   |
 | --- | ---------------------- | ----------------------- | ------------------ | -------- | -------------------- | ------------------------------------------------------------------------------- | ------ | --------- | ---------- | ---------- | --- | ------- |
-| A1  | supernova_explosion_64 | `cfg_hyena.py`          | ResNet + Hyena     | 147901   | ivi-h1 geodude 2×GPU | [`2xgyax2l`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2xgyax2l) | —      | —         | —          | —          | DW  | running |
-| A2  | supernova_explosion_64 | `cfg_attention.py`      | ResNet + Attention | 147900   | ivi-h1 geodude 2×GPU | [`58lsi3l0`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/58lsi3l0) | —      | —         | —          | —          | DW  | running |
-| A3  | supernova_explosion_64 | `cfg_vit5_hyena.py`     | ViT5 + Hyena       | 147905   | ivi-h1 all6000 1×GPU | [`5qhyl902`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5qhyl902) | —      | —         | —          | —          | DW  | running |
-| A4  | supernova_explosion_64 | `cfg_vit5_attention.py` | ViT5 + Attention   | 147904   | ivi-h1 all6000 1×GPU | [`8ygteq44`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8ygteq44) | —      | —         | —          | —          | DW  | running |
+| A1  | supernova_explosion_64 | `cfg_hyena.py`          | ResNet + Hyena     | 147963   | ivi-h1 geodude 2×GPU | [`vlzxxwp9`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/vlzxxwp9) | —      | —         | —          | —          | DW  | running |
+| A2  | supernova_explosion_64 | `cfg_attention.py`      | ResNet + Attention | 147964   | ivi-h1 geodude 2×GPU | [`f6ud6ris`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/f6ud6ris) | —      | —         | —          | —          | DW  | running |
+| A3  | supernova_explosion_64 | `cfg_vit5_hyena.py`     | ViT5 + Hyena       | 147968   | ivi-h1 all6000 1×GPU | [`lycw7w1j`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/lycw7w1j) | —      | —         | —          | —          | DW  | running |
+| A4  | supernova_explosion_64 | `cfg_vit5_attention.py` | ViT5 + Attention   | 147961   | ivi-h1 all6000 1×GPU | [`8ygl9vn1`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8ygl9vn1) | —      | —         | —          | —          | DW  | running |
 
 ______________________________________________________________________
 
