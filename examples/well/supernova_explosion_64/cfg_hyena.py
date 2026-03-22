@@ -49,7 +49,7 @@ DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
 FFT_PADDING = "circular"
 OMEGA_0 = 100.0
-PATCH_SIZE = int(os.environ.get("HYENA_PATCH_SIZE", 4))
+PATCH_SIZE = int(os.environ.get("HYENA_PATCH_SIZE", 8))
 
 # TRAINING parameters
 TRAINING_ITERATIONS = 260_000
