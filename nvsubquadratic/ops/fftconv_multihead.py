@@ -49,7 +49,7 @@ def fftconv2d_multihead_bhl(
     if shortcut is not None:
         assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
 
-    B, num_heads, head_dim, H, W = x.shape
+    _B, num_heads, head_dim, H, W = x.shape
     N, head_dim_out, head_dim_in, K_x, K_y = kernel.shape
 
     assert N == num_heads, f"Kernel num_heads ({N}) must match input ({num_heads})"
@@ -113,7 +113,7 @@ def fftconv2d_multihead_circular_bhl(
     assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
     assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
 
-    B, num_heads, head_dim, H, W = x.shape
+    _B, num_heads, head_dim, H, W = x.shape
 
     # FFT of input and kernel (circular: no padding needed)
     x_fft = torch.fft.rfft2(x)

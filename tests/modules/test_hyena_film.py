@@ -208,7 +208,7 @@ class TestKernelFiLMGenerator:
         conditioning = torch.randn(2, 64, device=device)
         film_params = gen(conditioning)
         assert len(film_params) == 1
-        gamma, beta = film_params[0]
+        gamma, _beta = film_params[0]
         assert gamma.shape == (2, 8)
 
     def test_bottleneck_dim(self) -> None:

@@ -157,7 +157,7 @@ class TestDiscreteMode:
         )
 
         batch = {"input": torch.randint(0, 100, (4, 10))}
-        input_seq, target_seq = wrapper._prepare_batch(batch)
+        input_seq, _target_seq = wrapper._prepare_batch(batch)
 
         output = wrapper({"input": input_seq, "condition": None})
         logits = output["logits"]
@@ -222,7 +222,7 @@ class TestContinuousMode:
         )
 
         batch = {"input": torch.randn(4, 10, 1)}
-        input_seq, target_seq = wrapper._prepare_batch(batch)
+        input_seq, _target_seq = wrapper._prepare_batch(batch)
 
         output = wrapper({"input": input_seq, "condition": None})
         logits = output["logits"]
@@ -245,7 +245,7 @@ class TestContinuousMode:
         output = wrapper({"input": input_seq, "condition": None})
         logits = output["logits"]
 
-        loss, predictions = wrapper._compute_loss(logits, target_seq)
+        loss, _predictions = wrapper._compute_loss(logits, target_seq)
 
         assert loss.ndim == 0, "Loss should be scalar"
         assert loss.item() >= 0, "MSE should be non-negative"
