@@ -335,7 +335,7 @@ def fftconv2d_fp32_bhl_chunked(
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    _B, H, _X_in, Y_in = x.shape
+    _B, H, _X_in, _Y_in = x.shape
 
     if H <= chunk_size:
         return _fftconv2d_bhl_std(x, kernel, shortcut)
@@ -381,7 +381,7 @@ def fftconv3d_fp32_bhl_chunked(
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, X_in, Y_in, Z_in = x.shape
+    _B, H, _X_in, _Y_in, _Z_in = x.shape
 
     if H <= chunk_size:
         return _fftconv3d_bhl_std(x, kernel, shortcut)

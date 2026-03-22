@@ -1,11 +1,29 @@
 # TODO: Add license header here
 
-"""Wrappers around the custom CUDA FFT convolution kernels.
 
-This module mirrors the API of :mod:`nvsubquadratic.ops.fftconv` for the 2D
-operators while delegating the heavy lifting to the optimized kernel provided
-by :mod:`subquadratic_ops_torch`. The intent is to be a drop-in replacement
-that preserves shapes, dtype checks, and shortcut semantics.
+"""Drop-in wrappers around :mod:`subquadratic_ops_torch` CUDA FFT kernels.
+
+This module mirrors the API of :mod:`nvsubquadratic.ops.fftconv` for 2D
+operators while delegating the heavy lifting to the optimized CUDA kernel
+provided by :mod:`subquadratic_ops_torch`.
+
+Functions provided
+------------------
+- ``fftconv2d_bhl``  /  ``fftconv2d_bhl_chunked``   — BHL layout ``[B, H, X, Y]``
+- ``fftconv2d_bhl_w_reshape``  /  ``fftconv2d_bhl_w_reshape_chunked``   — accepts BLH ``[B, X, Y, H]``, reshapes internally
+- ``fftconv2d_blh``  /  ``fftconv2d_blh_chunked``   — aliases for the ``_w_reshape`` variants
+
+All functions accept any input dtype (bf16, fp16, fp32) and internally cast to
+fp32 for the CUDA kernel, returning the output in the original dtype. Shortcut
+semantics are identical to the torch.fft reference: ``y += shortcut * x``.
+
+The chunked variants process channels in groups of ``chunk_size`` to reduce
+peak GPU memory from the CUDA kernel's FFT intermediates.
+
+.. note::
+   ``subquadratic_ops_torch`` is an **optional** dependency. Importing this
+   module always succeeds; a clear error is raised only when a function is
+   actually called without the package installed.
 """
 
 from __future__ import annotations
@@ -13,20 +31,59 @@ from __future__ import annotations
 
 __all__ = [
     "fftconv2d_bhl",
+    "fftconv2d_bhl_chunked",
     "fftconv2d_bhl_w_reshape",
+    "fftconv2d_bhl_w_reshape_chunked",
     "fftconv2d_blh",
+    "fftconv2d_blh_chunked",
 ]
 
 import torch
-import torch.nn.functional as F
 from einops import rearrange
-from subquadratic_ops_torch.fft_conv2d import fft_conv2d
 
 
-def _validate_float32_tensor(name: str, tensor: torch.Tensor | None) -> None:
-    if tensor is None:
-        return
-    assert tensor.dtype == torch.float32, f"{name} must be float32. Current dtype: {tensor.dtype}"
+# ---------------------------------------------------------------------------
+# Lazy import — cached on first use so the module can be imported without
+# subquadratic_ops_torch being installed.
+# ---------------------------------------------------------------------------
+_fft_conv2d = None
+
+
+def _get_fft_conv2d():
+    """Return the ``fft_conv2d`` callable, importing on first call."""
+    global _fft_conv2d
+    if _fft_conv2d is None:
+        try:
+            from subquadratic_ops_torch.fft_conv2d import fft_conv2d
+
+            _fft_conv2d = fft_conv2d
+        except ImportError as exc:
+            raise ImportError(
+                "subquadratic_ops_torch is required for fft_backend='subq_ops'. "
+                "Install it with: pip install subquadratic_ops_torch"
+            ) from exc
+    return _fft_conv2d
+
+
+# ---------------------------------------------------------------------------
+# Core helper — runs the CUDA kernel on fp32 tensors
+# ---------------------------------------------------------------------------
+
+
+def _subq_conv2d_bhl(x_fp32: torch.Tensor, k_fp32: torch.Tensor) -> torch.Tensor:
+    """Call the subq_ops CUDA kernel on fp32 BHL tensors.
+
+    Handles both shared kernels ``[1, H, Kx, Ky]`` (squeezed to ``[H, Kx, Ky]``)
+    and FiLM per-sample kernels ``[B, H, Kx, Ky]`` (passed as-is).
+    """
+    fft_conv2d = _get_fft_conv2d()
+    k = k_fp32.squeeze(0) if k_fp32.shape[0] == 1 else k_fp32
+    return fft_conv2d(x_fp32.contiguous(), k.contiguous())
+
+
+# ---------------------------------------------------------------------------
+# Non-chunked functions
+# ---------------------------------------------------------------------------
 
 
 def fftconv2d_bhl(
@@ -34,39 +91,28 @@ def fftconv2d_bhl(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """2D FFT convolution with optional shortcut for BHL layout (B, H, X, Y)."""
-    _validate_float32_tensor("x", x)
-    _validate_float32_tensor("kernel", kernel)
-    _validate_float32_tensor("shortcut", shortcut)
+    """2D FFT convolution via subq_ops CUDA kernel, BHL layout ``[B, H, X, Y]``.
 
-    assert x.ndim == 4, f"Expected x with 4 dims (B, H, X, Y). Got {x.shape}."
-    assert kernel.ndim == 4, f"Expected kernel with 4 dims (1|B, H, K_x, K_y). Got {kernel.shape}."
-    B, H, X_in, Y_in = x.shape
-    assert x.is_cuda, "Custom CUDA kernel requires CUDA tensors."
-    assert kernel.shape[0] == 1, "Custom CUDA kernel only supports shared kernels (kernel.shape[0] == 1)."
-    _, H_k, K_x, K_y = kernel.shape
-    assert H_k == H, "Input and kernel must have the same number of channels (H)."
-    assert K_x <= X_in and K_y <= Y_in, (
-        "Custom CUDA kernel expects kernel spatial dims <= input; use grid_type='single' so they match."
-    )
-    print(kernel.shape)
-    exit()
-    pad_x = X_in - K_x
-    pad_y = Y_in - K_y
-    if pad_x or pad_y:
-        pad_x_before = pad_x // 2
-        pad_x_after = pad_x - pad_x_before
-        pad_y_before = pad_y // 2
-        pad_y_after = pad_y - pad_y_before
-        kernel = F.pad(kernel, (pad_y_before, pad_y_after, pad_x_before, pad_x_after))
+    Drop-in replacement for :func:`nvsubquadratic.ops.fftconv.fftconv2d_fp32_bhl`.
+    Accepts any input dtype; internally casts to fp32 for the CUDA kernel and
+    returns the output in the original dtype of ``x``.
 
-    weight = kernel[0]
-    y = fft_conv2d(x.contiguous(), weight.contiguous())
-    assert y.shape == x.shape, f"Kernel returned shape {y.shape}, expected {x.shape}."
+    Args:
+        x: Input tensor ``[B, H, X, Y]``.
+        kernel: Kernel tensor ``[1|B, H, Kx, Ky]``.
+        shortcut: Optional per-channel scale ``[H]``.
+
+    Returns:
+        Output tensor ``[B, H, X, Y]`` in ``x.dtype``.
+    """
+    input_dtype = x.dtype
+    _B, H, _X, _Y = x.shape
+
+    y = _subq_conv2d_bhl(x.float(), kernel.float()).to(input_dtype)
 
     if shortcut is not None:
-        assert shortcut.shape == (H,)
-        y = y.add(rearrange(shortcut, "h -> 1 h 1 1") * x)
+        y = y + shortcut.to(input_dtype).view(1, H, 1, 1) * x
+
     return y
 
 
@@ -75,7 +121,10 @@ def fftconv2d_bhl_w_reshape(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """2D FFT convolution with optional shortcut for BLH layout (B, X, Y, H)."""
+    """2D FFT convolution via subq_ops for BLH inputs ``[B, X, Y, H]``.
+
+    Reshapes to BHL, runs :func:`fftconv2d_bhl`, reshapes back.
+    """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     kernel_bhl = rearrange(kernel, "b x y h -> b h x y")
     y_bhl = fftconv2d_bhl(x_bhl, kernel_bhl, shortcut)
@@ -87,5 +136,81 @@ def fftconv2d_blh(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Alias for fftconv2d_bhl_w_reshape to match nvsubquadratic.ops.fftconv API."""
+    """Alias for :func:`fftconv2d_bhl_w_reshape`."""
     return fftconv2d_bhl_w_reshape(x, kernel, shortcut)
+
+
+# ---------------------------------------------------------------------------
+# Chunked functions — process channels in groups to reduce peak memory
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CHUNK_SIZE = 128
+
+
+def fftconv2d_bhl_chunked(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Channel-chunked 2D FFT convolution via subq_ops, BHL layout.
+
+    Processes channels in groups of ``chunk_size`` to reduce peak GPU memory
+    from the CUDA kernel's internal FFT intermediates.
+
+    Args:
+        x: Input tensor ``[B, H, X, Y]``.
+        kernel: Kernel tensor ``[1|B, H, Kx, Ky]``.
+        shortcut: Optional per-channel scale ``[H]``.
+        chunk_size: Channels per chunk (default 128).
+
+    Returns:
+        Output tensor ``[B, H, X, Y]`` in ``x.dtype``.
+    """
+    if chunk_size is None:
+        chunk_size = _DEFAULT_CHUNK_SIZE
+
+    input_dtype = x.dtype
+    _B, H, _X, _Y = x.shape
+    x_fp32 = x.float()
+    k_fp32 = kernel.float()
+
+    chunks = []
+    for start in range(0, H, chunk_size):
+        end = min(start + chunk_size, H)
+        x_c = x_fp32[:, start:end].contiguous()
+        k_c = k_fp32[:, start:end].contiguous()
+        chunks.append(_subq_conv2d_bhl(x_c, k_c))
+
+    y = torch.cat(chunks, dim=1).to(input_dtype)
+
+    if shortcut is not None:
+        y = y + shortcut.to(input_dtype).view(1, H, 1, 1) * x
+
+    return y
+
+
+def fftconv2d_bhl_w_reshape_chunked(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Channel-chunked 2D FFT convolution via subq_ops for BLH inputs ``[B, X, Y, H]``.
+
+    Reshapes to BHL, runs :func:`fftconv2d_bhl_chunked`, reshapes back.
+    """
+    x_bhl = rearrange(x, "b x y h -> b h x y")
+    kernel_bhl = rearrange(kernel, "b x y h -> b h x y")
+    y_bhl = fftconv2d_bhl_chunked(x_bhl, kernel_bhl, shortcut, chunk_size)
+    return rearrange(y_bhl, "b h x y -> b x y h")
+
+
+def fftconv2d_blh_chunked(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Alias for :func:`fftconv2d_bhl_w_reshape_chunked`."""
+    return fftconv2d_bhl_w_reshape_chunked(x, kernel, shortcut, chunk_size)

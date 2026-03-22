@@ -155,17 +155,13 @@ class TestFP16FFTConv1D:
         y2 = fftconv1d_fp16_bhl(x_f32, kernel_f32, shortcut_f32)
         assert y2.dtype == torch.float32
 
-    def test_rejects_mismatched_dtypes(self, device: str) -> None:
-        """Mismatched dtypes between x, kernel, or shortcut raise AssertionError."""
+    def test_rejects_mismatched_shortcut_dtype(self, device: str) -> None:
+        """Mismatched shortcut dtype raises AssertionError."""
         x = torch.randn(2, 32, 64, device=device, dtype=torch.float16)
-        kernel_f32 = torch.randn(1, 32, 7, device=device, dtype=torch.float32)
-        kernel_fp16 = kernel_f32.half()
+        kernel_fp16 = torch.randn(1, 32, 7, device=device, dtype=torch.float16)
         shortcut_f32 = torch.randn(32, device=device, dtype=torch.float32)
 
-        with pytest.raises(AssertionError, match="kernel.dtype"):
-            fftconv1d_fp16_bhl(x, kernel_f32, None)
-
-        with pytest.raises(AssertionError, match="shortcut.dtype"):
+        with pytest.raises(AssertionError, match=r"shortcut.dtype"):
             fftconv1d_fp16_bhl(x, kernel_fp16, shortcut_f32)
 
     @pytest.mark.parametrize("chunk_size", [16, 32, 64])

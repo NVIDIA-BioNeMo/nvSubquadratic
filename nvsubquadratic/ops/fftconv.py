@@ -128,8 +128,6 @@ def causal_fftconv1d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -187,8 +185,6 @@ def fftconv1d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -245,8 +241,6 @@ def fftconv2d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -318,8 +312,6 @@ def fftconv3d_fp32_blh(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, X_in, Y_in, Z_in, hidden_dim), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -497,8 +489,6 @@ def causal_fftconv1d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -556,8 +546,6 @@ def fftconv1d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, seq_len), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -617,8 +605,6 @@ def fftconv2d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
@@ -693,8 +679,6 @@ def fftconv3d_fp32_bhl(
     Returns:
         torch.Tensor: Output tensor of shape (batch_size, hidden_dim, X_in, Y_in, Z_in), in the original dtype of ``x``.
     """
-    assert x.dtype == kernel.dtype, f"x.dtype ({x.dtype}) must match kernel.dtype ({kernel.dtype})"
-
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
 
