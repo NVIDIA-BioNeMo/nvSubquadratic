@@ -64,7 +64,7 @@ def fftconv1d_fp16_bhl(
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
-    _, hidden_dim, seq_len = x.shape
+    _, _hidden_dim, seq_len = x.shape
     _, _, kernel_len = kernel.shape
 
     fft_len = _next_power_of_2(min(seq_len + (kernel_len + 1) // 2, 2 * seq_len))
@@ -128,7 +128,7 @@ def causal_fftconv1d_fp16_bhl(
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
-    _, hidden_dim, seq_len = x.shape
+    _, _hidden_dim, seq_len = x.shape
     _, _, kernel_len = kernel.shape
 
     # Causal: need seq_len + kernel_len to avoid wraparound
@@ -192,7 +192,7 @@ def fftconv2d_fp16_bhl(
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
-    B, hidden_dim, X_in, Y_in = x.shape
+    _B, _hidden_dim, X_in, Y_in = x.shape
     _, _, K_x, K_y = kernel.shape
 
     fft_shape = (
@@ -266,7 +266,7 @@ def fftconv3d_fp16_bhl(
     x_fp16 = x.to(torch.float16)
     k_fp16 = kernel.to(torch.float16)
 
-    B, hidden_dim, X_in, Y_in, Z_in = x.shape
+    _B, _hidden_dim, X_in, Y_in, Z_in = x.shape
     _, _, K_x, K_y, K_z = kernel.shape
 
     fft_shape = (
