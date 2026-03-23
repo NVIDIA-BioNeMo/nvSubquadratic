@@ -2,7 +2,7 @@
 	"name": "nvSubquadratic Development Container",
 	"runArgs": [
 		"--gpus=all",
-		"--shm-size=4g"
+		"--shm-size=16g"
 	],
 	"build": {
 		"context": "${localWorkspaceFolder}",
@@ -11,7 +11,7 @@
 	"mounts": [
 		// Mount the local ~/.aws config to pass along AWS credentials for PBSS.
 		"source=/home/oviessmann/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
-        "source=/home/oviessmann/.ngc,target=/home/oviessmann/.ngc,type=bind,consistency=cached",
+		"source=/home/oviessmann/.ngc,target=/home/oviessmann/.ngc,type=bind,consistency=cached",
 		"source=/home/oviessmann/.cache,target=/home/oviessmann/.cache,type=bind,consistency=cached",
 		"source=/home/oviessmann/.ssh,target=/home/oviessmann/.ssh,readonly,type=bind,consistency=cached",
 		"source=/home/oviessmann/.netrc,target=/home/oviessmann/.netrc,readonly,type=bind,consistency=cached",
