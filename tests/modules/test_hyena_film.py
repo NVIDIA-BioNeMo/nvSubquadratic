@@ -152,7 +152,9 @@ class TestKernelFiLMGenerator:
 
     Maps ``[B, cond_dim]`` conditioning to a list of ``(gamma, beta)`` tuples
     (one per SIREN hidden layer).  At initialization, ``gamma=1, beta=0``
-    (identity modulation) thanks to zero-initialized output weights.
+    (identity modulation) thanks to zero-initialized output weights.  The
+    output-layer bias (encoding the identity point) is always excluded from
+    weight decay.
     """
 
     def test_output_structure(self, device: torch.device) -> None:
@@ -234,6 +236,34 @@ class TestKernelFiLMGenerator:
         p1 = gen(c1)
         p2 = gen(c2)
         assert not torch.allclose(p1[0][0], p2[0][0], atol=1e-6)
+
+    @pytest.mark.parametrize("no_weight_decay", [False, True, 1e-3])
+    def test_all_biases_always_no_weight_decay(self, no_weight_decay: bool | float) -> None:
+        """Every bias in the MLP has ``_no_weight_decay=True`` regardless of setting."""
+        gen = KernelFiLMGenerator(
+            cond_dim=64,
+            kernel_hidden_dim=8,
+            num_film_layers=2,
+            no_weight_decay=no_weight_decay,
+        )
+        for module in gen.mlp.modules():
+            if hasattr(module, "bias") and module.bias is not None:
+                assert getattr(module.bias, "_no_weight_decay", False) is True, (
+                    f"bias of {module} missing _no_weight_decay"
+                )
+
+    @pytest.mark.parametrize("no_weight_decay", [False, True, 1e-3])
+    def test_biases_no_custom_weight_decay(self, no_weight_decay: bool | float) -> None:
+        """No bias has a ``_weight_decay`` attribute (even with float WD)."""
+        gen = KernelFiLMGenerator(
+            cond_dim=64,
+            kernel_hidden_dim=8,
+            num_film_layers=2,
+            no_weight_decay=no_weight_decay,
+        )
+        for module in gen.mlp.modules():
+            if hasattr(module, "bias") and module.bias is not None:
+                assert not hasattr(module.bias, "_weight_decay"), f"bias of {module} should not have _weight_decay"
 
 
 # ─── 3. ViT5ResidualBlock with FiLM conditioning ────────────────────────────

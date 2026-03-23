@@ -10,6 +10,8 @@ Implements the full ViT-5 architecture for ImageNet classification:
 Reference: Wang et al., "ViT-5: Vision Transformers for The Mid-2020s", 2026.
 """
 
+from typing import Literal
+
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -34,11 +36,13 @@ class ViT5ClassificationNet(nn.Module):
         use_cls_token: If True (default), prepend a learnable CLS token and read it
             out for classification. If False, skip the CLS token and use global
             average pooling over patch tokens instead.
-        prepend_registers: If True, register tokens are placed between the CLS token
-            and patch tokens ([CLS, regs, patches]) instead of after patches
-            ([CLS, patches, regs]). This allows the full sequence to be reshaped to a
-            contiguous 2D grid for spatial mixers like Hyena. Only takes effect when
-            both use_cls_token and num_registers > 0.
+        prepend_registers: If True, register tokens are placed before patch tokens.
+            With CLS: [CLS, regs, patches]. Without CLS: [regs, zero_pad, patches]
+            where zero_pad fills the register row to grid width (image_size // patch_size)
+            for clean 2D reshape in spatial mixers like Hyena.
+        reg_init: Initialization strategy for register tokens.
+            "trunc_normal" (default) uses truncated normal with std=0.02.
+            "zeros" initializes registers to zero.
     """
 
     def __init__(
@@ -55,9 +59,11 @@ class ViT5ClassificationNet(nn.Module):
         dropout_rate: float = 0.0,
         use_cls_token: bool = True,
         prepend_registers: bool = False,
+        reg_init: Literal["trunc_normal", "zeros"] = "trunc_normal",
     ):
-        """Initialize ViT-5 classification network (see class docstring for args)."""
+        """Initialize ViT-5 classification network."""
         super().__init__()
+        self._reg_init = reg_init
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
         self.num_registers = num_registers
@@ -70,13 +76,14 @@ class ViT5ClassificationNet(nn.Module):
         num_patches_w = image_size // patch_size
         self.num_patches = num_patches_h * num_patches_w
 
-        # Patch embedding (non-overlapping Conv2d)
+        # Patch embedding (non-overlapping Conv2d, no bias — pos_embed absorbs the offset)
         self.patch_embed = nn.Conv2d(
             in_channels,
             hidden_dim,
             kernel_size=patch_size,
             stride=patch_size,
             padding=0,
+            bias=False,
         )
 
         # Learnable tokens
@@ -96,6 +103,21 @@ class ViT5ClassificationNet(nn.Module):
         else:
             self.reg_token = None
 
+        # Zero-padding buffer for GAP models: fills the register row to grid width
+        assert num_registers <= num_patches_w, (
+            f"num_registers ({num_registers}) > grid width ({num_patches_w}); "
+            "registers must fit in a single row for 2D reshape"
+        )
+        self._register_row_width = num_patches_w
+        if num_registers > 0 and prepend_registers and not use_cls_token:
+            pad_size = num_patches_w - num_registers
+            if pad_size > 0:
+                self.register_buffer("reg_zero_pad", torch.zeros(1, pad_size, hidden_dim), persistent=False)
+            else:
+                self.reg_zero_pad = None
+        else:
+            self.reg_zero_pad = None
+
         # Transformer blocks
         self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
 
@@ -104,7 +126,7 @@ class ViT5ClassificationNet(nn.Module):
         for param in self.out_norm.parameters():
             param._no_weight_decay = True
 
-        self.out_proj = nn.Linear(hidden_dim, num_classes)
+        self.out_proj = nn.Linear(hidden_dim, num_classes, bias=False)
 
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
 
@@ -116,7 +138,10 @@ class ViT5ClassificationNet(nn.Module):
             nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         if self.reg_token is not None:
-            nn.init.trunc_normal_(self.reg_token, std=0.02)
+            if self._reg_init == "zeros":
+                nn.init.zeros_(self.reg_token)
+            else:
+                nn.init.trunc_normal_(self.reg_token, std=0.02)
 
         # Initialize patch embed and head with truncated normal
         nn.init.trunc_normal_(self.patch_embed.weight, std=0.02)
@@ -125,6 +150,73 @@ class ViT5ClassificationNet(nn.Module):
         nn.init.trunc_normal_(self.out_proj.weight, std=0.02)
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
+
+    def flop_count(self, inference: bool = False) -> int:
+        """Count FLOPs for a full ViT-5 classification forward pass (one sample).
+
+        Pipeline:
+          1. Patch embedding (Conv2d(in_channels, D, kernel_size=P, stride=P)):
+               2 * in_channels * D * P² * num_patches
+             Each of the ``num_patches`` output positions has a receptive field
+             of P x P x in_channels → P² * in_channels MACs = 2 * P² * in_ch * D FLOPs.
+          2. Positional embedding addition:  num_patches * D  (elementwise add).
+          3. Transformer blocks:  sum of ``block.flop_count(T, inference)``
+             where T is the total token count (see below).
+          4. Output norm (RMSNorm on 1 CLS token or GAP result):
+               ``self.out_norm.flop_count(1)``
+             For GAP models, the averaging itself costs num_patches * D adds.
+          5. Classification head (Linear(D, num_classes)):
+               2 * D * num_classes
+
+        Token count T:
+          - With CLS + prepend_registers: 1 + num_registers + num_patches
+          - With CLS + append_registers: 1 + num_patches + num_registers
+          - Without CLS + prepend_registers: register_row_width + num_patches
+          - Without CLS/registers: num_patches
+          The ordering doesn't affect FLOP count — only T matters.
+
+        Args:
+            inference: Passed through to each block for kernel caching decisions.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        D = self.hidden_dim
+        P = self.patch_size
+        num_patches = self.num_patches
+        in_channels = self.patch_embed.in_channels
+
+        flops = 0
+
+        # 1. Patch embedding: Conv2d(in_ch, D, P, stride=P) on (image_size, image_size)
+        flops += 2 * in_channels * D * P * P * num_patches
+
+        # 2. Positional embedding addition
+        flops += num_patches * D
+
+        # 3. Total token count
+        T = num_patches
+        if self.use_cls_token:
+            T += 1
+        if self.num_registers > 0:
+            if self.prepend_registers and not self.use_cls_token:
+                T += self._register_row_width
+            else:
+                T += self.num_registers
+
+        # 4. Transformer blocks
+        for block in self.blocks:
+            flops += block.flop_count(T, inference=inference)
+
+        # 5. Output norm
+        if not self.use_cls_token:
+            flops += num_patches * D  # GAP: mean over patch tokens
+        flops += self.out_norm.flop_count(1)
+
+        # 6. Classification head
+        flops += 2 * D * self.num_classes
+
+        return flops
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Forward pass.
@@ -158,6 +250,13 @@ class ViT5ClassificationNet(nn.Module):
             if self.prepend_registers and self.cls_token is not None:
                 # [CLS, regs, patches] — enables direct 2D reshape for spatial mixers
                 x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
+            elif self.prepend_registers:
+                # [regs, zero_pad, patches] — GAP model without CLS
+                if self.reg_zero_pad is not None:
+                    pad = self.reg_zero_pad.expand(B, -1, -1)
+                    x = torch.cat([reg_tokens, pad, x], dim=1)
+                else:
+                    x = torch.cat([reg_tokens, x], dim=1)
             else:
                 x = torch.cat([x, reg_tokens], dim=1)
 
@@ -170,7 +269,11 @@ class ViT5ClassificationNet(nn.Module):
         else:
             # Global average pool over patch tokens, excluding register tokens
             if self.prepend_registers and self.num_registers > 0 and self.cls_token is not None:
-                out = x[:, self.num_registers :].mean(dim=1)
+                # [CLS, regs, patches] — skip CLS + registers
+                out = x[:, 1 + self.num_registers :].mean(dim=1)
+            elif self.prepend_registers and self.num_registers > 0:
+                # [regs, zero_pad, patches] — skip entire register row
+                out = x[:, self._register_row_width :].mean(dim=1)
             elif self.num_registers > 0:
                 out = x[:, : -self.num_registers].mean(dim=1)
             else:

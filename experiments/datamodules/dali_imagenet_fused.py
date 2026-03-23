@@ -10,6 +10,7 @@ training loop in ``dali_imagenet_optimized.py``.
 Requires: ``pip install nvidia-dali-cuda120``
 """
 
+import math
 import os
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from nvidia.dali import fn, pipeline_def, types
@@ -67,6 +69,80 @@ class AugmentConfig:
     rand_augment: Optional[str] = None
     random_erasing_prob: float = 0.0
     random_erasing_mode: str = "pixel"
+    num_repeats: int = 1
+
+
+# ---------------------------------------------------------------------------
+# Repeated augmentation source (DeiT-style RASampler for DALI)
+# ---------------------------------------------------------------------------
+
+
+class _RepeatedAugSource:
+    """Per-sample callable for ``fn.external_source`` implementing repeated augmentation.
+
+    Follows the DeiT RASampler logic (Hoffer et al., 2020; Touvron et al., 2021):
+    shuffle all dataset indices, repeat each index ``num_repeats`` times
+    consecutively, then shard across GPUs.  Different GPUs receive different
+    copies of the same image, and DALI's stochastic augmentation pipeline
+    produces independent augmented views for each copy.
+    """
+
+    def __init__(self, file_root: str, num_repeats: int, shard_id: int, num_shards: int, seed: int = 42):
+        self._files, self._labels = self._enumerate_imagefolder(file_root)
+        self._num_repeats = num_repeats
+        self._shard_id = shard_id
+        self._num_shards = num_shards
+        self._seed = seed
+        self._epoch = 0
+        self._indices: list[int] = []
+        self.num_selected: int = 0
+        self._recompute_indices()
+
+    @staticmethod
+    def _enumerate_imagefolder(file_root: str) -> tuple[list[str], list[int]]:
+        """Walk an ImageFolder directory and return sorted (files, labels)."""
+        root = Path(file_root)
+        files: list[str] = []
+        labels: list[int] = []
+        class_dirs = sorted(d for d in root.iterdir() if d.is_dir())
+        for label_idx, class_dir in enumerate(class_dirs):
+            for img_path in sorted(class_dir.iterdir()):
+                if img_path.suffix.lower() in (".jpeg", ".jpg", ".png"):
+                    files.append(str(img_path))
+                    labels.append(label_idx)
+        return files, labels
+
+    def _recompute_indices(self) -> None:
+        """Compute repeat-interleaved, sharded indices for the current epoch."""
+        n = len(self._files)
+        g = torch.Generator()
+        g.manual_seed(self._seed + self._epoch)
+        indices = torch.randperm(n, generator=g)
+
+        # Repeat-interleave: [a, a, a, b, b, b, ...] so nearby GPUs see same images
+        indices = torch.repeat_interleave(indices, repeats=self._num_repeats)
+
+        # Pad to make evenly divisible by num_shards
+        total = math.ceil(len(indices) / self._num_shards) * self._num_shards
+        padding = total - len(indices)
+        if padding > 0:
+            indices = torch.cat([indices, indices[:padding]])
+
+        # Subsample for this shard (strided)
+        indices = indices[self._shard_id :: self._num_shards]
+
+        # Truncate to match DeiT RASampler epoch length: floor(N // 256 * 256 / W)
+        self.num_selected = math.floor(n // 256 * 256 / self._num_shards)
+        self._indices = indices[: self.num_selected].tolist()
+
+    def __call__(self, sample_info):
+        if sample_info.idx_in_epoch >= self.num_selected:
+            raise StopIteration
+
+        idx = self._indices[sample_info.idx_in_epoch]
+        jpeg_bytes = np.fromfile(self._files[idx], dtype=np.uint8)
+        label = np.array([self._labels[idx]], dtype=np.int32)
+        return jpeg_bytes, label
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +170,24 @@ def _train_pipeline_fused(
     rand_augment_config: str = "",
     shard_id: int = 0,
     num_shards: int = 1,
+    ra_source=None,
 ):
     """Training pipeline with decode, crop, augmentations, and normalization."""
-    jpegs, labels = fn.readers.file(
-        file_root=file_root,
-        random_shuffle=True,
-        name="reader",
-        shard_id=shard_id,
-        num_shards=num_shards,
-    )
+    if ra_source is not None:
+        jpegs, labels = fn.external_source(
+            source=ra_source,
+            num_outputs=2,
+            batch=False,
+            parallel=True,
+        )
+    else:
+        jpegs, labels = fn.readers.file(
+            file_root=file_root,
+            random_shuffle=True,
+            name="reader",
+            shard_id=shard_id,
+            num_shards=num_shards,
+        )
 
     images = fn.decoders.image(jpegs, device="mixed", output_type=types.RGB)
     images = fn.random_resized_crop(
@@ -326,6 +411,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         self._rand_augment_config = (
             augment_cfg.rand_augment if augment_cfg is not None and getattr(augment_cfg, "rand_augment", None) else ""
         )
+        self._num_repeats = getattr(augment_cfg, "num_repeats", 1) if augment_cfg is not None else 1
 
         # ── RandomErasing (applied on GPU in on_before_batch_transfer) ───
         self._random_erasing_fn = None
@@ -358,6 +444,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
 
         self._train_pipe = None
         self._val_pipe = None
+        self._ra_source: Optional[_RepeatedAugSource] = None
 
     # ------------------------------------------------------------------
     # Lightning lifecycle
@@ -424,6 +511,24 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
             world_size = int(os.environ.get("WORLD_SIZE", 1))
 
         if stage in ("fit", None):
+            ra_source = None
+            if self._num_repeats > 1:
+                self._ra_source = _RepeatedAugSource(
+                    file_root=train_root,
+                    num_repeats=self._num_repeats,
+                    shard_id=local_rank,
+                    num_shards=world_size,
+                    seed=self.seed,
+                )
+                ra_source = self._ra_source
+
+            # When using external_source with parallel=True, DALI forks
+            # workers.  DDP initialises CUDA before setup(), so we must use
+            # spawn instead of fork to avoid "cannot fork after CUDA init".
+            extra_pipe_kwargs = {}
+            if ra_source is not None:
+                extra_pipe_kwargs["py_start_method"] = "spawn"
+
             self._train_pipe = _train_pipeline_fused(
                 file_root=train_root,
                 image_size=self.image_size,
@@ -440,6 +545,8 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 device_id=local_rank,
                 seed=self.seed,
                 prefetch_queue_depth=self.prefetch_factor,
+                ra_source=ra_source,
+                **extra_pipe_kwargs,
             )
             self._train_pipe.build()
 
@@ -462,6 +569,16 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         """Return DALI-backed training dataloader."""
+        if self._ra_source is not None:
+            return _DALILoaderWrapper(
+                DALIGenericIterator(
+                    self._train_pipe,
+                    output_map=["images", "labels"],
+                    size=self._ra_source.num_selected,
+                    last_batch_policy=LastBatchPolicy.DROP,
+                    auto_reset=True,
+                )
+            )
         return _DALILoaderWrapper(
             DALIGenericIterator(
                 self._train_pipe,
