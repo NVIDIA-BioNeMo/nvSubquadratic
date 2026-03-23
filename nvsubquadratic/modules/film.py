@@ -5,6 +5,8 @@ Provides:
   for modulating SIREN hidden layers.
 - RegisterPooling: Learnable weighted average over register tokens to produce a single
   conditioning vector per sample.
+- RegisterCompressConcat: Compress each register token via a shared linear layer and
+  concatenate, producing a conditioning vector that preserves per-register identity.
 """
 
 from __future__ import annotations
@@ -205,3 +207,64 @@ class RegisterPooling(nn.Module):
 
     def extra_repr(self) -> str:  # noqa: D102
         return f"num_registers={self.logits.shape[0]}"
+
+
+class RegisterCompressConcat(nn.Module):
+    """Compress each register token and concatenate into a single conditioning vector.
+
+    Each register token is passed through a shared linear projection that reduces
+    its dimensionality from ``hidden_dim`` to ``compressed_dim``.  The compressed
+    tokens are then concatenated along the feature axis, producing a conditioning
+    vector of size ``num_registers * compressed_dim`` that preserves per-register
+    identity (unlike :class:`RegisterPooling` which averages them).
+
+    Inspired by Mamba-Reg (Wang et al., 2024) which distributes and individually
+    reads out register tokens rather than pooling them.
+
+    Args:
+        num_registers: Number of register tokens expected.
+        hidden_dim: Channel dimension of each register token.
+        compressed_dim: Output dimension per register after compression.
+            The final conditioning vector has size ``num_registers * compressed_dim``.
+    """
+
+    def __init__(self, num_registers: int, hidden_dim: int, compressed_dim: int):  # noqa: D107
+        super().__init__()
+        self.num_registers = num_registers
+        self.compressed_dim = compressed_dim
+        self.compress = nn.Linear(hidden_dim, compressed_dim, bias=False)
+
+    @property
+    def out_dim(self) -> int:
+        """Dimensionality of the output conditioning vector."""
+        return self.num_registers * self.compressed_dim
+
+    def flop_count(self, dim: int) -> int:
+        """Count FLOPs for compress-and-concatenate (one sample).
+
+        Operations (R = num_registers, D_in = ``dim``, D_out = compressed_dim):
+          1. Shared linear applied R times:  R * 2 * D_in * D_out
+          2. Concatenation is a view/copy, not a FLOP.
+
+        Args:
+            dim: Channel dimension of the register tokens (should match ``hidden_dim``).
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        return self.num_registers * 2 * dim * self.compressed_dim
+
+    def forward(self, registers: torch.Tensor) -> torch.Tensor:
+        """Compress each register and concatenate.
+
+        Args:
+            registers: [B, num_registers, hidden_dim]
+
+        Returns:
+            [B, num_registers * compressed_dim] conditioning vector.
+        """
+        compressed = self.compress(registers)  # [B, R, compressed_dim]
+        return compressed.flatten(start_dim=1)  # [B, R * compressed_dim]
+
+    def extra_repr(self) -> str:  # noqa: D102
+        return f"num_registers={self.num_registers}, compressed_dim={self.compressed_dim}, out_dim={self.out_dim}"

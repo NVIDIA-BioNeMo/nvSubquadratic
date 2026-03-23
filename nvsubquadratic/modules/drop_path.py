@@ -31,6 +31,18 @@ class DropPath(nn.Module):
         super().__init__()
         self.drop_prob = drop_prob
 
+    def flop_count(self) -> int:
+        """Count FLOPs for stochastic depth.
+
+        DropPath is a stochastic identity (training) or pure identity
+        (inference).  Neither involves floating-point arithmetic beyond a
+        Bernoulli sample and a scalar divide, which are negligible.
+
+        Returns:
+            Always 0.
+        """
+        return 0
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply stochastic depth to the input."""
         return drop_path(x, self.drop_prob, self.training)

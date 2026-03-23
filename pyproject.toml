@@ -69,7 +69,8 @@ select = [
 "__init__.py" = ["D104", "E402", "F401", "F403", "F811"]
 "test_*.py" = ["D"]
 "conftest.py" = ["D"]
-"scripts/*.py" = ["D"]
+"scripts/*.py" = ["D", "E402"]
+"examples/**/ft_ablation/*.py" = ["D"]
 "**/*.ipynb" = ["D"]
 
 [tool.ruff.lint.isort]

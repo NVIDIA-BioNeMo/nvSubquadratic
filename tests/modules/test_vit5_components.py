@@ -8,7 +8,7 @@ Tests verify:
 5. ViT5ResidualBlock: residual connection, LayerScale, DropPath
 6. ViT5ClassificationNet: end-to-end forward pass, parameter count, token assembly
 7. Cross-validation against the reference ViT-5 repo
-8. GAP readout & token layout (use_cls_token / prepend_registers)
+8. GAP readout & token layout (readout / prepend_registers)
 
 Run:
     PYTHONPATH=. python -m pytest tests/modules/test_vit5_components.py -v -o addopts=""
@@ -467,6 +467,7 @@ class TestViT5ClassificationNet:
             image_size=image_size,
             num_registers=num_registers,
             dropout_rate=0.0,
+            readout="cls",
             norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
                 sequence_mixer_cfg=LazyConfig(ViT5Attention)(
@@ -663,13 +664,13 @@ class TestCrossValidation:
         assert attn.reg_rope_base == 100.0
 
 
-# ─── 8. GAP readout & token layout (use_cls_token / prepend_registers) ───────
+# ─── 8. GAP readout & token layout (readout / prepend_registers) ─────────────
 
 
 class TestGAPReadoutAndTokenLayout:
     """Tests for global average pooling readout and register token placement.
 
-    Covers the bug where ``use_cls_token=False`` with ``prepend_registers=True``
+    Covers the bug where ``readout="gap"`` with ``prepend_registers=True``
     produced incorrect token slicing, and verifies all register layout combos.
 
     Uses ``nn.Identity`` as the sequence mixer because ``ViT5Attention`` has
@@ -680,7 +681,7 @@ class TestGAPReadoutAndTokenLayout:
     def _make_net(
         self,
         device: torch.device,
-        use_cls_token: bool = True,
+        readout: str = "cls",
         prepend_registers: bool = False,
         num_registers: int = 4,
         hidden_dim: int = 384,
@@ -696,7 +697,7 @@ class TestGAPReadoutAndTokenLayout:
             image_size=224,
             num_registers=num_registers,
             dropout_rate=0.0,
-            use_cls_token=use_cls_token,
+            readout=readout,
             prepend_registers=prepend_registers,
             norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
@@ -723,24 +724,24 @@ class TestGAPReadoutAndTokenLayout:
 
     def test_gap_no_registers(self, device: torch.device) -> None:
         """GAP with no CLS and no registers averages all 196 patch tokens."""
-        net = self._make_net(device, use_cls_token=False, num_registers=0)
+        net = self._make_net(device, readout="gap", num_registers=0)
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
     def test_gap_appended_registers(self, device: torch.device) -> None:
         """GAP with appended registers (default layout) excludes register tokens."""
-        net = self._make_net(device, use_cls_token=False, prepend_registers=False, num_registers=4)
+        net = self._make_net(device, readout="gap", prepend_registers=False, num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
     def test_gap_no_cls_prepend_registers_flag(self, device: torch.device) -> None:
-        """Regression: ``use_cls_token=False`` + ``prepend_registers=True``.
+        """Regression: ``readout="gap"`` + ``prepend_registers=True``.
 
         Registers are always appended when CLS token is absent (the prepend
         guard requires ``cls_token``), so the readout must slice from the end.
         """
-        net = self._make_net(device, use_cls_token=False, prepend_registers=True, num_registers=4)
+        net = self._make_net(device, readout="gap", prepend_registers=True, num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
@@ -751,7 +752,7 @@ class TestGAPReadoutAndTokenLayout:
         Manually builds the ``[patches, regs]`` sequence and asserts its length
         is 200, then checks the full forward pass produces valid logits.
         """
-        net = self._make_net(device, use_cls_token=False, num_registers=4)
+        net = self._make_net(device, readout="gap", num_registers=4)
         net.eval()
 
         x = torch.randn(2, 224, 224, 3, device=device)
@@ -774,30 +775,243 @@ class TestGAPReadoutAndTokenLayout:
 
     def test_cls_prepend_registers_layout(self, device: torch.device) -> None:
         """With CLS + ``prepend_registers``, layout is ``[CLS, regs, patches]``."""
-        net = self._make_net(device, use_cls_token=True, prepend_registers=True, num_registers=4)
+        net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
     def test_cls_append_registers_layout(self, device: torch.device) -> None:
         """With CLS + appended registers, layout is ``[CLS, patches, regs]``."""
-        net = self._make_net(device, use_cls_token=True, prepend_registers=False, num_registers=4)
+        net = self._make_net(device, readout="cls", prepend_registers=False, num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
     def test_no_cls_token_attribute(self, device: torch.device) -> None:
-        """``use_cls_token=False`` sets ``cls_token`` to ``None``."""
-        net = self._make_net(device, use_cls_token=False)
+        """``readout="gap"`` sets ``cls_token`` to ``None``."""
+        net = self._make_net(device, readout="gap")
         assert net.cls_token is None
 
     def test_gradient_flow_gap_mode(self, device: torch.device) -> None:
         """Gradients propagate through GAP readout back to the image input."""
-        net = self._make_net(device, use_cls_token=False, num_registers=4)
+        net = self._make_net(device, readout="gap", num_registers=4)
         x = {"input": torch.randn(1, 224, 224, 3, device=device, requires_grad=True), "condition": None}
         out = net(x)
         out["logits"].sum().backward()
         assert x["input"].grad is not None
+
+
+# ─── 9. Register-concat readout ──────────────────────────────────────────────
+
+
+class TestRegisterConcatReadout:
+    """Tests for the ``register_concat`` classification readout.
+
+    This readout gathers register tokens, compresses each via a shared neck
+    linear, concatenates, normalises, and projects to logits.
+    """
+
+    def _make_net(
+        self,
+        device: torch.device,
+        num_registers: int = 4,
+        neck_compression_ratio: int = 4,
+        hidden_dim: int = 384,
+        num_blocks: int = 1,
+        prepend_registers: bool = True,
+    ) -> ViT5ClassificationNet:
+        """Build a ViT-5 net with ``register_concat`` readout using Identity mixer."""
+        neck_dim = hidden_dim // neck_compression_ratio
+        out_norm_dim = num_registers * neck_dim
+        net = ViT5ClassificationNet(
+            in_channels=3,
+            num_classes=1000,
+            hidden_dim=hidden_dim,
+            num_blocks=num_blocks,
+            patch_size=16,
+            image_size=224,
+            num_registers=num_registers,
+            dropout_rate=0.0,
+            readout="register_concat",
+            neck_compression_ratio=neck_compression_ratio,
+            prepend_registers=prepend_registers,
+            norm_cfg=LazyConfig(RMSNorm)(dim=out_norm_dim, eps=1e-6),
+            block_cfg=LazyConfig(ViT5ResidualBlock)(
+                sequence_mixer_cfg=LazyConfig(nn.Identity)(),
+                sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
+                mlp_cfg=LazyConfig(MLP)(
+                    dim=hidden_dim,
+                    activation="gelu",
+                    expansion_factor=4.0,
+                    dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+                ),
+                mlp_norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
+                hidden_dim=hidden_dim,
+                layer_scale_init=1e-4,
+                drop_path_rate=0.0,
+            ),
+        )
+        return net.to(device)
+
+    def _forward(self, net: ViT5ClassificationNet, device: torch.device) -> dict[str, torch.Tensor]:
+        x = {"input": torch.randn(2, 224, 224, 3, device=device), "condition": None}
+        return net(x)
+
+    def test_output_shape(self, device: torch.device) -> None:
+        """Forward returns ``{"logits": [B, num_classes]}``."""
+        net = self._make_net(device)
+        out = self._forward(net, device)
+        assert out["logits"].shape == (2, 1000)
+
+    def test_neck_linear_exists(self, device: torch.device) -> None:
+        """``register_neck`` is an ``nn.Linear`` with correct in/out features."""
+        net = self._make_net(device, hidden_dim=384, neck_compression_ratio=4)
+        assert isinstance(net.register_neck, nn.Linear)
+        assert net.register_neck.in_features == 384
+        assert net.register_neck.out_features == 96  # 384 // 4
+        assert net.register_neck.bias is None
+
+    def test_head_input_dim(self, device: torch.device) -> None:
+        """``out_proj`` input dim equals ``num_registers * (hidden_dim // neck_compression_ratio)``."""
+        net = self._make_net(device, num_registers=4, neck_compression_ratio=2)
+        assert net.out_proj.in_features == 4 * 192  # 4 * (384 // 2)
+
+    def test_no_cls_token(self, device: torch.device) -> None:
+        """``register_concat`` readout does not create a CLS token."""
+        net = self._make_net(device)
+        assert net.cls_token is None
+        assert net.use_cls_token is False
+
+    def test_gradient_flow_through_neck(self, device: torch.device) -> None:
+        """Gradients reach ``register_neck.weight`` and the input image."""
+        net = self._make_net(device)
+        x = {"input": torch.randn(1, 224, 224, 3, device=device, requires_grad=True), "condition": None}
+        out = net(x)
+        out["logits"].sum().backward()
+        assert x["input"].grad is not None
+        assert net.register_neck.weight.grad is not None
+
+    def test_gradient_flow_through_reg_token(self, device: torch.device) -> None:
+        """Gradients reach ``reg_token`` (learnable register embeddings)."""
+        net = self._make_net(device)
+        x = {"input": torch.randn(1, 224, 224, 3, device=device), "condition": None}
+        out = net(x)
+        out["logits"].sum().backward()
+        assert net.reg_token.grad is not None
+
+    def test_different_from_gap(self, device: torch.device) -> None:
+        """Output differs from a GAP readout with the same weights (structurally different)."""
+        net_rc = self._make_net(device, num_registers=4, neck_compression_ratio=2)
+        net_gap = ViT5ClassificationNet(
+            in_channels=3,
+            num_classes=1000,
+            hidden_dim=384,
+            num_blocks=1,
+            patch_size=16,
+            image_size=224,
+            num_registers=4,
+            dropout_rate=0.0,
+            readout="gap",
+            prepend_registers=True,
+            norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+            block_cfg=LazyConfig(ViT5ResidualBlock)(
+                sequence_mixer_cfg=LazyConfig(nn.Identity)(),
+                sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+                mlp_cfg=LazyConfig(MLP)(
+                    dim=384,
+                    activation="gelu",
+                    expansion_factor=4.0,
+                    dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+                ),
+                mlp_norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+                hidden_dim=384,
+                layer_scale_init=1e-4,
+                drop_path_rate=0.0,
+            ),
+        ).to(device)
+        # Different head dims so logits differ structurally
+        assert net_rc.out_proj.in_features != net_gap.out_proj.in_features
+
+    def test_prepend_registers_layout(self, device: torch.device) -> None:
+        """Works correctly with prepended registers ``[regs, pad, patches]``."""
+        net = self._make_net(device, prepend_registers=True)
+        net.eval()
+        out = self._forward(net, device)
+        assert out["logits"].shape == (2, 1000)
+
+    def test_append_registers_layout(self, device: torch.device) -> None:
+        """Works correctly with appended registers ``[patches, regs]``."""
+        net = self._make_net(device, prepend_registers=False)
+        net.eval()
+        out = self._forward(net, device)
+        assert out["logits"].shape == (2, 1000)
+
+    def test_raises_without_neck_compression_ratio(self, device: torch.device) -> None:
+        """``ValueError`` when ``readout="register_concat"`` but ratio is None."""
+        with pytest.raises(ValueError, match="neck_compression_ratio is required"):
+            ViT5ClassificationNet(
+                in_channels=3,
+                num_classes=1000,
+                hidden_dim=384,
+                num_blocks=1,
+                patch_size=16,
+                image_size=224,
+                num_registers=4,
+                readout="register_concat",
+                neck_compression_ratio=None,
+                norm_cfg=LazyConfig(RMSNorm)(dim=16, eps=1e-6),
+                block_cfg=LazyConfig(ViT5ResidualBlock)(
+                    sequence_mixer_cfg=LazyConfig(nn.Identity)(),
+                    sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+                    mlp_cfg=LazyConfig(MLP)(
+                        dim=384,
+                        activation="gelu",
+                        expansion_factor=4.0,
+                        dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+                    ),
+                    mlp_norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+                    hidden_dim=384,
+                    layer_scale_init=1e-4,
+                    drop_path_rate=0.0,
+                ),
+            )
+
+    def test_raises_without_registers(self, device: torch.device) -> None:
+        """``ValueError`` when ``readout="register_concat"`` but ``num_registers=0``."""
+        with pytest.raises(ValueError, match="num_registers must be > 0"):
+            ViT5ClassificationNet(
+                in_channels=3,
+                num_classes=1000,
+                hidden_dim=384,
+                num_blocks=1,
+                patch_size=16,
+                image_size=224,
+                num_registers=0,
+                readout="register_concat",
+                neck_compression_ratio=4,
+                norm_cfg=LazyConfig(RMSNorm)(dim=16, eps=1e-6),
+                block_cfg=LazyConfig(ViT5ResidualBlock)(
+                    sequence_mixer_cfg=LazyConfig(nn.Identity)(),
+                    sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+                    mlp_cfg=LazyConfig(MLP)(
+                        dim=384,
+                        activation="gelu",
+                        expansion_factor=4.0,
+                        dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+                    ),
+                    mlp_norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
+                    hidden_dim=384,
+                    layer_scale_init=1e-4,
+                    drop_path_rate=0.0,
+                ),
+            )
+
+    def test_head_dim_smaller_than_hidden(self, device: torch.device) -> None:
+        """``register_concat`` head input dim can be < hidden_dim with high ratio."""
+        net = self._make_net(device, num_registers=4, neck_compression_ratio=8)
+        # 384 // 8 = 48 per register, 4 * 48 = 192
+        assert net.out_proj.in_features == 192
+        assert net.out_proj.in_features < net.hidden_dim  # 192 < 384
 
 
 if __name__ == "__main__":

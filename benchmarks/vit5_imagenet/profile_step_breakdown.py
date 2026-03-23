@@ -84,6 +84,7 @@ def build_model(preset):
             image_size=IMAGE_SIZE,
             num_registers=preset["num_registers"],
             dropout_rate=0.0,
+            readout="cls",
             norm_cfg=LazyConfig(RMSNorm)(dim=hd, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
                 sequence_mixer_cfg=LazyConfig(ViT5Attention)(

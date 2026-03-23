@@ -48,6 +48,25 @@ class RMSNorm(nn.Module):
         self.weight._no_weight_decay = True
         self.eps = eps
 
+    def flop_count(self, num_tokens: int) -> int:
+        """Count FLOPs for RMS normalization over ``num_tokens`` token vectors.
+
+        Operations per token (D = ``self.weight.shape[0]``):
+          1. Square each element:           D FLOPs
+          2. Mean over D + rsqrt:           D FLOPs (amortized reduction + 1 rsqrt)
+          3. Multiply by learned scale:     D FLOPs
+
+        Total: 3 * num_tokens * D.
+
+        Args:
+            num_tokens: Number of token vectors being normalized.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        dim = self.weight.shape[0]
+        return 3 * num_tokens * dim
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize over last dimension and scale by weight."""
         # Only use quack on GPUs that support it (SM 9+). On Ampere (8.x), quack backward fails;
@@ -82,6 +101,23 @@ class PerHeadRMSNorm(nn.Module):
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.norm = RMSNorm(dim=head_dim, eps=eps)
+
+    def flop_count(self, num_tokens: int) -> int:
+        """Count FLOPs for per-head RMS normalization on ``num_tokens`` tokens.
+
+        Each token is reshaped to [num_heads, head_dim] and RMSNorm is applied
+        independently per head.  Total cost is the same as a full RMSNorm over
+        ``hidden_dim = num_heads * head_dim``:
+
+        Total: 3 * num_tokens * num_heads * head_dim.
+
+        Args:
+            num_tokens: Number of token vectors being normalized.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        return 3 * num_tokens * self.num_heads * self.head_dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize each head independently over head_dim."""

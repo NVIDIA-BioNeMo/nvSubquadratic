@@ -25,7 +25,7 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.film import KernelFiLMGenerator, RegisterPooling
+from nvsubquadratic.modules.film import KernelFiLMGenerator, RegisterCompressConcat, RegisterPooling
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
@@ -142,6 +142,74 @@ class TestRegisterPooling:
         regs = torch.randn(2, 3, 64, device=device)
         out = pool(regs)
         torch.testing.assert_close(out, regs[:, 0, :], atol=1e-4, rtol=1e-3)
+
+
+# ─── 1b. RegisterCompressConcat Tests ────────────────────────────────────────
+
+
+class TestRegisterCompressConcat:
+    """Tests for :class:`RegisterCompressConcat` — compress and concatenate register tokens.
+
+    ``RegisterCompressConcat`` maps ``[B, num_registers, hidden_dim]`` to
+    ``[B, num_registers * compressed_dim]`` via a shared linear compression
+    followed by flattening.
+    """
+
+    def test_output_shape(self, device: torch.device) -> None:
+        """Output is ``[B, num_registers * compressed_dim]``."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32).to(device)
+        regs = torch.randn(2, 14, 384, device=device)
+        out = pool(regs)
+        assert out.shape == (2, 14 * 32)
+
+    def test_out_dim_property(self) -> None:
+        """``out_dim`` matches ``num_registers * compressed_dim``."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32)
+        assert pool.out_dim == 14 * 32
+
+    def test_gradient_flow(self, device: torch.device) -> None:
+        """Gradients reach the input registers and the compression weights."""
+        pool = RegisterCompressConcat(num_registers=4, hidden_dim=64, compressed_dim=16).to(device)
+        regs = torch.randn(2, 4, 64, device=device, requires_grad=True)
+        out = pool(regs)
+        out.sum().backward()
+        assert regs.grad is not None
+        assert pool.compress.weight.grad is not None
+
+    def test_no_bias(self) -> None:
+        """Compression linear has no bias (intentional — FiLM MLP has its own)."""
+        pool = RegisterCompressConcat(num_registers=4, hidden_dim=64, compressed_dim=16)
+        assert pool.compress.bias is None
+
+    def test_single_register(self, device: torch.device) -> None:
+        """With one register, output equals the compressed single token."""
+        pool = RegisterCompressConcat(num_registers=1, hidden_dim=64, compressed_dim=16).to(device)
+        regs = torch.randn(2, 1, 64, device=device)
+        out = pool(regs)
+        expected = pool.compress(regs).squeeze(1)
+        torch.testing.assert_close(out, expected)
+
+    def test_different_registers_different_output_slices(self, device: torch.device) -> None:
+        """Each register contributes a distinct slice of the output."""
+        pool = RegisterCompressConcat(num_registers=4, hidden_dim=64, compressed_dim=16).to(device)
+        regs = torch.randn(2, 4, 64, device=device)
+        out = pool(regs)
+        # Each register's contribution is a contiguous slice of compressed_dim
+        for i in range(4):
+            expected_slice = pool.compress(regs[:, i, :])
+            torch.testing.assert_close(out[:, i * 16 : (i + 1) * 16], expected_slice)
+
+    def test_shared_linear(self) -> None:
+        """A single ``compress`` linear is shared across all registers (weight only, no bias)."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32)
+        linear_params = list(pool.parameters())
+        assert len(linear_params) == 1
+
+    def test_flop_count(self) -> None:
+        """FLOP count matches R * 2 * hidden_dim * compressed_dim."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32)
+        expected = 14 * 2 * 384 * 32
+        assert pool.flop_count(384) == expected
 
 
 # ─── 2. KernelFiLMGenerator Tests ───────────────────────────────────────────

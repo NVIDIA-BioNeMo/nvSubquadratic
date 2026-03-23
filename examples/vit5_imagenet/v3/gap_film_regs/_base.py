@@ -274,7 +274,7 @@ def get_config(
         image_size=FINAL_IMAGE_SIZE,
         num_registers=num_registers if has_film else 0,
         dropout_rate=0.0,
-        use_cls_token=False,
+        readout="gap",
         prepend_registers=True if has_film else False,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
