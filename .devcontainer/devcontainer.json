@@ -10,13 +10,14 @@
 	},
 	"mounts": [
 		// Mount the local ~/.aws config to pass along AWS credentials for PBSS.
-		"source=${localEnv:HOME}/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
-		"source=${localEnv:HOME}/.ngc,target=/home/ubuntu/.ngc,type=bind,consistency=cached",
-		"source=${localEnv:HOME}/.cache,target=/home/ubuntu/.cache,type=bind,consistency=cached",
-		"source=${localEnv:HOME}/.ssh,target=/home/ubuntu/.ssh,readonly,type=bind,consistency=cached",
-		"source=${localEnv:HOME}/.netrc,target=/home/ubuntu/.netrc,readonly,type=bind,consistency=cached",
+		"source=/home/oviessmann/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
+        "source=/home/oviessmann/.ngc,target=/home/oviessmann/.ngc,type=bind,consistency=cached",
+		"source=/home/oviessmann/.cache,target=/home/oviessmann/.cache,type=bind,consistency=cached",
+		"source=/home/oviessmann/.ssh,target=/home/oviessmann/.ssh,readonly,type=bind,consistency=cached",
+		"source=/home/oviessmann/.netrc,target=/home/oviessmann/.netrc,readonly,type=bind,consistency=cached",
 		// Mount bash history file for persistence. Created if it doesn't exist in initializeCommand.sh
-		"source=${localEnv:HOME}/.bash_history_devcontainer,target=/home/ubuntu/.bash_history,type=bind,consistency=cached"
+		"source=/home/oviessmann/.bash_history_devcontainer,target=/home/oviessmann/.bash_history,type=bind,consistency=cached",
+		"source=/home/oviessmann/scratch/data/well_data/datasets,target=/home/ubuntu/scratch/data/well_data/datasets,type=bind,consistency=cached"
 	],
 	"containerEnv": {
 		"TMPDIR": "/tmp"

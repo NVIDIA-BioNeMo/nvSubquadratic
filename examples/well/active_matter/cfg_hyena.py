@@ -31,7 +31,7 @@ PLACEHOLDER = None
 # Dataset parameters
 DATA_TYPE = "image"
 DATA_DIM = 2
-WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "/gpfs/scratch1/shared/dwessels2/data/the_well/datasets")
+WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "/home/oviessmann/data/the_well/datasets")
 WELL_DATASET_NAME = "active_matter"
 
 # Data parameters (following WELL benchmark defaults)
@@ -40,7 +40,7 @@ N_STEPS_OUTPUT = 1  # Number of output timesteps for training
 MAX_ROLLOUT_STEPS = 1  # Maximum rollout for validation
 
 # Model parameters (overridable via environment variables for sweeps)
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 NUM_HIDDEN_CHANNELS = int(os.environ.get("HYENA_HIDDEN_DIM", 512))
 NUM_BLOCKS = int(os.environ.get("HYENA_DEPTH", 12))
 DROPOUT_IN_RATE = 0.0
