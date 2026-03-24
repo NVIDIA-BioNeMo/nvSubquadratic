@@ -210,6 +210,8 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
                     value = True
                 elif value.lower() == "false":
                     value = False
+                elif value.lower() == "none":
+                    value = None
                 # Handle tuples: (x, y) or (x,y)
                 elif value.startswith("(") and value.endswith(")"):
                     try:

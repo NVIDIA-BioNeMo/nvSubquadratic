@@ -1,14 +1,16 @@
-"""ViT-5-Small + Hyena ImageNet-1k pretrain — CLS-row, gated, FiLM-conditioned SIREN, EMA.
+"""ViT-5-Small + Hyena ImageNet-1k pretrain — CLS-row, gated, FiLM + pos-embed conditioning, EMA.
 
-Extends the gated Hyena config with input-dependent SIREN kernels via FiLM
-conditioning from register tokens.  Each ``ViT5ResidualBlock`` extracts
-register tokens from the normalized input, pools them via a learnable
-weighted average (``RegisterPooling``), and passes the conditioning vector
-through to the SIREN kernel generator where it modulates every hidden layer
-via FiLM (gamma * h + beta).
+Extends the FiLM config with input-dependent spatial warping: the first
+FiLM (gamma, beta) pair modulates the SIREN positional embedding output
+*before* it enters the hidden layers.  This lets the model learn
+input-dependent coordinate transforms — effectively warping the kernel's
+spatial structure based on the input.
 
-Only the FiLM/Hyena-specific network definition lives here; everything else
-(dataset, optimizer, scheduler, EMA, etc.) comes from ``_pretrain_base``.
+The remaining FiLM pairs modulate hidden activations as before, so this
+is strictly a superset of standard FiLM conditioning.
+
+Only the network definition lives here; everything else (dataset, optimizer,
+scheduler, EMA, etc.) comes from ``_pretrain_base``.
 
 CLS-row architecture: CLS + 13 registers as extra row -> 15x14 grid.
 Gated variant: SiLU first gate, Sigmoid second gate.
@@ -60,14 +62,14 @@ FILM_INIT_STD = 1e-4
 
 
 def get_config() -> ExperimentConfig:
-    """Return the ViT-5-Small + Hyena CLS-row gated + FiLM pretrain config with EMA."""
+    """Return the ViT-5-Small + Hyena CLS-row gated + FiLM + pos-embed pretrain config with EMA."""
     config = get_base_config()
     config.compile_compatible_fftconv = True
 
     film_cfg = LazyConfig(KernelFiLMGenerator)(
         cond_dim=HIDDEN_DIM,
         kernel_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
-        num_film_layers=KERNEL_NUM_LAYERS - 1,
+        num_film_layers=KERNEL_NUM_LAYERS,  # +1 vs standard FiLM: extra pair for pos-embed
         film_hidden_dim=FILM_HIDDEN_DIM,
         film_parameterization=FILM_PARAMETERIZATION,
         no_weight_decay=FILM_NO_WEIGHT_DECAY,
@@ -92,6 +94,7 @@ def get_config() -> ExperimentConfig:
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                     film_cfg=film_cfg,
+                    film_on_pos_embed=True,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type="double",

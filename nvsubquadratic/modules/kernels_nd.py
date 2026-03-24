@@ -327,15 +327,23 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         for param in self.parameters():
             param._no_weight_decay = True
 
-    def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        seq_lens: tuple[int, ...],
+        film_params: tuple[torch.Tensor, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the positional embeddings for a sequence of the given length.
 
         Args:
             seq_lens (tuple[int, ...]): Lengths of the input grid for which to compute the positional embeddings.
+            film_params: Optional (gamma, beta) pair, each [B, embedding_dim], applied
+                *before* the sine activation: ``sin(gamma * (W @ grid + b) + beta)``.
+                This modulates frequency (gamma) and phase (beta) of the positional
+                encoding, enabling input-dependent spatial warping.
 
         Returns:
             tuple:
-                - torch.Tensor: The positional embeddings, concatenated sine and cosine values (shape: [1, * spatial_dims, embedding_dim]).
+                - torch.Tensor: The positional embeddings, concatenated sine and cosine values (shape: [1|B, * spatial_dims, embedding_dim]).
                 - torch.Tensor: The input positions normalized between [-1, 1] (shape: [1, * spatial_dims, 1]).
 
         Raises:
@@ -389,6 +397,12 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         else:
             out = self.linear(grid)
 
+        # Optionally apply FiLM before sine (spatial warping: frequency/phase modulation)
+        if film_params is not None:
+            gamma, beta = film_params
+            shape = [gamma.shape[0]] + [1] * self.data_dim + [gamma.shape[-1]]
+            out = gamma.view(*shape) * out + beta.view(*shape)
+
         # Apply sine activation in place.
         return out.sin_(), grid
 
@@ -415,6 +429,10 @@ class SIRENKernelND(torch.nn.Module):
             input-dependent FiLM conditioning of all hidden SIREN layers.
         weight_decay_on_hidden_layers: If True, apply weight decay to SIREN hidden layers.
             Default False preserves the original SIREN init by excluding them.
+        film_on_pos_embed: If True, the first FiLM (gamma, beta) pair modulates the
+            positional embedding output before it enters the hidden layers, enabling
+            input-dependent spatial warping of the kernel coordinates. Requires
+            ``embedding_dim == mlp_hidden_dim`` and one extra FiLM layer in ``film_cfg``.
     """
 
     def __init__(  # noqa: D107
@@ -430,6 +448,7 @@ class SIRENKernelND(torch.nn.Module):
         hidden_omega_0: float = 1.0,
         film_cfg: LazyConfig | None = None,
         weight_decay_on_hidden_layers: bool = False,
+        film_on_pos_embed: bool = False,
     ):
         super().__init__()
 
@@ -441,6 +460,12 @@ class SIRENKernelND(torch.nn.Module):
         self.omega_0 = float(omega_0)
         self.hidden_omega_0 = float(hidden_omega_0)
         self.L_cache = L_cache
+        self.film_on_pos_embed = film_on_pos_embed
+
+        if film_on_pos_embed:
+            assert embedding_dim == mlp_hidden_dim, (
+                f"film_on_pos_embed requires embedding_dim == mlp_hidden_dim, got {embedding_dim} != {mlp_hidden_dim}"
+            )
 
         # Construct positional embedding
         self.positional_embedding = SIRENPositionalEmbeddingND(
@@ -502,20 +527,25 @@ class SIRENKernelND(torch.nn.Module):
             tuple: (kernel, grid) where kernel has shape [1|B, *spatial, out_dim]
                 and grid has shape [1, *spatial, data_dim].
         """
-        # Generate positional embeddings and corresponding grid values
-        pos_emb, grid = self.positional_embedding(seq_lens)  # [1, *spatial, emb], [1, *spatial, data_dim]
-
         # Generate FiLM parameters if conditioning is available
         film_params = None
+        film_offset = 0
         if conditioning is not None and self.film_generator is not None:
             film_params = self.film_generator(conditioning)  # list of (gamma, beta), each [B, hidden_dim]
+
+        # Generate positional embeddings, optionally with FiLM before the sine
+        # (input-dependent spatial warping: frequency/phase modulation of coordinates)
+        pos_film = film_params[0] if (self.film_on_pos_embed and film_params is not None) else None
+        pos_emb, grid = self.positional_embedding(seq_lens, film_params=pos_film)
+        if pos_film is not None:
+            film_offset = 1
 
         # Forward through hidden layers with optional FiLM
         h = pos_emb
         for i, linear in enumerate(self.hidden_linears):
             h = self.sine(linear(h))
             if film_params is not None:
-                gamma, beta = film_params[i]
+                gamma, beta = film_params[i + film_offset]
                 # Reshape [B, hidden_dim] -> [B, 1, ..., 1, hidden_dim] for broadcasting over spatial dims
                 shape = [gamma.shape[0]] + [1] * self.data_dim + [gamma.shape[-1]]
                 gamma = gamma.view(*shape)

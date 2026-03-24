@@ -7,9 +7,17 @@ Provides:
   conditioning vector per sample.
 """
 
+from __future__ import annotations
+
+from typing import Literal
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+FiLMParameterization = Literal["residual", "direct"]
+FiLMInitType = Literal["identity", "small_random"]
 
 
 class KernelFiLMGenerator(nn.Module):
@@ -22,6 +30,24 @@ class KernelFiLMGenerator(nn.Module):
         kernel_hidden_dim: Hidden dimension of the SIREN layers to modulate.
         num_film_layers: Number of (gamma, beta) pairs to produce (one per SIREN hidden layer).
         film_hidden_dim: Hidden dimension of the FiLM generator MLP (bottleneck).
+        film_parameterization: How the FiLM modulation is applied:
+
+            - ``"residual"``: Modulation is ``(1 + gamma) * h + beta``; the +1 is
+              folded into gamma in :meth:`forward`.  Identity = gamma=0, beta=0.
+            - ``"direct"``: Modulation is ``gamma * h + beta``.
+              Identity = gamma=1, beta=0.
+        no_weight_decay: If True, all parameters are marked with ``_no_weight_decay``
+            to exclude them from the optimizer's weight decay group.
+        init_type: How the output layer of the MLP is initialized:
+
+            - ``"identity"``: Output weights=0, bias set to the identity point
+              for the chosen parameterization (bias=0 for residual, bias=(1,0)
+              for direct).  Exact identity at init.
+            - ``"small_random"``: Same bias as ``"identity"`` but with output
+              weights drawn from N(0, ``init_std``) to break symmetry.
+              Near-identity at init.
+        init_std: Standard deviation for output-layer weight init when
+            ``init_type="small_random"``.  Ignored for ``"identity"``.
     """
 
     def __init__(  # noqa: D107
@@ -30,10 +56,15 @@ class KernelFiLMGenerator(nn.Module):
         kernel_hidden_dim: int,
         num_film_layers: int,
         film_hidden_dim: int = 64,
+        film_parameterization: FiLMParameterization = "residual",
+        no_weight_decay: bool = False,
+        init_type: FiLMInitType = "small_random",
+        init_std: float = 1e-4,
     ):
         super().__init__()
         self.num_film_layers = num_film_layers
         self.kernel_hidden_dim = kernel_hidden_dim
+        self.residual = film_parameterization == "residual"
 
         out_dim = num_film_layers * 2 * kernel_hidden_dim
         self.mlp = nn.Sequential(
@@ -42,29 +73,42 @@ class KernelFiLMGenerator(nn.Module):
             nn.Linear(film_hidden_dim, out_dim),
         )
 
-        self._init_weights()
+        # Initialize the MLP output layer
+        self._init_weights(init_type, init_std)
 
-    def _init_weights(self):
-        """Initialize so that gamma ~1 and beta ~0 at the start (identity modulation).
+        # Mark parameters to be excluded from weight decay
+        if no_weight_decay:
+            for param in self.parameters():
+                param._no_weight_decay = True
 
-        The output layer weights are zeroed and biases set to (gamma=1, beta=0),
-        so at init the FiLM transform is the identity: ``1 * h + 0 = h``.  This
-        means the model starts as if FiLM conditioning does not exist and
-        gradually learns to modulate — a standard residual-style init pattern
-        (cf. ControlNet, DiT adaptive LayerNorm).
+    def _init_weights(self, init_type: FiLMInitType, init_std: float):
+        """Initialize the MLP output layer according to ``init_type``.
 
-        The first linear layer keeps PyTorch's default Kaiming init; its exact
-        values are irrelevant at init because they are multiplied by the
-        all-zeros output weight matrix.
+        The bias is always set to the identity point for the chosen
+        parameterization: zero for residual (since ``(1+0)*h+0 = h``),
+        or ``(gamma=1, beta=0)`` for direct (since ``1*h+0 = h``).
+
+        ``"small_random"`` additionally gives the output weights a small random
+        perturbation to break the zero-weight saddle point.
         """
         final_linear = self.mlp[-1]
-        nn.init.zeros_(final_linear.weight)
+
+        if init_type == "identity":
+            nn.init.zeros_(final_linear.weight)
+        elif init_type == "small_random":
+            nn.init.normal_(final_linear.weight, mean=0.0, std=init_std)
+        else:
+            raise ValueError(f"Unknown init_type: {init_type!r}. Expected 'identity' or 'small_random'.")
+
         with torch.no_grad():
             bias = final_linear.bias
-            for i in range(self.num_film_layers):
-                offset = i * 2 * self.kernel_hidden_dim
-                bias[offset : offset + self.kernel_hidden_dim].fill_(1.0)  # gamma -> 1
-                bias[offset + self.kernel_hidden_dim : offset + 2 * self.kernel_hidden_dim].fill_(0.0)  # beta -> 0
+            if self.residual:
+                bias.zero_()
+            else:
+                for i in range(self.num_film_layers):
+                    offset = i * 2 * self.kernel_hidden_dim
+                    bias[offset : offset + self.kernel_hidden_dim].fill_(1.0)
+                    bias[offset + self.kernel_hidden_dim : offset + 2 * self.kernel_hidden_dim].fill_(0.0)
 
     def forward(self, conditioning: torch.Tensor) -> list[tuple[torch.Tensor, torch.Tensor]]:
         """Generate FiLM parameters from the conditioning vector.
@@ -74,10 +118,15 @@ class KernelFiLMGenerator(nn.Module):
 
         Returns:
             List of (gamma, beta) tuples, each [B, kernel_hidden_dim].
+            Callers always apply ``gamma * h + beta``.  When using residual
+            parameterization, the +1 offset is already folded into gamma here.
         """
         out = self.mlp(conditioning)  # [B, num_film_layers * 2 * kernel_hidden_dim]
         chunks = out.chunk(self.num_film_layers, dim=-1)  # num_film_layers x [B, 2 * kernel_hidden_dim]
-        return [c.chunk(2, dim=-1) for c in chunks]  # list of (gamma, beta) tuples
+        pairs = [c.chunk(2, dim=-1) for c in chunks]  # list of (gamma, beta) tuples
+        if self.residual:
+            pairs = [(1 + gamma, beta) for gamma, beta in pairs]
+        return pairs
 
 
 class RegisterPooling(nn.Module):
