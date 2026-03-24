@@ -1,23 +1,12 @@
 """DataModule for WELL benchmark datasets."""
 
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional
+
 import pytorch_lightning as pl
-import torch
 from the_well.data import WellDataModule as BaseWellDataModule
-
-
-class _DownsampledDataLoader:
-    """Wraps a dataloader to apply spatial downsampling on-the-fly."""
-
-    def __init__(self, loader, downsample_fn):
-        self.loader = loader
-        self.downsample_fn = downsample_fn
-
-    def __iter__(self):
-        for batch in self.loader:
-            yield self.downsample_fn(batch)
-
-    def __len__(self):
-        return len(self.loader)
 
 
 class WellDataModule(pl.LightningDataModule):
@@ -30,18 +19,19 @@ class WellDataModule(pl.LightningDataModule):
         well_base_path: Path to the WELL datasets directory
         well_dataset_name: Name of the dataset (e.g., 'active_matter')
         batch_size: Batch size for training
-        num_workers: Number of data loading workers
-        pin_memory: Whether to pin memory for faster GPU transfer
+        num_workers: Number of data loading workers (maps to ``data_workers`` in BaseWellDataModule)
         use_normalization: Whether to use normalization
         n_steps_input: Number of input timesteps
         n_steps_output: Number of output timesteps (for training)
         max_rollout_steps: Maximum number of rollout steps for validation
         min_dt_stride: Minimum time stride
         max_dt_stride: Maximum time stride (for data augmentation during training)
-        seed: Random seed for deterministic behavior
-        use_deterministic_worker_init: Whether to use deterministic worker initialization
-        prefetch_factor: Number of batches to prefetch
-        spatial_downsample_factor: Factor for spatial downsampling (e.g., 4 means take every 4th point)
+        local_staging_dir: Optional path to fast local storage (e.g. NVMe).
+            When set, the dataset is copied there before training for faster I/O.
+
+    Note:
+        ``pin_memory`` is always True inside BaseWellDataModule.
+        ``seed`` and ``prefetch_factor`` are not supported by BaseWellDataModule.
     """
 
     def __init__(
@@ -50,41 +40,86 @@ class WellDataModule(pl.LightningDataModule):
         well_dataset_name: str,
         batch_size: int = 64,
         num_workers: int = 4,
-        pin_memory: bool = True,
         use_normalization: bool = True,
         n_steps_input: int = 4,
         n_steps_output: int = 1,
         max_rollout_steps: int = 32,
         min_dt_stride: int = 1,
         max_dt_stride: int = 1,
-        seed: int = 0,
-        use_deterministic_worker_init: bool = False,
-        prefetch_factor: int = 2,
-        spatial_downsample_factor: int = 1,
+        local_staging_dir: Optional[str] = None,
     ):
         super().__init__()
         self.well_base_path = well_base_path
+        self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
         self.well_dataset_name = well_dataset_name
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.pin_memory = pin_memory
         self.use_normalization = use_normalization
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.max_rollout_steps = max_rollout_steps
         self.min_dt_stride = min_dt_stride
         self.max_dt_stride = max_dt_stride
-        self.seed = seed
-        self.use_deterministic_worker_init = use_deterministic_worker_init
-        self.prefetch_factor = prefetch_factor
-        self.spatial_downsample_factor = spatial_downsample_factor
 
         self._well_datamodule = None
 
+    # ------------------------------------------------------------------
+    # Local NVMe staging
+    # ------------------------------------------------------------------
+
+    def _stage_to_local(self) -> None:
+        """Copy dataset to fast local storage (e.g. NVMe).
+
+        Idempotent via a ``.staging_complete`` sentinel.  After staging,
+        ``self.well_base_path`` is redirected to the local directory.
+
+        Directory layout preserved:
+            {well_base_path}/{dataset_name}/  ->  {local_staging_dir}/{dataset_name}/
+        """
+        src = Path(self.well_base_path) / self.well_dataset_name
+        dst = self._local_staging_dir / self.well_dataset_name
+        sentinel = dst / ".staging_complete"
+
+        if not src.is_dir():
+            raise RuntimeError(f"[data-staging] Source not found: {src}")
+
+        # Fast path: previous staging completed successfully.
+        if sentinel.is_file():
+            print(f"[data-staging] {self.well_dataset_name} already staged.", flush=True)
+            self.well_base_path = str(self._local_staging_dir)
+            return
+
+        # Ensure destination is accessible before starting the copy.
+        try:
+            dst.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(f"[data-staging] Cannot access {self._local_staging_dir}: {exc}") from exc
+
+        free_gb = shutil.disk_usage(self._local_staging_dir).free / (1024**3)
+        print(f"[data-staging] Copying {self.well_dataset_name} -> {dst}  ({free_gb:.1f} GB free)", flush=True)
+
+        # cp -a preserves permissions/timestamps, -r for recursive.
+        subprocess.run(
+            ["cp", "-a", "-r", f"{src}/.", str(dst)],
+            check=True,
+            timeout=7200,
+        )
+
+        sentinel.write_text("ok\n")
+        self.well_base_path = str(self._local_staging_dir)
+        print("[data-staging] Done.", flush=True)
+
     def prepare_data(self):
-        """Download or prepare data (called on single process)."""
-        # WELL datasets are assumed to be already downloaded
-        pass
+        """Stage data to local storage if configured, and verify it exists."""
+        if self._local_staging_dir is not None:
+            self._stage_to_local()
+
+        dataset_dir = Path(self.well_base_path) / self.well_dataset_name
+        if not dataset_dir.is_dir():
+            raise FileNotFoundError(
+                f"Dataset directory not found: {dataset_dir}. "
+                f"Download it first with: bash scripts/download_well.sh {self.well_dataset_name}"
+            )
 
     def setup(self, stage=None):
         """Setup datasets (called on each process)."""
@@ -138,68 +173,14 @@ class WellDataModule(pl.LightningDataModule):
         # Store metadata for use in model/wrapper
         self.metadata = metadata
 
-    def _downsample_batch(self, batch):
-        """Apply spatial downsampling to a batch.
-
-        Args:
-            batch: Dict with tensor fields in [B, T, H, W, C] format
-
-        Returns:
-            Downsampled batch
-        """
-        if self.spatial_downsample_factor == 1:
-            return batch
-
-        stride = self.spatial_downsample_factor
-        downsampled_batch = {}
-
-        for key, value in batch.items():
-            if isinstance(value, torch.Tensor):
-                if value.ndim >= 4 and key in ["input_fields", "output_fields", "constant_fields", "space_grid"]:
-                    if key in ["input_fields", "output_fields"]:
-                        if value.ndim == 5:  # 2D: [B, T, H, W, C]
-                            downsampled_batch[key] = value[:, :, ::stride, ::stride, :]
-                        elif value.ndim == 6:  # 3D: [B, T, D, H, W, C]
-                            downsampled_batch[key] = value[:, :, ::stride, ::stride, ::stride, :]
-                        else:
-                            downsampled_batch[key] = value
-                    elif key == "constant_fields":
-                        if value.ndim == 4:  # 2D: [B, H, W, C]
-                            downsampled_batch[key] = value[:, ::stride, ::stride, :]
-                        elif value.ndim == 5:  # 3D: [B, D, H, W, C]
-                            downsampled_batch[key] = value[:, ::stride, ::stride, ::stride, :]
-                        else:
-                            downsampled_batch[key] = value
-                    elif key == "space_grid":
-                        if value.ndim == 4:  # 2D: [B, H, W, D]
-                            downsampled_batch[key] = value[:, ::stride, ::stride, :]
-                        elif value.ndim == 5:  # 3D: [B, D, H, W, D]
-                            downsampled_batch[key] = value[:, ::stride, ::stride, ::stride, :]
-                        else:
-                            downsampled_batch[key] = value
-                    else:
-                        downsampled_batch[key] = value
-                else:
-                    downsampled_batch[key] = value
-            else:
-                downsampled_batch[key] = value
-
-        return downsampled_batch
-
-    def _wrap_loader(self, base_loader):
-        """Wrap a dataloader with spatial downsampling if needed."""
-        if self.spatial_downsample_factor == 1:
-            return base_loader
-        return _DownsampledDataLoader(base_loader, self._downsample_batch)
-
     def train_dataloader(self):
-        return self._wrap_loader(self._well_datamodule.train_dataloader())
+        return self._well_datamodule.train_dataloader()
 
     def val_dataloader(self):
-        return self._wrap_loader(self._well_datamodule.val_dataloader())
+        return self._well_datamodule.val_dataloader()
 
     def test_dataloader(self):
-        return self._wrap_loader(self._well_datamodule.test_dataloader())
+        return self._well_datamodule.test_dataloader()
 
     @property
     def input_channels(self):

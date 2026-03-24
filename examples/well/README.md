@@ -79,18 +79,13 @@ PYTHONPATH=. python experiments/run.py \
     --config examples/well/active_matter/cfg_hyena.py \
     dataset.batch_size=8 \
     train.iterations=50000
-
-# Enable spatial downsampling (e.g., 4x -> 256x256 becomes 64x64)
-PYTHONPATH=. python experiments/run.py \
-    --config examples/well/active_matter/cfg_hyena.py \
-    dataset.spatial_downsample_factor=4
 ```
 
 ## Architecture
 
 The pipeline consists of three components:
 
-1. **DataModule** (`experiments/datamodules/pde/well.py`): Wraps The Well's `WellDataModule` with normalization fixes, spatial downsampling, and channel calculation for the nvSubquadratic interface.
+1. **DataModule** (`experiments/datamodules/pde/well.py`): Wraps The Well's `WellDataModule` with normalization fixes and channel calculation for the nvSubquadratic interface.
 
 1. **Lightning Wrapper** (`experiments/lightning_wrappers/well_lightning_wrapper.py`): Handles input formatting (flattening timesteps into channels), single-step training, autoregressive rollout for validation/test, and metric computation on denormalized (physical-scale) data.
 
@@ -128,7 +123,7 @@ Metrics are computed on **denormalized** (physical-scale) data using The Well's 
 
 ### Active Matter (256x256, periodic BCs)
 
-All models trained with 130k iterations, batch size 16, cosine schedule with 10% warmup. Metric: **test/VRMSE** (lower is better). Entries marked with * use `spatial_downsample_factor`.
+All models trained with 130k iterations, batch size 16, cosine schedule with 10% warmup. Metric: **test/VRMSE** (lower is better).
 
 #### Hyena
 
