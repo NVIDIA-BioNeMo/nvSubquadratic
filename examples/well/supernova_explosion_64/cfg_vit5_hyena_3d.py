@@ -80,17 +80,13 @@ def get_config() -> ExperimentConfig:
         well_dataset_name=WELL_DATASET_NAME,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
-        pin_memory=True,
         use_normalization=True,
         n_steps_input=N_STEPS_INPUT,
         n_steps_output=N_STEPS_OUTPUT,
         max_rollout_steps=MAX_ROLLOUT_STEPS,
         min_dt_stride=1,
         max_dt_stride=1,
-        seed=config.seed,
-        use_deterministic_worker_init=True,
-        prefetch_factor=2,
-        spatial_downsample_factor=1,
+        local_staging_dir=None,
     )
 
     patch_grid_size = SPATIAL_SIZE // PATCH_SIZE  # 8 per dimension (with patch_size=8)
