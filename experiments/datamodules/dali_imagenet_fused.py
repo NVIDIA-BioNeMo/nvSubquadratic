@@ -136,10 +136,15 @@ class _RepeatedAugSource:
         self._indices = indices[: self.num_selected].tolist()
 
     def __call__(self, sample_info):
-        if sample_info.idx_in_epoch >= self.num_selected:
-            raise StopIteration
+        # Reshuffle indices when DALI advances to a new epoch.
+        if sample_info.epoch_idx != self._epoch:
+            self._epoch = sample_info.epoch_idx
+            self._recompute_indices()
 
-        idx = self._indices[sample_info.idx_in_epoch]
+        # Wrap around instead of raising StopIteration.  The
+        # DALIGenericIterator(size=num_selected) handles epoch boundaries;
+        # the source must stay alive so parallel workers aren't killed.
+        idx = self._indices[sample_info.idx_in_epoch % self.num_selected]
         jpeg_bytes = np.fromfile(self._files[idx], dtype=np.uint8)
         label = np.array([self._labels[idx]], dtype=np.int32)
         return jpeg_bytes, label

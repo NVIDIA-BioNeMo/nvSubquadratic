@@ -57,7 +57,11 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
-from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.utils.init import (
+    partial_wang_init_fn_with_num_layers,
+    small_init,
+    trunc_normal_init_factory,
+)
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
@@ -118,7 +122,7 @@ def get_config(
     smoothing: float = 0.0,
     use_three_augment: bool = True,
     color_jitter: float = 0.3,
-    rand_augment: str = "rand-m9-mstd0.5-inc1",
+    rand_augment: str | None = None,
     random_erasing_prob: float = 0.0,
     num_repeats: int = 3,
     # ─── Register + FiLM parameters ──────────────────────────────────
@@ -135,6 +139,9 @@ def get_config(
     # ─── Classification readout ──────────────────────────────────────
     readout: Literal["cls", "gap", "register_concat"] = "gap",
     neck_compression_ratio: int | None = None,
+    # ─── Init / architecture knobs ────────────────────────────────────
+    init_style: Literal["v3_trunc_normal", "v2_small_wang"] = "v3_trunc_normal",
+    use_gated_hyena: bool = True,
 ) -> ExperimentConfig:
     """Return a pretraining config for ViT-5-Small Hyena GAP with FiLM registers.
 
@@ -174,8 +181,22 @@ def get_config(
         neck_compression_ratio: Compression ratio for "register_concat" readout.
             Each register is projected to ``HIDDEN_DIM // neck_compression_ratio`` dims.
             Required when ``readout="register_concat"``.
+        init_style: Weight initialization scheme.
+            "v3_trunc_normal": ``trunc_normal_init_factory(std=0.02)`` for both in/out
+            (matches v3 pretraining baseline).
+            "v2_small_wang": ``small_init`` + ``partial_wang_init_fn_with_num_layers``.
+        use_gated_hyena: If True, add a Sigmoid second gate
+            (``gate_nonlinear_2_cfg``).  True matches the v3 "gated" Hyena configs.
     """
     has_film = num_registers > 0 and num_film_layers is not None
+
+    # Resolve init functions
+    if init_style == "v3_trunc_normal":
+        _init_in = trunc_normal_init_factory(std=0.02)
+        _init_out = trunc_normal_init_factory(std=0.02)
+    else:
+        _init_in = small_init
+        _init_out = LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS)
 
     # Determine FiLM cond_dim based on pooling mode
     film_compressed_dim = HIDDEN_DIM // film_compression_ratio
@@ -239,7 +260,10 @@ def get_config(
             init_type=film_init_type,
         )
 
-    l_cache = NUM_PATCHES_H
+    # Prepended registers (with or without CLS) occupy an extra row in the
+    # 2D grid, making grid_h = NUM_PATCHES_H + 1.
+    has_register_row = num_registers > 0 or readout == "cls"
+    l_cache = NUM_PATCHES_H + 1 if has_register_row else NUM_PATCHES_H
 
     hyena_mixer_cfg = LazyConfig(QKVSequenceMixer)(
         hidden_dim=HIDDEN_DIM,
@@ -276,9 +300,10 @@ def get_config(
             qk_norm_cfg=LazyConfig(L2Norm)(),
             use_rope=False,
             output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
+            **({"gate_nonlinear_2_cfg": LazyConfig(torch.nn.Sigmoid)()} if use_gated_hyena else {}),
         ),
-        init_method_in=small_init,
-        init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
+        init_method_in=_init_in,
+        init_method_out=_init_out,
     )
 
     # Block config: add register pooling when FiLM is enabled
@@ -326,8 +351,8 @@ def get_config(
                 activation="gelu",
                 expansion_factor=float(MLP_RATIO),
                 dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
-                init_method_in=small_init,
-                init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
+                init_method_in=_init_in,
+                init_method_out=_init_out,
             ),
             mlp_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             hidden_dim=HIDDEN_DIM,
