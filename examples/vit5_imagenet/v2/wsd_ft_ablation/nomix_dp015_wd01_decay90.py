@@ -1,0 +1,19 @@
+"""WSD finetuning ablation — no Mixup, drop path 0.15, WD=0.1, WSD 10/0/90.
+
+Combines dp015 (82.07%), higher WD (dp01_wd01 hit 82.06%), and decay90.
+"""
+
+from examples.vit5_imagenet.wsd_ft_ablation._base import get_config as _base
+
+
+def get_config():
+    """Return config with no Mixup, dp 0.15, WD=0.1, 90% decay."""
+    return _base(
+        lr=3e-5,
+        wd=0.1,
+        mixup=0.0,
+        cutmix=0.0,
+        drop_path_rate=0.15,
+        warmup_pct=0.10,
+        stable_pct=0.0,
+    )

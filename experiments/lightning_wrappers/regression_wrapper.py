@@ -6,14 +6,23 @@ from typing import Literal
 
 import torch
 import torchmetrics
-
 import wandb
+
 from experiments.default_cfg import ExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
 
 class RegressionWrapper(LightningWrapperBase):
-    """Lightning wrapper for regression tasks."""
+    """Lightning wrapper for regression tasks.
+
+    .. TODO(@dwromero/dwessels): Resume support (see ClassificationWrapper for reference)
+        - Add ``on_save_checkpoint`` / ``on_load_checkpoint`` to persist
+          ``best_train_loss`` and ``best_val_loss`` across job resumes.
+          Without this, best-metric tracking silently resets to initial
+          values (1e9) after every SLURM preemption or manual resume.
+        - Add corresponding tests in ``tests/test_checkpoint_resume.py``
+          (see ``TestBestMetricsPersistence`` for the classification pattern).
+    """
 
     def __init__(
         self,
@@ -71,22 +80,24 @@ class RegressionWrapper(LightningWrapperBase):
         logits = output["logits"].contiguous()
         prediction = logits  # In regression, predictions are the logits
 
-        # Calculate metric
-        metric_calculator(prediction.view(-1), labels.view(-1))
+        # Calculate metric (use reshape instead of view for non-contiguous tensors)
+        metric_calculator(prediction.reshape(-1), labels.reshape(-1))
 
         # Other outputs
         other_outputs = {}  # Not adding anything here for now, but we could add things to track per epoch, etc.
 
         # Calculate loss
-        loss = self.loss_metric(prediction.view(-1), labels.view(-1))
+        loss = self.loss_metric(prediction.reshape(-1), labels.reshape(-1))
 
         # Return predictions, loss and other outputs (contains logits and possibly other outputs such as token stats)
         return prediction, loss, other_outputs
 
     def training_step(self, batch, batch_idx):
         """Perform training step and log the training loss."""
+        # Start timing (CUDA events)
+        self._start_timing()
         # Perform step
-        predictions, loss, other_outputs = self._step(batch, self.train_metric)
+        _predictions, loss, other_outputs = self._step(batch, self.train_metric)
         # Log loss
         self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Add other outputs to the list of other outputs. This is used for end of epoch logging.
@@ -97,7 +108,7 @@ class RegressionWrapper(LightningWrapperBase):
     def validation_step(self, batch, batch_idx):
         """Perform a validation step and log the validation loss."""
         # Perform step
-        predictions, loss, other_outputs = self._step(batch, self.val_metric)
+        _predictions, loss, other_outputs = self._step(batch, self.val_metric)
         # Log loss
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Add other outputs to the list of other outputs. This is used for end of epoch logging.
@@ -108,7 +119,7 @@ class RegressionWrapper(LightningWrapperBase):
     def test_step(self, batch, batch_idx):
         """Perform a test step and log the test loss."""
         # Perform step
-        predictions, loss, _ = self._step(batch, self.test_metric)
+        _predictions, loss, _ = self._step(batch, self.test_metric)
         # Log loss
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
 
@@ -150,6 +161,10 @@ class RegressionWrapper(LightningWrapperBase):
 
     def on_validation_epoch_end(self):
         """Log best validation loss and logits over the validation set."""
+        if self.trainer.sanity_checking:
+            self.other_outputs_validation.clear()
+            return
+
         validation_step_outputs = self.other_outputs_validation
         validation_step_outputs_keys = validation_step_outputs[0].keys()
 

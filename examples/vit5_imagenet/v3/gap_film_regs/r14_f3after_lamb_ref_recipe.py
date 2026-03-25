@@ -1,0 +1,23 @@
+"""14 regs, film3_after, LAMB — ViT-5 reference finetuning recipe.
+
+Conservative: lr=1e-5, wd=0.1, dp=0.05, RandAug m9, no Mixup/CutMix.
+"""
+
+from examples.vit5_imagenet.v3.gap_film_regs._base import get_config as _base
+
+
+def get_config():  # noqa: D103
+    return _base(
+        num_registers=14,
+        num_film_layers=3,
+        film_after_pos_embed=True,
+        lr=1e-5,
+        wd=0.1,
+        drop_path_rate=0.05,
+        smoothing=0.1,
+        mixup=0.0,
+        cutmix=0.0,
+        use_three_augment=False,
+        rand_augment="rand-m9-mstd0.5-inc1",
+        optimizer_type="lamb",
+    )

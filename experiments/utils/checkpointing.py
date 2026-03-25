@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 from typing import Dict, Literal
 
 import pytorch_lightning as pl
 import pytorch_lightning.callbacks as pl_callbacks
 import torch
-
 import wandb
 
 
@@ -105,6 +105,101 @@ def load_checkpoint_state_dict(ckpt_path: str) -> dict:
     if isinstance(obj, dict):
         return obj
     raise ValueError(f"Unsupported checkpoint format for {ckpt_path}: type={type(obj)}")
+
+
+def align_compiled_keys(
+    state_dict: dict[str, torch.Tensor],
+    model_keys: set[str],
+) -> dict[str, torch.Tensor]:
+    """Remap ``state_dict`` keys to match *model_keys*, handling ``_orig_mod`` mismatches.
+
+    ``torch.compile`` wraps parameters under ``_orig_mod``, so a checkpoint
+    saved with/without compile may have different key prefixes.  This strips
+    the ``._orig_mod.`` segment from both sides and maps by the canonical
+    (stripped) name.  Works in both directions (compiled->plain and
+    plain->compiled) in a single pass.
+
+    Returns *state_dict* unchanged if the keys already match.
+    """
+    if set(state_dict.keys()) == model_keys:
+        return state_dict
+
+    def _strip(key: str) -> str:
+        return key.replace("._orig_mod.", ".")
+
+    model_stripped = {_strip(k): k for k in model_keys}
+    return {model_stripped.get(_strip(k), k): v for k, v in state_dict.items()}
+
+
+class StripCompiledPrefix:
+    """Callback for ``start_from_checkpoint`` that aligns ``_orig_mod.`` prefixes.
+
+    Delegates to :func:`align_compiled_keys`.
+    """
+
+    def __call__(self, state_dict, model=None, **_kwargs):
+        """Align ``_orig_mod.`` prefixes between *state_dict* and *model*."""
+        if model is None:
+            return state_dict
+        return align_compiled_keys(state_dict, set(model.state_dict().keys()))
+
+
+class DropKeysFromCheckpoint:
+    """Callback that removes matching keys from the state dict before loading.
+
+    Use this to re-initialize specific layers (e.g., the classification head)
+    from scratch instead of loading pretrained weights.  Requires
+    ``strict=False`` on the checkpoint config so that missing keys are
+    tolerated.
+
+    Args:
+        prefixes: Tuple of key prefixes to drop (e.g., ``("network.out_proj",)``).
+    """
+
+    def __init__(self, prefixes: tuple[str, ...] = ()):  # noqa: D107
+        self.prefixes = prefixes
+
+    def __call__(self, state_dict, model=None, **_kwargs):  # noqa: D102
+        dropped = []
+        new_sd = {}
+        for k, v in state_dict.items():
+            if any(k.startswith(p) or k.replace("._orig_mod.", ".").startswith(p) for p in self.prefixes):
+                dropped.append(k)
+            else:
+                new_sd[k] = v
+        if dropped:
+            print(
+                f"[DropKeysFromCheckpoint] Dropped {len(dropped)} keys: {dropped[:10]}{'...' if len(dropped) > 10 else ''}"
+            )
+        return new_sd
+
+
+class RemapSirenSequentialKeys:
+    """Remap old SIREN ``kernel_network.{2*i}`` keys to ``hidden_linears.{i}``.
+
+    Older SIRENKernelND used an ``nn.Sequential`` called ``kernel_network``
+    where even-indexed entries are Linear layers and odd-indexed are Sine
+    activations.  The current code stores only the Linears in an
+    ``nn.ModuleList`` called ``hidden_linears``.
+    """
+
+    _RE = re.compile(r"(\.kernel\.kernel_network)\.(\d+)\.(weight|bias)$")
+
+    def __call__(self, state_dict, **_kwargs):  # noqa: D102
+        out = {}
+        remapped = 0
+        for k, v in state_dict.items():
+            m = self._RE.search(k)
+            if m:
+                idx = int(m.group(2)) // 2
+                new_key = k[: m.start()] + f".kernel.hidden_linears.{idx}.{m.group(3)}"
+                out[new_key] = v
+                remapped += 1
+            else:
+                out[k] = v
+        if remapped:
+            print(f"[RemapSirenSequentialKeys] Remapped {remapped} kernel_network keys to hidden_linears")
+        return out
 
 
 def _compute_overlapping_slices(target_shape, source_shape):
@@ -266,9 +361,16 @@ def preview_state_dict_compatibility(
 
 
 class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
-    """Upload only selected checkpoints (best/last) to W&B during training.
+    """Upload checkpoints to W&B with per-scheduler-phase best/latest tracking.
 
-    Avoids logging every checkpoint and supports optional local deletion.
+    In addition to the global ``best`` and ``latest`` aliases, this callback
+    uploads ``last.ckpt`` with per-phase aliases (e.g. ``stable-best``,
+    ``decay-latest``) so that the best and most recent checkpoint for each
+    scheduler regime are preserved in W&B artifacts.
+
+    Phase boundaries are derived from the scheduler config and passed as
+    ``phase_boundaries``.  When empty, only global best/latest are uploaded
+    (backward-compatible behavior).
     """
 
     def __init__(
@@ -277,17 +379,51 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         upload_last: bool = True,
         remove_local_after_upload: bool = False,
         keep_last_k_versions: int = 2,
+        phase_boundaries: dict[str, tuple[int, int]] | None = None,
+        mode: str = "max",
     ):
-        """Configure selective checkpoint uploads to W&B."""
+        """Configure selective checkpoint uploads to W&B.
+
+        Args:
+            upload_best: Upload the global-best checkpoint (alias ``"best"``).
+            upload_last: Upload the latest checkpoint (alias ``"latest"``).
+            remove_local_after_upload: Delete local file after successful upload.
+            keep_last_k_versions: Minimum unaliased artifact versions to retain
+                when pruning.  Aliased versions are **always** protected.
+            phase_boundaries: Maps phase name to ``(start_step, end_step)``
+                inclusive/exclusive.  E.g. ``{"stable": (1000, 8000), "decay":
+                (8000, 10000)}``.  Empty or ``None`` disables per-phase tracking.
+            mode: ``"max"`` or ``"min"`` — whether higher or lower metric is better.
+        """
         super().__init__()
         self.upload_best = upload_best
         self.upload_last = upload_last
         self.remove_local_after_upload = remove_local_after_upload
         self.keep_last_k_versions = max(int(keep_last_k_versions), 1)
+        self.phase_boundaries: dict[str, tuple[int, int]] = phase_boundaries or {}
+        self.mode = mode
         # Track per-alias content hashes to avoid re-uploading identical content
         # even if the file path is reused (e.g., latest checkpoint overwrites).
         # Structure: {alias: last_sha256_hex}
         self._uploaded_hashes: dict[str, str] = {}
+        # Per-phase best metric tracking: {phase_name: best_score}
+        self._phase_best: dict[str, float] = {
+            name: float("-inf") if mode == "max" else float("inf") for name in self.phase_boundaries
+        }
+
+    def _current_phase(self, global_step: int) -> str | None:
+        """Return the phase name for *global_step*, or ``None`` if no phase matches."""
+        for name, (start, end) in self.phase_boundaries.items():
+            if start <= global_step < end:
+                return name
+        return None
+
+    def _is_phase_improvement(self, phase: str, score: float) -> bool:
+        """Return ``True`` if *score* improves the per-phase best for *phase*."""
+        prev = self._phase_best[phase]
+        if self.mode == "max":
+            return score > prev
+        return score < prev
 
     def _file_sha256(self, path: str, chunk_size: int = 1024 * 1024) -> str:
         h = hashlib.sha256()
@@ -371,14 +507,14 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             # Newest first
             versions.sort(key=_ver_num, reverse=True)
 
-            # Always preserve versions carrying important aliases
+            # Preserve every version that carries at least one alias
             alias_protected = set()
             for a in versions:
                 aliases = set(getattr(a, "aliases", []) or [])
-                if ("best" in aliases) or ("latest" in aliases):
+                if aliases:
                     alias_protected.add(getattr(a, "id", a))
             if alias_protected:
-                print(f"[checkpoint/prune] Protected by alias (best/latest): {len(alias_protected)}")
+                print(f"[checkpoint/prune] Protected by alias: {len(alias_protected)}")
 
             to_keep = []
             for a in versions:
@@ -432,6 +568,12 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         except Exception as e:
             # Report errors explicitly but do not crash training
             print(f"[checkpoint/prune][error] {type(e).__name__}: {e}")
+        finally:
+            # Explicitly release the API client to free HTTP sessions/caches
+            try:
+                del api
+            except UnboundLocalError:
+                pass
 
     def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         """Upload selected checkpoints at the end of validation if appropriate."""
@@ -454,6 +596,8 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
         if ckpt_cb is None:
             print("[checkpoint/upload][warn] No ModelCheckpoint callback found; skipping upload")
             return
+
+        # --- Global best / latest (backward-compatible) -----------------------
         if self.upload_best:
             best_path = getattr(ckpt_cb, "best_model_path", None)
             if best_path:
@@ -461,12 +605,29 @@ class WandbSelectiveCheckpointUploader(pl_callbacks.Callback):
             else:
                 print("[checkpoint/upload][warn] upload_best=True but best_model_path is empty; will retry later")
         if self.upload_last:
-            # Support both Lightning 1.x and 2.x attribute names
             last_path = getattr(ckpt_cb, "last_model_path", None) or getattr(ckpt_cb, "last_model", None)
             if last_path:
                 self._maybe_upload(run, last_path, alias="latest")
             else:
                 print("[checkpoint/upload][warn] upload_last=True but last_model_path is empty; will retry later")
+
+        # --- Per-phase best / latest ------------------------------------------
+        if self.phase_boundaries:
+            phase = self._current_phase(trainer.global_step)
+            if phase is not None:
+                last_path = getattr(ckpt_cb, "last_model_path", None) or getattr(ckpt_cb, "last_model", None)
+                if last_path and os.path.isfile(last_path):
+                    self._maybe_upload(run, last_path, alias=f"{phase}-latest")
+
+                    score = getattr(ckpt_cb, "current_score", None)
+                    if score is not None:
+                        score_val = float(score)
+                        if self._is_phase_improvement(phase, score_val):
+                            self._phase_best[phase] = score_val
+                            self._maybe_upload(run, last_path, alias=f"{phase}-best")
+                            print(
+                                f"[checkpoint/upload] New {phase}-best: {score_val:.4f} (step {trainer.global_step})"
+                            )
 
         # Prune older remote versions to keep storage bounded
         self._prune_old_versions(run, artifact_name=f"model-{run.id}")

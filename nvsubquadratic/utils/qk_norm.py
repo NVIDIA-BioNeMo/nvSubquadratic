@@ -4,20 +4,37 @@
 """QK normalization utilities."""
 
 import torch
+import torch.nn.functional as F
 
 
-def apply_qk_norm(query: torch.Tensor, key: torch.Tensor, dim: int) -> tuple[torch.Tensor, torch.Tensor]:
-    """L2-normalize queries and keys along the specified dimension.
-
-    Args:
-        query: torch.Tensor - The query tensor of shape (batch_size, hidden_dim, * spatial_dims) or (batch_size, * spatial_dims, hidden_dim).
-        key: torch.Tensor - The key tensor of shape (batch_size, hidden_dim, * spatial_dims) or (batch_size, * spatial_dims, hidden_dim).
-        dim: int - The dimension along which to normalize the query and key. This should be the hidden dimension.
+def apply_qk_norm(query: torch.Tensor, key: torch.Tensor, dim: int = -1, eps: float = 1e-12):
+    """L2-normalize query and key along the given dimension (e.g. for QK-norm in attention).
 
     Returns:
-        tuple[torch.Tensor, torch.Tensor]: The normalized query and key of corresponding shape.
-
+        Tuple of (query_normalized, key_normalized), same shapes as inputs.
     """
-    query = torch.nn.functional.normalize(query, p=2.0, dim=dim)
-    key = torch.nn.functional.normalize(key, p=2.0, dim=dim)
+    query = F.normalize(query, p=2.0, dim=dim, eps=eps)
+    key = F.normalize(key, p=2.0, dim=dim, eps=eps)
     return query, key
+
+
+class L2Norm(torch.nn.Module):
+    """L2 normalization as a module, for use as a LazyConfig target.
+
+    Normalizes along the last dimension by default, matching the convention
+    of torch.nn.RMSNorm and torch.nn.LayerNorm.
+    """
+
+    def __init__(self, dim: int = -1, eps: float = 1e-12):
+        """Store normalization dimension and epsilon."""
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """L2-normalize along the configured dimension."""
+        return F.normalize(x, p=2.0, dim=self.dim, eps=self.eps)
+
+    def extra_repr(self) -> str:
+        """Return dim and eps for repr()."""
+        return f"dim={self.dim}, eps={self.eps}"

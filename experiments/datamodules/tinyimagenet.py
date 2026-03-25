@@ -6,11 +6,13 @@ import torch
 from datasets import load_dataset
 from omegaconf import DictConfig, OmegaConf
 from timm.data import Mixup
+from timm.data.auto_augment import rand_augment_transform
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-from experiments.datamodules.imagenet import AugmentConfig, MixupConfig, ThreeAugment
+from experiments.datamodules._deprecated.ref_imagenet import ThreeAugment
+from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 
 
 # TinyImageNet statistics
@@ -182,6 +184,15 @@ class TinyImageNetDataModule(pl.LightningDataModule):
                 )
                 # 3-Augment (Gray, Solar, Blur)
                 ops.append(ThreeAugment())
+
+            if self.augment_cfg is not None and self.augment_cfg.rand_augment:
+                # RandAugment
+                ops.append(
+                    rand_augment_transform(
+                        config_str=self.augment_cfg.rand_augment,
+                        hparams={"img_mean": tuple([int(x * 255) for x in TINYIMAGENET_MEAN])},
+                    )
+                )
 
         else:
             if self.center_crop and self.image_size < 64:

@@ -47,8 +47,6 @@ class MLP(nn.Module):
             init_method_in: Optional initialization method for the first layer.
             init_method_out: Optional initialization method for the second layer.
         """
-        assert bias is False, f"Modern MLPs do not use bias. Got {bias}"
-
         super().__init__()
         self.hidden_dim = int(dim * expansion_factor)
         self.activation = activation
@@ -61,6 +59,8 @@ class MLP(nn.Module):
         self.layer1 = nn.Linear(dim, self.hidden_dim * glu_factor, bias=bias)
         if init_method_in is not None:
             init_method_in(self.hidden_dim * glu_factor)(self.layer1.weight.data)
+            if self.layer1.bias is not None:
+                nn.init.zeros_(self.layer1.bias)
 
         # Construct dropout
         self.dropout = instantiate(dropout_cfg)
@@ -69,6 +69,8 @@ class MLP(nn.Module):
         self.layer2 = nn.Linear(self.hidden_dim, dim, bias=bias)
         if init_method_out is not None:
             init_method_out(dim)(self.layer2.weight.data)
+            if self.layer2.bias is not None:
+                nn.init.zeros_(self.layer2.bias)
 
     def _apply_activation(self, x: torch.Tensor) -> torch.Tensor:
         """Apply the activation function to the input."""
@@ -83,6 +85,42 @@ class MLP(nn.Module):
             return b * F.silu(a)
         else:
             raise ValueError(f"Unsupported activation: {self.activation}")
+
+    def flop_count(self, num_tokens: int) -> int:
+        """Count FLOPs for a two-layer MLP applied to ``num_tokens`` tokens.
+
+        Structure: Linear(dim, hidden_dim * glu_factor) -> activation -> Linear(hidden_dim, dim).
+
+        FLOPs breakdown (T = num_tokens):
+          1. layer1 (Linear):  2 * T * ``self.layer1.in_features`` * ``self.layer1.out_features``
+             For GLU/SwiGLU, out_features = 2 * hidden_dim (gate doubles width).
+          2. Activation: T * ``self.hidden_dim`` (elementwise).
+             For GLU variants, an additional T * ``self.hidden_dim`` for the
+             gate multiply (SiLU on one half + elementwise product).
+          3. layer2 (Linear):  2 * T * ``self.layer2.in_features`` * ``self.layer2.out_features``
+
+        Convention: 1 MAC = 2 FLOPs for linear layers.
+                    Activations count as 1 FLOP per element.
+
+        Args:
+            num_tokens: Number of tokens (positions) the MLP is applied to.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        T = num_tokens
+        flops = 0
+        # layer1
+        flops += 2 * T * self.layer1.in_features * self.layer1.out_features
+        # Activation
+        if self.is_glu_variant:
+            # SiLU/sigmoid on one half + elementwise gate product
+            flops += 2 * T * self.hidden_dim
+        else:
+            flops += T * self.hidden_dim
+        # layer2
+        flops += 2 * T * self.layer2.in_features * self.layer2.out_features
+        return flops
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the MLP."""

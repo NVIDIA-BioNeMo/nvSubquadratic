@@ -15,6 +15,31 @@ from experiments.utils.checkpointing import WandbSelectiveCheckpointUploader
 from nvsubquadratic.lazy_config import instantiate
 
 
+def _scheduler_phase_boundaries(cfg: ExperimentConfig) -> dict[str, tuple[int, int]]:
+    """Derive per-phase step boundaries from the scheduler config.
+
+    Returns a mapping ``{phase_name: (start_step, end_step)}`` suitable for
+    :class:`WandbSelectiveCheckpointUploader`.  Warmup is excluded because it
+    is typically too short to warrant dedicated checkpoints.
+    """
+    sched = cfg.scheduler
+    total = sched.total_iterations
+    if total is None or total <= 0:
+        return {}
+    warmup_end = int(sched.warmup_iterations_percentage * total)
+
+    name = getattr(sched, "name", None)
+    if name == "wsd":
+        stable_pct = getattr(sched, "stable_iterations_percentage", 0.0)
+        stable_end = warmup_end + int(stable_pct * total)
+        return {"stable": (warmup_end, stable_end), "decay": (stable_end, total)}
+    if name == "cosine":
+        return {"cosine": (warmup_end, total)}
+    if name == "constant":
+        return {"constant": (warmup_end, total)}
+    return {}
+
+
 def construct_trainer(
     cfg: ExperimentConfig,
     wandb_logger: pl.loggers.WandbLogger,
@@ -44,7 +69,9 @@ def construct_trainer(
         benchmark = True
 
     # Metric to monitor
-    if cfg.scheduler.mode == "max":
+    if cfg.trainer.checkpoint_monitor is not None:
+        monitor = cfg.trainer.checkpoint_monitor
+    elif cfg.scheduler.mode == "max":
         monitor = "val/acc"
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
@@ -58,21 +85,29 @@ def construct_trainer(
     print(f"[checkpoint] Saving checkpoints to: {checkpoint_dir.resolve()}")
 
     # Callback for model checkpointing:
-    checkpoint_callback = pl_callbacks.ModelCheckpoint(
-        dirpath=str(checkpoint_dir),
-        monitor=monitor,
-        mode=cfg.scheduler.mode,  # Save on best validation accuracy
-        save_top_k=1,
-        save_last=True,  # Keep track of the model at the last epoch
-        verbose=True,
-    )
+    checkpoint_kwargs = {
+        "dirpath": str(checkpoint_dir),
+        "monitor": monitor,
+        "mode": cfg.scheduler.mode,  # Save on best validation accuracy
+        "save_top_k": 1,
+        "save_last": True,  # Keep track of the model at the last epoch
+        "verbose": True,
+    }
+    # Add step-based checkpointing if configured (useful for long runs to avoid losing progress)
+    if cfg.trainer.checkpoint_every_n_steps is not None:
+        checkpoint_kwargs["every_n_train_steps"] = cfg.trainer.checkpoint_every_n_steps
+        print(f"[checkpoint] Saving every {cfg.trainer.checkpoint_every_n_steps} steps")
+    checkpoint_callback = pl_callbacks.ModelCheckpoint(**checkpoint_kwargs)
 
     # Distributed training params
     assert cfg.device == "cuda", "Only CUDA training is supported."
 
     device_count = torch.cuda.device_count()
     if device_count > 1:  # Multi-GPU training
-        strategy = "ddp"
+        if cfg.trainer.find_unused_parameters:
+            strategy = "ddp_find_unused_parameters_true"
+        else:
+            strategy = "ddp"
         sync_batchnorm = True
     else:
         strategy = "auto"
@@ -83,7 +118,7 @@ def construct_trainer(
     user_callbacks = [instantiate(cb_cfg) for cb_cfg in cfg.callbacks] if cfg.callbacks else []
 
     callbacks_list = [
-        # Checkpoint callback
+        # Checkpoint callback (local saving — always enabled)
         checkpoint_callback,
         # Model summary callback
         pl_callbacks.ModelSummary(max_depth=-1),
@@ -93,25 +128,34 @@ def construct_trainer(
         pl_callbacks.Timer(),
         # Progress bar for SLURM/non-TTY environments - prints training progress with it/s
         pl_callbacks.TQDMProgressBar(refresh_rate=10),
-        # Wandb selective checkpoint uploader
-        WandbSelectiveCheckpointUploader(
-            upload_best=True,
-            upload_last=True,
-            remove_local_after_upload=False,
-            keep_last_k_versions=2,
-        ),
-        # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
-        WandbCacheCleanupCallback(
-            max_cache_size="5GB",
-            every_n_epochs=2,
-            executable="wandb",
-            run_on_fit_start=True,
-            background=True,
-            timeout=60,
-        ),
         # Append user-defined callbacks
         *user_callbacks,
     ]
+
+    # Optionally add W&B checkpoint upload and cache cleanup callbacks
+    if cfg.trainer.wandb_checkpoint_upload:
+        callbacks_list.extend(
+            [
+                # Wandb selective checkpoint uploader
+                WandbSelectiveCheckpointUploader(
+                    upload_best=True,
+                    upload_last=True,
+                    remove_local_after_upload=False,
+                    keep_last_k_versions=2,
+                    phase_boundaries=_scheduler_phase_boundaries(cfg),
+                    mode=cfg.scheduler.mode,
+                ),
+                # Wandb cache cleanup callback to prevent W&B cache from growing too large (Disk Space OOM errors)
+                WandbCacheCleanupCallback(
+                    max_cache_size="5GB",
+                    every_n_epochs=2,
+                    executable="wandb",
+                    run_on_fit_start=True,
+                    background=True,
+                    timeout=60,
+                ),
+            ]
+        )
 
     if cfg.train.run_start_time is not None and cfg.train.run_time_limit_hours is not None:
         callbacks_list.append(
@@ -141,7 +185,8 @@ def construct_trainer(
         # Determinism
         deterministic=deterministic,
         benchmark=benchmark,
-        val_check_interval=cfg.trainer.val_check_interval,
+        val_check_interval=cfg.trainer.check_val_every_n_iterations,
+        check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         limit_val_batches=cfg.trainer.limit_val_batches,
         # Logging frequency
         log_every_n_steps=10,
