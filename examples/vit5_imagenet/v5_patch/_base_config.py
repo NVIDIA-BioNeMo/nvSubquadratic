@@ -243,6 +243,7 @@ def build_attention_net(patch_size: int) -> LazyConfig:
         image_size=IMAGE_SIZE,
         num_registers=num_registers,
         dropout_rate=0.0,
+        readout="cls",
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=_make_block_cfg(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
@@ -344,7 +345,7 @@ def build_hyena_net(patch_size: int) -> LazyConfig:
         image_size=IMAGE_SIZE,
         num_registers=num_registers,
         dropout_rate=0.0,
-        use_cls_token=True,
+        readout="cls",
         prepend_registers=True,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=block_cfg,

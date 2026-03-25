@@ -36,6 +36,9 @@ class ViT5ResidualBlock(nn.Module):
         register_start_idx: Start index of register tokens in the sequence.
             Default 1 for [CLS, regs, patches] layout; set to 0 for GAP models
             without CLS where registers are prepended directly.
+        grn_cfg: Optional LazyConfig for GlobalResponseNorm (ConvNeXt V2).
+            When provided, GRN is applied after the sequence mixer output
+            to promote inter-channel feature competition.
     """
 
     def __init__(
@@ -50,6 +53,7 @@ class ViT5ResidualBlock(nn.Module):
         register_pooling_cfg: LazyConfig | None = None,
         num_registers: int = 0,
         register_start_idx: int = 1,
+        grn_cfg: LazyConfig | None = None,
     ):
         """Instantiate norms, sequence mixer, MLP, and optional register pooling."""
         super().__init__()
@@ -77,6 +81,9 @@ class ViT5ResidualBlock(nn.Module):
             self.register_pooling = instantiate(register_pooling_cfg)
         else:
             self.register_pooling = None
+
+        # Optional GRN (Global Response Normalization) after mixer
+        self.grn = instantiate(grn_cfg) if grn_cfg is not None else None
 
     def flop_count(self, num_tokens: int, inference: bool = False) -> int:
         """Count FLOPs for one ViT-5 residual block.
@@ -155,6 +162,9 @@ class ViT5ResidualBlock(nn.Module):
             regs = x_normed[:, s : s + self.num_registers, :]  # [B, num_registers, C]
             mixer_kwargs["conditioning"] = self.register_pooling(regs)  # [B, C]
 
-        x = x + self.drop_path(self.ls_attn(self.sequence_mixer(x_normed, **mixer_kwargs)))
+        mixer_out = self.sequence_mixer(x_normed, **mixer_kwargs)
+        if self.grn is not None:
+            mixer_out = self.grn(mixer_out)
+        x = x + self.drop_path(self.ls_attn(mixer_out))
         x = x + self.drop_path(self.ls_mlp(self.mlp(self.mlp_norm(x))))
         return x
