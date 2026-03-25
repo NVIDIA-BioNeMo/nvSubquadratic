@@ -129,15 +129,13 @@ class WELLRegressionWrapper(RegressionWrapper):
         # Process input
         model_input = self._process_batch_input(batch)  # [B, H, W, C_in]
 
-        # Get target - next timestep(s) after input
-        # The WELL dataset provides input and output in the batch
-        # For training, we typically predict 1 step ahead
-        # The formatter helps us extract the correct target
-        _, y_ref = self.formatter.process_input(batch)  # y_ref: [B, n_steps_output, H, W, C]
+        # Get target directly from batch (avoids redundant rearrange + nan_to_num
+        # that formatter.process_input() would do on input_fields)
+        y_ref = batch["output_fields"]  # [B, n_steps_output, *spatial, C]
 
         # For single-step prediction, squeeze time dimension
         if self.n_steps_output == 1:
-            target = y_ref[:, 0]  # [B, H, W, C]
+            target = y_ref[:, 0]  # [B, *spatial, C]
         else:
             target = y_ref  # Keep as is for multi-step
 

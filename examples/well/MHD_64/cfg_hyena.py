@@ -24,6 +24,7 @@ from nvsubquadratic.modules.residual_block import ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 PLACEHOLDER = None
@@ -145,7 +146,7 @@ def get_config() -> ExperimentConfig:
                     ),
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=NUM_HIDDEN_CHANNELS),
-                    apply_qk_norm=True,
+                    qk_norm_cfg=LazyConfig(L2Norm)(),
                     use_rope=False,
                 ),
                 init_method_in=small_init,

@@ -154,7 +154,6 @@ def get_config() -> ExperimentConfig:
         drop_path_rate=DROP_PATH_RATE,
         register_pooling_cfg=LazyConfig(RegisterPooling)(num_registers=NUM_REGISTERS),
         num_registers=NUM_REGISTERS,
-        register_start_idx=0,
     )
 
     config.net = LazyConfig(ViT5GeneralPurposeNet)(
