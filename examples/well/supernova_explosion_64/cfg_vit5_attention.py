@@ -1,4 +1,4 @@
-# examples/well/supernova_explosion_64/cfg_attention.py
+# examples/well/supernova_explosion_64/cfg_vit5_attention.py
 
 """Supernova ViT5-style attention config."""
 
