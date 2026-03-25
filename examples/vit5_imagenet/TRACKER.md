@@ -24,11 +24,9 @@ W&B project: [`implicit-long-convs/nvsubquadratic`](https://wandb.ai/implicit-lo
 
 All training configs share: ViT-5-Small (12 blocks, dim 384, patch 16, 224x224), LAMB lr=4e-3, wd=0.05, batch 2048, 800 epochs, cosine schedule, 5 warmup epochs, 3-Augment, Mixup 0.8 + CutMix 1.0, BCE loss, DropPath 0.05, LayerScale 1e-4, bf16-mixed.
 
-## Active runs (as of 2026-02-27)
+## Active runs (as of 2026-03-19)
 
-| Job ID | Job name          | Config                                   | W&B run | Node        | Status  | Epoch | val/loss | val/acc | it/s  |
-| ------ | ----------------- | ---------------------------------------- | ------- | ----------- | ------- | ----- | -------- | ------- | ----- |
-| 32158  | `vit5-dali-fused` | `vit5_small_pretrain_apex_dali_fused.py` | `ky33`  | b65c909e-38 | Running | ~316  | 0.994    | 74.5%   | ~12.4 |
+No active runs. All v3 experiments have completed. See v3 section below for results.
 
 ### v2 runs — Hyena mixer ablations (DALI fused + local NVMe)
 
@@ -159,7 +157,77 @@ tail -f logs/<NAME>_<JOBID>.out
 tail -f logs/<NAME>_<JOBID>.err
 ```
 
+______________________________________________________________________
+
+## v3 — FiLM-conditioned SIREN kernels + Muon optimizer
+
+### Architecture
+
+v3 extends the gated Hyena CLS-row architecture with **input-dependent SIREN kernels via FiLM conditioning**. Each block extracts register tokens from the normalized input, pools them via a learnable weighted average (`RegisterPooling`), and passes the conditioning vector through a `KernelFiLMGenerator` that modulates every SIREN hidden layer via FiLM (`γ * h + β`). The FiLM layer is also applied after the first sine (positional encoding), giving 3 FiLM layers total per block.
+
+Key FiLM parameters:
+
+- **Parameterization**: `direct` (`γ * h + β`) vs `residual` (`(1 + γ) * h + β`)
+- **Initialization**: `identity` (output weights = 0, starts as identity) vs `small_random`
+- **Weight decay**: can be set independently from the global wd via `no_weight_decay`
+
+### Config files
+
+| Config                                                        | Optimizer      | FiLM                                                           | Notes                |
+| ------------------------------------------------------------- | -------------- | -------------------------------------------------------------- | -------------------- |
+| `v3/vit5_small_pretrain_hyena_cls_row_gated_film_ema.py`      | Apex FusedLAMB | direct, identity, wd=5e-3                                      | LAMB + FiLM baseline |
+| `v3/vit5_small_pretrain_hyena_cls_row_gated_film_ema_muon.py` | MuonAdamW      | residual, small_random, wd=5e-3 (defaults; overridden via CLI) | Muon + FiLM          |
+
+### Completed runs — LAMB baselines
+
+| W&B ID                                                                          | Config   | Optimizer | FiLM param | FiLM init | FiLM wd | Global wd | LR   | Epoch | Best Val Acc | Test Acc  | Val Loss | Notes                               |
+| ------------------------------------------------------------------------------- | -------- | --------- | ---------- | --------- | ------- | --------- | ---- | ----- | ------------ | --------- | -------- | ----------------------------------- |
+| [`peeaqdkq`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/peeaqdkq) | film_ema | LAMB      | direct     | identity  | 5e-3    | 0.05      | 4e-3 | 800   | **81.8%**    | **81.8%** | 0.744    | Original LAMB+FiLM baseline         |
+| [`e1du5yky`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/e1du5yky) | film_ema | LAMB      | direct     | identity  | 0.05    | 0.05      | 4e-3 | 800   | 81.5%        | 81.5%     | 0.773    | Replicate with FiLM using global wd |
+
+### Completed runs — Muon optimizer sweep
+
+All Muon runs use MuonAdamW (Muon for 2D hidden weights, AdamW for rest), `direct` FiLM parameterization, `identity` init, `film_after_pos_embed=True`, and CLI overrides from the Muon config.
+
+| W&B ID                                                                          | LR   | Global wd | FiLM wd | Epoch | Best Val Acc | Test Acc  | Val Loss | Train Acc | Notes                           |
+| ------------------------------------------------------------------------------- | ---- | --------- | ------- | ----- | ------------ | --------- | -------- | --------- | ------------------------------- |
+| [`x3hdb062`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/x3hdb062) | 1e-3 | 0.05      | 0.05    | 800   | **79.0%**    | **79.0%** | 1.030    | 72.0%     | Best Muon at wd=0.05            |
+| [`jxwof131`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jxwof131) | 8e-4 | 0.05      | 0.05    | 800   | 78.6%        | 78.6%     | 1.079    | 71.3%     |                                 |
+| [`8r6y3wnh`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/8r6y3wnh) | 6e-4 | 0.05      | 0.05    | 800   | 78.3%        | 78.3%     | 1.118    | 72.1%     |                                 |
+| [`mrabs1x8`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/mrabs1x8) | 4e-4 | 0.05      | 0.05    | 800   | 77.6%        | 77.6%     | 1.150    | 71.7%     |                                 |
+| [`tnaj1e0b`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/tnaj1e0b) | 1e-3 | **0.1**   | 0.05    | 800   | **79.9%**    | **79.9%** | 0.902    | 69.8%     | Stronger wd → best Muon overall |
+| [`nrhmo8fr`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/nrhmo8fr) | 2e-3 | 0.05      | 0.05    | 288   | 76.7%        | —         | 0.939    | 52.3%     | Hung (NCCL), cancelled          |
+
+### Cancelled / diverged runs
+
+| W&B ID                  | Config                               | Notes                                                 |
+| ----------------------- | ------------------------------------ | ----------------------------------------------------- |
+| `vfyl0uax`              | Muon lr=4e-3, residual, small_random | Plateaued early, wrong FiLM param                     |
+| `oqx4vbyl`              | Muon, residual, small_random         | Diverged                                              |
+| `dwi2vigx`              | LAMB, film_after_sin, wd=5e-3        | Diverged                                              |
+| `nz62nqdl`              | film_on_pos_embed                    | Diverged; FiLM showed no input-dependent conditioning |
+| Various `film_posemb_*` | film_on_pos_embed variants           | All diverged or showed zero batch variation           |
+
+### Key findings
+
+1. **LAMB vs Muon gap**: LAMB reaches 81.5–81.8% test acc; best Muon reaches 79.0% (wd=0.05) or 79.9% (wd=0.1). Gap of ~2%.
+1. **Muon overfits more**: At matched train accuracy (~69–72%), Muon has significantly higher val loss (0.9–1.1) vs LAMB (0.74–0.77). LAMB's layerwise-adaptive weight decay provides stronger effective regularization.
+1. **Higher wd helps Muon**: Increasing global wd from 0.05 → 0.1 (with FiLM at 0.05) improved best val acc from 79.0% → 79.9% and dropped val loss from 1.03 → 0.90. Train acc dropped from 72.0% → 69.8%, confirming reduced overfitting.
+1. **Muon LR sweet spot**: 1e-3 is the best LR. Lower LRs (8e-4, 6e-4, 4e-4) underperform despite 800 epochs.
+1. **FiLM parameterization**: `direct` + `identity` init is the stable configuration. `residual` + `small_random` caused instability with Muon.
+1. **FiLM on pos_embed is broken**: `film_on_pos_embed` showed zero batch variation — the conditioning signal was lost. `film_after_pos_embed` (modulating after the first sine) works correctly.
+
+______________________________________________________________________
+
+## v3 Finetuning — FiLM checkpoint ablations
+
+See dedicated tracker: [`v3/ft_ablation/TRACKER.md`](v3/ft_ablation/TRACKER.md)
+
+______________________________________________________________________
+
 ## TODOs
 
 - [ ] **Remove `ViT5HyenaAdapter`**: The adapter only reshapes `[B, T, C]` ↔ `[B, H, W, C]` around the `QKVSequenceMixer`, but `QKVSequenceMixer` (and all norms, MLP, LayerScale, DropPath in the residual block) already accept `[B, *spatial_dims, C]`. If the classification net reshapes to `[B, H, W, C]` before the blocks and back after, the adapter is unnecessary and can be deleted entirely.
 - [ ] **Fill in completed run final metrics**: Check W&B for final val/loss and val/acc of generation-1 runs (30923–31003) once confirmed.
+- [ ] **Close Muon-LAMB gap**: Try wd=0.15 or 0.2 for Muon, or explore other regularization (drop path, stochastic depth).
+- [ ] **FiLM wd ablation**: Try lower FiLM wd (0.01) to allow stronger conditioning while keeping global wd high.

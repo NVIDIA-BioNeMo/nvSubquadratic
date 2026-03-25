@@ -413,6 +413,11 @@ class SIRENKernelND(torch.nn.Module):
         hidden_omega_0: Frequency scaling for subsequent SIREN layers.
         film_cfg: Optional LazyConfig for KernelFiLMGenerator. When provided, enables
             input-dependent FiLM conditioning of all hidden SIREN layers.
+        film_after_pos_embed: If True, the first FiLM (gamma, beta) pair modulates
+            the positional embedding *after* the sine activation (i.e. scales/shifts
+            the ``sin(omega_0 * x)`` output).  Requires
+            ``embedding_dim == mlp_hidden_dim`` and one extra FiLM layer in ``film_cfg``
+            (i.e. ``num_film_layers = num_layers - 1 + 1 = num_layers``).
     """
 
     def __init__(
@@ -427,9 +432,17 @@ class SIRENKernelND(torch.nn.Module):
         use_bias: bool,
         hidden_omega_0: float = 1.0,
         film_cfg: LazyConfig | None = None,
+        film_after_pos_embed: bool = False,
     ):
         """Build SIREN MLP and optional FiLM conditioner."""
         super().__init__()
+        self.film_after_pos_embed = film_after_pos_embed
+
+        if film_after_pos_embed:
+            assert embedding_dim == mlp_hidden_dim, (
+                f"film_after_pos_embed requires embedding_dim == mlp_hidden_dim, "
+                f"got {embedding_dim} != {mlp_hidden_dim}"
+            )
 
         self.out_dim = out_dim
         self.data_dim = data_dim
@@ -471,17 +484,106 @@ class SIRENKernelND(torch.nn.Module):
         with torch.no_grad():
             self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))  # Modulation by expected kernel size.
 
-        # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear)
+        # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear weights)
         # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.
         for linear in self.hidden_linears:
             for param in linear.parameters():
                 param._no_weight_decay = True
+        if self.out_linear.bias is not None:
+            self.out_linear.bias._no_weight_decay = True
 
         # Optional FiLM conditioning
         if film_cfg is not None:
             self.film_generator = instantiate(film_cfg)
+            expected_film_layers = len(self.hidden_linears) + int(self.film_after_pos_embed)
+            if self.film_generator.num_film_layers != expected_film_layers:
+                raise ValueError(
+                    f"film_generator.num_film_layers={self.film_generator.num_film_layers} "
+                    f"does not match expected {expected_film_layers} "
+                    f"(len(hidden_linears)={len(self.hidden_linears)} + "
+                    f"int(film_after_pos_embed)={int(self.film_after_pos_embed)})"
+                )
         else:
             self.film_generator = None
+
+    def flop_count(self, grid_lens: tuple[int, ...], inference: bool = False) -> int:
+        """Count FLOPs for SIREN kernel generation on the positional grid.
+
+        At ``inference=True`` with no FiLM generator, returns 0 because the
+        kernel is input-independent and can be precomputed once and cached.
+        When a ``film_generator`` exists, the kernel is input-dependent (via
+        register-conditioned FiLM modulation) and must be recomputed every
+        forward pass regardless of the inference flag.
+
+        Let G = prod(2 * L_i - 1 for L_i in grid_lens) = total grid points.
+
+        FLOPs breakdown:
+          1. Positional embedding (``SIRENPositionalEmbeddingND``):
+             Linear(``self.data_dim``, ``self.embedding_dim``) on G points:
+               2 * G * data_dim * embedding_dim
+             + sin activation: G * embedding_dim
+
+          2. Hidden SIREN layers (``len(self.hidden_linears)`` = num_layers - 1):
+             First:  Linear(embedding_dim, mlp_hidden_dim) + sin
+               2 * G * embedding_dim * mlp_hidden_dim  +  G * mlp_hidden_dim
+             Rest:   Linear(mlp_hidden_dim, mlp_hidden_dim) + sin  (each)
+               2 * G * mlp_hidden_dim * mlp_hidden_dim  +  G * mlp_hidden_dim
+
+          3. Output linear:
+             Linear(``self.mlp_hidden_dim``, ``self.out_dim``) on G points:
+               2 * G * mlp_hidden_dim * out_dim
+
+          4. FiLM conditioning (only when ``self.film_generator`` is not None):
+             a. FiLM generator MLP:  ``self.film_generator.flop_count()``
+             b. Per modulated layer:  gamma * h + beta = 2 * G * mlp_hidden_dim
+                Applied to each hidden layer, plus the positional embedding
+                when ``self.film_after_pos_embed`` is True.
+                (Note: film_after_pos_embed requires embedding_dim == mlp_hidden_dim.)
+
+        Args:
+            grid_lens: Spatial extents passed to the positional embedding.
+                The kernel grid has size ``(2 * L - 1)`` per dimension.
+            inference: If True and no FiLM generator, return 0 (cacheable kernel).
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        has_film = self.film_generator is not None
+        if inference and not has_film:
+            return 0
+
+        # Grid size: product of (2*L - 1) for each dimension
+        G = 1
+        for L in grid_lens:
+            G *= 2 * L - 1
+
+        flops = 0
+
+        # 1. Positional embedding: Linear(data_dim -> embedding_dim) + sin
+        flops += 2 * G * self.data_dim * self.embedding_dim
+        flops += G * self.embedding_dim
+
+        # 2. Hidden SIREN layers (iterate to get exact in/out dimensions)
+        in_dim = self.embedding_dim
+        for linear in self.hidden_linears:
+            out_dim = linear.out_features
+            flops += 2 * G * in_dim * out_dim  # Linear
+            flops += G * out_dim  # sin activation
+            in_dim = out_dim
+
+        # 3. Output linear
+        flops += 2 * G * self.mlp_hidden_dim * self.out_dim
+
+        # 4. FiLM conditioning
+        if has_film:
+            flops += self.film_generator.flop_count()
+            num_modulated = len(self.hidden_linears)
+            if self.film_after_pos_embed:
+                num_modulated += 1
+            # gamma * h + beta = 2 elementwise ops per grid point per hidden_dim
+            flops += num_modulated * 2 * G * self.mlp_hidden_dim
+
+        return flops
 
     def forward(
         self, seq_lens: tuple[int, ...], conditioning: torch.Tensor | None = None
@@ -499,20 +601,28 @@ class SIRENKernelND(torch.nn.Module):
             tuple: (kernel, grid) where kernel has shape [1|B, *spatial, out_dim]
                 and grid has shape [1, *spatial, data_dim].
         """
+        # Generate FiLM parameters if conditioning is available
+        film_params = None
+        film_offset = 0
+        if conditioning is not None and self.film_generator is not None:
+            film_params = self.film_generator(conditioning)  # list of (gamma, beta), each [B, hidden_dim]
+
         # Generate positional embeddings and corresponding grid values
         pos_emb, grid = self.positional_embedding(seq_lens)  # [1, *spatial, emb], [1, *spatial, data_dim]
 
-        # Generate FiLM parameters if conditioning is available
-        film_params = None
-        if conditioning is not None and self.film_generator is not None:
-            film_params = self.film_generator(conditioning)  # list of (gamma, beta), each [B, hidden_dim]
+        # Optionally apply FiLM *after* the positional embedding sine
+        if self.film_after_pos_embed and film_params is not None:
+            gamma, beta = film_params[0]
+            shape = [gamma.shape[0]] + [1] * self.data_dim + [gamma.shape[-1]]
+            pos_emb = gamma.view(*shape) * pos_emb + beta.view(*shape)
+            film_offset = 1
 
         # Forward through hidden layers with optional FiLM
         h = pos_emb
         for i, linear in enumerate(self.hidden_linears):
             h = self.sine(linear(h))
             if film_params is not None:
-                gamma, beta = film_params[i]
+                gamma, beta = film_params[i + film_offset]
                 # Reshape [B, hidden_dim] -> [B, 1, ..., 1, hidden_dim] for broadcasting over spatial dims
                 shape = [gamma.shape[0]] + [1] * self.data_dim + [gamma.shape[-1]]
                 gamma = gamma.view(*shape)

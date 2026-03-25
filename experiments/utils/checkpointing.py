@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 from typing import Dict, Literal
 
@@ -141,6 +142,64 @@ class StripCompiledPrefix:
         if model is None:
             return state_dict
         return align_compiled_keys(state_dict, set(model.state_dict().keys()))
+
+
+class DropKeysFromCheckpoint:
+    """Callback that removes matching keys from the state dict before loading.
+
+    Use this to re-initialize specific layers (e.g., the classification head)
+    from scratch instead of loading pretrained weights.  Requires
+    ``strict=False`` on the checkpoint config so that missing keys are
+    tolerated.
+
+    Args:
+        prefixes: Tuple of key prefixes to drop (e.g., ``("network.out_proj",)``).
+    """
+
+    def __init__(self, prefixes: tuple[str, ...] = ()):  # noqa: D107
+        self.prefixes = prefixes
+
+    def __call__(self, state_dict, model=None, **_kwargs):  # noqa: D102
+        dropped = []
+        new_sd = {}
+        for k, v in state_dict.items():
+            if any(k.startswith(p) or k.replace("._orig_mod.", ".").startswith(p) for p in self.prefixes):
+                dropped.append(k)
+            else:
+                new_sd[k] = v
+        if dropped:
+            print(
+                f"[DropKeysFromCheckpoint] Dropped {len(dropped)} keys: {dropped[:10]}{'...' if len(dropped) > 10 else ''}"
+            )
+        return new_sd
+
+
+class RemapSirenSequentialKeys:
+    """Remap old SIREN ``kernel_network.{2*i}`` keys to ``hidden_linears.{i}``.
+
+    Older SIRENKernelND used an ``nn.Sequential`` called ``kernel_network``
+    where even-indexed entries are Linear layers and odd-indexed are Sine
+    activations.  The current code stores only the Linears in an
+    ``nn.ModuleList`` called ``hidden_linears``.
+    """
+
+    _RE = re.compile(r"(\.kernel\.kernel_network)\.(\d+)\.(weight|bias)$")
+
+    def __call__(self, state_dict, **_kwargs):  # noqa: D102
+        out = {}
+        remapped = 0
+        for k, v in state_dict.items():
+            m = self._RE.search(k)
+            if m:
+                idx = int(m.group(2)) // 2
+                new_key = k[: m.start()] + f".kernel.hidden_linears.{idx}.{m.group(3)}"
+                out[new_key] = v
+                remapped += 1
+            else:
+                out[k] = v
+        if remapped:
+            print(f"[RemapSirenSequentialKeys] Remapped {remapped} kernel_network keys to hidden_linears")
+        return out
 
 
 def _compute_overlapping_slices(target_shape, source_shape):

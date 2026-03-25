@@ -20,25 +20,56 @@ from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.schedulers import ResumableSequentialLR
 
 
-def construct_optimizer(
-    model,
-    optimizer_cfg: LazyConfig,
-):
-    """Constructs an optimizer for a given model given a configuration.
+def _get_layer_index(name: str, num_blocks: int) -> int:
+    """Map a parameter name to a layer index for LLRD.
 
-    Args:
-        model: a list of parameters to be trained
-        optimizer_cfg (LazyConfig): The optimizer configuration.
-
-    Returns:
-        torch.optim.Optimizer: The constructed optimizer.
+    Convention:
+      - 0: patch_embed, cls_token, pos_embed, reg_token (embedding layer)
+      - 1..num_blocks: blocks.0 .. blocks.<num_blocks-1>
+      - num_blocks + 1: out_norm, out_proj (classification head)
     """
-    # Create parameter groups based on weight decay flag
-    # IMPORTANT: Avoid duplicates by iterating parameters ONCE at the top level
-    # and tracking by object identity (id(param)).
-    wd_params: list[torch.nn.Parameter] = []
-    no_wd_params: list[torch.nn.Parameter] = []
+    if any(name.startswith(f"network.{prefix}") for prefix in ("patch_embed", "cls_token", "pos_embed", "reg_token")):
+        return 0
+    if "network.blocks." in name:
+        block_str = name.split("network.blocks.")[1].split(".")[0]
+        return int(block_str) + 1
+    if any(name.startswith(f"network.{prefix}") for prefix in ("out_norm", "out_proj")):
+        return num_blocks + 1
+    # Fallback: treat unknown params as head-level (full LR)
+    return num_blocks + 1
+
+
+def _build_param_groups(
+    model,
+    default_weight_decay: float,
+    layer_decay: float | None = None,
+    num_blocks: int | None = None,
+) -> list[dict]:
+    """Partition model parameters into optimizer groups.
+
+    Supports weight-decay grouping and optional layer-wise learning rate
+    decay (LLRD).
+
+    Weight-decay modes per parameter (set via custom attributes):
+      - ``_no_weight_decay = True``  -> weight_decay = 0
+      - ``_weight_decay = <float>``  -> weight_decay = <float> (custom group)
+      - neither                      -> weight_decay = *default_weight_decay*
+
+    A warning is emitted for any parameter with ``ndim <= 1`` (biases, norm
+    weights, scales) that ends up with non-zero weight decay without an
+    explicit ``_no_weight_decay`` flag.  This helps catch modules that
+    forgot to mark their bias/norm parameters.
+
+    When *layer_decay* is not None, each group also receives a per-layer
+    ``lr`` scale factor so that deeper layers (closer to the head) get
+    higher learning rates.  The scale for layer *i* out of *N* total
+    layers is ``layer_decay ** (N - i)``.
+    """
+    if layer_decay is not None and num_blocks is None:
+        raise ValueError("num_blocks must be set in the config when layer_decay (LLRD) is enabled.")
     seen_param_ids: set[int] = set()
+    # group key = (wd_value, lr_scale) -> list of params
+    groups: dict[tuple[float, float], list[torch.nn.Parameter]] = {}
 
     for name, param in model.named_parameters(recurse=True):
         if not param.requires_grad:
@@ -47,23 +78,71 @@ def construct_optimizer(
         if pid in seen_param_ids:
             continue
         seen_param_ids.add(pid)
-        if getattr(param, "_no_weight_decay", False):
-            no_wd_params.append(param)
-        else:
-            wd_params.append(param)
 
-    # Safety: ensure no overlaps and no duplicates
-    assert len(seen_param_ids) == len(set(map(id, wd_params))) + len(set(map(id, no_wd_params))), (
+        # Determine weight decay
+        custom_wd = getattr(param, "_weight_decay", None)
+        if custom_wd is not None:
+            wd = custom_wd
+        elif getattr(param, "_no_weight_decay", False):
+            wd = 0.0
+        else:
+            wd = default_weight_decay
+
+        if param.ndim <= 1 and wd > 0 and not getattr(param, "_no_weight_decay", False):
+            warnings.warn(
+                f"Parameter '{name}' (shape {tuple(param.shape)}) has ndim <= 1 "
+                f"and receives weight_decay={wd} without an explicit "
+                f"_no_weight_decay flag. Set _no_weight_decay=True on this "
+                f"parameter if it should be excluded from weight decay.",
+                stacklevel=2,
+            )
+
+        # Determine LR scale
+        if layer_decay is not None:
+            num_layers = num_blocks + 2  # embedding + blocks + head
+            layer_idx = _get_layer_index(name, num_blocks)
+            lr_scale = layer_decay ** (num_layers - 1 - layer_idx)
+        else:
+            lr_scale = 1.0
+
+        key = (wd, lr_scale)
+        groups.setdefault(key, []).append(param)
+
+    total_grouped = sum(len(ps) for ps in groups.values())
+    assert len(seen_param_ids) == total_grouped, (
         "Optimizer param group mismatch: duplicate parameters across groups or some trainable "
         "parameters were not assigned. Every requires_grad=True parameter must appear in exactly one group."
     )
 
-    # Create parameter groups with appropriate weight decay
-    parameters = [
-        {"params": wd_params, "weight_decay": optimizer_cfg.weight_decay},
-        {"params": no_wd_params, "weight_decay": 0.0},
-    ]
+    parameters = []
+    for wd, lr_scale in sorted(groups.keys(), key=lambda k: (k[1], k[0])):
+        group = {"params": groups[(wd, lr_scale)], "weight_decay": wd}
+        if layer_decay is not None:
+            group["lr_scale"] = lr_scale
+        parameters.append(group)
 
+    return parameters
+
+
+def construct_optimizer(
+    model,
+    optimizer_cfg: LazyConfig,
+    layer_decay: float | None = None,
+    num_blocks: int | None = None,
+):
+    """Constructs an optimizer for a given model given a configuration.
+
+    Args:
+        model: a list of parameters to be trained
+        optimizer_cfg (LazyConfig): The optimizer configuration.
+        layer_decay: If set, apply layer-wise learning rate decay (LLRD).
+            Each layer gets ``lr * layer_decay^(N - layer_index)``.
+        num_blocks: Number of transformer blocks (for LLRD layer counting).
+            Required when *layer_decay* is set.
+
+    Returns:
+        torch.optim.Optimizer: The constructed optimizer.
+    """
     # OmegaConf has problems with non-serializable objects. To instantiate the optimizer, we need to do the following:
     # 1. Convert the optimizer config to a dictionary
     # 2. Import the optimizer class
@@ -78,7 +157,21 @@ def construct_optimizer(
     module = __import__(module_path, fromlist=[class_name])
     _optimizer_cls = getattr(module, class_name)
 
-    # 3. Instantiate the optimizer with wd=0. Weight decay is calculated over the generated kernels.
+    # 3. Build parameter groups and instantiate
+    parameters = _build_param_groups(
+        model,
+        _optim_cfg.get("weight_decay", 0.0),
+        layer_decay=layer_decay,
+        num_blocks=num_blocks,
+    )
+
+    # Apply per-group LR scales (LLRD) to the base learning rate
+    base_lr = _optim_cfg.get("lr", 1e-3)
+    if layer_decay is not None:
+        for group in parameters:
+            scale = group.pop("lr_scale", 1.0)
+            group["lr"] = base_lr * scale
+
     _optim_cfg["params"] = parameters
     optimizer = _optimizer_cls(**_optim_cfg)
 
@@ -237,6 +330,8 @@ class LightningWrapperBase(pl.LightningModule):
         # Save optimizer & scheduler parameters
         self.optimizer_cfg = cfg.optimizer
         self.scheduler_cfg = cfg.scheduler
+        self.layer_decay = getattr(cfg, "layer_decay", None)
+        self.num_blocks = getattr(cfg, "num_blocks", None)
 
         # Explicitly define whether we are in distributed mode.
         self.distributed = torch.cuda.device_count() > 1
@@ -328,7 +423,12 @@ class LightningWrapperBase(pl.LightningModule):
             return
 
         try:
-            reference_optim_dict = construct_optimizer(self, self.optimizer_cfg)
+            reference_optim_dict = construct_optimizer(
+                self,
+                self.optimizer_cfg,
+                layer_decay=self.layer_decay,
+                num_blocks=self.num_blocks,
+            )
             ref_group = reference_optim_dict.param_groups[0]
         except Exception:
             return
@@ -422,6 +522,8 @@ class LightningWrapperBase(pl.LightningModule):
         optimizer = construct_optimizer(
             model=self,
             optimizer_cfg=self.optimizer_cfg,
+            layer_decay=self.layer_decay,
+            num_blocks=self.num_blocks,
         )
         scheduler = construct_scheduler(
             optimizer=optimizer,

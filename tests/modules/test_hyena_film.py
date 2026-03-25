@@ -25,7 +25,7 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.film import KernelFiLMGenerator, RegisterPooling
+from nvsubquadratic.modules.film import KernelFiLMGenerator, RegisterCompressConcat, RegisterPooling
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
@@ -144,6 +144,74 @@ class TestRegisterPooling:
         torch.testing.assert_close(out, regs[:, 0, :], atol=1e-4, rtol=1e-3)
 
 
+# ─── 1b. RegisterCompressConcat Tests ────────────────────────────────────────
+
+
+class TestRegisterCompressConcat:
+    """Tests for :class:`RegisterCompressConcat` — compress and concatenate register tokens.
+
+    ``RegisterCompressConcat`` maps ``[B, num_registers, hidden_dim]`` to
+    ``[B, num_registers * compressed_dim]`` via a shared linear compression
+    followed by flattening.
+    """
+
+    def test_output_shape(self, device: torch.device) -> None:
+        """Output is ``[B, num_registers * compressed_dim]``."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32).to(device)
+        regs = torch.randn(2, 14, 384, device=device)
+        out = pool(regs)
+        assert out.shape == (2, 14 * 32)
+
+    def test_out_dim_property(self) -> None:
+        """``out_dim`` matches ``num_registers * compressed_dim``."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32)
+        assert pool.out_dim == 14 * 32
+
+    def test_gradient_flow(self, device: torch.device) -> None:
+        """Gradients reach the input registers and the compression weights."""
+        pool = RegisterCompressConcat(num_registers=4, hidden_dim=64, compressed_dim=16).to(device)
+        regs = torch.randn(2, 4, 64, device=device, requires_grad=True)
+        out = pool(regs)
+        out.sum().backward()
+        assert regs.grad is not None
+        assert pool.compress.weight.grad is not None
+
+    def test_no_bias(self) -> None:
+        """Compression linear has no bias (intentional — FiLM MLP has its own)."""
+        pool = RegisterCompressConcat(num_registers=4, hidden_dim=64, compressed_dim=16)
+        assert pool.compress.bias is None
+
+    def test_single_register(self, device: torch.device) -> None:
+        """With one register, output equals the compressed single token."""
+        pool = RegisterCompressConcat(num_registers=1, hidden_dim=64, compressed_dim=16).to(device)
+        regs = torch.randn(2, 1, 64, device=device)
+        out = pool(regs)
+        expected = pool.compress(regs).squeeze(1)
+        torch.testing.assert_close(out, expected)
+
+    def test_different_registers_different_output_slices(self, device: torch.device) -> None:
+        """Each register contributes a distinct slice of the output."""
+        pool = RegisterCompressConcat(num_registers=4, hidden_dim=64, compressed_dim=16).to(device)
+        regs = torch.randn(2, 4, 64, device=device)
+        out = pool(regs)
+        # Each register's contribution is a contiguous slice of compressed_dim
+        for i in range(4):
+            expected_slice = pool.compress(regs[:, i, :])
+            torch.testing.assert_close(out[:, i * 16 : (i + 1) * 16], expected_slice)
+
+    def test_shared_linear(self) -> None:
+        """A single ``compress`` linear is shared across all registers (weight only, no bias)."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32)
+        linear_params = list(pool.parameters())
+        assert len(linear_params) == 1
+
+    def test_flop_count(self) -> None:
+        """FLOP count matches R * 2 * hidden_dim * compressed_dim."""
+        pool = RegisterCompressConcat(num_registers=14, hidden_dim=384, compressed_dim=32)
+        expected = 14 * 2 * 384 * 32
+        assert pool.flop_count(384) == expected
+
+
 # ─── 2. KernelFiLMGenerator Tests ───────────────────────────────────────────
 
 
@@ -152,7 +220,9 @@ class TestKernelFiLMGenerator:
 
     Maps ``[B, cond_dim]`` conditioning to a list of ``(gamma, beta)`` tuples
     (one per SIREN hidden layer).  At initialization, ``gamma=1, beta=0``
-    (identity modulation) thanks to zero-initialized output weights.
+    (identity modulation) thanks to zero-initialized output weights.  The
+    output-layer bias (encoding the identity point) is always excluded from
+    weight decay.
     """
 
     def test_output_structure(self, device: torch.device) -> None:
@@ -208,7 +278,7 @@ class TestKernelFiLMGenerator:
         conditioning = torch.randn(2, 64, device=device)
         film_params = gen(conditioning)
         assert len(film_params) == 1
-        gamma, _beta = film_params[0]
+        gamma, beta = film_params[0]
         assert gamma.shape == (2, 8)
 
     def test_bottleneck_dim(self) -> None:
@@ -234,6 +304,34 @@ class TestKernelFiLMGenerator:
         p1 = gen(c1)
         p2 = gen(c2)
         assert not torch.allclose(p1[0][0], p2[0][0], atol=1e-6)
+
+    @pytest.mark.parametrize("no_weight_decay", [False, True, 1e-3])
+    def test_all_biases_always_no_weight_decay(self, no_weight_decay: bool | float) -> None:
+        """Every bias in the MLP has ``_no_weight_decay=True`` regardless of setting."""
+        gen = KernelFiLMGenerator(
+            cond_dim=64,
+            kernel_hidden_dim=8,
+            num_film_layers=2,
+            no_weight_decay=no_weight_decay,
+        )
+        for module in gen.mlp.modules():
+            if hasattr(module, "bias") and module.bias is not None:
+                assert getattr(module.bias, "_no_weight_decay", False) is True, (
+                    f"bias of {module} missing _no_weight_decay"
+                )
+
+    @pytest.mark.parametrize("no_weight_decay", [False, True, 1e-3])
+    def test_biases_no_custom_weight_decay(self, no_weight_decay: bool | float) -> None:
+        """No bias has a ``_weight_decay`` attribute (even with float WD)."""
+        gen = KernelFiLMGenerator(
+            cond_dim=64,
+            kernel_hidden_dim=8,
+            num_film_layers=2,
+            no_weight_decay=no_weight_decay,
+        )
+        for module in gen.mlp.modules():
+            if hasattr(module, "bias") and module.bias is not None:
+                assert not hasattr(module.bias, "_weight_decay"), f"bias of {module} should not have _weight_decay"
 
 
 # ─── 3. ViT5ResidualBlock with FiLM conditioning ────────────────────────────

@@ -300,6 +300,112 @@ class CKConvND(torch.nn.Module):
             f"fft_backend={self.fft_backend!r}"
         )
 
+    def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
+        """Count FLOPs for CKConv: kernel generation + FFT convolution.
+
+        Two phases:
+
+        **Phase 1 — Kernel generation** (via SIREN MLP):
+          Delegated to ``self.kernel.flop_count(grid_lens, inference)``.
+          At ``inference=True`` without FiLM, the kernel is input-independent
+          and can be precomputed, so this returns 0.
+
+        **Phase 2 — FFT-based depthwise convolution** (C = ``self.hidden_dim``):
+          The convolution is computed in the frequency domain.  Padded signal
+          sizes Np_i depend on the padding mode:
+            - ``"zero"`` non-causal ("same"-mode):
+                Np_i = min(s_i + (k_i + 1) // 2,  2 * s_i)
+              Only half the kernel width of extra padding is needed beyond
+              the input size, because the output is cropped back to input
+              size (centered crop).  Matches ``fftconv.py`` line 624-628.
+            - ``"zero"`` causal (1D only):
+                Np_i = min(s_i + k_i,  2 * s_i)
+              Full linear convolution length; output is tail-cropped.
+            - ``"circular"``: Np_i = s_i  (wrap-around, no extra padding)
+
+          A separable N-D FFT on a grid of size (Np_1, ..., Np_d) costs:
+            5 * prod(Np) * sum(log2(Np_i))  real FLOPs per channel,
+          based on the radix-2 Cooley-Tukey decomposition where each butterfly
+          operation costs ~5 real FLOPs (1 complex multiply ≈ 4 real muls +
+          2 real adds, minus shared twiddle-factor optimizations → ~5 ops).
+          Note: the implementation uses ``rfft`` (real-to-complex), which is
+          ~2x cheaper than a full complex FFT; the 5N log N formula is a
+          conservative (upper-bound) estimate consistent with standard
+          vision-paper conventions.
+
+          Three FFTs are needed: forward FFT of input, forward FFT of kernel,
+          and inverse FFT of the product.  At ``inference=True`` without FiLM,
+          the kernel FFT is precomputed and cached, reducing to 2 FFTs.
+
+          Pointwise complex multiply in the frequency domain:
+            6 * C * prod(Np)  (4 real muls + 2 real adds for (a+bi)(c+di)).
+
+          Shortcut (skip connection): C * prod(spatial_dims)  (elementwise).
+
+        Args:
+            spatial_dims: Spatial dimensions of the input signal, e.g. (H, W).
+            inference: If True and kernel has no FiLM, skip kernel generation
+                and kernel FFT (both are precomputable and cached).
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        C = self.hidden_dim
+        has_film = getattr(self.kernel, "film_generator", None) is not None
+
+        # Determine kernel grid_lens (same logic as forward)
+        if self.grid_type == "single":
+            grid_lens = tuple((s + 1) // 2 for s in spatial_dims)
+        else:
+            grid_lens = tuple(spatial_dims)
+
+        # Kernel spatial sizes: the SIREN generates on a (2*L - 1) grid per dim
+        kernel_sizes = tuple(2 * gl - 1 for gl in grid_lens)
+
+        # For causal 1D, kernel is cropped to second half
+        if self.is_causal:
+            kernel_sizes = tuple(ks // 2 + 1 for ks in kernel_sizes)
+
+        flops = 0
+
+        # Phase 1: Kernel generation
+        flops += self.kernel.flop_count(grid_lens, inference=inference)
+
+        # Phase 2: FFT convolution
+        # Padded sizes match the actual fftconv implementations (fftconv.py):
+        #   non-causal "same": min(s + (k+1)//2, 2*s)
+        #   causal:            min(s + k, 2*s)
+        #   circular:          s  (no extra padding)
+        if self.fft_padding == "circular":
+            padded_dims = tuple(spatial_dims)
+        elif self.is_causal:
+            padded_dims = tuple(min(s + k, 2 * s) for s, k in zip(spatial_dims, kernel_sizes))
+        else:
+            padded_dims = tuple(min(s + (k + 1) // 2, 2 * s) for s, k in zip(spatial_dims, kernel_sizes))
+
+        prod_padded = 1
+        for p in padded_dims:
+            prod_padded *= p
+        log2_sum = sum(math.log2(max(p, 1)) for p in padded_dims)
+
+        # 3 FFTs (input, kernel, inverse) normally;
+        # 2 FFTs (input, inverse) at inference without FiLM (kernel FFT cached).
+        num_ffts = 2 if (inference and not has_film) else 3
+        fft_flops = num_ffts * 5 * C * prod_padded * log2_sum
+
+        # Pointwise complex multiply in frequency domain
+        cmul_flops = 6 * C * prod_padded
+
+        # Shortcut (elementwise multiply: input * shortcut_weight)
+        prod_spatial = 1
+        for s in spatial_dims:
+            prod_spatial *= s
+        shortcut_flops = C * prod_spatial
+
+        flops += int(fft_flops) + cmul_flops + shortcut_flops
+
+        return flops
+
     def apply_convolution(
         self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
     ) -> torch.Tensor:

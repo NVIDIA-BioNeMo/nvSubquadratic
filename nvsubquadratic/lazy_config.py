@@ -13,7 +13,28 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 
-PLACEHOLDER = None
+class _Placeholder:
+    """Sentinel object for unset config fields.
+
+    Using a dedicated class instead of ``None`` so that legitimate ``None`` values in configs
+    are not confused with missing fields.
+    """
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "PLACEHOLDER"
+
+    def __bool__(self):
+        return False
+
+
+PLACEHOLDER = _Placeholder()
 
 
 class LazyConfig:

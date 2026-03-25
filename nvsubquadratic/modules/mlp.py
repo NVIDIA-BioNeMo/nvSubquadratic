@@ -86,6 +86,42 @@ class MLP(nn.Module):
         else:
             raise ValueError(f"Unsupported activation: {self.activation}")
 
+    def flop_count(self, num_tokens: int) -> int:
+        """Count FLOPs for a two-layer MLP applied to ``num_tokens`` tokens.
+
+        Structure: Linear(dim, hidden_dim * glu_factor) -> activation -> Linear(hidden_dim, dim).
+
+        FLOPs breakdown (T = num_tokens):
+          1. layer1 (Linear):  2 * T * ``self.layer1.in_features`` * ``self.layer1.out_features``
+             For GLU/SwiGLU, out_features = 2 * hidden_dim (gate doubles width).
+          2. Activation: T * ``self.hidden_dim`` (elementwise).
+             For GLU variants, an additional T * ``self.hidden_dim`` for the
+             gate multiply (SiLU on one half + elementwise product).
+          3. layer2 (Linear):  2 * T * ``self.layer2.in_features`` * ``self.layer2.out_features``
+
+        Convention: 1 MAC = 2 FLOPs for linear layers.
+                    Activations count as 1 FLOP per element.
+
+        Args:
+            num_tokens: Number of tokens (positions) the MLP is applied to.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        T = num_tokens
+        flops = 0
+        # layer1
+        flops += 2 * T * self.layer1.in_features * self.layer1.out_features
+        # Activation
+        if self.is_glu_variant:
+            # SiLU/sigmoid on one half + elementwise gate product
+            flops += 2 * T * self.hidden_dim
+        else:
+            flops += T * self.hidden_dim
+        # layer2
+        flops += 2 * T * self.layer2.in_features * self.layer2.out_features
+        return flops
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the MLP."""
         # Apply first layer
