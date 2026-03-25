@@ -81,7 +81,10 @@ class WellDataModule(pl.LightningDataModule):
         sentinel = dst / ".staging_complete"
 
         if not src.is_dir():
-            raise RuntimeError(f"[data-staging] Source not found: {src}")
+            raise FileNotFoundError(
+                f"[data-staging] Source dataset not found: {src}. "
+                f"Download it first with: bash scripts/download_well.sh {self.well_dataset_name}"
+            )
 
         # Fast path: previous staging completed successfully.
         if sentinel.is_file():
@@ -99,11 +102,16 @@ class WellDataModule(pl.LightningDataModule):
         print(f"[data-staging] Copying {self.well_dataset_name} -> {dst}  ({free_gb:.1f} GB free)", flush=True)
 
         # cp -a preserves permissions/timestamps, -r for recursive.
-        subprocess.run(
-            ["cp", "-a", "-r", f"{src}/.", str(dst)],
-            check=True,
+        # --no-clobber prevents conflicts when parallel jobs stage the same dataset.
+        result = subprocess.run(
+            ["cp", "-a", "--no-clobber", "-r", f"{src}/.", str(dst)],
+            check=False,
             timeout=7200,
         )
+        # cp --no-clobber exits 1 when it skips existing files (e.g. parallel
+        # jobs staging to the same directory).  Only fail on unexpected codes.
+        if result.returncode not in (0, 1):
+            raise RuntimeError(f"[data-staging] cp failed with exit code {result.returncode}")
 
         sentinel.write_text("ok\n")
         self.well_base_path = str(self._local_staging_dir)
