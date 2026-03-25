@@ -57,7 +57,7 @@ NUM_WORKERS = 8
 GRAD_CLIP = 1.0
 
 WEIGHT_DECAY = 1e-5
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 3e-3
 
 
 def get_config() -> ExperimentConfig:

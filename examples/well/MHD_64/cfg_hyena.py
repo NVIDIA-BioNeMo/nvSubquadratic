@@ -31,7 +31,7 @@ PLACEHOLDER = None
 # Dataset parameters
 DATA_TYPE = "volume"
 DATA_DIM = 3
-WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "./data/the_well")
+WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "./data/the_well/datasets")
 WELL_DATASET_NAME = "MHD_64"
 
 # Data parameters
@@ -40,7 +40,7 @@ N_STEPS_OUTPUT = 1
 MAX_ROLLOUT_STEPS = 1
 
 # Model parameters - smaller due to 3D memory constraints
-BATCH_SIZE = 2
+BATCH_SIZE = 8
 NUM_HIDDEN_CHANNELS = 256
 NUM_BLOCKS = 8
 DROPOUT_IN_RATE = 0.0
