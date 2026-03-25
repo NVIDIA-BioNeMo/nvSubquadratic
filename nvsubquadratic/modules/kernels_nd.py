@@ -495,6 +495,14 @@ class SIRENKernelND(torch.nn.Module):
         # Optional FiLM conditioning
         if film_cfg is not None:
             self.film_generator = instantiate(film_cfg)
+            expected_film_layers = len(self.hidden_linears) + int(self.film_after_pos_embed)
+            if self.film_generator.num_film_layers != expected_film_layers:
+                raise ValueError(
+                    f"film_generator.num_film_layers={self.film_generator.num_film_layers} "
+                    f"does not match expected {expected_film_layers} "
+                    f"(len(hidden_linears)={len(self.hidden_linears)} + "
+                    f"int(film_after_pos_embed)={int(self.film_after_pos_embed)})"
+                )
         else:
             self.film_generator = None
 
