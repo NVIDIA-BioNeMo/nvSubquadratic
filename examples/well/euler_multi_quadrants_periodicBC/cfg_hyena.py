@@ -1,26 +1,29 @@
-"""Config file for WELL benchmark: MHD_64 dataset with Hyena.
+"""Hyena config for euler_multi_quadrants_periodicBC.
 
-Magneto-hydrodynamic turbulence: 64x64x64 spatial resolution (3D), 4 fields.
-Periodic boundary conditions -> circular FFT padding.
+Uses a ResidualNetwork with Hyena (QKV + CKConv global conv) as the
+sequence mixer.  Circular FFT padding is natural for this dataset's
+periodic boundary conditions.
 
-NOTE: This is a 3D dataset. The architecture uses 3D ops (Conv3d, data_dim=3).
+With patch_size=16 the effective sequence resolution is 32×32.
 """
-
-import os
 
 import torch
 
-from experiments.datamodules.pde.well import WellDataModule
-from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
-from experiments.lightning_wrappers.well_lightning_wrapper import WELLRegressionWrapper
+from examples.well.euler_multi_quadrants_periodicBC._base import (
+    DATA_DIM,
+    IN_CHANNELS,
+    OUT_CHANNELS,
+    get_base_config,
+)
+from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
@@ -29,66 +32,37 @@ from nvsubquadratic.utils.qk_norm import L2Norm
 
 PLACEHOLDER = None
 
-# Dataset parameters
-DATA_TYPE = "volume"
-DATA_DIM = 3
-WELL_BASE_PATH = os.environ.get("WELL_DATA_PATH", "./data/the_well")
-WELL_DATASET_NAME = "MHD_64"
+# ─── Model hyperparameters ────────────────────────────────────────────────────
+BATCH_SIZE = 24  # same as the baseline (unet_convnext)
+NUM_HIDDEN_CHANNELS = 384
+NUM_BLOCKS = 12
+PATCH_SIZE = 16
 
-# Data parameters
-N_STEPS_INPUT = 4
-N_STEPS_OUTPUT = 1
-MAX_ROLLOUT_STEPS = 1
-
-N_FIELDS = 7
-N_CONSTANT_FIELDS = 0
-IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
-OUT_CHANNELS = N_FIELDS
-
-# Model parameters - smaller due to 3D memory constraints
-BATCH_SIZE = 2
-NUM_HIDDEN_CHANNELS = 256
-NUM_BLOCKS = 8
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
 FFT_PADDING = "circular"  # Periodic boundary conditions
-OMEGA_0 = 100.0
-PATCH_SIZE = 4
-SPATIAL_RESOLUTION = 64  # Native resolution per dimension
+OMEGA_0 = 30.0
 
-# Training parameters
-TRAINING_ITERATIONS = 130_000
-WARMUP_ITERATIONS_PERCENTAGE = 0.1
-NUM_WORKERS = 8
-GRAD_CLIP = 1.0
-
-WEIGHT_DECAY = 1e-5
 LEARNING_RATE = 1e-3
+WEIGHT_DECAY = 1e-5
+
+PATCHED_RESOLUTION = 512 // PATCH_SIZE  # 32
 
 
 def get_config() -> ExperimentConfig:
-    """Returns the experiment configuration."""
-    config = ExperimentConfig()
-
-    config.debug = False
-    config.compile = False
-
-    config.dataset = LazyConfig(WellDataModule)(
-        well_base_path=WELL_BASE_PATH,
-        well_dataset_name=WELL_DATASET_NAME,
+    """Build Hyena experiment config for euler_multi_quadrants_periodicBC."""
+    config = get_base_config(
         batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
-        use_normalization=True,
-        n_steps_input=N_STEPS_INPUT,
-        n_steps_output=N_STEPS_OUTPUT,
-        max_rollout_steps=MAX_ROLLOUT_STEPS,
-        min_dt_stride=1,
-        max_dt_stride=1,
-        local_staging_dir=None,
+        learning_rate=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
     )
 
-    norm_cfg = LazyConfig(torch.nn.RMSNorm)(normalized_shape=NUM_HIDDEN_CHANNELS)
+    config.compile = True
+    config.compile_mode = "max-autotune-no-cudagraphs"
+    config.compile_compatible_fftconv = False  # Not needed for conventional Hyena.
+
+    norm_cfg = LazyConfig(RMSNorm)(dim=NUM_HIDDEN_CHANNELS)
 
     config.net = LazyConfig(ResidualNetwork)(
         in_channels=IN_CHANNELS,
@@ -119,29 +93,31 @@ def get_config() -> ExperimentConfig:
                         data_dim=DATA_DIM,
                         hidden_dim=NUM_HIDDEN_CHANNELS,
                         fft_padding=FFT_PADDING,
+                        use_fp16_fft=False,
                         kernel_cfg=LazyConfig(SIRENKernelND)(
                             data_dim=DATA_DIM,
                             out_dim=NUM_HIDDEN_CHANNELS,
-                            mlp_hidden_dim=96,
+                            mlp_hidden_dim=64,
                             num_layers=3,
-                            embedding_dim=32,
+                            embedding_dim=64,
                             omega_0=OMEGA_0,
-                            L_cache=SPATIAL_RESOLUTION // PATCH_SIZE,
+                            L_cache=PATCHED_RESOLUTION,
                             use_bias=True,
                             hidden_omega_0=1.0,
                         ),
-                        mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim=DATA_DIM,
-                            num_channels=NUM_HIDDEN_CHANNELS,
-                            min_std=0.025,
-                            max_std=1.25,
-                            init_std_low=0.05,
-                            init_std_high=1.0,
-                            parametrization="direct",
-                        ),
+                        # mask_cfg=LazyConfig(GaussianModulationND)(
+                        #     data_dim=DATA_DIM,
+                        #     num_channels=NUM_HIDDEN_CHANNELS,
+                        #     min_std=0.025,
+                        #     max_std=1.25,
+                        #     init_std_low=0.05,
+                        #     init_std_high=1.0,
+                        #     parametrization="direct",
+                        # ),
+                        mask_cfg=LazyConfig(torch.nn.Identity)(),
                         grid_type=GRID_TYPE,
                     ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv3d)(
+                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels=3 * NUM_HIDDEN_CHANNELS,
                         out_channels=3 * NUM_HIDDEN_CHANNELS,
                         kernel_size=3,
@@ -149,8 +125,14 @@ def get_config() -> ExperimentConfig:
                         padding=1,
                         bias=False,
                     ),
-                    gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-                    pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=NUM_HIDDEN_CHANNELS),
+                    gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+                    gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
+                    pixelhyena_norm_cfg=LazyConfig(RMSNorm)(
+                        dim=NUM_HIDDEN_CHANNELS,
+                    ),
+                    output_norm_cfg=LazyConfig(RMSNorm)(
+                        dim=NUM_HIDDEN_CHANNELS,
+                    ),
                     qk_norm_cfg=LazyConfig(L2Norm)(),
                     use_rope=False,
                 ),
@@ -172,40 +154,6 @@ def get_config() -> ExperimentConfig:
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-    )
-
-    config.lightning_wrapper_class = LazyConfig(WELLRegressionWrapper)(
-        metadata=PLACEHOLDER,
-        n_steps_input=N_STEPS_INPUT,
-        n_steps_output=N_STEPS_OUTPUT,
-        max_rollout_steps=MAX_ROLLOUT_STEPS,
-        metric="MSE",
-    )
-
-    config.optimizer = LazyConfig(torch.optim.AdamW)(
-        params=PLACEHOLDER,
-        lr=LEARNING_RATE,
-        weight_decay=WEIGHT_DECAY,
-    )
-
-    config.train = TrainConfig(
-        batch_size="${dataset.batch_size}",
-        iterations=TRAINING_ITERATIONS,
-        grad_clip=GRAD_CLIP,
-        precision="bf16-mixed",
-    )
-
-    config.scheduler = SchedulerConfig(
-        name="cosine",
-        warmup_iterations_percentage=WARMUP_ITERATIONS_PERCENTAGE,
-        total_iterations="${train.iterations}",
-        mode="min",
-    )
-
-    config.wandb = WandbConfig(
-        entity="implicit-long-convs",
-        project="nvsubquadratic",
-        job_group="MHD_64_hyena",
     )
 
     return config

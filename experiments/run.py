@@ -137,11 +137,14 @@ def main() -> None:
 
     # Construct data_module, prepare and setup
     datamodule = instantiate(config.dataset)
+    print("[run] prepare_data …", flush=True)
     datamodule.prepare_data()
+    print("[run] setup …", flush=True)
     datamodule.setup()
+    print("[run] datamodule ready.", flush=True)
 
     # Construct model
-    network = instantiate(config.net, in_channels=datamodule.input_channels, out_channels=datamodule.output_channels)
+    network = instantiate(config.net)
 
     # Enable compile-compatible FFT path if requested (needed for models with FFT conv, e.g. Hyena + FiLM)
     if getattr(config, "compile_compatible_fftconv", False):
@@ -159,13 +162,12 @@ def main() -> None:
         network = torch.compile(network, **compile_kwargs)
 
     # Wrap network in a pl.LightningModule
+    wrapper_kwargs: dict = {"network": network, "cfg": config}
     if hasattr(datamodule, "metadata"):
-        model = instantiate(config.lightning_wrapper_class, network=network, cfg=config, metadata=datamodule.metadata)
-        # Set normalization object for denormalizing metrics (if available)
-        if hasattr(datamodule, "_well_datamodule") and hasattr(datamodule._well_datamodule.train_dataset, "norm"):
-            model.normalization = datamodule._well_datamodule.train_dataset.norm
-    else:
-        model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
+        wrapper_kwargs["metadata"] = datamodule.metadata
+    if hasattr(datamodule, "normalization"):
+        wrapper_kwargs["normalization"] = datamodule.normalization
+    model = instantiate(config.lightning_wrapper_class, **wrapper_kwargs)
 
     # Initialize wandb logger
     if config.debug:

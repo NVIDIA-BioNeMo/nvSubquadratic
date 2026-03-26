@@ -48,6 +48,7 @@ class WellDataModule(pl.LightningDataModule):
         max_dt_stride: int = 1,
         local_staging_dir: Optional[str] = None,
     ):
+        """Initialize the WELL DataModule with dataset and loader parameters."""
         super().__init__()
         self.well_base_path = well_base_path
         self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
@@ -131,6 +132,7 @@ class WellDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         """Setup datasets (called on each process)."""
+        print(f"[WellDataModule] Loading {self.well_dataset_name} from {self.well_base_path} …", flush=True)
         from the_well.data.normalization import ZScoreNormalization
 
         # Create the WELL datamodule
@@ -182,12 +184,15 @@ class WellDataModule(pl.LightningDataModule):
         self.metadata = metadata
 
     def train_dataloader(self):
+        """Return the training dataloader from the underlying WELL module."""
         return self._well_datamodule.train_dataloader()
 
     def val_dataloader(self):
+        """Return the validation dataloader from the underlying WELL module."""
         return self._well_datamodule.val_dataloader()
 
     def test_dataloader(self):
+        """Return the test dataloader from the underlying WELL module."""
         return self._well_datamodule.test_dataloader()
 
     @property
@@ -203,6 +208,15 @@ class WellDataModule(pl.LightningDataModule):
         if self._well_datamodule is None:
             raise RuntimeError("DataModule not setup yet. Call setup() first.")
         return self._output_channels
+
+    @property
+    def normalization(self):
+        """Normalization object (ZScoreNormalization) from the training split, or None."""
+        if self._well_datamodule is None:
+            raise RuntimeError("DataModule not setup yet. Call setup() first.")
+        if self.use_normalization and hasattr(self._well_datamodule.train_dataset, "norm"):
+            return self._well_datamodule.train_dataset.norm
+        return None
 
     @property
     def rollout_val_dataloader(self):

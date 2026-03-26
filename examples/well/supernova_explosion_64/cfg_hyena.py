@@ -40,6 +40,11 @@ N_STEPS_INPUT = 4  # Number of input timesteps
 N_STEPS_OUTPUT = 1  # Number of output timesteps for training
 MAX_ROLLOUT_STEPS = 1  # Maximum rollout for validation
 
+N_FIELDS = 6
+N_CONSTANT_FIELDS = 0
+IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
+OUT_CHANNELS = N_FIELDS
+
 # Model parameters (overridable via environment variables for sweeps)
 BATCH_SIZE = 4
 NUM_HIDDEN_CHANNELS = int(os.environ.get("HYENA_HIDDEN_DIM", 512))
@@ -88,8 +93,8 @@ def get_config() -> ExperimentConfig:
     norm_cfg = LazyConfig(torch.nn.RMSNorm)(normalized_shape=NUM_HIDDEN_CHANNELS)
 
     config.net = LazyConfig(ResidualNetwork)(
-        in_channels=PLACEHOLDER,
-        out_channels=PLACEHOLDER,
+        in_channels=IN_CHANNELS,
+        out_channels=OUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
         data_dim=DATA_DIM,

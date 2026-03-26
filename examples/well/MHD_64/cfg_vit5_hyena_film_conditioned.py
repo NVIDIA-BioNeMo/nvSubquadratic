@@ -33,6 +33,11 @@ N_STEPS_INPUT = 4
 N_STEPS_OUTPUT = 1
 MAX_ROLLOUT_STEPS = 1
 
+N_FIELDS = 7
+N_CONSTANT_FIELDS = 0
+IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
+OUT_CHANNELS = N_FIELDS
+
 BATCH_SIZE = int(os.environ.get("MHD_VIT5_HYENA_BATCH_SIZE", 2))
 HIDDEN_DIM = int(os.environ.get("MHD_VIT5_HYENA_HIDDEN_DIM", 384))
 NUM_BLOCKS = int(os.environ.get("MHD_VIT5_HYENA_DEPTH", 12))
@@ -157,8 +162,8 @@ def get_config() -> ExperimentConfig:
     )
 
     config.net = LazyConfig(ViT5GeneralPurposeNet)(
-        in_channels=PLACEHOLDER,
-        out_channels=PLACEHOLDER,
+        in_channels=IN_CHANNELS,
+        out_channels=OUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=HIDDEN_DIM,
         data_dim=DATA_DIM,

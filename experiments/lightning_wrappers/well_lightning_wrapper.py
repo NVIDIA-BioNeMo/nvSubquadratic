@@ -47,7 +47,9 @@ class WELLRegressionWrapper(RegressionWrapper):
         n_steps_output: int = 1,
         max_rollout_steps: int = 32,
         metric: Literal["MAE", "MSE"] = "MSE",
+        normalization=None,
     ):
+        """Initialize the WELL regression wrapper with dataset metadata and rollout settings."""
         super().__init__(network=network, cfg=cfg, metric=metric)
 
         self.metadata = metadata
@@ -64,8 +66,8 @@ class WELLRegressionWrapper(RegressionWrapper):
         # Track best validation loss
         self.best_val_loss = float("inf")
 
-        # Normalization object (will be set from datamodule)
-        self.normalization = None
+        # Normalization object for denormalizing metric inputs back to physical scale
+        self.normalization = normalization
 
     def _denormalize_for_metrics(self, predictions, targets):
         """Denormalize predictions and targets for metric computation.
@@ -125,6 +127,7 @@ class WELLRegressionWrapper(RegressionWrapper):
 
         Args:
             batch: Dict with 'input_fields' and target in subsequent timestep
+            batch_idx: Index of the current batch
         """
         # Process input
         model_input = self._process_batch_input(batch)  # [B, H, W, C_in]
@@ -199,6 +202,7 @@ class WELLRegressionWrapper(RegressionWrapper):
 
         Args:
             batch: Batch dict from validation dataloader
+            batch_idx: Index of the current batch
         """
         # Perform rollout (WELL validation typically uses shorter rollouts)
         predictions, targets = self._autoregressive_rollout(batch, self.n_steps_output)
@@ -240,6 +244,7 @@ class WELLRegressionWrapper(RegressionWrapper):
 
         Args:
             batch: Batch dict from test dataloader
+            batch_idx: Index of the current batch
         """
         # Perform rollout
         predictions, targets = self._autoregressive_rollout(batch, self.n_steps_output)

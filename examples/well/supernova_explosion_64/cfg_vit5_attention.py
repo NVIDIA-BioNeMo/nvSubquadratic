@@ -31,6 +31,11 @@ N_STEPS_INPUT = 4
 N_STEPS_OUTPUT = 1
 MAX_ROLLOUT_STEPS = 1
 
+N_FIELDS = 6
+N_CONSTANT_FIELDS = 0
+IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
+OUT_CHANNELS = N_FIELDS
+
 BATCH_SIZE = int(os.environ.get("SUPERNOVA_VIT5_ATTN_BATCH_SIZE", 16))
 HIDDEN_DIM = int(os.environ.get("SUPERNOVA_VIT5_ATTN_HIDDEN_DIM", 384))
 NUM_BLOCKS = int(os.environ.get("SUPERNOVA_VIT5_ATTN_DEPTH", 12))
@@ -110,8 +115,8 @@ def get_config() -> ExperimentConfig:
     )
 
     config.net = LazyConfig(ViT5GeneralPurposeNet)(
-        in_channels=PLACEHOLDER,
-        out_channels=PLACEHOLDER,
+        in_channels=IN_CHANNELS,
+        out_channels=OUT_CHANNELS,
         hidden_dim=HIDDEN_DIM,
         num_blocks=NUM_BLOCKS,
         data_dim=DATA_DIM,
