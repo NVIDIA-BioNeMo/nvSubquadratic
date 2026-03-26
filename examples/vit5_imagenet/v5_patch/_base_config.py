@@ -63,6 +63,7 @@ HEAD_DIM = HIDDEN_DIM // NUM_HEADS  # 64
 LAYER_SCALE_INIT = 1e-4
 DROP_PATH_RATE = 0.05
 MLP_RATIO = 4
+NUM_REGISTERS = 4  # Fixed across all patch sizes for fair comparison
 
 # ─── SIREN kernel hyperparameters ─────────────────────────────────────────────
 KERNEL_MLP_HIDDEN_DIM = 32
@@ -232,7 +233,7 @@ def build_attention_net(patch_size: int) -> LazyConfig:
     """Build ViT5ClassificationNet with standard attention for a given patch_size."""
     num_patches_h = IMAGE_SIZE // patch_size
     num_patches_w = IMAGE_SIZE // patch_size
-    num_registers = num_patches_w - 1  # Scale registers with grid (matches Hyena CLS-row)
+    num_registers = NUM_REGISTERS
 
     return LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
@@ -270,7 +271,7 @@ def build_hyena_net(patch_size: int) -> LazyConfig:
     """Build ViT5ClassificationNet with Hyena CLS-row + FiLM + GRN for a given patch_size."""
     num_patches_h = IMAGE_SIZE // patch_size
     num_patches_w = IMAGE_SIZE // patch_size
-    num_registers = num_patches_w - 1  # CLS-row: fill one row with [CLS, regs]
+    num_registers = NUM_REGISTERS
 
     film_cfg = LazyConfig(KernelFiLMGenerator)(
         cond_dim=HIDDEN_DIM,

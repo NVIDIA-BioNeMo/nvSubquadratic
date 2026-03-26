@@ -7,16 +7,21 @@ All runs use 8 H100 GPUs on a single node with an effective batch size of 2048.
 
 ## Sequence lengths
 
+All configs use **4 register tokens** + 1 CLS token, regardless of patch size.
+For Hyena (CLS-row), the first grid row is zero-padded to width `num_patches_w`
+when 1 + 4 registers \< `num_patches_w`.
+
 | Patch | Patches | Registers | Total tokens |
 | ----: | ------: | --------: | -----------: |
-|    16 |   14x14 |        13 |          210 |
-|     8 |   28x28 |        27 |          812 |
-|     4 |   56x56 |        55 |        3,192 |
-|     2 | 112x112 |       111 |       12,656 |
-|     1 | 224x224 |       223 |       50,400 |
+|    16 |   14x14 |         4 |          201 |
+|     8 |   28x28 |         4 |          789 |
+|     4 |   56x56 |         4 |        3,141 |
+|     2 | 112x112 |         4 |       12,549 |
+|     1 | 224x224 |         4 |       50,181 |
 
-Both Hyena and Attention use `num_patches_w - 1` registers + 1 CLS token,
-so the total token count is the same for a fair comparison.
+For Hyena with CLS-row layout, the actual grid includes zero-padding:
+T = `num_patches_w` (first row: CLS + regs + pad) + `num_patches` = `(H+1) × W`.
+Attention does not use prepend_registers, so T = 1 + 4 + `num_patches` (no padding).
 
 > **Note:** Attention is O(n^2). Patch sizes 2 and 1 will be very expensive or
 > infeasible for attention. Hyena should handle all patch sizes.
@@ -173,14 +178,13 @@ Identical across all configs (same as v3 pretrain base):
 
 ## Architecture notes
 
-- **Hyena** uses CLS-row layout: \[CLS, registers, patches\] reshaped to a 2D grid.
-  The number of registers equals `num_patches_w - 1` to fill one grid row.
+- **Hyena** uses CLS-row layout: \[CLS, registers, zero-pad, patches\] reshaped to a 2D grid.
+  The first row is `[CLS, 4 regs, (W-5) zeros]` and the remaining rows are patches.
   FiLM conditioning modulates the SIREN kernel via register pooling.
   GRN (Global Response Normalization) adds inter-channel competition.
 
 - **Attention** uses standard multi-head attention (6 heads) with RoPE
-  and `num_patches_w - 1` register tokens (same count as Hyena for fair
-  comparison). QK normalization via RMSNorm.
+  and 4 register tokens (appended, no 2D reshape). QK normalization via RMSNorm.
 
 ## W&B
 

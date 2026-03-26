@@ -127,14 +127,20 @@ class ViT5ClassificationNet(nn.Module):
         else:
             self.reg_token = None
 
-        # Zero-padding buffer for GAP models: fills the register row to grid width
+        # Zero-padding buffer: fills the register row to grid width so the
+        # token sequence reshapes cleanly into a 2-D grid for spatial mixers.
+        # CLS-row layout:  [CLS, regs, pad, patches]  →  pad = W-1-M
+        # GAP layout:      [regs, pad, patches]        →  pad = W-M
         assert num_registers <= num_patches_w, (
             f"num_registers ({num_registers}) > grid width ({num_patches_w}); "
             "registers must fit in a single row for 2D reshape"
         )
         self._register_row_width = num_patches_w
-        if num_registers > 0 and prepend_registers and not self.use_cls_token:
-            pad_size = num_patches_w - num_registers
+        if num_registers > 0 and prepend_registers:
+            if self.use_cls_token:
+                pad_size = num_patches_w - 1 - num_registers  # CLS occupies 1 slot
+            else:
+                pad_size = num_patches_w - num_registers
             if pad_size > 0:
                 self.register_buffer("reg_zero_pad", torch.zeros(1, pad_size, hidden_dim), persistent=False)
             else:
@@ -235,8 +241,11 @@ class ViT5ClassificationNet(nn.Module):
         if self.use_cls_token:
             T += 1
         if self.num_registers > 0:
-            if self.prepend_registers and not self.use_cls_token:
-                T += self._register_row_width
+            if self.prepend_registers:
+                if self.use_cls_token:
+                    T += self._register_row_width - 1  # regs + padding (CLS already counted)
+                else:
+                    T += self._register_row_width  # regs + padding (no CLS)
             else:
                 T += self.num_registers
 
@@ -293,8 +302,12 @@ class ViT5ClassificationNet(nn.Module):
         if self.reg_token is not None:
             reg_tokens = self.reg_token.expand(B, -1, -1)
             if self.prepend_registers and self.cls_token is not None:
-                # [CLS, regs, patches] — enables direct 2D reshape for spatial mixers
-                x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
+                # [CLS, regs, (pad), patches] — enables direct 2D reshape for spatial mixers
+                if self.reg_zero_pad is not None:
+                    pad = self.reg_zero_pad.expand(B, -1, -1)
+                    x = torch.cat([x[:, :1, :], reg_tokens, pad, x[:, 1:, :]], dim=1)
+                else:
+                    x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
             elif self.prepend_registers:
                 # [regs, zero_pad, patches] — GAP model without CLS
                 if self.reg_zero_pad is not None:
@@ -312,7 +325,7 @@ class ViT5ClassificationNet(nn.Module):
         if self.readout == "register_concat":
             # Gather register tokens, compress via neck, concatenate
             if self.prepend_registers and self.cls_token is not None:
-                reg_start = 1  # [CLS, regs, patches]
+                reg_start = 1  # [CLS, regs, (pad), patches]
             elif self.prepend_registers:
                 reg_start = 0  # [regs, zero_pad, patches]
             else:
@@ -324,8 +337,8 @@ class ViT5ClassificationNet(nn.Module):
         else:
             # Global average pool over patch tokens, excluding register tokens
             if self.prepend_registers and self.num_registers > 0 and self.cls_token is not None:
-                # [CLS, regs, patches] — skip CLS + registers
-                out = x[:, 1 + self.num_registers :].mean(dim=1)
+                # [CLS, regs, (pad), patches] — skip entire first row
+                out = x[:, self._register_row_width :].mean(dim=1)
             elif self.prepend_registers and self.num_registers > 0:
                 # [regs, zero_pad, patches] — skip entire register row
                 out = x[:, self._register_row_width :].mean(dim=1)
