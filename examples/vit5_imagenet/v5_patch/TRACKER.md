@@ -114,6 +114,36 @@ ______________________________________________________________________
 - **attention_patch1:** O(n²) on ~50.2K tokens. Almost certainly infeasible on H100 80GB.
 - **Hyena patch2/patch1:** Long sequences will be memory-intensive but should be tractable thanks to O(n log n) FFT-based convolution. The grid is `(H+1) × W` with a zero-padded first row. May need to verify that SIREN kernel generation at L_cache=113 (patch2) and L_cache=225 (patch1) remains efficient.
 
+______________________________________________________________________
+
+## Pre-flight / Smoke Test Results
+
+All configs successfully completed a batch-1 forward pass on an RTX A5000 (24GB).
+
+| Config              | Patch | Params | Peak VRAM | Forward Time (bs=1) |
+| :------------------ | ----: | -----: | --------: | ------------------: |
+| `attention_patch16` |    16 |  22.0M |    146 MB |              0.022s |
+| `hyena_patch16`     |    16 |  22.7M |    154 MB |              0.547s |
+| `attention_patch8`  |     8 |  22.0M |    159 MB |              0.025s |
+| `hyena_patch8`      |     8 |  22.7M |    188 MB |              0.254s |
+| `attention_patch4`  |     4 |  22.9M |    207 MB |              0.014s |
+| `hyena_patch4`      |     4 |  23.6M |    295 MB |              0.302s |
+| `attention_patch2`  |     2 |  26.5M |    407 MB |              0.071s |
+| `hyena_patch2`      |     2 |  27.2M |    813 MB |              0.338s |
+| `attention_patch1`  |     1 |  40.9M |   1196 MB |              0.704s |
+| `hyena_patch1`      |     1 |  41.6M |   2489 MB |              0.693s |
+
+### Parameter Growth Analysis
+
+Both Attention and Hyena models exhibit significant parameter growth when scaling to `patch_size=2` and `patch_size=1`. The `hyena_patch1` model balloons to 41.6M parameters (almost double the patch16 size).
+
+This growth does **not** originate from the mixer layers (Hyena/Attention convolutions/queries), but is driven entirely by the **learnable absolute positional embeddings** inherited from the shared `ViT5ClassificationNet` backbone.
+
+- `patch2` (112×112) requires 12,544 spatial tokens $\\times 384$ hidden dim $\\approx +4.8\\text{M}$ embedding parameters over the baseline.
+- `patch1` (224×224) requires 50,176 spatial tokens $\\times 384$ hidden dim $\\approx +19.2\\text{M}$ embedding parameters over the baseline.
+
+At each patch size, Hyena is exactly ~0.7M parameters larger than its Attention counterpart, which represents the constant fixed overhead of the `SIREN` generator, `KernelFiLMGenerator`, and `GlobalResponseNorm`.
+
 ## Key hypotheses
 
 1. **Crossover point:** Hyena should match or beat attention accuracy at patch 16/8, and increasingly dominate at patch 4/2/1 where attention either OOMs or is prohibitively slow.
