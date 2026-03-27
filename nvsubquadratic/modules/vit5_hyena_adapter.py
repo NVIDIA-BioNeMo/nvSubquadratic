@@ -41,7 +41,7 @@ class ViT5HyenaAdapter(nn.Module):
                 When registers are present, Hyena accomodates them at the first row of the 2D grid,
                 making the token at position (0, 0) the CLS token, and the (0, 1), ..., (0, num_registers-1)
                 the register tokens.
-            
+
             IMPORTANT: In the future we can have M < grid_w registers by appending grid_w - M zeros to the row.
             **mixer_kwargs: Forwarded to the inner mixer (e.g. ``conditioning`` for FiLM).
 

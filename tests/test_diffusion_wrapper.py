@@ -115,5 +115,3 @@ def test_sampling_without_guidance_uses_single_branch() -> None:
     assert samples.shape == (1, 4, 4, 3)
     # Three timesteps, single pass each.
     assert len(wrapper.network.calls) == 3  # type: ignore[attr-defined]
-
-

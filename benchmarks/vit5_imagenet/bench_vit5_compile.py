@@ -1,4 +1,5 @@
 """Profile + test optimizations for ViT-5-Small."""
+
 import sys
 import torch
 import torch.nn.functional as F
@@ -22,6 +23,7 @@ NUM_REGISTERS = 4
 NUM_PATCHES_H = IMAGE_SIZE // PATCH_SIZE
 NUM_PATCHES_W = IMAGE_SIZE // PATCH_SIZE
 BATCH_SIZE = 256
+
 
 def build_model():
     net = ViT5ClassificationNet(
@@ -63,6 +65,7 @@ def build_model():
     )
     return net.cuda().to(torch.bfloat16)
 
+
 def benchmark(model, batch_size, label, num_warmup=10, num_iters=50):
     x = torch.randn(batch_size, IMAGE_SIZE, IMAGE_SIZE, 3, device="cuda", dtype=torch.bfloat16)
     inp = {"input": x, "condition": None}
@@ -88,6 +91,7 @@ def benchmark(model, batch_size, label, num_warmup=10, num_iters=50):
     samples_per_sec = batch_size * num_iters / elapsed
     print(f"  [{label}] Time/step: {ms_per_step:.1f} ms | Throughput: {samples_per_sec:.0f} samples/sec")
     return ms_per_step, samples_per_sec
+
 
 if __name__ == "__main__":
     print("=" * 60)
