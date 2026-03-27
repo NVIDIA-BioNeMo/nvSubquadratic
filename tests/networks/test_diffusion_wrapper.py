@@ -98,10 +98,14 @@ def test_cfg_sampling_invokes_both_branches() -> None:
 
     samples = wrapper.sample(num_samples=1, labels=torch.tensor([1]))
     assert samples.shape == (1, 4, 4, 3)
-    # Two timesteps * two passes (unconditional + conditional).
-    assert len(wrapper.network.calls) == 4  # type: ignore[attr-defined]
-    unconditional_condition = wrapper.network.calls[0]  # type: ignore[attr-defined]
-    conditional_condition = wrapper.network.calls[1]  # type: ignore[attr-defined]
+    # Heun step (i=0): forward(t=0.0) outside cfg_interval → 1 call,
+    #   forward(t=0.5) inside cfg_interval → 2 calls (uncond + cond).
+    # Final Euler step: forward(t=0.5) inside cfg_interval → 2 calls.
+    # Total: 1 + 2 + 2 = 5.
+    assert len(wrapper.network.calls) == 5  # type: ignore[attr-defined]
+    # First CFG pair starts at index 1 (index 0 is the non-CFG forward at t=0.0).
+    unconditional_condition = wrapper.network.calls[1]  # type: ignore[attr-defined]
+    conditional_condition = wrapper.network.calls[2]  # type: ignore[attr-defined]
     assert not torch.allclose(unconditional_condition, conditional_condition)
 
 
@@ -113,5 +117,7 @@ def test_sampling_without_guidance_uses_single_branch() -> None:
 
     samples = wrapper.sample(num_samples=1, labels=torch.tensor([2]))
     assert samples.shape == (1, 4, 4, 3)
-    # Three timesteps, single pass each.
-    assert len(wrapper.network.calls) == 3  # type: ignore[attr-defined]
+    # Heun steps (i=0, i=1): 2 forward calls each = 4.
+    # Final Euler step: 1 forward call.
+    # Total: 4 + 1 = 5.
+    assert len(wrapper.network.calls) == 5  # type: ignore[attr-defined]
