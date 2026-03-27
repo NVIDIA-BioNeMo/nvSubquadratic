@@ -101,12 +101,14 @@ class ViT5ResidualBlock(nn.Module):
              D is inferred from ``self.input_norm.weight.shape[0]``.
           3. sequence_mixer:         ``self.sequence_mixer.flop_count(T, inference)``
              Dispatches to ViT5Attention or ViT5HyenaAdapter depending on config.
-          4. ls_attn (LayerScale):   ``self.ls_attn.flop_count(T)``
+          4. grn:                    ``self.grn.flop_count(T)``
+             Skipped when GRN is disabled.
+          5. ls_attn (LayerScale):   ``self.ls_attn.flop_count(T)``
              Skipped when LayerScale is replaced by Identity (init_value=0).
-          5. drop_path:              0  (stochastic identity)
-          6. mlp_norm (RMSNorm):     ``self.mlp_norm.flop_count(T)``
-          7. mlp:                    ``self.mlp.flop_count(T)``
-          8. ls_mlp (LayerScale):    ``self.ls_mlp.flop_count(T)``
+          6. drop_path:              0  (stochastic identity)
+          7. mlp_norm (RMSNorm):     ``self.mlp_norm.flop_count(T)``
+          8. mlp:                    ``self.mlp.flop_count(T)``
+          9. ls_mlp (LayerScale):    ``self.ls_mlp.flop_count(T)``
 
         Args:
             num_tokens: Sequence length T.
@@ -127,6 +129,11 @@ class ViT5ResidualBlock(nn.Module):
 
         # Sequence mixer
         flops += self.sequence_mixer.flop_count(num_tokens, inference=inference)
+
+        # GRN
+        if self.grn is not None:
+            # We assume GlobalResponseNorm implements a flop_count(num_tokens) property/method if present
+            flops += getattr(self.grn, "flop_count", lambda t: 0)(num_tokens)
 
         # LayerScale (attention branch)
         if isinstance(self.ls_attn, LayerScale):

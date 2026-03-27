@@ -23,9 +23,23 @@ class GlobalResponseNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         """Initialize GRN with zero-initialized gamma and beta."""
         super().__init__()
+        self.dim = dim
         self.gamma = nn.Parameter(torch.zeros(dim))
         self.beta = nn.Parameter(torch.zeros(dim))
         self.eps = eps
+
+    def flop_count(self, num_tokens: int) -> int:
+        """Count FLOPs for GRN.
+
+        Using T = num_tokens and C = dim:
+        - L2 norm per channel over spatial dims: T*C (square) + T*C (sum) + C (sqrt) = 2*T*C + C
+        - mean over channels: C (sum)
+        - division: C (div)
+        - apply to input: T*C (mult) + T*C (mult by gamma) + T*C (add beta) + T*C (residual)
+
+        Total: ~6 * T * C FLOPs
+        """
+        return 6 * num_tokens * self.dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply GRN to input tensor.
