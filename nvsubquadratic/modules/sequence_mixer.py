@@ -54,6 +54,43 @@ class QKVSequenceMixer(torch.nn.Module):
             if out_proj_bias:
                 torch.nn.init.zeros_(self.out_proj.bias)
 
+    def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
+        """Count FLOPs for QKV projections + inner mixer + output projection.
+
+        Let D = ``self.qkv_proj.in_features`` (hidden_dim),
+            T = prod(spatial_dims) (number of spatial positions).
+
+        FLOPs breakdown:
+          1. QKV projection (Linear(D, 3D)):  2 * T * D * 3D = 6 * T * D²
+             Three projections (query, key, value) packed into one linear.
+          2. Inner mixer (e.g. Hyena):
+             Delegated to ``self.mixer.flop_count(spatial_dims, inference)``.
+          3. Output projection (Linear(D, D)):  2 * T * D * D = 2 * T * D²
+
+        Total: 8 * T * D² + inner_mixer_flops.
+
+        Args:
+            spatial_dims: Spatial dimensions of the signal, e.g. (H, W).
+                Linear projections operate on T = prod(spatial_dims) tokens.
+            inference: Passed through to the inner mixer.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        D = self.qkv_proj.in_features
+        T = 1
+        for s in spatial_dims:
+            T *= s
+
+        flops = 0
+        # QKV projection
+        flops += 2 * T * D * self.qkv_proj.out_features
+        # Inner mixer
+        flops += self.mixer.flop_count(spatial_dims, inference=inference)
+        # Output projection
+        flops += 2 * T * self.out_proj.in_features * self.out_proj.out_features
+        return flops
+
     def forward(
         self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None, **mixer_kwargs
     ) -> torch.Tensor:

@@ -173,7 +173,7 @@ def get_config() -> ExperimentConfig:
         image_size=FINAL_IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
-        use_cls_token=False,
+        readout="gap",
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(

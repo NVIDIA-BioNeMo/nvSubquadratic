@@ -219,6 +219,61 @@ class ViT5Attention(nn.Module):
         self.register_buffer("rope_cos", torch.cat(parts_cos, dim=0), persistent=False)
         self.register_buffer("rope_sin", torch.cat(parts_sin, dim=0), persistent=False)
 
+    def flop_count(self, num_tokens: int, inference: bool = False) -> int:
+        """Count FLOPs for multi-head self-attention on ``num_tokens`` tokens.
+
+        The ``inference`` flag is accepted for API consistency but does not
+        change the count — attention has no cacheable precomputation analogous
+        to SIREN kernels.
+
+        Let T = num_tokens, D = ``self.hidden_dim``.
+
+        FLOPs breakdown:
+          1. QKV projection (Linear(D, 3D)):       6 * T * D²
+             Three projections packed into one:  2 * T * D * 3D.
+          2. QK-Norm (2x RMSNorm on Q and K):      Delegated to self.q_norm / self.k_norm.
+             Only counted when ``self.qk_norm`` is True; 0 otherwise.
+          3. RoPE on Q and K:                       4 * T * D
+             Each of Q, K: x * cos + rotate(x) * sin = 2 elementwise
+             multiplies per element, over T * D elements, for both Q and K.
+             This assumes **full RoPE** (all ``head_dim`` dimensions rotated),
+             which is the case here: the cos/sin buffers have shape
+             ``[T, head_dim]`` and broadcast across all heads.
+             For partial RoPE (only the first ``rope_dim`` of each head
+             rotated, remainder passed through), the count would instead be
+             ``4 * T * num_heads * rope_dim``.
+          4. SDPA (Q@K^T + attn@V):                 4 * T² * D
+             Q@K^T: 2 * T * T * D.  attn@V: 2 * T * T * D.
+             (Softmax cost ~3 * T * H is negligible and omitted.)
+          5. Output projection (Linear(D, D)):      2 * T * D²
+
+        Total: 8 * T * D² + 4 * T² * D + 4 * T * D + qk_norm_flops.
+
+        Args:
+            num_tokens: Total sequence length T (cls + patches + registers).
+            inference: Accepted for API consistency; does not affect the count.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        T = num_tokens
+        D = self.hidden_dim
+
+        flops = 0
+        # QKV projection:  2 * T * D * 3D
+        flops += 2 * T * D * 3 * D
+        # QK-Norm (delegate to per-head norm instances)
+        if self.qk_norm:
+            flops += self.q_norm.flop_count(T)
+            flops += self.k_norm.flop_count(T)
+        # RoPE: 2 elementwise ops on Q (T*D) + 2 on K (T*D)
+        flops += 4 * T * D
+        # SDPA: Q@K^T + attn@V
+        flops += 4 * T * T * D
+        # Output projection
+        flops += 2 * T * D * D
+        return flops
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
 

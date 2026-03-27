@@ -39,20 +39,20 @@ Usage
 -----
 Explicit chunked functions::
 
-    from nvsubquadratic.ops.fftconv_chunked import fftconv2d_bhl_chunked
+    from nvsubquadratic.ops.fftconv_chunked import fftconv2d_fp32_bhl_chunked
 
     # Process in chunks of 128 channels (default)
-    y = fftconv2d_bhl_chunked(x, kernel, shortcut)
+    y = fftconv2d_fp32_bhl_chunked(x, kernel, shortcut)
 
     # Process in chunks of 64 channels (more memory-efficient)
-    y = fftconv2d_bhl_chunked(x, kernel, shortcut, chunk_size=64)
+    y = fftconv2d_fp32_bhl_chunked(x, kernel, shortcut, chunk_size=64)
 
 Drop-in replacements that automatically use chunking when enabled::
 
-    from nvsubquadratic.ops.fftconv_chunked import fftconv2d_bhl, set_chunking_enabled
+    from nvsubquadratic.ops.fftconv_chunked import fftconv2d_fp32_bhl, set_chunking_enabled
 
     set_chunking_enabled(True)   # Enable chunked processing
-    y = fftconv2d_bhl(x, kernel, shortcut)  # Uses chunking
+    y = fftconv2d_fp32_bhl(x, kernel, shortcut)  # Uses chunking
 
 Control chunking via global flags::
 
@@ -83,23 +83,23 @@ __all__ = [  # noqa: RUF022
     "set_default_chunk_size",
     "get_default_chunk_size",
     # Chunked FFT convolutions (explicit)
-    "fftconv1d_bhl_chunked",
-    "fftconv2d_bhl_chunked",
-    "fftconv3d_bhl_chunked",
-    "causal_fftconv1d_bhl_chunked",
+    "fftconv1d_fp32_bhl_chunked",
+    "fftconv2d_fp32_bhl_chunked",
+    "fftconv3d_fp32_bhl_chunked",
+    "causal_fftconv1d_fp32_bhl_chunked",
     # Drop-in replacements (use chunking when enabled)
-    "causal_fftconv1d_bhl",
-    "causal_fftconv1d_bhl_w_reshape",
-    "causal_fftconv1d_blh",
-    "fftconv1d_bhl",
-    "fftconv1d_bhl_w_reshape",
-    "fftconv1d_blh",
-    "fftconv2d_bhl",
-    "fftconv2d_bhl_w_reshape",
-    "fftconv2d_blh",
-    "fftconv3d_bhl",
-    "fftconv3d_bhl_w_reshape",
-    "fftconv3d_blh",
+    "causal_fftconv1d_fp32_bhl",
+    "causal_fftconv1d_fp32_bhl_w_reshape",
+    "causal_fftconv1d_fp32_blh",
+    "fftconv1d_fp32_bhl",
+    "fftconv1d_fp32_bhl_w_reshape",
+    "fftconv1d_fp32_blh",
+    "fftconv2d_fp32_bhl",
+    "fftconv2d_fp32_bhl_w_reshape",
+    "fftconv2d_fp32_blh",
+    "fftconv3d_fp32_bhl",
+    "fftconv3d_fp32_bhl_w_reshape",
+    "fftconv3d_fp32_blh",
 ]
 
 # =============================================================================
@@ -155,17 +155,17 @@ def chunking_enabled(enabled: bool = True, chunk_size: int | None = None):
     Example::
 
         from nvsubquadratic.ops.fftconv_chunked import (
-            fftconv2d_bhl,
+            fftconv2d_fp32_bhl,
             chunking_enabled,
         )
 
         # Use chunking with chunk_size=32
         with chunking_enabled(True, chunk_size=32):
-            y = fftconv2d_bhl(x, kernel)
+            y = fftconv2d_fp32_bhl(x, kernel)
 
         # Disable chunking (use standard impl)
         with chunking_enabled(False):
-            y = fftconv2d_bhl(x, kernel)
+            y = fftconv2d_fp32_bhl(x, kernel)
 
     Args:
         enabled: Whether to enable chunking within this context.
@@ -230,7 +230,7 @@ def enable_chunking(module_or_flag=None, chunk_size: int | None = None):
 # =============================================================================
 
 
-def fftconv1d_bhl_chunked(
+def fftconv1d_fp32_bhl_chunked(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -247,12 +247,12 @@ def fftconv1d_bhl_chunked(
     Returns:
         Output tensor [B, H, L]
     """
-    from nvsubquadratic.ops.fftconv import fftconv1d_bhl as _fftconv1d_bhl_std
+    from nvsubquadratic.ops.fftconv import fftconv1d_fp32_bhl as _fftconv1d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, L = x.shape
+    _B, H, _L = x.shape
 
     if H <= chunk_size:
         return _fftconv1d_bhl_std(x, kernel, shortcut)
@@ -270,7 +270,7 @@ def fftconv1d_bhl_chunked(
     return torch.cat(outputs, dim=1)
 
 
-def causal_fftconv1d_bhl_chunked(
+def causal_fftconv1d_fp32_bhl_chunked(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -287,12 +287,12 @@ def causal_fftconv1d_bhl_chunked(
     Returns:
         Output tensor [B, H, L]
     """
-    from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl as _causal_fftconv1d_bhl_std
+    from nvsubquadratic.ops.fftconv import causal_fftconv1d_fp32_bhl as _causal_fftconv1d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, L = x.shape
+    _B, H, _L = x.shape
 
     if H <= chunk_size:
         return _causal_fftconv1d_bhl_std(x, kernel, shortcut)
@@ -310,7 +310,7 @@ def causal_fftconv1d_bhl_chunked(
     return torch.cat(outputs, dim=1)
 
 
-def fftconv2d_bhl_chunked(
+def fftconv2d_fp32_bhl_chunked(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -330,12 +330,12 @@ def fftconv2d_bhl_chunked(
     Returns:
         Output tensor [B, H, X, Y]
     """
-    from nvsubquadratic.ops.fftconv import fftconv2d_bhl as _fftconv2d_bhl_std
+    from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl as _fftconv2d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, X_in, Y_in = x.shape
+    _B, H, _X_in, _Y_in = x.shape
 
     if H <= chunk_size:
         return _fftconv2d_bhl_std(x, kernel, shortcut)
@@ -353,7 +353,7 @@ def fftconv2d_bhl_chunked(
     return torch.cat(outputs, dim=1)
 
 
-def fftconv3d_bhl_chunked(
+def fftconv3d_fp32_bhl_chunked(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -376,12 +376,12 @@ def fftconv3d_bhl_chunked(
     Returns:
         Output tensor [B, H, X, Y, Z]
     """
-    from nvsubquadratic.ops.fftconv import fftconv3d_bhl as _fftconv3d_bhl_std
+    from nvsubquadratic.ops.fftconv import fftconv3d_fp32_bhl as _fftconv3d_bhl_std
 
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
 
-    B, H, X_in, Y_in, Z_in = x.shape
+    _B, H, _X_in, _Y_in, _Z_in = x.shape
 
     if H <= chunk_size:
         return _fftconv3d_bhl_std(x, kernel, shortcut)
@@ -404,7 +404,7 @@ def fftconv3d_bhl_chunked(
 # =============================================================================
 
 
-def fftconv1d_bhl(
+def fftconv1d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -423,14 +423,14 @@ def fftconv1d_bhl(
         Output tensor [B, H, L]
     """
     if _CHUNKING_ENABLED:
-        return fftconv1d_bhl_chunked(x, kernel, shortcut)
+        return fftconv1d_fp32_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import fftconv1d_bhl as _std
+        from nvsubquadratic.ops.fftconv import fftconv1d_fp32_bhl as _std
 
         return _std(x, kernel, shortcut)
 
 
-def causal_fftconv1d_bhl(
+def causal_fftconv1d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -449,14 +449,14 @@ def causal_fftconv1d_bhl(
         Output tensor [B, H, L] (causal: output[i] depends only on input[0..i])
     """
     if _CHUNKING_ENABLED:
-        return causal_fftconv1d_bhl_chunked(x, kernel, shortcut)
+        return causal_fftconv1d_fp32_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import causal_fftconv1d_bhl as _std
+        from nvsubquadratic.ops.fftconv import causal_fftconv1d_fp32_bhl as _std
 
         return _std(x, kernel, shortcut)
 
 
-def fftconv2d_bhl(
+def fftconv2d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -475,14 +475,14 @@ def fftconv2d_bhl(
         Output tensor [B, H, X, Y]
     """
     if _CHUNKING_ENABLED:
-        return fftconv2d_bhl_chunked(x, kernel, shortcut)
+        return fftconv2d_fp32_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import fftconv2d_bhl as _std
+        from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl as _std
 
         return _std(x, kernel, shortcut)
 
 
-def fftconv3d_bhl(
+def fftconv3d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -501,15 +501,15 @@ def fftconv3d_bhl(
         Output tensor [B, H, X, Y, Z]
     """
     if _CHUNKING_ENABLED:
-        return fftconv3d_bhl_chunked(x, kernel, shortcut)
+        return fftconv3d_fp32_bhl_chunked(x, kernel, shortcut)
     else:
-        from nvsubquadratic.ops.fftconv import fftconv3d_bhl as _std
+        from nvsubquadratic.ops.fftconv import fftconv3d_fp32_bhl as _std
 
         return _std(x, kernel, shortcut)
 
 
 # BLH layout wrappers (channels-last)
-def fftconv1d_blh(
+def fftconv1d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -526,11 +526,11 @@ def fftconv1d_blh(
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     k_bhl = rearrange(kernel, "b l h -> b h l")
-    y_bhl = fftconv1d_bhl(x_bhl, k_bhl, shortcut)
+    y_bhl = fftconv1d_fp32_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y_bhl, "b h l -> b l h")
 
 
-def causal_fftconv1d_blh(
+def causal_fftconv1d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -547,11 +547,11 @@ def causal_fftconv1d_blh(
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     k_bhl = rearrange(kernel, "b l h -> b h l")
-    y_bhl = causal_fftconv1d_bhl(x_bhl, k_bhl, shortcut)
+    y_bhl = causal_fftconv1d_fp32_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y_bhl, "b h l -> b l h")
 
 
-def fftconv2d_blh(
+def fftconv2d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -568,11 +568,11 @@ def fftconv2d_blh(
     """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     k_bhl = rearrange(kernel, "b x y h -> b h x y")
-    y_bhl = fftconv2d_bhl(x_bhl, k_bhl, shortcut)
+    y_bhl = fftconv2d_fp32_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y_bhl, "b h x y -> b x y h")
 
 
-def fftconv3d_blh(
+def fftconv3d_fp32_blh(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -589,16 +589,16 @@ def fftconv3d_blh(
     """
     x_bhl = rearrange(x, "b x y z h -> b h x y z")
     k_bhl = rearrange(kernel, "b x y z h -> b h x y z")
-    y_bhl = fftconv3d_bhl(x_bhl, k_bhl, shortcut)
+    y_bhl = fftconv3d_fp32_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y_bhl, "b h x y z -> b x y z h")
 
 
 # w_reshape aliases: BLH input → internal BHL conv → BLH output
 # These match the naming convention in nvsubquadratic.ops.fftconv
-fftconv1d_bhl_w_reshape = fftconv1d_blh
-fftconv2d_bhl_w_reshape = fftconv2d_blh
-fftconv3d_bhl_w_reshape = fftconv3d_blh
-causal_fftconv1d_bhl_w_reshape = causal_fftconv1d_blh
+fftconv1d_fp32_bhl_w_reshape = fftconv1d_fp32_blh
+fftconv2d_fp32_bhl_w_reshape = fftconv2d_fp32_blh
+fftconv3d_fp32_bhl_w_reshape = fftconv3d_fp32_blh
+causal_fftconv1d_fp32_bhl_w_reshape = causal_fftconv1d_fp32_blh
 
 
 # =============================================================================
@@ -622,7 +622,7 @@ if __name__ == "__main__":
     shortcut = torch.randn(H, device=device, dtype=torch.float32, requires_grad=True)
 
     # Reference
-    from nvsubquadratic.ops.fftconv import fftconv2d_bhl as fftconv2d_bhl_std
+    from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl as fftconv2d_bhl_std
 
     y_std = fftconv2d_bhl_std(x, kernel, shortcut)
     loss_std = y_std.sum()
@@ -636,7 +636,7 @@ if __name__ == "__main__":
     shortcut.grad = None
 
     # Chunked
-    y_chunked = fftconv2d_bhl_chunked(x, kernel, shortcut, chunk_size=32)
+    y_chunked = fftconv2d_fp32_bhl_chunked(x, kernel, shortcut, chunk_size=32)
     loss_chunked = y_chunked.sum()
     loss_chunked.backward()
 
@@ -674,7 +674,7 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
 
-            y = fftconv2d_bhl_chunked(x, kernel, shortcut, chunk_size=cs)
+            y = fftconv2d_fp32_bhl_chunked(x, kernel, shortcut, chunk_size=cs)
             y.sum().backward()
             peak = torch.cuda.max_memory_allocated() / 1024 / 1024
             savings = peak_std - peak
@@ -693,7 +693,7 @@ if __name__ == "__main__":
     x = torch.randn(B, H, X, Y, Z, device=device, dtype=torch.float32, requires_grad=True)
     kernel = torch.randn(1, H, K, K, K, device=device, dtype=torch.float32, requires_grad=True)
 
-    from nvsubquadratic.ops.fftconv import fftconv3d_bhl as fftconv3d_bhl_std
+    from nvsubquadratic.ops.fftconv import fftconv3d_fp32_bhl as fftconv3d_bhl_std
 
     y_std = fftconv3d_bhl_std(x, kernel, None)
     y_std.sum().backward()
@@ -702,7 +702,7 @@ if __name__ == "__main__":
     x.grad = None
     kernel.grad = None
 
-    y_chunked = fftconv3d_bhl_chunked(x, kernel, None, chunk_size=16)
+    y_chunked = fftconv3d_fp32_bhl_chunked(x, kernel, None, chunk_size=16)
     y_chunked.sum().backward()
 
     print(f"3D output diff: {(y_std - y_chunked).abs().max().item():.2e}")

@@ -73,6 +73,7 @@ def build_model():
         image_size=IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
+        readout="cls",
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
@@ -178,7 +179,7 @@ def _build_loader(use_dali: bool, optimized: str = "", device_id: int = 0, **kwa
 
 def bench_dataloader(prefetch_factor, num_workers, use_dali=False, optimized=False, warmup=5):
     """Benchmark pure data loading for a single (prefetch, workers) combo."""
-    loader, dm = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
+    loader, _ = _build_loader(use_dali, optimized=optimized, prefetch_factor=prefetch_factor, num_workers=num_workers)
     it = iter(loader)
     for _ in range(warmup):
         next(it)

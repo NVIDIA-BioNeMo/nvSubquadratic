@@ -6,7 +6,7 @@ patch tokens at the final layer, which is the natural readout for a
 convolutional sequence mixer like Hyena.
 
 Key differences from vit5_small_pretrain_hyena_apex.py:
-- use_cls_token=False: no CLS token prepended to the sequence
+- readout="gap": no CLS token prepended to the sequence
 - has_cls_token=False in ViT5HyenaAdapter: patches go directly through
   the 2D Hyena mixer without CLS bookkeeping
 - Final classification: mean-pool of patch tokens -> norm -> linear head
@@ -176,7 +176,7 @@ def get_config() -> ExperimentConfig:
         image_size=FINAL_IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
-        use_cls_token=False,
+        readout="gap",
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(

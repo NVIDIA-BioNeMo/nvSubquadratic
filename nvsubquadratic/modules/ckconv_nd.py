@@ -21,41 +21,61 @@ from nvsubquadratic.ops.circular_fftconv import (
     circular_fftconv3d_bhl_w_reshape,
 )
 from nvsubquadratic.ops.fftconv import (
-    causal_fftconv1d_bhl,
-    causal_fftconv1d_bhl_w_reshape,
-    fftconv1d_bhl,
-    fftconv1d_bhl_w_reshape,
-    fftconv2d_bhl,
-    fftconv2d_bhl_w_reshape,
-    fftconv3d_bhl,
-    fftconv3d_bhl_w_reshape,
+    causal_fftconv1d_fp32_bhl,
+    causal_fftconv1d_fp32_bhl_w_reshape,
+    fftconv1d_fp32_bhl,
+    fftconv1d_fp32_bhl_w_reshape,
+    fftconv2d_fp32_bhl,
+    fftconv2d_fp32_bhl_w_reshape,
+    fftconv3d_fp32_bhl,
+    fftconv3d_fp32_bhl_w_reshape,
 )
 
 # Chunked (memory-efficient) variants for zero-padded and causal convolutions
 # Note: circular convolutions don't have chunked variants (lower memory overhead already)
 from nvsubquadratic.ops.fftconv_chunked import (
-    causal_fftconv1d_bhl as causal_fftconv1d_bhl_chunked,
+    causal_fftconv1d_fp32_bhl as causal_fftconv1d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    causal_fftconv1d_bhl_w_reshape as causal_fftconv1d_bhl_w_reshape_chunked,
+    causal_fftconv1d_fp32_bhl_w_reshape as causal_fftconv1d_fp32_bhl_w_reshape_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv1d_bhl as fftconv1d_bhl_chunked,
+    fftconv1d_fp32_bhl as fftconv1d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv1d_bhl_w_reshape as fftconv1d_bhl_w_reshape_chunked,
+    fftconv1d_fp32_bhl_w_reshape as fftconv1d_fp32_bhl_w_reshape_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv2d_bhl as fftconv2d_bhl_chunked,
+    fftconv2d_fp32_bhl as fftconv2d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv2d_bhl_w_reshape as fftconv2d_bhl_w_reshape_chunked,
+    fftconv2d_fp32_bhl_w_reshape as fftconv2d_fp32_bhl_w_reshape_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv3d_bhl as fftconv3d_bhl_chunked,
+    fftconv3d_fp32_bhl as fftconv3d_fp32_bhl_chunked,
 )
 from nvsubquadratic.ops.fftconv_chunked import (
-    fftconv3d_bhl_w_reshape as fftconv3d_bhl_w_reshape_chunked,
+    fftconv3d_fp32_bhl_w_reshape as fftconv3d_fp32_bhl_w_reshape_chunked,
+)
+
+# FP16 FFT convolutions (power-of-2 padding + ortho normalization)
+from nvsubquadratic.ops.fftconv_fp16 import (
+    causal_fftconv1d_fp16_bhl,
+    causal_fftconv1d_fp16_bhl_chunked,
+    causal_fftconv1d_fp16_bhl_w_reshape,
+    causal_fftconv1d_fp16_bhl_w_reshape_chunked,
+    fftconv1d_fp16_bhl,
+    fftconv1d_fp16_bhl_chunked,
+    fftconv1d_fp16_bhl_w_reshape,
+    fftconv1d_fp16_bhl_w_reshape_chunked,
+    fftconv2d_fp16_bhl,
+    fftconv2d_fp16_bhl_chunked,
+    fftconv2d_fp16_bhl_w_reshape,
+    fftconv2d_fp16_bhl_w_reshape_chunked,
+    fftconv3d_fp16_bhl,
+    fftconv3d_fp16_bhl_chunked,
+    fftconv3d_fp16_bhl_w_reshape,
+    fftconv3d_fp16_bhl_w_reshape_chunked,
 )
 
 
@@ -68,12 +88,12 @@ FFT_FUNCTIONS = {
         3: (circular_fftconv3d_bhl_w_reshape, circular_fftconv3d_bhl),
     },
     "zero": {
-        1: (fftconv1d_bhl_w_reshape, fftconv1d_bhl),
-        2: (fftconv2d_bhl_w_reshape, fftconv2d_bhl),
-        3: (fftconv3d_bhl_w_reshape, fftconv3d_bhl),
+        1: (fftconv1d_fp32_bhl_w_reshape, fftconv1d_fp32_bhl),
+        2: (fftconv2d_fp32_bhl_w_reshape, fftconv2d_fp32_bhl),
+        3: (fftconv3d_fp32_bhl_w_reshape, fftconv3d_fp32_bhl),
     },
     "causal": {
-        1: (causal_fftconv1d_bhl_w_reshape, causal_fftconv1d_bhl),
+        1: (causal_fftconv1d_fp32_bhl_w_reshape, causal_fftconv1d_fp32_bhl),
         # Causal is only supported for 1D (sequences)
     },
 }
@@ -83,12 +103,40 @@ FFT_FUNCTIONS = {
 # memory overhead since they don't require padding.
 FFT_FUNCTIONS_CHUNKED = {
     "zero": {
-        1: (fftconv1d_bhl_w_reshape_chunked, fftconv1d_bhl_chunked),
-        2: (fftconv2d_bhl_w_reshape_chunked, fftconv2d_bhl_chunked),
-        3: (fftconv3d_bhl_w_reshape_chunked, fftconv3d_bhl_chunked),
+        1: (fftconv1d_fp32_bhl_w_reshape_chunked, fftconv1d_fp32_bhl_chunked),
+        2: (fftconv2d_fp32_bhl_w_reshape_chunked, fftconv2d_fp32_bhl_chunked),
+        3: (fftconv3d_fp32_bhl_w_reshape_chunked, fftconv3d_fp32_bhl_chunked),
     },
     "causal": {
-        1: (causal_fftconv1d_bhl_w_reshape_chunked, causal_fftconv1d_bhl_chunked),
+        1: (causal_fftconv1d_fp32_bhl_w_reshape_chunked, causal_fftconv1d_fp32_bhl_chunked),
+        # Causal is only supported for 1D (sequences)
+    },
+}
+
+# FP16 versions (power-of-2 padding + ortho normalization to prevent overflow)
+# Note: circular convolutions are not supported in fp16 — cuFFT half-precision
+# requires power-of-2 sizes which circular padding cannot guarantee.
+FFT_FUNCTIONS_FP16 = {
+    "zero": {
+        1: (fftconv1d_fp16_bhl_w_reshape, fftconv1d_fp16_bhl),
+        2: (fftconv2d_fp16_bhl_w_reshape, fftconv2d_fp16_bhl),
+        3: (fftconv3d_fp16_bhl_w_reshape, fftconv3d_fp16_bhl),
+    },
+    "causal": {
+        1: (causal_fftconv1d_fp16_bhl_w_reshape, causal_fftconv1d_fp16_bhl),
+        # Causal is only supported for 1D (sequences)
+    },
+}
+
+# FP16 + chunked: combines fp16 memory savings with channel-chunking savings
+FFT_FUNCTIONS_FP16_CHUNKED = {
+    "zero": {
+        1: (fftconv1d_fp16_bhl_w_reshape_chunked, fftconv1d_fp16_bhl_chunked),
+        2: (fftconv2d_fp16_bhl_w_reshape_chunked, fftconv2d_fp16_bhl_chunked),
+        3: (fftconv3d_fp16_bhl_w_reshape_chunked, fftconv3d_fp16_bhl_chunked),
+    },
+    "causal": {
+        1: (causal_fftconv1d_fp16_bhl_w_reshape_chunked, causal_fftconv1d_fp16_bhl_chunked),
         # Causal is only supported for 1D (sequences)
     },
 }
@@ -107,6 +155,8 @@ class CKConvND(torch.nn.Module):
         fft_padding: Literal["zero", "circular"],
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
+        use_fp16_fft: bool = False,
+        fft_backend: Literal["torch_fft", "subq_ops"] = "torch_fft",
     ):
         """Initialize the CKConvND.
 
@@ -127,10 +177,24 @@ class CKConvND(torch.nn.Module):
                 intermediates. Typical savings: ~26% memory with ~11% compute overhead.
                 Useful for memory-constrained training with large spatial dimensions
                 in 2D/3D. Default is False.
+            use_fp16_fft: If True, use fp16 FFT convolutions. Pads to power-of-2
+                sizes (cuFFT requirement) and uses ortho normalization to prevent
+                overflow. Saves ~36% peak memory per convolution with ~0.8% mean
+                relative error vs f32. Supported for 1D/2D/3D with zero or causal
+                padding (not circular). Default is False.
+            fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
+                uses the torch.fft-based implementations. ``'subq_ops'`` uses the
+                optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
+                backend currently only supports 2D, zero-padded, non-causal
+                convolutions and does not support fp16 FFT. It supports chunked
+                convolutions via channel-wise chunking.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
             f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
+        )
+        assert fft_backend in ["torch_fft", "subq_ops"], (
+            f"Invalid fft_backend: {fft_backend!r}. Must be 'torch_fft' or 'subq_ops'."
         )
         if is_causal:
             assert data_dim == 1, f"Causal CKConvND only supports 1D inputs. Got {data_dim}D."
@@ -150,36 +214,79 @@ class CKConvND(torch.nn.Module):
                 "Circular convolutions already have lower memory overhead due to no padding."
             )
 
+        if use_fp16_fft:
+            assert fft_padding != "circular", (
+                "use_fp16_fft does not support circular padding — cuFFT half-precision "
+                "requires power-of-2 sizes which circular padding cannot guarantee."
+            )
+
+        # subq_ops backend constraints
+        if fft_backend == "subq_ops":
+            assert data_dim == 2, f"fft_backend='subq_ops' only supports 2D convolutions. Got data_dim={data_dim}."
+            assert fft_padding == "zero", (
+                f"fft_backend='subq_ops' only supports zero-padded convolutions. Got fft_padding='{fft_padding}'."
+            )
+            assert not is_causal, "fft_backend='subq_ops' does not support causal convolutions (causal is 1D only)."
+            assert not use_fp16_fft, (
+                "fft_backend='subq_ops' does not support fp16 FFT — the CUDA kernel "
+                "manages its own precision internally. Use use_fp16_fft=False."
+            )
+
         super().__init__()
         self.data_dim = data_dim
         self.hidden_dim = hidden_dim
         self.fft_padding = fft_padding
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
+        self.use_fp16_fft = use_fp16_fft
+        self.fft_backend = fft_backend
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
         self.mask = instantiate(mask_cfg)
 
         # Construct shortcut projection
-        self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim, dtype=torch.float32))
+        self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim))
         bounds = math.sqrt(1.0 / hidden_dim)
         self.shortcut.data.uniform_(-bounds, bounds)
 
-        # Define FFT operation depending on padding and dimensionality
-        # Causal mode overrides fft_padding for 1D
-        effective_padding = "causal" if is_causal else self.fft_padding
-
-        # Choose between standard and chunked FFT functions
-        fft_fn_table = FFT_FUNCTIONS_CHUNKED if use_chunked_fftconv else FFT_FUNCTIONS
-        try:
-            self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
-        except KeyError:
-            valid_dims = sorted(FFT_FUNCTIONS.get(effective_padding, {}).keys())
-            raise ValueError(
-                f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
-                f"Valid dimensions for '{effective_padding}': {valid_dims}"
+        # Select FFT convolution functions based on backend
+        if fft_backend == "subq_ops":
+            from nvsubquadratic.ops.fftconv_custom import (
+                fftconv2d_bhl,
+                fftconv2d_bhl_chunked,
+                fftconv2d_bhl_w_reshape,
+                fftconv2d_bhl_w_reshape_chunked,
             )
+
+            if use_chunked_fftconv:
+                self.fftconv_fn = fftconv2d_bhl_w_reshape_chunked
+                self.fftconv_fn_bhl_input = fftconv2d_bhl_chunked
+            else:
+                self.fftconv_fn = fftconv2d_bhl_w_reshape
+                self.fftconv_fn_bhl_input = fftconv2d_bhl
+        else:
+            # torch_fft backend: use lookup tables
+            # Causal mode overrides fft_padding for 1D
+            effective_padding = "causal" if is_causal else self.fft_padding
+
+            # Choose FFT functions: fp16+chunked > fp16 > chunked > standard
+            if use_fp16_fft and use_chunked_fftconv:
+                fft_fn_table = FFT_FUNCTIONS_FP16_CHUNKED
+            elif use_fp16_fft:
+                fft_fn_table = FFT_FUNCTIONS_FP16
+            elif use_chunked_fftconv:
+                fft_fn_table = FFT_FUNCTIONS_CHUNKED
+            else:
+                fft_fn_table = FFT_FUNCTIONS
+            try:
+                self.fftconv_fn, self.fftconv_fn_bhl_input = fft_fn_table[effective_padding][self.data_dim]
+            except KeyError:
+                valid_dims = sorted(fft_fn_table.get(effective_padding, {}).keys())
+                raise ValueError(
+                    f"Unsupported configuration: fft_padding='{effective_padding}', data_dim={self.data_dim}. "
+                    f"Valid dimensions for '{effective_padding}': {valid_dims}"
+                )
 
         # Define the grid type
         self.grid_type = grid_type
@@ -189,8 +296,115 @@ class CKConvND(torch.nn.Module):
         return (
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"fft_padding={self.fft_padding!r}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
-            f"use_chunked_fftconv={self.use_chunked_fftconv}"
+            f"use_chunked_fftconv={self.use_chunked_fftconv}, use_fp16_fft={self.use_fp16_fft}, "
+            f"fft_backend={self.fft_backend!r}"
         )
+
+    def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
+        """Count FLOPs for CKConv: kernel generation + FFT convolution.
+
+        Two phases:
+
+        **Phase 1 — Kernel generation** (via SIREN MLP):
+          Delegated to ``self.kernel.flop_count(grid_lens, inference)``.
+          At ``inference=True`` without FiLM, the kernel is input-independent
+          and can be precomputed, so this returns 0.
+
+        **Phase 2 — FFT-based depthwise convolution** (C = ``self.hidden_dim``):
+          The convolution is computed in the frequency domain.  Padded signal
+          sizes Np_i depend on the padding mode:
+            - ``"zero"`` non-causal ("same"-mode):
+                Np_i = min(s_i + (k_i + 1) // 2,  2 * s_i)
+              Only half the kernel width of extra padding is needed beyond
+              the input size, because the output is cropped back to input
+              size (centered crop).  Matches ``fftconv.py`` line 624-628.
+            - ``"zero"`` causal (1D only):
+                Np_i = min(s_i + k_i,  2 * s_i)
+              Full linear convolution length; output is tail-cropped.
+            - ``"circular"``: Np_i = s_i  (wrap-around, no extra padding)
+
+          A separable N-D FFT on a grid of size (Np_1, ..., Np_d) costs:
+            5 * prod(Np) * sum(log2(Np_i))  real FLOPs per channel,
+          based on the radix-2 Cooley-Tukey decomposition where each butterfly
+          operation costs ~5 real FLOPs (1 complex multiply ≈ 4 real muls +
+          2 real adds, minus shared twiddle-factor optimizations → ~5 ops).
+          Note: the implementation uses ``rfft`` (real-to-complex), which is
+          ~2x cheaper than a full complex FFT; the 5N log N formula is a
+          conservative (upper-bound) estimate consistent with standard
+          vision-paper conventions.
+
+          Three FFTs are needed: forward FFT of input, forward FFT of kernel,
+          and inverse FFT of the product.  At ``inference=True`` without FiLM,
+          the kernel FFT is precomputed and cached, reducing to 2 FFTs.
+
+          Pointwise complex multiply in the frequency domain:
+            6 * C * prod(Np)  (4 real muls + 2 real adds for (a+bi)(c+di)).
+
+          Shortcut (skip connection): C * prod(spatial_dims)  (elementwise).
+
+        Args:
+            spatial_dims: Spatial dimensions of the input signal, e.g. (H, W).
+            inference: If True and kernel has no FiLM, skip kernel generation
+                and kernel FFT (both are precomputable and cached).
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        C = self.hidden_dim
+        has_film = getattr(self.kernel, "film_generator", None) is not None
+
+        # Determine kernel grid_lens (same logic as forward)
+        if self.grid_type == "single":
+            grid_lens = tuple((s + 1) // 2 for s in spatial_dims)
+        else:
+            grid_lens = tuple(spatial_dims)
+
+        # Kernel spatial sizes: the SIREN generates on a (2*L - 1) grid per dim
+        kernel_sizes = tuple(2 * gl - 1 for gl in grid_lens)
+
+        # For causal 1D, kernel is cropped to second half
+        if self.is_causal:
+            kernel_sizes = tuple(ks // 2 + 1 for ks in kernel_sizes)
+
+        flops = 0
+
+        # Phase 1: Kernel generation
+        flops += self.kernel.flop_count(grid_lens, inference=inference)
+
+        # Phase 2: FFT convolution
+        # Padded sizes match the actual fftconv implementations (fftconv.py):
+        #   non-causal "same": min(s + (k+1)//2, 2*s)
+        #   causal:            min(s + k, 2*s)
+        #   circular:          s  (no extra padding)
+        if self.fft_padding == "circular":
+            padded_dims = tuple(spatial_dims)
+        elif self.is_causal:
+            padded_dims = tuple(min(s + k, 2 * s) for s, k in zip(spatial_dims, kernel_sizes))
+        else:
+            padded_dims = tuple(min(s + (k + 1) // 2, 2 * s) for s, k in zip(spatial_dims, kernel_sizes))
+
+        prod_padded = 1
+        for p in padded_dims:
+            prod_padded *= p
+        log2_sum = sum(math.log2(max(p, 1)) for p in padded_dims)
+
+        # 3 FFTs (input, kernel, inverse) normally;
+        # 2 FFTs (input, inverse) at inference without FiLM (kernel FFT cached).
+        num_ffts = 2 if (inference and not has_film) else 3
+        fft_flops = num_ffts * 5 * C * prod_padded * log2_sum
+
+        # Pointwise complex multiply in frequency domain
+        cmul_flops = 6 * C * prod_padded
+
+        # Shortcut (elementwise multiply: input * shortcut_weight)
+        prod_spatial = 1
+        for s in spatial_dims:
+            prod_spatial *= s
+        shortcut_flops = C * prod_spatial
+
+        flops += int(fft_flops) + cmul_flops + shortcut_flops
+
+        return flops
 
     def apply_convolution(
         self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
@@ -207,26 +421,14 @@ class CKConvND(torch.nn.Module):
             torch.Tensor: Output tensor after applying convolution.
         """
         if is_bhl_input:
-            # Apply kernel
             conv_kernel = rearrange(
                 conv_kernel, "b ... c -> b c ..."
             )  # Reshape kernel to [B, C, * spatial_dims] (Kernels are always in BLH format)
-            x_dtype = x.dtype
-            x = self.fftconv_fn_bhl_input(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
-            return x.to(x_dtype)
+            _conv_fn = self.fftconv_fn_bhl_input
         else:
-            # Apply kernel
-            x_dtype = x.dtype
-            x = self.fftconv_fn(
-                x.to(torch.float32),
-                conv_kernel.to(torch.float32),
-                shortcut.to(torch.float32),
-            )
-            return x.to(x_dtype)
+            _conv_fn = self.fftconv_fn
+
+        return _conv_fn(x, conv_kernel, shortcut)
 
     def forward(
         self,

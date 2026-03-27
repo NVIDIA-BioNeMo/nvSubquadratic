@@ -81,7 +81,8 @@ class Hyena(torch.nn.Module):
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
         gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
     ):
-        """
+        """Constructor.
+
         Args:
             global_conv_cfg: Global (long-range) convolutional layer.
             short_conv_cfg: Short depthwise conv applied to concatenated [Q, K, V].
@@ -262,6 +263,89 @@ class Hyena(torch.nn.Module):
                 )
                 self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
         return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
+
+    def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
+        """Count FLOPs for the Hyena gated global convolutional mixer.
+
+        Let C = hidden_dim (per projection), S = prod(spatial_dims).
+
+        FLOPs breakdown:
+          1. Short depthwise conv on concatenated [Q, K, V] (3C channels):
+             2 * 3C * S * k_prod,  where k_prod = product of kernel sizes.
+             Each output element: k_prod MACs for 1 depthwise filter.
+             Skipped when short_conv is Identity.
+          2. RoPE on Q and K (when ``self.use_rope``):  4 * C * S.
+             Each of Q, K: x * cos + rotate(x) * sin = 2 elementwise ops
+             per element, over C * S elements.
+          3. QK-Norm (when ``self.q_norm is not None``):
+             Q: 3 * C * S  (RMSNorm-like).
+             K: 3 * C * S  only when ``self.gate_nonlinear`` is Identity
+             (linear gating); a nonlinear σ(K) already bounds magnitude.
+          4. First gate  Q ⊙ σ(K):  C * S (multiply).
+             + C * S for activation on K if gate_nonlinear is not Identity.
+          5. PixelHyena norm (if not Identity):  3 * C * S.
+          6. Global convolution (CKConvND):
+             Delegated to ``self.global_conv.flop_count(spatial_dims, inference)``.
+          7. Second gate  h ⊙ σ₂(V):  C * S (multiply).
+             + C * S for activation on V if gate_nonlinear_2 is not Identity.
+          8. Output norm (if not Identity):  3 * C * S.
+
+        Args:
+            spatial_dims: Spatial dimensions of the input, e.g. (H, W) for 2D.
+            inference: Passed through to CKConvND for kernel generation caching.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        C = self.global_conv.hidden_dim
+        S = 1
+        for s in spatial_dims:
+            S *= s
+
+        flops = 0
+
+        # 1. Short depthwise conv
+        if not isinstance(self.short_conv, torch.nn.Identity):
+            k_prod = 1
+            for k in self.short_conv.kernel_size:
+                k_prod *= k
+            in_ch = self.short_conv.in_channels  # 3 * C
+            groups = self.short_conv.groups
+            out_ch = self.short_conv.out_channels
+            flops += 2 * (in_ch // groups) * out_ch * S * k_prod
+
+        # 2. RoPE
+        if self.use_rope:
+            flops += 4 * C * S
+
+        # 3. QK-Norm
+        if self.q_norm is not None:
+            flops += 3 * C * S  # Q norm
+            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+                flops += 3 * C * S  # K norm (only for linear gating)
+
+        # 4. First gate: Q * σ(K)
+        flops += C * S  # elementwise multiply
+        if not isinstance(self.gate_nonlinear, torch.nn.Identity):
+            flops += C * S  # activation on K
+
+        # 5. PixelHyena norm
+        if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
+            flops += 3 * C * S
+
+        # 6. Global convolution
+        flops += self.global_conv.flop_count(spatial_dims, inference=inference)
+
+        # 7. Second gate: h * σ₂(V)
+        flops += C * S
+        if not isinstance(self.gate_nonlinear_2, torch.nn.Identity):
+            flops += C * S  # activation on V
+
+        # 8. Output norm
+        if not isinstance(self.output_norm, torch.nn.Identity):
+            flops += 3 * C * S
+
+        return flops
 
     def forward(
         self,

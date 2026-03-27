@@ -8,8 +8,8 @@ version = "0.1.0"
 description = "A unified PyTorch-native library for subquadratic alternatives to quadratic attention method"
 requires-python = ">=3.11"
 dependencies = [
-    "torch>=2.0.0",
-    "torchvision>=0.15.0",
+    "torch>=2.10.0,<2.11.0",
+    "torchvision>=0.25.0,<0.26.0",
     "einops>=0.6.0",
     "numpy>=1.21.0",
     "pyarrow>=14.0.0,<20.0.0",     # Constrained to be compatible with cudf/pylibcudf in NGC containers
@@ -27,7 +27,13 @@ dependencies = [
     "huggingface_hub",
     "subquadratic-ops-torch-cu12",
     "timm==1.0.22",
+    "nvidia-dali-cuda120",
 ]
+
+[project.optional-dependencies]
+# Optional: use QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
+# On Ampere and older GPUs the kernel is not available; RMSNorm uses PyTorch fallback.
+quack = ["quack-kernels"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -63,7 +69,8 @@ select = [
 "__init__.py" = ["D104", "E402", "F401", "F403", "F811"]
 "test_*.py" = ["D"]
 "conftest.py" = ["D"]
-"scripts/*.py" = ["D"]
+"scripts/*.py" = ["D", "E402"]
+"examples/**/ft_ablation/*.py" = ["D"]
 "**/*.ipynb" = ["D"]
 
 [tool.ruff.lint.isort]

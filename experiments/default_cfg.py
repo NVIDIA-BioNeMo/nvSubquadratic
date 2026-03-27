@@ -150,6 +150,11 @@ class ExperimentConfig:
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
     callbacks: list[LazyConfig] = field(default_factory=list)
 
+    # Layer-wise learning rate decay (LLRD): deeper layers get lower LR.
+    # None = disabled; float in (0, 1) = decay factor per layer.
+    layer_decay: Optional[float] = None
+    num_blocks: Optional[int] = None  # required when layer_decay is set
+
 
 @dataclass
 class DiffusionConfig:

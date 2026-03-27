@@ -1,18 +1,21 @@
 """Benchmark ViT-5-Small forward+backward throughput."""
 
 import sys
+import time
+
 import torch
 import torch.nn.functional as F
-import time
+
 
 sys.path.insert(0, ".")
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
-from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
 
 HIDDEN_DIM = 384
 NUM_BLOCKS = 12
@@ -26,6 +29,7 @@ BATCH_SIZE = 256
 
 
 def build_model():
+    """Build ViT-5-Small classification model on CUDA in bfloat16."""
     net = ViT5ClassificationNet(
         in_channels=3,
         num_classes=1000,
@@ -35,6 +39,7 @@ def build_model():
         image_size=IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
+        readout="cls",
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
@@ -67,6 +72,7 @@ def build_model():
 
 
 def benchmark(model, batch_size, num_warmup=10, num_iters=50):
+    """Run warmup then timed forward+backward iterations; return mean step time in seconds."""
     x = torch.randn(batch_size, IMAGE_SIZE, IMAGE_SIZE, 3, device="cuda", dtype=torch.bfloat16)
     inp = {"input": x, "condition": None}
     target = torch.randint(0, 1000, (batch_size,), device="cuda")
@@ -126,7 +132,7 @@ if __name__ == "__main__":
     h100_peak = 989.0  # BF16 tensor core peak TFLOPS
     mfu = achieved_tflops / h100_peak * 100
 
-    print(f"\n--- FLOP Analysis ---")
+    print("\n--- FLOP Analysis ---")
     print(f"  FLOPs/sample (fwd):   {flops_fwd / 1e9:.2f} GFLOPs")
     print(f"  FLOPs/sample (train): {flops_train / 1e9:.2f} GFLOPs")
     print(f"  FLOPs/step (B={BATCH_SIZE}): {flops_per_step / 1e12:.2f} TFLOPs")

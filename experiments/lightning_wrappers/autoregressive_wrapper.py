@@ -188,9 +188,9 @@ class AutoregressiveWrapper(LightningWrapperBase):
         self._start_timing()
         # Perform step
         if self.mode == "discrete":
-            predictions, loss, other_outputs = self._step(batch, self.train_acc)
+            _predictions, loss, other_outputs = self._step(batch, self.train_acc)
         else:  # Continuous mode
-            predictions, loss, other_outputs = self._step(batch, self.train_metric)
+            _predictions, loss, other_outputs = self._step(batch, self.train_metric)
         # Log loss
         self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Log perplexity for discrete mode
@@ -206,9 +206,9 @@ class AutoregressiveWrapper(LightningWrapperBase):
         """Perform validation step."""
         # Perform step
         if self.mode == "discrete":
-            predictions, loss, other_outputs = self._step(batch, self.val_acc)
+            _predictions, loss, other_outputs = self._step(batch, self.val_acc)
         else:  # Continuous mode
-            predictions, loss, other_outputs = self._step(batch, self.val_metric)
+            _predictions, loss, other_outputs = self._step(batch, self.val_metric)
         # Log loss
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Log perplexity for discrete mode
@@ -226,9 +226,9 @@ class AutoregressiveWrapper(LightningWrapperBase):
         """Perform test step."""
         # Perform step
         if self.mode == "discrete":
-            predictions, loss, _ = self._step(batch, self.test_acc)
+            _predictions, loss, _ = self._step(batch, self.test_acc)
         else:  # Continuous mode
-            predictions, loss, _ = self._step(batch, self.test_metric)
+            _predictions, loss, _ = self._step(batch, self.test_metric)
         # Log loss
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         # Log perplexity for discrete mode

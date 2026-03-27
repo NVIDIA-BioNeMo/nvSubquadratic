@@ -20,6 +20,13 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 - CUDA Toolkit 12.0 or higher
 - Python 3.11 or higher
 
+**quack-kernels (optional)**:
+
+- Used by `RMSNorm` for a fused CUDA kernel when available.
+- **Supported GPUs**: Hopper and Blackwell only (H100, B200, B300). There is no quack-kernels build for Ampere (e.g. RTX A6000, A100) or older architectures.
+- On unsupported GPUs or when quack is not installed, `RMSNorm` uses a pure-PyTorch fallback automatically. No separate “version” fixes Ampere; use the fallback or run on H100/B200 for the kernel.
+- Optional install: `pip install quack-kernels` (on H100/B200); or `pip install -e ".[quack]"` if using the optional dependency group.
+
 ## Architecture
 
 nvSubquadratic provides a **high-level PyTorch interface** that depends on the **subquadratic-ops library** for optimized CUDA kernels. This separation provides clear boundaries between API design and performance optimization:

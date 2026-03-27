@@ -20,9 +20,28 @@ class LayerScale(nn.Module):
     """
 
     def __init__(self, dim: int, init_value: float = 1e-4):
+        """Initialize learnable scale vector to init_value."""
         super().__init__()
         self.gamma = nn.Parameter(init_value * torch.ones(dim))
         self.gamma._no_weight_decay = True
 
+    def flop_count(self, num_tokens: int) -> int:
+        """Count FLOPs for per-channel scaling of ``num_tokens`` token vectors.
+
+        Each token of dimension D = ``self.gamma.shape[0]`` is multiplied
+        element-wise by the learned gamma vector: D FLOPs per token.
+
+        Total: num_tokens * D.
+
+        Args:
+            num_tokens: Number of token vectors being scaled.
+
+        Returns:
+            Total FLOPs as an integer.
+        """
+        dim = self.gamma.shape[0]
+        return num_tokens * dim
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Scale input by per-channel gamma."""
         return x * self.gamma

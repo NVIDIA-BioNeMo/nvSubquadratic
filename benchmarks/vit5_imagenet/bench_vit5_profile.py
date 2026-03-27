@@ -1,17 +1,20 @@
 """Profile one fwd+bwd step of ViT-5-Small to find time breakdown."""
 
 import sys
+
 import torch
 import torch.nn.functional as F
 
+
 sys.path.insert(0, ".")
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
-from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+
 
 HIDDEN_DIM = 384
 NUM_BLOCKS = 12
@@ -25,6 +28,7 @@ BATCH_SIZE = 256
 
 
 def build_model():
+    """Build ViT-5-Small classification model on CUDA in bfloat16."""
     net = ViT5ClassificationNet(
         in_channels=3,
         num_classes=1000,
@@ -34,6 +38,7 @@ def build_model():
         image_size=IMAGE_SIZE,
         num_registers=NUM_REGISTERS,
         dropout_rate=0.0,
+        readout="cls",
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5Attention)(
