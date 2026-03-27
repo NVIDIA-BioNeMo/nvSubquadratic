@@ -53,7 +53,7 @@ SIREN_LAYERS = 3
 SIREN_HIDDEN_DIM = 64
 
 # Training parameters
-TRAINING_ITERATIONS = 130_000
+TRAINING_ITERATIONS = 260_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.1
 NUM_WORKERS = 8
 GRAD_CLIP = 1.0
@@ -67,7 +67,7 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
 
     config.debug = False
-    config.compile = False
+    config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
 
     config.dataset = LazyConfig(WellDataModule)(

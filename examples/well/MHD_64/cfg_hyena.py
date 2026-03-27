@@ -46,7 +46,7 @@ IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
 OUT_CHANNELS = N_FIELDS
 
 # Model parameters - smaller due to 3D memory constraints
-BATCH_SIZE = 2
+BATCH_SIZE = 8
 NUM_HIDDEN_CHANNELS = 256
 NUM_BLOCKS = 8
 DROPOUT_IN_RATE = 0.0
@@ -58,7 +58,7 @@ PATCH_SIZE = 4
 SPATIAL_RESOLUTION = 64  # Native resolution per dimension
 
 # Training parameters
-TRAINING_ITERATIONS = 130_000
+TRAINING_ITERATIONS = 260_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.1
 NUM_WORKERS = 8
 GRAD_CLIP = 1.0
@@ -72,7 +72,7 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
 
     config.debug = False
-    config.compile = False
+    config.compile = True
 
     config.dataset = LazyConfig(WellDataModule)(
         well_base_path=WELL_BASE_PATH,
