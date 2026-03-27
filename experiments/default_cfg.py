@@ -34,6 +34,11 @@ class TrainConfig:
 class TrainerConfig:
     """Lightning Trainer configuration overrides."""
 
+    # Number of training samples per epoch.  Used with
+    # OmegaConf resolvers to derive step-based validation intervals via
+    # interpolation so that changing batch_size auto-adjusts everything.
+    samples_per_epoch: Optional[int] = None
+
     # Validate every N training iterations (maps to Lightning's val_check_interval).
     # None = rely on check_val_every_n_epoch only.
     check_val_every_n_iterations: Optional[int] = None

@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:8
-#SBATCH --cpus-per-task=128
-#SBATCH --partition=low
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=16
+#SBATCH --partition=batch
 #SBATCH --gpu-bind=closest
 #SBATCH --container-image=/shared/images/nvsubquadratic_cuda129.sqsh
 #SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch"
@@ -14,8 +14,8 @@
 set -eo pipefail
 
 if [ -z "$1" ]; then
-    echo "Usage: sbatch [--job-name=NAME] scripts/submit.sh <config.py> [extra args...]"
-    echo "  e.g. sbatch --job-name=vit5-apex scripts/submit.sh examples/vit5_imagenet/vit5_small_pretrain_apex.py"
+    echo "Usage: sbatch [--job-name=NAME] scripts/submit_1gpu.sh <config.py> [extra args...]"
+    echo "  e.g. sbatch --job-name=vit5-apex scripts/submit_1gpu.sh examples/vit5_imagenet/vit5_small_pretrain_apex.py"
     exit 1
 fi
 
@@ -34,6 +34,7 @@ conda activate nv-subq
 export SLURM_JOB_NAME=bash
 
 export TORCHINDUCTOR_FX_GRAPH_CACHE=1
+export TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor_${USER}_torch2.10
 export TRITON_CACHE_DIR=/home/dwromero/.triton/cache
 export DALI_NO_MMAP=1
 

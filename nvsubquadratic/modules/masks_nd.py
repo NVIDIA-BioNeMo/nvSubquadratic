@@ -169,9 +169,9 @@ class GaussianModulationND(torch.nn.Module):
     def _clamp_direct_std_param_pre_hook(self, module, inputs):
         """Clamp std_param into [min_std, max_std] just before forward without tracking grads."""
         with torch.no_grad():
-            self.std_param.clamp_(min=self.min_std)
+            self.std_param.data.clamp_(min=self.min_std)
             if self.max_std is not None:
-                self.std_param.clamp_(max=self.max_std)
+                self.std_param.data.clamp_(max=self.max_std)
 
     def _compute_std(self) -> torch.Tensor:
         """Computes the standard deviation for each channel based on the learned weights.
@@ -189,7 +189,8 @@ class GaussianModulationND(torch.nn.Module):
             std = torch.nn.functional.softplus(std)
         else:
             raise ValueError(f"Invalid parametrization: {self.parametrization}")
-        # Clamp the standard deviation to the limits. IMPORTANT! THIS WILL BREAK THE GRADIENT FLOW ON THE LIMITS!
+        # Clamp the standard deviation to the limits.
+        # IMPORTANT! THIS WILL BREAK THE GRADIENT FLOW ON THE LIMITS!
         std = std.clamp_min(self.min_std)
         if self.max_std is not None:
             std = std.clamp_max(self.max_std)
