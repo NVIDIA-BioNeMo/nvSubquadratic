@@ -57,6 +57,28 @@ class ViT5GeneralPurposeNet(nn.Module):
         use_cls_token: bool = False,
         prepend_registers: bool = True,
     ):
+        """Initialize the ViT5 general-purpose dense network.
+
+        Args:
+            in_channels: Number of input channels.
+            out_channels: Number of output channels.
+            hidden_dim: Transformer hidden dimension (D).
+            num_blocks: Number of Transformer blocks.
+            data_dim: Dimensionality of the spatial data (e.g. 1, 2, 3).
+            patch_size: Spatial shape of the patch (e.g. `P` for `PxP` patches in 2D). Can be a scalar or a tuple.
+            input_size: Spatial shape of the dense input (e.g. `H` for `H` width/height). Can be a scalar or a tuple.
+            num_registers: Number of learnable register tokens to use.
+            in_proj_cfg: LazyConfig for the linear mapping applied to patchified dense inputs to reach hidden_dim.
+            out_proj_cfg: LazyConfig for the linear mapping applied to the unpatchified grid to reach out_channels.
+            block_cfg: LazyConfig to instantiate each Transformer block.
+            norm_cfg: LazyConfig for the output normalization layer applied before the out_proj.
+            dropout_rate: Dropout rate applied right before the output projection. Let zero to disable.
+            use_cls_token: If True, prepends a learnable [CLS] token to the sequence.
+            prepend_registers: If True, registers will be placed at the beginning of the sequence
+                (just after the CLS token if present). If False, registers are appended to the end.
+                Note that prepended registers are automatically zero-padded to form a clean slice along
+                spatial dimensions (vital for spatial multi-dimensional mixers like Hyena).
+        """
         super().__init__()
         self.hidden_dim = hidden_dim
         self.out_channels = out_channels
@@ -89,7 +111,36 @@ class ViT5GeneralPurposeNet(nn.Module):
         else:
             self.reg_token = None
 
-        self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
+        if len(self.patch_grid_shape) > 1:
+            self._register_plane_size = math.prod(self.patch_grid_shape[1:])
+        else:
+            self._register_plane_size = None
+
+        # Calculate prefix (CLS + registers) size
+        self._prefix_len = 0
+        if self.use_cls_token:
+            self._prefix_len += 1
+        if self.num_registers > 0 and self.prepend_registers:
+            self._prefix_len += self.num_registers
+
+        # Zero-padding buffer for dense ND models: fills the prefix space to gracefully reshape
+        # as a unified multi-dimensional block internally by maintaining clean slice geometries.
+        if self._prefix_len > 0 and self._register_plane_size is not None:
+            assert self._prefix_len <= self._register_plane_size, (
+                f"prefix_len ({self._prefix_len}) > slice size ({self._register_plane_size}); "
+                "prefix tokens must fit in a single slice along spatial dimensions"
+            )
+            pad_size = self._register_plane_size - self._prefix_len
+            if pad_size > 0:
+                self.register_buffer("reg_zero_pad", torch.zeros(1, pad_size, hidden_dim), persistent=False)
+            else:
+                self.reg_zero_pad = None
+            self._padded_prefix_len = self._register_plane_size
+        else:
+            self.reg_zero_pad = None
+            self._padded_prefix_len = self._prefix_len
+
+        # Transformer blocks
 
         self.out_norm = instantiate(norm_cfg)
         for param in self.out_norm.parameters():
@@ -116,14 +167,8 @@ class ViT5GeneralPurposeNet(nn.Module):
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
     def _extract_patch_tokens(self, x: torch.Tensor) -> torch.Tensor:
-        start = 1 if self.use_cls_token else 0
-
-        if self.prepend_registers and self.num_registers > 0:
-            start += self.num_registers
-            end = start + self.num_patches
-            return x[:, start:end, :]
-
-        end = x.shape[1] - self.num_registers if self.num_registers > 0 else x.shape[1]
+        start = self._padded_prefix_len
+        end = start + self.num_patches
         return x[:, start:end, :]
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -135,6 +180,7 @@ class ViT5GeneralPurposeNet(nn.Module):
         Returns:
             Dict with dense prediction tensor in ``logits``.
         """
+        # 1. Patchify density via input projecting mapper
         x = input_and_condition["input"]
         x = self.in_proj(x)
 
@@ -144,27 +190,42 @@ class ViT5GeneralPurposeNet(nn.Module):
                 f"Runtime patch grid {patch_grid_shape} does not match configured shape {self.patch_grid_shape}."
             )
 
+        # 2. Add absolute positional embeddings over the flattened sequence
         batch_size = x.shape[0]
         x = rearrange(x, "b ... c -> b (...) c")
         x = x + self.pos_embed
 
+        # 3. Prepend CLS token (when enabled)
         if self.cls_token is not None:
             cls_tokens = self.cls_token.expand(batch_size, -1, -1)
             x = torch.cat([cls_tokens, x], dim=1)
 
+        # 4. Insert register tokens
         if self.reg_token is not None:
             reg_tokens = self.reg_token.expand(batch_size, -1, -1)
             if self.prepend_registers:
                 if self.cls_token is not None:
+                    # [CLS, regs, patches]
                     x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
                 else:
+                    # [regs, patches]
                     x = torch.cat([reg_tokens, x], dim=1)
             else:
+                # [patches, regs] or [CLS, patches, regs]
                 x = torch.cat([x, reg_tokens], dim=1)
 
+        # 5. Automatically uniformly align prefix tokens (CLS + prepended registers) geometrically
+        # so ND sequential mixers reshape identically into N-planes.
+        if self.reg_zero_pad is not None:
+            pad = self.reg_zero_pad.expand(batch_size, -1, -1)
+            # [prefix, zero_pad, patches]
+            x = torch.cat([x[:, : self._prefix_len, :], pad, x[:, self._prefix_len :, :]], dim=1)
+
+        # 6. Apply transformer blocks
         for block in self.blocks:
             x = block(x)
 
+        # 7. Unpatchify dense representation filtering out CLS/Registers & optional zero padding
         x = self._extract_patch_tokens(x)
         x = self.out_norm(x)
         x = self.dropout(x)

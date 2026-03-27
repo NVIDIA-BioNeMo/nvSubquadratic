@@ -10,6 +10,7 @@ treat the entire sequence as a flat spatial grid — they do not know or care ab
 which tokens are CLS, registers, or patches.
 """
 
+import math
 from collections.abc import Sequence
 
 import torch
@@ -116,25 +117,26 @@ class ViT5HyenaAdapterND(nn.Module):
         """Forward pass.
 
         Args:
-            x: [B, T, C] token sequence. T - num_prefix_tokens must equal prod(grid_shape).
+            x: [B, T, C] token sequence.
             **mixer_kwargs: Forwarded to the inner mixer (e.g. ``conditioning`` for FiLM).
 
         Returns:
-            [B, T, C] with patch tokens mixed via the ND inner mixer and prefix
-            tokens re-prepended unchanged.
+            [B, T, C] with all tokens mixed via the ND inner mixer.
+            Prefix tokens are expected to be zero-padded upstream so that they cleanly
+            fit into one or more planes along the first spatial dimension.
         """
         B, T, C = x.shape
 
-        if self.num_prefix_tokens > 0:
-            prefix = x[:, : self.num_prefix_tokens, :]
-            x = x[:, self.num_prefix_tokens :, :]
+        if len(self.grid_shape) > 1:
+            slice_size = math.prod(self.grid_shape[1:])
+            # The first dimension dynamically expands to accommodate prefix tokens padding upstream
+            first_dim = T // slice_size
+            x = x.reshape(B, first_dim, *self.grid_shape[1:], C)
+        else:
+            x = x.reshape(B, T, C)
 
-        x = x.reshape(B, *self.grid_shape, C)
         x = self.inner_mixer(x, **mixer_kwargs)
         x = x.reshape(B, -1, C)
-
-        if self.num_prefix_tokens > 0:
-            x = torch.cat([prefix, x], dim=1)
 
         return x
 
