@@ -141,6 +141,7 @@ class ViT5GeneralPurposeNet(nn.Module):
             self._padded_prefix_len = self._prefix_len
 
         # Transformer blocks
+        self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
 
         self.out_norm = instantiate(norm_cfg)
         for param in self.out_norm.parameters():
