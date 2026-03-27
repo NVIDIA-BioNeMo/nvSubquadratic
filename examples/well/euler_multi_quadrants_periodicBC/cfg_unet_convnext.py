@@ -16,7 +16,7 @@ from examples.well.euler_multi_quadrants_periodicBC._base import (
 )
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.networks.baselines.unet_convnext import WellUNetConvNext
+from nvsubquadratic.networks.baselines.unet import ConvNeXtBlock, WellUNet
 
 
 # ─── Model hyperparameters (configs/model/unet_convnext.yaml) ────────────────
@@ -42,7 +42,7 @@ def get_config() -> ExperimentConfig:
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
 
-    config.net = LazyConfig(WellUNetConvNext)(
+    config.net = LazyConfig(WellUNet)(
         dim_in=IN_CHANNELS,
         dim_out=OUT_CHANNELS,
         n_spatial_dims=DATA_DIM,
@@ -51,6 +51,9 @@ def get_config() -> ExperimentConfig:
         blocks_per_stage=BLOCKS_PER_STAGE,
         blocks_at_neck=BLOCKS_AT_NECK,
         init_features=INIT_FEATURES,
+        block_cfg=LazyConfig(ConvNeXtBlock)(
+            n_spatial_dims=DATA_DIM,
+        ),
         gradient_checkpointing=GRADIENT_CHECKPOINTING,
     )
 
