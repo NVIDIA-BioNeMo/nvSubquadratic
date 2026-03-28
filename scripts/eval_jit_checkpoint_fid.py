@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from nvsubquadratic.lazy_config import instantiate  # noqa: E402
+from nvsubquadratic.lazy_config import instantiate
 
 
 def _load_config(config_path: str, config_fn: str) -> Any:
