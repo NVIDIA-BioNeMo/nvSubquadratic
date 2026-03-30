@@ -139,6 +139,18 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     return module.get_config()
 
 
+def _register_arithmetic_resolvers(oc: Any) -> None:
+    """Register an ``eval`` OmegaConf resolver for inline arithmetic (idempotent).
+
+    OmegaConf does not natively support math operators in interpolations.
+    Registering Python's ``eval`` is the recommended workaround::
+
+        "${eval:'${trainer.samples_per_epoch} // (${train.batch_size} * 2)'}"
+    """
+    if not oc.has_resolver("eval"):
+        oc.register_new_resolver("eval", eval)
+
+
 def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> ExperimentConfig:
     """Apply command-line overrides to a configuration.
 
@@ -266,6 +278,8 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
     # Resolve ${...} interpolations while preserving DictConfig for dot-access
     from omegaconf import DictConfig as _DictConfig
     from omegaconf import OmegaConf as _OC
+
+    _register_arithmetic_resolvers(_OC)
 
     resolved_conf: _DictConfig = _OC.create(config_dict, flags={"allow_objects": True})
     _OC.resolve(resolved_conf)

@@ -47,12 +47,13 @@ N_CONSTANT_FIELDS = 0
 IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS  # 20
 OUT_CHANNELS = N_FIELDS  # 5
 
-# ─── Training constants (shared across models) ───────────────────────────────
-EPOCHS = 200  # configs/trainer/defaults.yaml
-WARMUP_EPOCHS = 5  # configs/lr_scheduler/cosine_with_warmup.yaml
-WARMUP_ITERATIONS_PERCENTAGE = WARMUP_EPOCHS / EPOCHS
+SAMPLES_PER_EPOCH = 388_000
 
-NUM_WORKERS = 14  # configs/config.yaml
+# ─── Training constants (shared across models) ───────────────────────────────
+TRAINING_ITERATIONS = 110_000  # override via CLI: train.iterations=<N>
+WARMUP_ITERATIONS_PERCENTAGE = 0.05
+
+NUM_WORKERS = 8
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
 
@@ -70,11 +71,6 @@ def get_base_config(
         learning_rate: Peak learning rate (from Table 6 of the paper).
         weight_decay: AdamW weight decay (default 1e-4 from optimizer/adam.yaml).
     """
-    # iterations = samples_per_epoch / batch_size * epochs
-    samples_per_epoch = 388_000
-    iters_per_epoch = samples_per_epoch // batch_size
-    training_iterations = iters_per_epoch * EPOCHS
-
     config = ExperimentConfig()
     config.debug = False
 
@@ -112,10 +108,15 @@ def get_base_config(
     # ── Training ──────────────────────────────────────────────────────────
     config.train = TrainConfig(
         batch_size="${dataset.batch_size}",
-        iterations=training_iterations,
+        iterations=TRAINING_ITERATIONS,
         grad_clip=GRAD_CLIP,
         precision=PRECISION,
     )
+
+    # ── Trainer: validate + checkpoint every half epoch ────────────────────
+    config.trainer.samples_per_epoch = SAMPLES_PER_EPOCH
+    config.trainer.check_val_every_n_iterations = "${eval:'${trainer.samples_per_epoch} // (${train.batch_size} * 2)'}"
+    config.trainer.checkpoint_every_n_steps = "${trainer.check_val_every_n_iterations}"
 
     # ── Scheduler ─────────────────────────────────────────────────────────
     config.scheduler = SchedulerConfig(
