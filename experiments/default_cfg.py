@@ -140,6 +140,12 @@ class ExperimentConfig:
     experiment_dir: Optional[str] = None
     num_nodes: int = 1
 
+    # Multiprocessing sharing strategy for DataLoader workers.
+    # Set to "file_system" to avoid /dev/shm exhaustion when running many
+    # workers or multiple jobs on the same node.  None keeps the PyTorch
+    # default ("file_descriptor" on Linux, which uses /dev/shm).
+    mp_sharing_strategy: Optional[str] = None
+
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER
     lightning_wrapper_class: LazyConfig = PLACEHOLDER

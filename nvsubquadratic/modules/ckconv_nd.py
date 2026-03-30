@@ -3,6 +3,7 @@
 
 """CKConv (long-convolution) implementation for ND signals."""
 
+import inspect
 import math
 import warnings
 from typing import Literal
@@ -10,7 +11,7 @@ from typing import Literal
 import torch
 from einops import rearrange
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, _resolve_target, instantiate
 
 # Standard FFT convolutions
 from nvsubquadratic.ops.circular_fftconv import (
@@ -258,6 +259,23 @@ class CKConvND(torch.nn.Module):
         self.use_chunked_fftconv = use_chunked_fftconv
         self.use_fp16_fft = use_fp16_fft
         self.fft_backend = fft_backend
+
+        # When grid_type="single", grid_lens is halved relative to spatial_dims
+        # (see forward()).  Adjust L_cache so the positional-embedding grid_cache
+        # spans [-1, 1] for the actual kernel size instead of a truncated subrange.
+        effective_L = getattr(kernel_cfg, "L_cache", None)
+        if grid_type == "single" and effective_L is not None:
+            effective_L = (effective_L + 1) // 2
+            kernel_cfg.L_cache = effective_L
+
+        # Inject the actual kernel size into mask_cfg so that attenuation-based
+        # initialization (GaussianModulationND) uses the correct grid geometry.
+        # This keeps grid_type logic in one place (here) instead of duplicating
+        # it in the mask.
+        if effective_L is not None:
+            mask_target = _resolve_target(mask_cfg["__target__"]) if "__target__" in mask_cfg else None
+            if mask_target is not None and "grid_size" in inspect.signature(mask_target).parameters:
+                mask_cfg.grid_size = 2 * effective_L - 1
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)

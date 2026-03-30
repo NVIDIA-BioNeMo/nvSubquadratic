@@ -90,6 +90,25 @@ class ExponentialModulationND(torch.nn.Module):
         return x * decay
 
 
+def _std_from_attenuation(attenuation: float, position: float, data_dim: int) -> float:
+    """Compute the per-dimension std that gives a target mask value at a grid position.
+
+    For a ``data_dim``-dimensional Gaussian mask evaluated at the corner
+    ``(position, position, …, position)``::
+
+        mask = exp(-0.5 * data_dim * (position / σ)²) = attenuation
+        ⟹  σ = position * sqrt( -data_dim / (2 * ln(attenuation)) )
+
+    Args:
+        attenuation: Desired mask value (0 < attenuation < 1).
+        position: Absolute grid coordinate (> 0).
+        data_dim: Number of spatial dimensions.
+    """
+    assert 0.0 < attenuation < 1.0, f"attenuation must be in (0, 1), got {attenuation}"
+    assert position > 0.0, f"position must be > 0, got {position}"
+    return position * math.sqrt(-data_dim / (2.0 * math.log(attenuation)))
+
+
 class GaussianModulationND(torch.nn.Module):
     """Gaussian decay modulation across N spatial/temporal dimensions.
 
@@ -102,45 +121,74 @@ class GaussianModulationND(torch.nn.Module):
 
     Mean is fixed (no learnable shift) so modulation remains symmetric around zero.
 
+    **Initialization** — pass ``min_attenuation_at_step`` and
+    ``max_attenuation_at_limit`` (plus ``grid_size``, auto-injected by
+    CKConvND).  These define the **clamp bounds** — the narrowest any
+    channel can get (min_std) and the widest (max_std).  Optionally pass
+    ``init_extent`` to control how global the widest channel is at
+    initialization.
+
+    All attenuation values are **single-axis** (1D) measurements.  Since the
+    mask is a product of per-dimension Gaussians, the 2D corner value is
+    ``attenuation ** 2``, and the 3D corner is ``attenuation ** 3``, etc.
+
+    - ``min_attenuation_at_step`` — 1D mask value at the first grid step
+      from center for the narrowest *possible* channel.  Sets ``min_std``
+      and ``init_std_low`` (narrowest channel starts at the clamp bound).
+    - ``max_attenuation_at_limit`` — 1D mask value at the grid boundary
+      (position 1) for the widest *possible* channel.  Sets ``max_std``.
+    - ``init_extent`` — grid position at which the widest *initial* channel
+      reaches 0.1 (10% mask value) along a single axis.  Sets
+      ``init_std_high``.  At ``init_extent=1.0`` the widest channel's mask
+      is 0.1 at the boundary.  Smaller values (e.g. 0.5, 0.25) start more
+      local.  Defaults to ``1.0`` when omitted.
+
     Args:
-        data_dim: Number of spatial/temporal dimensions represented in the last axis of `grid`.
+        data_dim: Number of spatial/temporal dimensions.
         num_channels: Number of feature channels to modulate.
-        min_std: Lower bound (after transformation) for stability.
-        max_std: Optional upper cap applied during forward (None to disable).
-        init_std_low / init_std_high: Range used to initialise stds per channel (linearly spaced) before transforming.
-        parametrization: 'log' (exp) or 'softplus' to ensure positivity.
+        min_attenuation_at_step: 1D mask value at first grid step (sets clamp
+            lower bound and init lower bound).
+        max_attenuation_at_limit: 1D mask value at grid boundary (sets clamp
+            upper bound).
+        init_extent: Grid position where widest init channel reaches 0.1.
+            Default ``1.0`` (start at max_std).
+        grid_size: Kernel grid points per dimension.  Auto-injected by CKConvND.
+        parametrization: ``'log'``, ``'softplus'``, or ``'direct'``.
     """
 
     def __init__(
         self,
         data_dim: int,
         num_channels: int,
-        min_std: float = 1e-3,
-        max_std: float | None = None,
-        init_std_low: float = 0.05,
-        init_std_high: float = 1.0,
+        grid_size: int,
+        min_attenuation_at_step: float = 0.1,
+        max_attenuation_at_limit: float = 0.95,
+        init_extent: float = 1.0,
         parametrization: str = "direct",
     ):
-        """Initialize the GaussianModulationND class.
-
-        Args:
-            data_dim: Dimension of input data.
-            num_channels: Number of input channels to be modulated.
-            min_std: Lower bound (after transformation) for stability.
-            max_std: Optional upper cap applied during forward (None to disable).
-            init_std_low: Range used to initialise stds per channel (linearly spaced) before transforming.
-            init_std_high: Range used to initialise stds per channel (linearly spaced) before transforming.
-            parametrization: Parametrization to use.
-        """
+        """Initialize the GaussianModulationND class."""
         super().__init__()
         assert parametrization in {"log", "softplus", "direct"}, (
             "parametrization must be 'log' or 'softplus' or 'direct'"
         )
         self.data_dim = data_dim
         self.num_channels = num_channels
-        self.min_std = float(min_std)
-        self.max_std = float(max_std) if max_std is not None else None
         self.parametrization = parametrization
+
+        # All attenuation targets are single-axis (1D) measurements.
+        # The multi-dim mask is the product of per-dim Gaussians, so the
+        # 2D corner value is attenuation^2, etc.
+        min_step = 2.0 / (grid_size - 1)
+        min_std = _std_from_attenuation(min_attenuation_at_step, min_step, 1)
+        max_std = _std_from_attenuation(max_attenuation_at_limit, 1.0, 1)
+        init_std_low = min_std
+        _extent = init_extent if init_extent is not None else 1.0
+        assert 0.0 < _extent <= 1.0, f"init_extent must be in (0, 1], got {_extent}"
+        _INIT_EXTENT_ATTENUATION = 0.1
+        init_std_high = _std_from_attenuation(_INIT_EXTENT_ATTENUATION, _extent, 1)
+
+        self.min_std = float(min_std)
+        self.max_std = float(max_std)
 
         # Create weight parameter
         init_std_per_channel = torch.logspace(math.log10(init_std_low), math.log10(init_std_high), num_channels)
@@ -165,13 +213,10 @@ class GaussianModulationND(torch.nn.Module):
             # IMPORTANT! DO NOT FORGET TO MANAGE GRADIENTS ON THE LIMITS FOR OTHER PARAMETRIZATIONS!
             pass
 
-    @torch.compiler.disable
     def _clamp_direct_std_param_pre_hook(self, module, inputs):
         """Clamp std_param into [min_std, max_std] just before forward without tracking grads."""
         with torch.no_grad():
-            self.std_param.data.clamp_(min=self.min_std)
-            if self.max_std is not None:
-                self.std_param.data.clamp_(max=self.max_std)
+            self.std_param.data.clamp_(min=self.min_std, max=self.max_std)
 
     def _compute_std(self) -> torch.Tensor:
         """Computes the standard deviation for each channel based on the learned weights.
@@ -191,9 +236,7 @@ class GaussianModulationND(torch.nn.Module):
             raise ValueError(f"Invalid parametrization: {self.parametrization}")
         # Clamp the standard deviation to the limits.
         # IMPORTANT! THIS WILL BREAK THE GRADIENT FLOW ON THE LIMITS!
-        std = std.clamp_min(self.min_std)
-        if self.max_std is not None:
-            std = std.clamp_max(self.max_std)
+        std = std.clamp(min=self.min_std, max=self.max_std)
         return std
 
     def extra_repr(self):
@@ -268,9 +311,7 @@ if __name__ == "__main__":
     script_dir = Path(__file__).parent
     fig_exp.savefig(script_dir / "exponential_masks.png", dpi=150, bbox_inches="tight")
 
-    gaussian_modulator = GaussianModulationND(
-        data_dim, num_channels, init_std_low=0.025, init_std_high=0.35, parametrization="direct"
-    )
+    gaussian_modulator = GaussianModulationND(data_dim, num_channels, grid_size=grid_size, parametrization="direct")
     gaussian_output = gaussian_modulator(grid, x)
     gauss_masks = gaussian_output[0].detach().cpu().permute(2, 0, 1)  # [C, H, W]
     print("Gaussian masks shape:", gauss_masks.shape)

@@ -1,20 +1,19 @@
-"""Shared config for euler_multi_quadrants_periodicBC experiments.
+"""Shared config for gray_scott_reaction_diffusion experiments.
 
 All dataset, optimizer, scheduler, and training parameters live here.
 Model configs (cfg_*.py) import these constants and call
 ``get_base_config(...)`` to get a pre-filled ExperimentConfig, then only
 need to set ``config.net`` and compile flags.
 
-Hyperparameters sourced from the Well benchmark codebase:
-    configs/data/euler_multi_quadrants_periodicBC.yaml  → batch_size default
-    configs/config.yaml                                  → n_steps_input/output, data_workers
-    configs/trainer/defaults.yaml                        → epochs, max_rollout_steps
-    configs/lr_scheduler/cosine_with_warmup.yaml        → warmup_epochs
-    configs/optimizer/adam.yaml                          → default optimizer
+Dataset: gray_scott_reaction_diffusion
+    - 2D, 128×128, 2 fields (A, B), 0 constant fields
+    - 1200 trajectories × 1001 timesteps
+    - ~960 train trajectories → ~957k training samples
+    - Periodic boundary conditions on [-1,1]×[-1,1]
+    - 6 parameter regimes (gliders, bubbles, maze, worms, spirals, spots)
 
-Dataset: euler_multi_quadrants_periodicBC
-    - 2D, 512×512, 5 fields, 0 constant fields
-    - 3000 trajectories × 101 timesteps → 388,000 training samples
+Reference: Well paper Table 6 — best LR varies by model:
+    FNO: 1e-3 (46 epochs), CNextU-net: 1e-4 (15 epochs) in 12h on 1×H100.
 """
 
 import os
@@ -31,26 +30,27 @@ PLACEHOLDER = None
 
 # ─── Dataset constants ────────────────────────────────────────────────────────
 DATA_DIM = 2
-SPATIAL_RESOLUTION = (512, 512)
+SPATIAL_RESOLUTION = (128, 128)
 WELL_BASE_PATH = os.environ.get(
     "WELL_DATA_PATH",
     "/shared/data/image_datasets/the_well/datasets",
 )
-WELL_DATASET_NAME = "euler_multi_quadrants_periodicBC"
+WELL_DATASET_NAME = "gray_scott_reaction_diffusion"
 
-N_STEPS_INPUT = 4  # configs/config.yaml
-N_STEPS_OUTPUT = 1  # configs/config.yaml
-MAX_ROLLOUT_STEPS = 100  # configs/trainer/defaults.yaml
+N_STEPS_INPUT = 4
+N_STEPS_OUTPUT = 1
+MAX_ROLLOUT_STEPS = 100
 
-N_FIELDS = 5
+N_FIELDS = 2  # A, B
 N_CONSTANT_FIELDS = 0
-IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS  # 20
-OUT_CHANNELS = N_FIELDS  # 5
+IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS  # 8
+OUT_CHANNELS = N_FIELDS  # 2
 
-SAMPLES_PER_EPOCH = 388_000
+# ~960 train trajectories × (1001 - 4) ≈ 957k samples
+SAMPLES_PER_EPOCH = 957_000
 
 # ─── Training constants (shared across models) ───────────────────────────────
-TRAINING_ITERATIONS = 110_000  # override via CLI: train.iterations=<N>
+TRAINING_ITERATIONS = 110_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 
 NUM_WORKERS = 12
@@ -68,8 +68,8 @@ def get_base_config(
 
     Args:
         batch_size: Per-GPU batch size.
-        learning_rate: Peak learning rate (from Table 6 of the paper).
-        weight_decay: AdamW weight decay (default 1e-4 from optimizer/adam.yaml).
+        learning_rate: Peak learning rate.
+        weight_decay: AdamW weight decay.
     """
     config = ExperimentConfig()
     config.debug = False
@@ -86,7 +86,7 @@ def get_base_config(
         max_rollout_steps=MAX_ROLLOUT_STEPS,
         min_dt_stride=1,
         max_dt_stride=1,
-        local_staging_dir=None,
+        local_staging_dir="/scratch/dwromero",
     )
 
     # ── Lightning wrapper ─────────────────────────────────────────────────
@@ -112,7 +112,6 @@ def get_base_config(
         grad_clip=GRAD_CLIP,
         precision=PRECISION,
     )
-    config.mp_sharing_strategy = "file_system"
 
     # ── Trainer: validate + checkpoint every half epoch ────────────────────
     config.trainer.samples_per_epoch = SAMPLES_PER_EPOCH
