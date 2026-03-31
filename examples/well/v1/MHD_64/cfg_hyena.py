@@ -45,16 +45,16 @@ N_CONSTANT_FIELDS = 0
 IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
 OUT_CHANNELS = N_FIELDS
 
-# Model parameters - smaller due to 3D memory constraints
+# Model parameters
 BATCH_SIZE = 8
-NUM_HIDDEN_CHANNELS = 256
-NUM_BLOCKS = 8
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 12
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
 FFT_PADDING = "circular"  # Periodic boundary conditions
 OMEGA_0 = 100.0
-PATCH_SIZE = 4
+PATCH_SIZE = 8
 SPATIAL_RESOLUTION = 64  # Native resolution per dimension
 
 # Training parameters
@@ -73,6 +73,8 @@ def get_config() -> ExperimentConfig:
 
     config.debug = False
     config.compile = True
+    config.compile_mode = "max-autotune-no-cudagraphs"
+    config.compile_compatible_fftconv = True
 
     config.dataset = LazyConfig(WellDataModule)(
         well_base_path=WELL_BASE_PATH,

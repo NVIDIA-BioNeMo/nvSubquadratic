@@ -40,17 +40,17 @@ IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS
 OUT_CHANNELS = N_FIELDS
 
 # Model parameters
-BATCH_SIZE = 2
-NUM_HIDDEN_CHANNELS = 256
-NUM_BLOCKS = 8
+BATCH_SIZE = 8
+NUM_HIDDEN_CHANNELS = 512
+NUM_BLOCKS = 12
 NUM_HEADS = 8
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
-PATCH_SIZE = 4
+PATCH_SIZE = 8
 SPATIAL_RESOLUTION = 64
 
 # Training parameters
-TRAINING_ITERATIONS = 130_000
+TRAINING_ITERATIONS = 260_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.1
 NUM_WORKERS = 8
 GRAD_CLIP = 1.0
@@ -64,7 +64,8 @@ def get_config() -> ExperimentConfig:
     config = ExperimentConfig()
 
     config.debug = False
-    config.compile = False
+    config.compile = True
+    config.compile_mode = "max-autotune"
 
     config.dataset = LazyConfig(WellDataModule)(
         well_base_path=WELL_BASE_PATH,

@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=2-00:00:00
-#SBATCH --mem=96G
+#SBATCH --mem=48G
 #SBATCH --output=logs/the_well_%A.out
 
 # print assigned node

@@ -41,14 +41,14 @@ Supernova serves as the initial ablation dataset before scaling to other Well da
 
 ### Ablation Results
 
-| #   | Config                               | Model               | Params | FLOPs | W&B ID | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Notes                                  |
-| --- | ------------------------------------ | ------------------- | ------ | ----- | ------ | ------ | --------- | ---------- | ---------- | -------------------------------------- |
-| A1  | `cfg_hyena.py`                       | ResNet + Hyena      | 26.0M  | 26.4G | TBD    | —      | —         | —          | —          | ivi-h1 geodude 2×GPU, batch_size=16    |
-| A2  | `cfg_attention.py`                   | ResNet + Attention  | 24.9M  | 25.5G | TBD    | —      | —         | —          | —          | ivi-h1 geodude 2×GPU, batch_size=16    |
-| A3  | `cfg_vit5_hyena.py`                  | ViT5 + Hyena        | 23.0M  | 23.8G | TBD    | —      | —         | —          | —          | ivi-h1 all6000 1×GPU, batch_size=16    |
-| A4  | `cfg_vit5_attention.py`              | ViT5 + Attention    | 22.8M  | 23.6G | TBD    | —      | —         | —          | —          | ivi-h1 all6000 1×GPU, batch_size=16    |
-| A5  | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | 23.4M  | 23.8G | TBD    | —      | —         | —          | —          | TBD                                    |
-| A6  | `cfg_vit5_hyena_3d.py`               | ViT5 + Hyena 3D     | 23.3M  | 23.9G | —      | —      | —         | —          | —          |                                        |
+| #   | Config                               | Model               | Params | FLOPs | W&B ID | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Notes                               |
+| --- | ------------------------------------ | ------------------- | ------ | ----- | ------ | ------ | --------- | ---------- | ---------- | ----------------------------------- |
+| A1  | `cfg_hyena.py`                       | ResNet + Hyena      | 26.0M  | 26.4G | TBD    | —      | —         | —          | —          | ivi-h1 geodude 2×GPU, batch_size=16 |
+| A2  | `cfg_attention.py`                   | ResNet + Attention  | 24.9M  | 25.5G | TBD    | —      | —         | —          | —          | ivi-h1 geodude 2×GPU, batch_size=16 |
+| A3  | `cfg_vit5_hyena.py`                  | ViT5 + Hyena        | 23.0M  | 23.8G | TBD    | —      | —         | —          | —          | ivi-h1 all6000 1×GPU, batch_size=16 |
+| A4  | `cfg_vit5_attention.py`              | ViT5 + Attention    | 22.8M  | 23.6G | TBD    | —      | —         | —          | —          | ivi-h1 all6000 1×GPU, batch_size=16 |
+| A5  | `cfg_vit5_hyena_film_conditioned.py` | ViT5 + Hyena + FiLM | 23.4M  | 23.8G | TBD    | —      | —         | —          | —          | TBD                                 |
+| A6  | `cfg_vit5_hyena_3d.py`               | ViT5 + Hyena 3D     | 23.3M  | 23.9G | —      | —      | —         | —          | —          |                                     |
 
 ______________________________________________________________________
 
@@ -56,11 +56,11 @@ ______________________________________________________________________
 
 Each row tracks the **best-scoring run** for a dataset. Only datasets with configs are listed.
 
-| Dataset                  | Dim | Resolution | Hyena test/VRMSE | Hyena W&B | Attn test/VRMSE | Attn W&B | Notes |
-| ------------------------ | --- | ---------- | ---------------- | --------- | --------------- | -------- | ----- |
-| `supernova_explosion_64` | 3D  | 64^3       | —                | —         | —               | —        |       |
-| `MHD_64`                 | 3D  | 64^3       | —                | —         | —               | —        |       |
-| `active_matter`          | 2D  | 256x256    | —                | —         | —               | —        |       |
+| Dataset                  | Dim | Resolution | Hyena test/VRMSE | Hyena W&B                                                                       | Attn test/VRMSE | Attn W&B | Notes                         |
+| ------------------------ | --- | ---------- | ---------------- | ------------------------------------------------------------------------------- | --------------- | -------- | ----------------------------- |
+| `supernova_explosion_64` | 3D  | 64^3       | —                | —                                                                               | —               | —        |                               |
+| `MHD_64`                 | 3D  | 64^3       | 0.2556           | [`e9nz6akw`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/e9nz6akw) | —               | —        | ResNet+Hyena (M2), 281 epochs |
+| `active_matter`          | 2D  | 256x256    | —                | —                                                                               | —               | —        |                               |
 
 ______________________________________________________________________
 
@@ -68,14 +68,12 @@ ______________________________________________________________________
 
 All completed runs. Failed, cancelled, and incomplete runs should be purged periodically.
 
-| #   | Dataset                | Config                  | Model              | SLURM ID | Cluster              | W&B ID                                                                            | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Who | Notes                  |
-| --- | ---------------------- | ----------------------- | ------------------ | -------- | -------------------- | --------------------------------------------------------------------------------- | ------ | --------- | ---------- | ---------- | --- | ---------------------- |
-| A1  | supernova_explosion_64 | `cfg_hyena.py`          | ResNet + Hyena     | TBD      | ivi-h1 geodude 2×GPU | TBD                                                                               | —      | —         | —          | —          | DW  | batch_size=16, pending |
-| A2  | supernova_explosion_64 | `cfg_attention.py`      | ResNet + Attention | TBD      | ivi-h1 geodude 2×GPU | TBD                                                                               | —      | —         | —          | —          | DW  | batch_size=16, pending |
-| A3  | supernova_explosion_64 | `cfg_vit5_hyena.py`     | ViT5 + Hyena       | TBD      | ivi-h1 all6000 1×GPU | TBD                                                                               | —      | —         | —          | —          | DW  | batch_size=16, pending |
-| A4  | supernova_explosion_64 | `cfg_vit5_attention.py` | ViT5 + Attention   | TBD      | ivi-h1 all6000 1×GPU | TBD                                                                               | —      | —         | —          | —          | DW  | batch_size=16, pending |
-| M1  | MHD_64                 | `cfg_unet_hyena.py`     | UNet + Hyena       | 149212   | ivi-h1 geodude 1×GPU | [`5aa1ukug`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5aa1ukug)   | —      | —         | —          | —          | DW  | running                |
-| M2  | MHD_64                 | `cfg_hyena.py`          | ResNet + Hyena     | 149213   | ivi-h1 geodude 1×GPU | TBD                                                                               | —      | —         | —          | —          | DW  | pending                |
+| #   | Dataset | Config                 | Model              | SLURM ID | Cluster              | W&B ID                                                                          | Epochs | val/VRMSE | test/VRMSE | test/NRMSE | Who | Notes                            |
+| --- | ------- | ---------------------- | ------------------ | -------- | -------------------- | ------------------------------------------------------------------------------- | ------ | --------- | ---------- | ---------- | --- | -------------------------------- |
+| M1  | MHD_64  | `cfg_unet_hyena.py`    | UNet + Hyena       | 151604   | ivi-h1 geodude 1×GPU | [`5aa1ukug`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/5aa1ukug) | 125+   | —         | —          | —          | DW  | running (resumed, was 149212)    |
+| M2  | MHD_64  | `cfg_hyena.py`         | ResNet + Hyena     | 151665   | ivi-h1 geodude 1×GPU | [`e9nz6akw`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/e9nz6akw) | 281    | 0.2545    | 0.2556     | 0.2133     | DW  | completed 2026-03-31 06:24 (18h) |
+| M3  | MHD_64  | `cfg_attention.py`     | ResNet + Attention | 151642   | ivi-h1 all6000 1×GPU | [`2twkspzu`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/2twkspzu) | 19+    | —         | —          | —          | DW  | running                          |
+| M4  | MHD_64  | `cfg_unet_convnext.py` | UNet + ConvNext    | 151620   | ivi-h1 geodude 1×GPU | [`jwepfpx9`](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/jwepfpx9) | 42+    | —         | —          | —          | DW  | running                          |
 
 ______________________________________________________________________
 
