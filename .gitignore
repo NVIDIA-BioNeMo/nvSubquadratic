@@ -348,4 +348,3 @@ uv.lock
 lightning_logs/
 wandb/
 runs/
-slurm/
