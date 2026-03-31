@@ -61,12 +61,16 @@ COPY . .
 # Set up git safe directory
 RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 
-# Install development dependencies first (as root, system-wide)
+# Install development dependencies first (as root, system-wide).
+# requirements-dev.txt intentionally omits torch/torchvision (see that file); they
+# come from pyproject.toml and stay on cu128 via the install below.
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 # Install the package (as root, system-wide). Apex and quack are not installed;
 # tests that need apex are skipped; RMSNorm uses the pure-PyTorch fallback.
-RUN pip install --no-cache-dir --no-build-isolation .
+# extra-index-url lets the resolver pick cu128 wheels that match this image.
+RUN pip install --no-cache-dir --no-build-isolation . \
+    --extra-index-url https://download.pytorch.org/whl/cu128
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \
@@ -78,7 +82,7 @@ RUN chown -R ubuntu:ubuntu /workspaces && \
 USER ubuntu
 
 # Set environment variables for development mode
-ENV PYTHONPATH="/workspaces/nvSubquadratic-private:${PYTHONPATH}"
+ENV PYTHONPATH=/workspaces/nvSubquadratic-private
 
 # Expose Jupyter port
 EXPOSE 8888
