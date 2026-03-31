@@ -2,11 +2,110 @@
 
 import shutil
 import subprocess
+import types
 from pathlib import Path
 from typing import Optional
 
+import h5py as h5
+import numpy as np
 import pytorch_lightning as pl
 from the_well.data import WellDataModule as BaseWellDataModule
+from the_well.data.utils import IO_PARAMS, maximum_stride_for_initial_index
+
+
+def _enable_h5_caching(dataset) -> None:
+    """Patch a WellDataset to cache HDF5 file handles across ``__getitem__`` calls.
+
+    The upstream ``WellDataset._load_one_sample`` opens and closes an ``h5py.File``
+    for **every** sample.  On large files the open/close overhead dominates data
+    loading time (~175 ms per sample even on NVMe).
+
+    This function replaces ``_load_one_sample`` with a version that keeps file
+    handles alive in a per-closure dict.  Handles are opened **lazily** on first
+    access, so they are always created inside the DataLoader worker process —
+    avoiding the h5py/fork() corruption issue.
+
+    Based on ``the_well==1.0.1`` ``WellDataset._load_one_sample``.
+    """
+    _cache: dict = {}  # file_idx -> h5py.File, populated lazily per worker
+
+    def _load_one_sample(self, index):
+        # --- index resolution (upstream WellDataset logic) ---
+        if self.restriction_set is not None:
+            index = self.restriction_set[index]
+        file_idx = int(np.searchsorted(self.file_index_offsets, index, side="right") - 1)
+        windows_per_trajectory = self.n_windows_per_trajectory[file_idx]
+        local_idx = index - max(self.file_index_offsets[file_idx], 0)
+        sample_idx = local_idx // windows_per_trajectory
+        time_idx = local_idx % windows_per_trajectory
+
+        # --- cached file handle (lazy open, never closed during training) ---
+        if file_idx not in _cache:
+            _cache[file_idx] = h5.File(
+                self.fs.open(self.files_paths[file_idx], "rb", **IO_PARAMS["fsspec_params"]),
+                "r",
+                **IO_PARAMS["h5py_params"],
+            )
+        file = _cache[file_idx]
+
+        # --- data loading (upstream WellDataset logic) ---
+        dt = self.min_dt_stride
+        if self.max_dt_stride > self.min_dt_stride:
+            effective_max_dt = maximum_stride_for_initial_index(
+                time_idx,
+                self.n_steps_per_trajectory[file_idx],
+                self.n_steps_input,
+                self.n_steps_output,
+            )
+            effective_max_dt = min(effective_max_dt, self.max_dt_stride)
+            if effective_max_dt > self.min_dt_stride:
+                dt = np.random.randint(self.min_dt_stride, effective_max_dt + 1)
+
+        data = {}
+        output_steps = min(self.n_steps_output, self.max_rollout_steps)
+        if self.full_trajectory_mode and self.start_output_steps_at_t >= 0:
+            time_idx = self.start_output_steps_at_t - (self.n_steps_input) * dt
+
+        data["variable_fields"], data["constant_fields"] = self._reconstruct_fields(
+            file,
+            self.caches[file_idx],
+            sample_idx,
+            time_idx,
+            self.n_steps_input + output_steps,
+            dt,
+        )
+        data["variable_scalars"], data["constant_scalars"] = self._reconstruct_scalars(
+            file,
+            self.caches[file_idx],
+            sample_idx,
+            time_idx,
+            self.n_steps_input + output_steps,
+            dt,
+        )
+
+        if self.boundary_return_type is not None:
+            data["boundary_conditions"] = self._reconstruct_bcs(
+                file,
+                self.caches[file_idx],
+                sample_idx,
+                time_idx,
+                self.n_steps_input + output_steps,
+                dt,
+            )
+
+        if self.return_grid:
+            data["space_grid"], data["time_grid"] = self._reconstruct_grids(
+                file,
+                self.caches[file_idx],
+                sample_idx,
+                time_idx,
+                self.n_steps_input + output_steps,
+                dt,
+            )
+
+        return data, file_idx, sample_idx, time_idx, dt
+
+    dataset._load_one_sample = types.MethodType(_load_one_sample, dataset)
 
 
 class WellDataModule(pl.LightningDataModule):
@@ -179,6 +278,17 @@ class WellDataModule(pl.LightningDataModule):
             # Apply same normalization to rollout test dataset
             self._well_datamodule.rollout_test_dataset.use_normalization = True
             self._well_datamodule.rollout_test_dataset.norm = train_normalization
+
+        # Patch all dataset splits to cache HDF5 file handles (each split
+        # gets its own independent cache via a fresh closure).
+        for ds in (
+            self._well_datamodule.train_dataset,
+            self._well_datamodule.val_dataset,
+            self._well_datamodule.rollout_val_dataset,
+            self._well_datamodule.test_dataset,
+            self._well_datamodule.rollout_test_dataset,
+        ):
+            _enable_h5_caching(ds)
 
         # Get metadata from the training dataset
         metadata = self._well_datamodule.train_dataset.metadata
