@@ -217,8 +217,11 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
                 # Try to parse as float
                 value = float(value)
             except ValueError:
+                # Handle None/null
+                if value.lower() in ("none", "null"):
+                    value = None
                 # Handle booleans
-                if value.lower() == "true":
+                elif value.lower() == "true":
                     value = True
                 elif value.lower() == "false":
                     value = False

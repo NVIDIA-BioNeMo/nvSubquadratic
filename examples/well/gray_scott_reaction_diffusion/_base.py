@@ -46,8 +46,9 @@ N_CONSTANT_FIELDS = 0
 IN_CHANNELS = N_STEPS_INPUT * N_FIELDS + N_CONSTANT_FIELDS  # 8
 OUT_CHANNELS = N_FIELDS  # 2
 
-# ~960 train trajectories × (1001 - 4) ≈ 957k samples
-SAMPLES_PER_EPOCH = 957_000
+# 960 train trajectories × 997 windows = 957,120 samples
+# windows = 1001 - (1 + 1*(4+1-1)) + 1 = 997  (see raw_steps_to_possible_sample_t0s)
+SAMPLES_PER_EPOCH = 957_120
 
 # ─── Training constants (shared across models) ───────────────────────────────
 TRAINING_ITERATIONS = 110_000
@@ -87,6 +88,8 @@ def get_base_config(
         min_dt_stride=1,
         max_dt_stride=1,
         local_staging_dir="/scratch/dwromero",
+        prefetch_factor=4,
+        persistent_workers=True,
     )
 
     # ── Lightning wrapper ─────────────────────────────────────────────────

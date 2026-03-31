@@ -90,5 +90,5 @@ addopts = [
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "nightly: full model validation against ImageNet (requires GPU, DALI, ImageNet data, wandb)",
+    "nightly: full model validation against ImageNet/WELL (requires GPU, data, wandb)",
 ]

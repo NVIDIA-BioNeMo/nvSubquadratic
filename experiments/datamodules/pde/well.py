@@ -15,6 +15,10 @@ class WellDataModule(pl.LightningDataModule):
     This wrapper provides a unified interface compatible with the nvSubquadratic
     training infrastructure while using the WELL benchmark's data loading.
 
+    Compared to the upstream ``BaseWellDataModule`` dataloaders, this wrapper
+    adds ``persistent_workers`` and a configurable ``prefetch_factor`` for
+    better GPU utilization (the upstream defaults leave both off / at 2).
+
     Args:
         well_base_path: Path to the WELL datasets directory
         well_dataset_name: Name of the dataset (e.g., 'active_matter')
@@ -28,10 +32,11 @@ class WellDataModule(pl.LightningDataModule):
         max_dt_stride: Maximum time stride (for data augmentation during training)
         local_staging_dir: Optional path to fast local storage (e.g. NVMe).
             When set, the dataset is copied there before training for faster I/O.
-
-    Note:
-        ``pin_memory`` is always True inside BaseWellDataModule.
-        ``seed`` and ``prefetch_factor`` are not supported by BaseWellDataModule.
+        prefetch_factor: Number of batches each worker pre-loads.  Higher values
+            keep the GPU better fed at the cost of more CPU memory.  Only used
+            when ``num_workers > 0``.
+        persistent_workers: Keep worker processes alive between epochs to avoid
+            re-opening HDF5 files and rebuilding worker state every epoch.
     """
 
     def __init__(
@@ -47,6 +52,8 @@ class WellDataModule(pl.LightningDataModule):
         min_dt_stride: int = 1,
         max_dt_stride: int = 1,
         local_staging_dir: Optional[str] = None,
+        prefetch_factor: int = 4,
+        persistent_workers: bool = True,
     ):
         """Initialize the WELL DataModule with dataset and loader parameters."""
         super().__init__()
@@ -61,6 +68,8 @@ class WellDataModule(pl.LightningDataModule):
         self.max_rollout_steps = max_rollout_steps
         self.min_dt_stride = min_dt_stride
         self.max_dt_stride = max_dt_stride
+        self.prefetch_factor = prefetch_factor
+        self.persistent_workers = persistent_workers
 
         self._well_datamodule = None
 
@@ -183,17 +192,51 @@ class WellDataModule(pl.LightningDataModule):
         # Store metadata for use in model/wrapper
         self.metadata = metadata
 
+    def _loader_kwargs(self) -> dict:
+        """Common DataLoader kwargs shared across all splits."""
+        use_workers = self.num_workers > 0
+        return {
+            "num_workers": self.num_workers,
+            "pin_memory": True,
+            "persistent_workers": self.persistent_workers and use_workers,
+            "prefetch_factor": self.prefetch_factor if use_workers else None,
+        }
+
     def train_dataloader(self):
-        """Return the training dataloader from the underlying WELL module."""
-        return self._well_datamodule.train_dataloader()
+        """Return the training dataloader with persistent workers and prefetching."""
+        from torch.utils.data import DataLoader
+
+        return DataLoader(
+            self._well_datamodule.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            drop_last=True,
+            **self._loader_kwargs(),
+        )
 
     def val_dataloader(self):
-        """Return the validation dataloader from the underlying WELL module."""
-        return self._well_datamodule.val_dataloader()
+        """Return the validation dataloader with persistent workers and prefetching."""
+        from torch.utils.data import DataLoader
+
+        return DataLoader(
+            self._well_datamodule.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            drop_last=False,
+            **self._loader_kwargs(),
+        )
 
     def test_dataloader(self):
-        """Return the test dataloader from the underlying WELL module."""
-        return self._well_datamodule.test_dataloader()
+        """Return the test dataloader with persistent workers and prefetching."""
+        from torch.utils.data import DataLoader
+
+        return DataLoader(
+            self._well_datamodule.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            drop_last=False,
+            **self._loader_kwargs(),
+        )
 
     @property
     def input_channels(self):
@@ -221,9 +264,25 @@ class WellDataModule(pl.LightningDataModule):
     @property
     def rollout_val_dataloader(self):
         """Return long rollout validation dataloader."""
-        return self._well_datamodule.rollout_val_dataloader
+        from torch.utils.data import DataLoader
+
+        return DataLoader(
+            self._well_datamodule.rollout_val_dataset,
+            batch_size=1,
+            shuffle=False,
+            drop_last=True,
+            **self._loader_kwargs(),
+        )
 
     @property
     def rollout_test_dataloader(self):
         """Return long rollout test dataloader."""
-        return self._well_datamodule.rollout_test_dataloader
+        from torch.utils.data import DataLoader
+
+        return DataLoader(
+            self._well_datamodule.rollout_test_dataset,
+            batch_size=1,
+            shuffle=False,
+            drop_last=True,
+            **self._loader_kwargs(),
+        )
