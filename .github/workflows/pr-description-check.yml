@@ -11,8 +11,12 @@ jobs:
     steps:
       - name: Check PR description for pre-commit pass
         env:
-          BODY: ${{ github.event.pull_request.body }}
+          # Pass body via env so bash does not parse backticks / $(...) in the text
+          # as command substitution (e.g. `examples/foo.md` would run as a command).
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
+          BODY="$PR_BODY"
+
           _how_to_run() {
             echo "How to run pre-commit (including pre-push hooks):"
             echo "  pre-commit install"
