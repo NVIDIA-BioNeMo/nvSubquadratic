@@ -9,7 +9,7 @@ With patch_size=16 the effective sequence resolution is 32×32.
 
 import torch
 
-from examples.well.euler_multi_quadrants_periodicBC._base import (
+from examples.well.v1.euler_multi_quadrants_periodicBC._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,

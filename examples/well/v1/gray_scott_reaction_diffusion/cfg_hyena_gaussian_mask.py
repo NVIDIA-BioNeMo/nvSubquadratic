@@ -13,7 +13,7 @@ override via CLI:
 
 import torch
 
-from examples.well.gray_scott_reaction_diffusion._base import (
+from examples.well.v1.gray_scott_reaction_diffusion._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,

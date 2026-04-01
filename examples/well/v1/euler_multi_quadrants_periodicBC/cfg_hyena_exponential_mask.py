@@ -4,11 +4,11 @@ Identical to ``cfg_hyena.py`` but replaces the ``nn.Identity`` mask with an
 ``ExponentialModulationND`` mask on the CKConv global convolution kernel.
 """
 
-from examples.well.euler_multi_quadrants_periodicBC.cfg_hyena import (
+from examples.well.v1.euler_multi_quadrants_periodicBC.cfg_hyena import (
     DATA_DIM,
     NUM_HIDDEN_CHANNELS,
 )
-from examples.well.euler_multi_quadrants_periodicBC.cfg_hyena import (
+from examples.well.v1.euler_multi_quadrants_periodicBC.cfg_hyena import (
     get_config as _get_hyena_config,
 )
 from experiments.callbacks.iteration_speed import IterationSpeedCallback
