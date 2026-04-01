@@ -167,6 +167,15 @@ def _run_validation_check(
     strip = StripCompiledPrefix()
     state_dict = strip(state_dict=state_dict, model=model)
 
+    # Drop checkpoint keys absent from model (e.g. bias params removed after
+    # the checkpoint was saved).  Keep strict=True semantics for missing keys.
+    model_keys = set(model.state_dict().keys())
+    extra = set(state_dict.keys()) - model_keys
+    if extra:
+        print(f"[nightly] Dropping {len(extra)} extra checkpoint keys: {sorted(extra)}")
+        for k in extra:
+            del state_dict[k]
+
     model.load_state_dict(state_dict, strict=True)
 
     # 7. Create a minimal trainer (no wandb, no checkpointing)
