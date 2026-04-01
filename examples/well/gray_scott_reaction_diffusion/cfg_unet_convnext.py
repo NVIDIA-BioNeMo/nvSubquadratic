@@ -14,6 +14,7 @@ from examples.well.gray_scott_reaction_diffusion._base import (
     SPATIAL_RESOLUTION,
     get_base_config,
 )
+from experiments.callbacks.iteration_speed import IterationSpeedCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.networks.baselines.unet_convnext import WellUNetConvNext
@@ -53,5 +54,7 @@ def get_config() -> ExperimentConfig:
         init_features=INIT_FEATURES,
         gradient_checkpointing=GRADIENT_CHECKPOINTING,
     )
+
+    config.callbacks.append(LazyConfig(IterationSpeedCallback)(log_every_n_steps=10))
 
     return config

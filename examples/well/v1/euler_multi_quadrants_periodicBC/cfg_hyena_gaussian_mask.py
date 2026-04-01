@@ -11,6 +11,7 @@ from examples.well.euler_multi_quadrants_periodicBC.cfg_hyena import (
 from examples.well.euler_multi_quadrants_periodicBC.cfg_hyena import (
     get_config as _get_hyena_config,
 )
+from experiments.callbacks.iteration_speed import IterationSpeedCallback
 from experiments.callbacks.mask_monitor import MaskMonitorCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
@@ -31,5 +32,6 @@ def get_config() -> ExperimentConfig:
     )
 
     config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))
+    config.callbacks.append(LazyConfig(IterationSpeedCallback)(log_every_n_steps=10))
 
     return config

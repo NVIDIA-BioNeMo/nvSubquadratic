@@ -1,7 +1,21 @@
-"""DataModule for WELL benchmark datasets."""
+"""Lightning DataModule for WELL benchmark datasets.
+
+Wraps ``the_well.data.WellDataModule`` with:
+
+* **Persistent HDF5 handles** — avoids re-opening files on every sample
+  (upstream opens and closes per ``__getitem__``).
+* **Optional NVMe staging** — copies the dataset to fast local storage
+  before training to reduce network I/O.
+* **Optional RAM preloading** — loads the entire training split into
+  numpy arrays in the parent process; workers then share the data via
+  OS copy-on-write pages with zero I/O overhead.
+* **Normalization fix** — upstream only normalizes the train split; this
+  wrapper applies the same normalization to val/test splits.
+"""
 
 import shutil
 import subprocess
+import time
 import types
 from pathlib import Path
 from typing import Optional
@@ -13,7 +27,132 @@ from the_well.data import WellDataModule as BaseWellDataModule
 from the_well.data.utils import IO_PARAMS, maximum_stride_for_initial_index
 
 
-def _enable_h5_caching(dataset) -> None:
+# ---------------------------------------------------------------------------
+# In-memory h5py mocks
+#
+# These lightweight classes implement the subset of the h5py API that the
+# upstream ``WellDataset._reconstruct_*`` methods use (indexing, .attrs,
+# group iteration, __contains__).  After RAM preloading, each HDF5 file
+# is represented as an _InMemFile -> _InMemGroup -> _InMemDataset tree
+# backed entirely by numpy arrays.
+# ---------------------------------------------------------------------------
+
+
+class _InMemDataset:
+    """h5py.Dataset mock: supports ``__getitem__``, ``.shape``, and ``.attrs``."""
+
+    __slots__ = ("_data", "attrs")
+
+    def __init__(self, data: np.ndarray, attrs: dict):
+        self._data = data
+        self.attrs = attrs
+
+    def __getitem__(self, idx):
+        return self._data[idx]
+
+    @property
+    def shape(self):
+        return self._data.shape
+
+
+class _InMemGroup:
+    """h5py.Group mock: supports ``['key']`` lookup, iteration, ``keys()``, and ``.attrs``."""
+
+    __slots__ = ("_items", "attrs")
+
+    def __init__(self):
+        self._items: dict[str, "_InMemDataset | _InMemGroup"] = {}
+        self.attrs: dict = {}
+
+    def __getitem__(self, key: str):
+        return self._items[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._items
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def keys(self):
+        return self._items.keys()
+
+
+class _InMemFile(_InMemGroup):
+    """h5py.File mock — identical to ``_InMemGroup`` (a File is just a root Group)."""
+
+    pass
+
+
+def _preload_to_ram(dataset) -> None:
+    """Preload all HDF5 data into numpy arrays stored on the dataset.
+
+    Called in the parent process **before** DataLoader workers fork, so the
+    numpy arrays live in shared (copy-on-write) memory pages.  Workers read
+    from these arrays with zero I/O overhead.
+
+    After preloading, ``_enable_h5_caching`` is replaced: the patched
+    ``_load_one_sample`` uses in-memory mocks instead of h5py Handles.
+
+    Memory cost: one copy of the training data in RAM.  For Gray-Scott this
+    is ~126 GB (6 files × 2 fields × 160×1001×128×128 float32).
+    """
+    preloaded: dict[int, _InMemFile] = {}  # file_idx -> mock file
+
+    for file_idx, path in enumerate(dataset.files_paths):
+        t0 = time.monotonic()
+        with h5.File(
+            dataset.fs.open(path, "rb", **IO_PARAMS["fsspec_params"]),
+            "r",
+            **IO_PARAMS["h5py_params"],
+        ) as f:
+            mock = _InMemFile()
+            mock.attrs = dict(f.attrs)
+
+            for group_name in f:
+                grp = f[group_name]
+                mg = _InMemGroup()
+                mg.attrs = dict(grp.attrs)
+
+                for ds_name in grp:
+                    item = grp[ds_name]
+                    if isinstance(item, h5.Dataset):
+                        data = item[()]  # read entire array into memory
+                        attrs = dict(item.attrs)
+                        mg._items[ds_name] = _InMemDataset(data, attrs)
+                    elif isinstance(item, h5.Group):
+                        # Nested group (e.g. boundary_conditions/x_periodic)
+                        sub_mg = _InMemGroup()
+                        sub_mg.attrs = dict(item.attrs)
+                        for sub_name in item:
+                            sub_item = item[sub_name]
+                            if isinstance(sub_item, h5.Dataset):
+                                sub_mg._items[sub_name] = _InMemDataset(sub_item[()], dict(sub_item.attrs))
+                        mg._items[ds_name] = sub_mg
+
+                mock._items[group_name] = mg
+
+        elapsed = time.monotonic() - t0
+        gb = (
+            sum(
+                ds._data.nbytes
+                for g in mock._items.values()
+                if isinstance(g, _InMemGroup)
+                for ds in g._items.values()
+                if isinstance(ds, _InMemDataset)
+            )
+            / 1e9
+        )
+        print(
+            f"[ram-preload] File {file_idx}/{len(dataset.files_paths) - 1}: {gb:.1f} GB in {elapsed:.1f}s",
+            flush=True,
+        )
+
+        preloaded[file_idx] = mock
+
+    dataset._preloaded_files = preloaded
+
+
+def _enable_h5_caching(dataset, *, use_ram_preload: bool = False) -> None:
     """Patch a WellDataset to cache HDF5 file handles across ``__getitem__`` calls.
 
     The upstream ``WellDataset._load_one_sample`` opens and closes an ``h5py.File``
@@ -25,9 +164,13 @@ def _enable_h5_caching(dataset) -> None:
     access, so they are always created inside the DataLoader worker process —
     avoiding the h5py/fork() corruption issue.
 
+    When ``use_ram_preload=True``, the patched loader reads from in-memory
+    numpy arrays (preloaded by ``_preload_to_ram``) instead of h5py.  This
+    gives zero-I/O data loading at the cost of RAM.
+
     Based on ``the_well==1.0.1`` ``WellDataset._load_one_sample``.
     """
-    _cache: dict = {}  # file_idx -> h5py.File, populated lazily per worker
+    _h5_cache: dict = {}  # file_idx -> h5py.File, populated lazily per worker
 
     def _load_one_sample(self, index):
         # --- index resolution (upstream WellDataset logic) ---
@@ -39,14 +182,18 @@ def _enable_h5_caching(dataset) -> None:
         sample_idx = local_idx // windows_per_trajectory
         time_idx = local_idx % windows_per_trajectory
 
-        # --- cached file handle (lazy open, never closed during training) ---
-        if file_idx not in _cache:
-            _cache[file_idx] = h5.File(
-                self.fs.open(self.files_paths[file_idx], "rb", **IO_PARAMS["fsspec_params"]),
-                "r",
-                **IO_PARAMS["h5py_params"],
-            )
-        file = _cache[file_idx]
+        # --- file handle: RAM preload or lazy h5py cache ---
+        preloaded = getattr(self, "_preloaded_files", None)
+        if preloaded is not None and file_idx in preloaded:
+            file = preloaded[file_idx]
+        else:
+            if file_idx not in _h5_cache:
+                _h5_cache[file_idx] = h5.File(
+                    self.fs.open(self.files_paths[file_idx], "rb", **IO_PARAMS["fsspec_params"]),
+                    "r",
+                    **IO_PARAMS["h5py_params"],
+                )
+            file = _h5_cache[file_idx]
 
         # --- data loading (upstream WellDataset logic) ---
         dt = self.min_dt_stride
@@ -109,14 +256,11 @@ def _enable_h5_caching(dataset) -> None:
 
 
 class WellDataModule(pl.LightningDataModule):
-    """Lightning DataModule wrapper for WELL benchmark datasets.
+    """Lightning DataModule for WELL benchmark datasets.
 
-    This wrapper provides a unified interface compatible with the nvSubquadratic
-    training infrastructure while using the WELL benchmark's data loading.
-
-    Compared to the upstream ``BaseWellDataModule`` dataloaders, this wrapper
-    adds ``persistent_workers`` and a configurable ``prefetch_factor`` for
-    better GPU utilization (the upstream defaults leave both off / at 2).
+    Wraps ``the_well.data.WellDataModule`` to provide persistent HDF5 handles,
+    optional NVMe staging, optional RAM preloading, and a normalization bugfix
+    for val/test splits.  See the module docstring for the full feature list.
 
     Args:
         well_base_path: Path to the WELL datasets directory
@@ -136,6 +280,10 @@ class WellDataModule(pl.LightningDataModule):
             when ``num_workers > 0``.
         persistent_workers: Keep worker processes alive between epochs to avoid
             re-opening HDF5 files and rebuilding worker state every epoch.
+        preload_to_ram: If True, load all HDF5 data into RAM before forking
+            DataLoader workers.  Workers share the data via copy-on-write pages,
+            eliminating all h5py/fsspec I/O overhead.  Requires sufficient RAM
+            (e.g. ~126 GB for Gray-Scott training split).  Default is False.
     """
 
     def __init__(
@@ -153,6 +301,7 @@ class WellDataModule(pl.LightningDataModule):
         local_staging_dir: Optional[str] = None,
         prefetch_factor: int = 4,
         persistent_workers: bool = True,
+        preload_to_ram: bool = False,
     ):
         """Initialize the WELL DataModule with dataset and loader parameters."""
         super().__init__()
@@ -169,6 +318,7 @@ class WellDataModule(pl.LightningDataModule):
         self.max_dt_stride = max_dt_stride
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
+        self.preload_to_ram = preload_to_ram
 
         self._well_datamodule = None
 
@@ -279,16 +429,36 @@ class WellDataModule(pl.LightningDataModule):
             self._well_datamodule.rollout_test_dataset.use_normalization = True
             self._well_datamodule.rollout_test_dataset.norm = train_normalization
 
-        # Patch all dataset splits to cache HDF5 file handles (each split
-        # gets its own independent cache via a fresh closure).
-        for ds in (
+        # Preload training data into RAM if requested (before workers fork).
+        # Only train split is preloaded — val/test are infrequent enough
+        # that h5py caching is fine.
+        all_splits = (
             self._well_datamodule.train_dataset,
             self._well_datamodule.val_dataset,
             self._well_datamodule.rollout_val_dataset,
             self._well_datamodule.test_dataset,
             self._well_datamodule.rollout_test_dataset,
-        ):
-            _enable_h5_caching(ds)
+        )
+        if self.preload_to_ram:
+            print("[WellDataModule] Preloading training data into RAM …", flush=True)
+            _preload_to_ram(self._well_datamodule.train_dataset)
+            total_gb = (
+                sum(
+                    ds._data.nbytes
+                    for mock in self._well_datamodule.train_dataset._preloaded_files.values()
+                    for g in mock._items.values()
+                    if isinstance(g, _InMemGroup)
+                    for ds in g._items.values()
+                    if isinstance(ds, _InMemDataset)
+                )
+                / 1e9
+            )
+            print(f"[WellDataModule] Preloaded {total_gb:.1f} GB into RAM.", flush=True)
+
+        # Patch all dataset splits to cache HDF5 file handles (each split
+        # gets its own independent cache via a fresh closure).
+        for ds in all_splits:
+            _enable_h5_caching(ds, use_ram_preload=self.preload_to_ram)
 
         # Get metadata from the training dataset
         metadata = self._well_datamodule.train_dataset.metadata

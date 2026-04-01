@@ -154,12 +154,22 @@ def _register_arithmetic_resolvers(oc: Any) -> None:
 def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> ExperimentConfig:
     """Apply command-line overrides to a configuration.
 
+    Supports two override formats:
+
+    * ``key=value`` — override an existing key (raises ``ValueError`` if
+      the key does not exist in the config tree).
+    * ``+key=value`` — Hydra-style force-add: creates intermediate dicts
+      as needed and sets the key even if it doesn't already exist.
+
+    Values are auto-parsed as ``int`` > ``float`` > ``bool`` >
+    ``None``/``null`` > ``tuple`` > ``list`` > ``str``.
+
     Args:
-        config: The base configuration
-        overrides: List of overrides in the format "key=value"
+        config: The base configuration.
+        overrides: List of overrides (e.g. ``["train.batch_size=32", "+dataset.preload_to_ram=True"]``).
 
     Returns:
-        Updated configuration
+        A new ``ExperimentConfig`` with the overrides applied.
     """
 
     # Convert config to a nested container that OmegaConf can resolve.
@@ -207,6 +217,11 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
             continue
 
         key, value = override.split("=", 1)
+
+        # Support Hydra-style '+key=value' to add new keys that don't yet exist
+        force_add = key.startswith("+")
+        if force_add:
+            key = key[1:]
 
         # Convert value to appropriate type
         try:
@@ -256,9 +271,12 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
         for i, part in enumerate(key_parts[:-1]):
             path_so_far.append(part)
             if part not in current_dict:
-                raise ValueError(
-                    f"Invalid config override: '{key}'. Path '{'.'.join(path_so_far)}' does not exist in config."
-                )
+                if force_add:
+                    current_dict[part] = {}
+                else:
+                    raise ValueError(
+                        f"Invalid config override: '{key}'. Path '{'.'.join(path_so_far)}' does not exist in config."
+                    )
             current_dict = current_dict[part]
             if not isinstance(current_dict, dict):
                 raise ValueError(
@@ -266,9 +284,9 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
                     f"'{'.'.join(path_so_far)}' is not a nested config (got {type(current_dict).__name__})."
                 )
 
-        # Validate the final key exists before setting
+        # Validate the final key exists before setting (skip when force-adding)
         final_key = key_parts[-1]
-        if final_key not in current_dict:
+        if not force_add and final_key not in current_dict:
             raise ValueError(
                 f"Invalid config override: '{key}'. "
                 f"Key '{final_key}' does not exist in config. "

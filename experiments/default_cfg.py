@@ -49,6 +49,9 @@ class TrainerConfig:
     # Run through all validation batches every epoch by default.
     limit_val_batches: Union[int, float] = 1.0
 
+    # Run through all test batches by default.
+    limit_test_batches: Union[int, float] = 1.0
+
     # Checkpoint saving frequency (in training steps). If None, only save after validation.
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None

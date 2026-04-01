@@ -19,6 +19,7 @@ from examples.well.gray_scott_reaction_diffusion._base import (
     OUT_CHANNELS,
     get_base_config,
 )
+from experiments.callbacks.iteration_speed import IterationSpeedCallback
 from experiments.callbacks.mask_monitor import MaskMonitorCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
@@ -161,5 +162,6 @@ def get_config() -> ExperimentConfig:
     )
 
     config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))
+    config.callbacks.append(LazyConfig(IterationSpeedCallback)(log_every_n_steps=10))
 
     return config
