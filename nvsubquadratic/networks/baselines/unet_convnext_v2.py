@@ -7,9 +7,11 @@ skips[-(N-1)]`` for ``j = 1, ..., N-1``, skipping ``skips[0]`` entirely.
 
 Changes vs :class:`~unet_convnext.UNetConvNext`:
 
-- **All** encoder skips are consumed (``skips[0]`` feeds the last decoder).
-- Every decoder stage uses ``skip_project=True`` (the original had
-  ``skip_project=False`` for ``j == 0``).
+- **All** encoder skips are consumed.  The decoder loop is kept identical
+  (first stage upsamples without a skip), but after the last decoder stage
+  ``skips[0]`` is concatenated and projected via a 1x1 conv before
+  ``out_proj``.  This is the minimal change that recovers the missing
+  finest-resolution information.
 
 All building blocks (``_Stage``, ``_Block``, ``_LayerNorm``, etc.) are
 imported from ``unet_convnext`` to avoid duplication.
@@ -33,9 +35,11 @@ from nvsubquadratic.networks.baselines.unet_convnext import (
 class UNetConvNextV2(nn.Module):
     """UNet-ConvNeXt with corrected skip connections.
 
-    Every decoder stage receives the corresponding encoder skip via
-    concatenation, including the finest-resolution features that the
-    upstream implementation silently drops.
+    Fixes the upstream bug where ``skips[0]`` (finest-resolution encoder
+    features) is never consumed.  The decoder loop is identical to the
+    original — first stage upsamples without a skip, stages 1..N-1 consume
+    ``skips[-1], ..., skips[-(N-1)]`` — but after all decoder stages we
+    concatenate ``skips[0]`` (full-resolution) and project before ``out_proj``.
 
     Args:
         dim_in: Number of input channels.
@@ -91,7 +95,7 @@ class UNetConvNextV2(nn.Module):
                     n_spatial_dims,
                     blocks_per_stage,
                     mode="up",
-                    skip_project=True,
+                    skip_project=i != 0,
                 )
             )
         self.encoder = nn.ModuleList(encoder)
@@ -104,6 +108,10 @@ class UNetConvNextV2(nn.Module):
         )
         self.decoder = nn.ModuleList(decoder)
 
+        # V2 addition: project the concatenated finest-resolution skip
+        # (2 * features → features) so skips[0] is actually used.
+        self.final_skip_proj = conv_modules[n_spatial_dims](2 * features, features, kernel_size=1)
+
     def _optional_checkpointing(self, layer, *inputs, **kwargs):
         if self.gradient_checkpointing:
             return checkpoint(layer, *inputs, use_reentrant=False, **kwargs)
@@ -112,6 +120,10 @@ class UNetConvNextV2(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with all skip connections used.
+
+        The decoder loop is identical to the original (j=0 upsamples without
+        skip, j=1..N-1 consume skips[-1]..skips[-(N-1)]).  The V2 fix adds
+        a final concatenation with skips[0] at the original resolution.
 
         Args:
             x: Channels-first input tensor [B, C_in, *spatial].
@@ -125,11 +137,15 @@ class UNetConvNextV2(nn.Module):
             skips.append(x)
             x = self._optional_checkpointing(enc, x)
         x = self.neck(x)
-        # Consume skips in reverse: skips[-1] (coarsest) first, skips[0] (finest) last.
+        # Same decoder loop as original: first stage has no skip, rest consume
+        # skips[-1], skips[-2], ... skips[-(N-1)].
         for j, dec in enumerate(self.decoder):
-            skip_idx = len(skips) - 1 - j
-            x = torch.cat([x, skips[skip_idx]], dim=1)
+            if j > 0:
+                x = torch.cat([x, skips[-j]], dim=1)
             x = dec(x)
+        # V2 fix: consume skips[0] (finest resolution) which the original drops.
+        x = torch.cat([x, skips[0]], dim=1)
+        x = self.final_skip_proj(x)
         x = self.out_proj(x)
         return x
 
