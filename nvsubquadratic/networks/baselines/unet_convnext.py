@@ -9,6 +9,17 @@ Mixed adaptation from:
 Ported from the_well.benchmark.models.unet_convnext to avoid the neuralop
 dependency that the_well.benchmark.models.__init__ eagerly imports.
 
+Note:
+    **Known bug (upstream):** ``skips[0]`` (finest-resolution encoder
+    features) is never used.  With N encoder stages the decoder loop
+    accesses ``skips[-1], skips[-2], ..., skips[-(N-1)]`` for
+    ``j = 1, 2, ..., N-1``, skipping ``skips[0]`` entirely.  In a
+    standard UNet the finest skip should connect to the last decoder
+    stage.  This matches the reference implementation in
+    ``the_well.benchmark.models.unet_convnext.UNetConvNext`` (v1.0.1)
+    line-for-line, so we preserve it here for reproducibility.
+    See :class:`UNetConvNextV2` for a corrected version.
+
 If you use this implementation, please cite the original work above.
 """
 
@@ -261,6 +272,17 @@ class UNetConvNext(nn.Module):
 
         Returns:
             Channels-first output tensor [B, C_out, *spatial].
+
+        Note:
+            **Known bug (upstream):** ``skips[0]`` (finest-resolution encoder
+            features) is never used.  With N encoder stages the decoder loop
+            accesses ``skips[-1], skips[-2], ..., skips[-(N-1)]`` for
+            ``j = 1, 2, ..., N-1``, skipping ``skips[0]`` entirely.  In a
+            standard UNet the finest skip should connect to the last decoder
+            stage.  This matches the reference implementation in
+            ``the_well.benchmark.models.unet_convnext.UNetConvNext`` (v1.0.1)
+            line-for-line, so we preserve it here for reproducibility.
+            See :class:`UNetConvNextV2` for a corrected version.
         """
         x = self.in_proj(x)
         skips = []
