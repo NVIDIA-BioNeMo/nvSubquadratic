@@ -64,12 +64,12 @@ repos:
         pass_filenames: false
         always_run: false
         description: Ensure all Python files have proper NVIDIA license headers
-        stages: [manual]  # Only run license check when explicitly invoked.
+        stages: [manual] # Only run license check when explicitly invoked.
       - id: pytest-pre-push
         name: pytest-pre-push
         # Write coverage to /tmp so the hook does not modify any file in the repo (avoids "files were modified" failure).
         # Apptainer/docker: set LD_LIBRARY_PATH/TRITON_LIBCUDA_PATH when cuda libs are in non-default locations.
-        entry: bash -c 'LIBCUDA_DIR=""; for cand in /.singularity.d/libs /usr/local/cuda/compat/lib; do if [ -f "$cand/libcuda.so.1" ]; then LIBCUDA_DIR="$cand"; break; fi; done; if [ -n "$LIBCUDA_DIR" ]; then export LD_LIBRARY_PATH="$LIBCUDA_DIR:${LD_LIBRARY_PATH}"; export TRITON_LIBCUDA_PATH="$LIBCUDA_DIR/libcuda.so.1"; fi; export COVERAGE_FILE=/tmp/.coverage_prepush; echo "Running tests before push..."; python -m pytest nvsubquadratic/ tests/ -v --tb=short --ignore=tests/test_h5_caching.py --ignore=tests/test_well_staging_ddp.py --ignore=tests/test_well_dataloader_parity.py'
+        entry: bash -c 'LIBCUDA_DIR=""; for cand in /.singularity.d/libs /usr/local/cuda/compat/lib; do if [ -f "$cand/libcuda.so.1" ]; then LIBCUDA_DIR="$cand"; break; fi; done; if [ -n "$LIBCUDA_DIR" ]; then export LD_LIBRARY_PATH="$LIBCUDA_DIR:${LD_LIBRARY_PATH}"; export TRITON_LIBCUDA_PATH="$LIBCUDA_DIR/libcuda.so.1"; fi; export COVERAGE_FILE=/tmp/.coverage_prepush; echo "Running tests before push..."; python -m pytest nvsubquadratic/ tests/ -v --tb=short'
         language: system
         stages: [pre-push]
         pass_filenames: false

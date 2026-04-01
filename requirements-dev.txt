@@ -1,5 +1,13 @@
-# Development dependencies for nvSubquadratic
-# Keep this in sync with pyproject.toml [project.optional-dependencies] dev
+# Development dependencies for nvSubquadratic (tools and notebooks only).
+#
+# torch / torchvision: defined in pyproject.toml [project.dependencies] with the
+# same bounds as the runtime package. Do NOT list them here with a separate loose
+# pin (e.g. torchvision>=0.15): pip would satisfy that from PyPI and can replace a
+# CUDA-matched torch wheel (e.g. cu129 in Docker) with a different CUDA build and
+# break Apex in slurm/enroot/Dockerfile.slurm.
+#
+# Install order for local dev: pip install -e ".[quack]"  (or plain .) then
+#   pip install -r requirements-dev.txt
 
 pytest>=6.0
 pytest-cov>=2.0
@@ -9,4 +17,4 @@ pre-commit>=4.0
 detect-secrets>=1.5.0
 jupyterlab>=4.0.0
 clean-fid>=0.1.35
-torchvision>=0.15.0
+the-well>=1.0.0

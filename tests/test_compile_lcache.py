@@ -13,8 +13,6 @@ import pytest
 import torch
 
 
-pytest.importorskip("apex")
-
 _requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 
