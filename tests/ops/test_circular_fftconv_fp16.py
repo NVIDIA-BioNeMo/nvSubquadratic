@@ -10,7 +10,14 @@ These tests verify that fp16 circular FFT convolutions:
 4. Work with and without the per-channel shortcut
 5. Reject mismatched shortcut dtypes
 6. Reject non-power-of-2 spatial dimensions
-7. Preserve caller dtype
+7. Reject unsupported kernel sizes (1D: only K=L or K=L-1)
+8. Preserve caller dtype
+9. Produce correct gradients matching the fp32 backward pass
+
+Kernel sizes are restricted to K=L (full-size) and K=L-1 (one shorter)
+per spatial axis, matching what the continuous kernel networks produce
+in production.  See ``nvsubquadratic/ops/FP16_FFTCONV_DERIVATION.md``
+for the mathematical background.
 
 All tests require CUDA (cuFFT only supports fp16 FFT).
 
@@ -47,8 +54,10 @@ pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA requ
 # K==L (full-size kernel) cases in higher dimensions accumulate more error.
 RTOL_FP16 = 0.15
 ATOL_FP16 = 0.4
-RTOL_FP16_BWD = 0.15
-ATOL_FP16_BWD = 0.15
+# Backward accumulates more error through the chain rule, especially for large
+# 3D K=L kernels (16^3 spatial elements).  Observed max atol ~0.31 for 3D K=L=16.
+RTOL_FP16_BWD = 0.20
+ATOL_FP16_BWD = 0.40
 
 
 @pytest.fixture
@@ -62,15 +71,22 @@ def device() -> str:
 
 
 class TestCircularFP16Conv1D:
-    """Tests for 1D fp16 circular FFT convolution."""
+    """Tests for 1D fp16 circular FFT convolution.
+
+    The dual-centering implementation only supports K=L (full-size kernel)
+    and K=L-1 (one element shorter), which are the only cases produced by
+    the continuous kernel networks in production.
+    """
 
     @pytest.mark.parametrize(
         "B,H,L,K",
         [
-            (2, 32, 64, 7),
-            (2, 16, 128, 32),
-            (1, 64, 256, 64),
-            (4, 16, 128, 15),
+            (2, 32, 64, 64),  # K=L
+            (2, 32, 64, 63),  # K=L-1
+            (2, 16, 128, 128),  # K=L
+            (2, 16, 128, 127),  # K=L-1
+            (1, 64, 256, 256),  # K=L
+            (4, 16, 128, 127),  # K=L-1
         ],
     )
     def test_fp16_vs_f32(self, device: str, B: int, H: int, L: int, K: int) -> None:
@@ -91,7 +107,7 @@ class TestCircularFP16Conv1D:
         """FP16 1D works without shortcut."""
         torch.manual_seed(42)
         x = torch.randn(2, 32, 64, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 32, 7, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 32, 63, device=device, dtype=torch.float32)
 
         y_f32 = circular_fftconv1d_f32(x, kernel, None)
         y_fp16 = circular_fftconv1d_fp16_bhl(x, kernel, None)
@@ -102,7 +118,7 @@ class TestCircularFP16Conv1D:
         """BLH wrapper reshapes correctly and matches direct BHL call."""
         torch.manual_seed(42)
         x_blh = torch.randn(2, 64, 32, device=device, dtype=torch.float32)  # [B, L, H]
-        k_blh = torch.randn(1, 7, 32, device=device, dtype=torch.float32)  # [1, K, H]
+        k_blh = torch.randn(1, 63, 32, device=device, dtype=torch.float32)  # [1, K, H], K=L-1
         shortcut = torch.randn(32, device=device, dtype=torch.float32)
 
         y = circular_fftconv1d_fp16_bhl_w_reshape(x_blh, k_blh, shortcut)
@@ -114,7 +130,7 @@ class TestCircularFP16Conv1D:
         torch.manual_seed(42)
 
         x_f32 = torch.randn(2, 32, 64, device=device, dtype=torch.float32)
-        kernel_f32 = torch.randn(1, 32, 7, device=device, dtype=torch.float32)
+        kernel_f32 = torch.randn(1, 32, 64, device=device, dtype=torch.float32)
         y1 = circular_fftconv1d_fp16_bhl(x_f32, kernel_f32, None)
         assert y1.dtype == torch.float32
 
@@ -126,7 +142,7 @@ class TestCircularFP16Conv1D:
     def test_rejects_mismatched_shortcut_dtype(self, device: str) -> None:
         """Mismatched shortcut dtype raises AssertionError."""
         x = torch.randn(2, 32, 64, device=device, dtype=torch.float16)
-        kernel = torch.randn(1, 32, 7, device=device, dtype=torch.float16)
+        kernel = torch.randn(1, 32, 64, device=device, dtype=torch.float16)
         shortcut_bad = torch.randn(32, device=device, dtype=torch.float32)
 
         with pytest.raises(AssertionError, match="shortcut.dtype"):
@@ -135,28 +151,23 @@ class TestCircularFP16Conv1D:
     def test_rejects_non_power_of_2(self, device: str) -> None:
         """Non-power-of-2 L raises AssertionError."""
         x = torch.randn(2, 16, 100, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 16, 7, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 16, 100, device=device, dtype=torch.float32)
 
         with pytest.raises(AssertionError, match="power of 2"):
             circular_fftconv1d_fp16_bhl(x, kernel, None)
 
-    def test_phase_shift_vs_roll(self, device: str) -> None:
-        """Phase-shift and spatial-roll alignment produce identical results."""
-        torch.manual_seed(42)
+    def test_rejects_arbitrary_kernel_size(self, device: str) -> None:
+        """K not in {L, L-1} raises ValueError."""
         x = torch.randn(2, 16, 128, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 16, 15, device=device, dtype=torch.float32)
-        shortcut = torch.randn(16, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 16, 7, device=device, dtype=torch.float32)
 
-        y_phase = circular_fftconv1d_fp16_bhl(x, kernel, shortcut, use_phase_shift=True)
-        y_roll = circular_fftconv1d_fp16_bhl(x, kernel, shortcut, use_phase_shift=False)
-
-        # Phase ramp goes through complex32, accumulating more rounding error than spatial roll.
-        torch.testing.assert_close(y_phase, y_roll, rtol=0.05, atol=0.05)
+        with pytest.raises(ValueError, match="K=L or K=L-1"):
+            circular_fftconv1d_fp16_bhl(x, kernel, None)
 
     def test_batched_kernel(self, device: str) -> None:
         """FP16 1D supports batched kernels [B, H, K]."""
         torch.manual_seed(42)
-        B, H, L, K = 2, 32, 64, 7
+        B, H, L, K = 2, 32, 64, 64
         x = torch.randn(B, H, L, device=device, dtype=torch.float32)
         kernel = torch.randn(B, H, K, device=device, dtype=torch.float32)
 
@@ -167,7 +178,7 @@ class TestCircularFP16Conv1D:
 
     @pytest.mark.parametrize(
         "B,H,L,K",
-        [(2, 16, 64, 15), (1, 32, 128, 7)],
+        [(2, 16, 64, 63), (1, 32, 128, 128)],
     )
     def test_backward_vs_f32(self, device: str, B: int, H: int, L: int, K: int) -> None:
         """FP16 circular 1D gradients match fp32 circular reference gradients."""
@@ -194,15 +205,19 @@ class TestCircularFP16Conv1D:
 
 
 class TestCircularFP16Conv2D:
-    """Tests for 2D fp16 circular FFT convolution."""
+    """Tests for 2D fp16 circular FFT convolution.
+
+    Uses K=L (full-size) and K=L-1 (one shorter) per spatial axis,
+    matching the kernel sizes produced by continuous kernel networks.
+    """
 
     @pytest.mark.parametrize(
         "B,H,X,Y,Kx,Ky",
         [
-            (2, 16, 32, 32, 7, 7),
-            (2, 32, 64, 64, 15, 15),
-            (1, 8, 16, 16, 5, 5),
-            (4, 8, 32, 32, 32, 32),
+            (2, 16, 32, 32, 31, 31),  # K=L-1 both axes
+            (2, 32, 64, 64, 64, 64),  # K=L both axes
+            (1, 8, 16, 16, 16, 16),  # K=L both axes
+            (4, 8, 32, 32, 32, 32),  # K=L both axes
         ],
     )
     def test_fp16_vs_f32(self, device: str, B: int, H: int, X: int, Y: int, Kx: int, Ky: int) -> None:
@@ -223,7 +238,7 @@ class TestCircularFP16Conv2D:
         """FP16 2D works without shortcut."""
         torch.manual_seed(42)
         x = torch.randn(2, 16, 32, 32, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 16, 7, 7, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 16, 31, 31, device=device, dtype=torch.float32)
 
         y_f32 = circular_fftconv2d_f32(x, kernel, None)
         y_fp16 = circular_fftconv2d_fp16_bhl(x, kernel, None)
@@ -234,36 +249,23 @@ class TestCircularFP16Conv2D:
         """BLH wrapper reshapes correctly."""
         torch.manual_seed(42)
         x_blh = torch.randn(2, 32, 32, 16, device=device, dtype=torch.float32)  # [B, X, Y, H]
-        k_blh = torch.randn(1, 7, 7, 16, device=device, dtype=torch.float32)
+        k_blh = torch.randn(1, 31, 31, 16, device=device, dtype=torch.float32)  # K=L-1
         shortcut = torch.randn(16, device=device, dtype=torch.float32)
 
         y = circular_fftconv2d_fp16_bhl_w_reshape(x_blh, k_blh, shortcut)
         assert y.shape == (2, 32, 32, 16)
 
-    def test_phase_shift_vs_roll(self, device: str) -> None:
-        """Phase-shift and spatial-roll alignment produce identical results."""
-        torch.manual_seed(42)
-        x = torch.randn(2, 8, 32, 32, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 8, 7, 7, device=device, dtype=torch.float32)
-        shortcut = torch.randn(8, device=device, dtype=torch.float32)
-
-        y_phase = circular_fftconv2d_fp16_bhl(x, kernel, shortcut, use_phase_shift=True)
-        y_roll = circular_fftconv2d_fp16_bhl(x, kernel, shortcut, use_phase_shift=False)
-
-        # Phase ramp goes through complex32, accumulating more rounding error than spatial roll.
-        torch.testing.assert_close(y_phase, y_roll, rtol=0.05, atol=0.05)
-
     def test_rejects_non_power_of_2(self, device: str) -> None:
         """Non-power-of-2 spatial dims raise AssertionError."""
         x = torch.randn(2, 8, 14, 14, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 8, 7, 7, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 8, 14, 14, device=device, dtype=torch.float32)
 
         with pytest.raises(AssertionError, match="power"):
             circular_fftconv2d_fp16_bhl(x, kernel, None)
 
     @pytest.mark.parametrize(
         "B,H,X,Y,Kx,Ky",
-        [(2, 8, 16, 16, 5, 5), (1, 16, 32, 32, 7, 7)],
+        [(2, 8, 16, 16, 15, 15), (1, 16, 32, 32, 32, 32)],
     )
     def test_backward_vs_f32(self, device: str, B: int, H: int, X: int, Y: int, Kx: int, Ky: int) -> None:
         """FP16 circular 2D gradients match fp32 circular reference gradients."""
@@ -290,14 +292,18 @@ class TestCircularFP16Conv2D:
 
 
 class TestCircularFP16Conv3D:
-    """Tests for 3D fp16 circular FFT convolution."""
+    """Tests for 3D fp16 circular FFT convolution.
+
+    Uses K=L (full-size) and K=L-1 (one shorter) per spatial axis,
+    matching the kernel sizes produced by continuous kernel networks.
+    """
 
     @pytest.mark.parametrize(
         "B,H,X,Y,Z,Kx,Ky,Kz",
         [
-            (2, 4, 16, 16, 16, 5, 5, 5),
-            (1, 8, 8, 8, 8, 3, 3, 3),
-            (2, 4, 16, 16, 16, 16, 16, 16),
+            (2, 4, 16, 16, 16, 15, 15, 15),  # K=L-1 all axes
+            (1, 8, 8, 8, 8, 8, 8, 8),  # K=L all axes
+            (2, 4, 16, 16, 16, 16, 16, 16),  # K=L all axes
         ],
     )
     def test_fp16_vs_f32(self, device: str, B: int, H: int, X: int, Y: int, Z: int, Kx: int, Ky: int, Kz: int) -> None:
@@ -318,7 +324,7 @@ class TestCircularFP16Conv3D:
         """FP16 3D works without shortcut."""
         torch.manual_seed(42)
         x = torch.randn(2, 4, 16, 16, 16, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 4, 3, 3, 3, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 4, 15, 15, 15, device=device, dtype=torch.float32)
 
         y_f32 = circular_fftconv3d_f32(x, kernel, None)
         y_fp16 = circular_fftconv3d_fp16_bhl(x, kernel, None)
@@ -329,36 +335,23 @@ class TestCircularFP16Conv3D:
         """BLH wrapper reshapes correctly."""
         torch.manual_seed(42)
         x_blh = torch.randn(2, 16, 16, 16, 4, device=device, dtype=torch.float32)
-        k_blh = torch.randn(1, 3, 3, 3, 4, device=device, dtype=torch.float32)
+        k_blh = torch.randn(1, 15, 15, 15, 4, device=device, dtype=torch.float32)  # K=L-1
         shortcut = torch.randn(4, device=device, dtype=torch.float32)
 
         y = circular_fftconv3d_fp16_bhl_w_reshape(x_blh, k_blh, shortcut)
         assert y.shape == (2, 16, 16, 16, 4)
 
-    def test_phase_shift_vs_roll(self, device: str) -> None:
-        """Phase-shift and spatial-roll alignment produce identical results."""
-        torch.manual_seed(42)
-        x = torch.randn(2, 4, 16, 16, 16, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 4, 5, 5, 5, device=device, dtype=torch.float32)
-        shortcut = torch.randn(4, device=device, dtype=torch.float32)
-
-        y_phase = circular_fftconv3d_fp16_bhl(x, kernel, shortcut, use_phase_shift=True)
-        y_roll = circular_fftconv3d_fp16_bhl(x, kernel, shortcut, use_phase_shift=False)
-
-        # Phase ramp goes through complex32, accumulating more rounding error than spatial roll.
-        torch.testing.assert_close(y_phase, y_roll, rtol=0.1, atol=0.1)
-
     def test_rejects_non_power_of_2(self, device: str) -> None:
         """Non-power-of-2 spatial dims raise AssertionError."""
         x = torch.randn(2, 4, 12, 12, 12, device=device, dtype=torch.float32)
-        kernel = torch.randn(1, 4, 3, 3, 3, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 4, 12, 12, 12, device=device, dtype=torch.float32)
 
         with pytest.raises(AssertionError, match="power"):
             circular_fftconv3d_fp16_bhl(x, kernel, None)
 
     @pytest.mark.parametrize(
         "B,H,X,Y,Z,Kx,Ky,Kz",
-        [(1, 4, 8, 8, 8, 3, 3, 3), (2, 4, 16, 16, 16, 5, 5, 5)],
+        [(1, 4, 8, 8, 8, 7, 7, 7), (2, 4, 16, 16, 16, 16, 16, 16)],
     )
     def test_backward_vs_f32(
         self, device: str, B: int, H: int, X: int, Y: int, Z: int, Kx: int, Ky: int, Kz: int

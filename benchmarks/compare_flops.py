@@ -14,17 +14,18 @@ Usage:
     conda run -n nv-subq python scripts/compare_flops.py --scaling
 """
 
-import csv
 import sys
 from pathlib import Path
 
-import torch
 
-
-# Ensure the project root is on the path
+# Ensure the project root is on sys.path before importing project modules.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+
+import csv
+
+import torch
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.ckconv_nd import CKConvND
@@ -582,6 +583,7 @@ def _per_block_breakdown(model: ViT5ClassificationNet, inference: bool) -> dict[
 
 
 def main():
+    """Print side-by-side FLOP comparison tables and optionally plot scaling curves."""
     print("=" * 80)
     print("ViT-5-Small FLOP Comparison: Attention vs Hyena vs Hyena+FiLM")
     print("=" * 80)

@@ -23,7 +23,7 @@ from einops import rearrange
 from timm.layers import DropPath
 from torch.utils.checkpoint import checkpoint
 
-from nvsubquadratic.lazy_config import instantiate
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
@@ -212,7 +212,7 @@ def _build_hyena(dim, n_spatial_dims, spatial_res, omega_0, siren_layers, siren_
             use_bias=True,
             hidden_omega_0=1.0,
         ),
-        mask_cfg=nn.Identity(),
+        mask_cfg=LazyConfig(nn.Identity)(),
         grid_type="single",
     )
     short_conv = conv_modules[n_spatial_dims](

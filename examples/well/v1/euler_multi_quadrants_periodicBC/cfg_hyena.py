@@ -108,10 +108,6 @@ def get_config() -> ExperimentConfig:
                         # mask_cfg=LazyConfig(GaussianModulationND)(
                         #     data_dim=DATA_DIM,
                         #     num_channels=NUM_HIDDEN_CHANNELS,
-                        #     min_std=0.025,
-                        #     max_std=1.25,
-                        #     init_std_low=0.05,
-                        #     init_std_high=1.0,
                         #     parametrization="direct",
                         # ),
                         mask_cfg=LazyConfig(torch.nn.Identity)(),

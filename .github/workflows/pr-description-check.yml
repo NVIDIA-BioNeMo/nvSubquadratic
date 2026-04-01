@@ -10,9 +10,9 @@ jobs:
 
     steps:
       - name: Check PR description for pre-commit pass
+        env:
+          BODY: ${{ github.event.pull_request.body }}
         run: |
-          BODY="${{ github.event.pull_request.body }}"
-
           _how_to_run() {
             echo "How to run pre-commit (including pre-push hooks):"
             echo "  pre-commit install"

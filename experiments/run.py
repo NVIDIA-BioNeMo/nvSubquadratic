@@ -22,6 +22,7 @@ PIL.Image.init()
 
 import pytorch_lightning as pl  # noqa: E402
 import torch  # noqa: E402
+import torch.multiprocessing  # noqa: E402
 import wandb  # noqa: E402
 from pytorch_lightning.loggers import WandbLogger  # noqa: E402
 from rich import print as rprint  # noqa: E402
@@ -134,6 +135,12 @@ def main() -> None:
     local_rank = os.environ.get("LOCAL_RANK", "0")
     base_triton_dir = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
     os.environ["TRITON_CACHE_DIR"] = os.path.join(base_triton_dir, f"rank_{local_rank}")
+
+    # Override multiprocessing sharing strategy if requested (e.g. "file_system"
+    # to avoid /dev/shm exhaustion with many workers on a shared node).
+    if getattr(config, "mp_sharing_strategy", None):
+        torch.multiprocessing.set_sharing_strategy(config.mp_sharing_strategy)
+        print(f"[run] multiprocessing sharing strategy → {config.mp_sharing_strategy}", flush=True)
 
     # Construct data_module, prepare and setup
     datamodule = instantiate(config.dataset)

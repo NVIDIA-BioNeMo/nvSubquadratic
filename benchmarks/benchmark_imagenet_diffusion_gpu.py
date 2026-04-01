@@ -55,16 +55,19 @@ def _autocast_context(device: torch.device, dtype: torch.dtype):
 
 
 def _ensure_cuda() -> torch.device:
+    """Assert CUDA is available and return the default CUDA device."""
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA GPU required for this benchmark.")
     return torch.device("cuda")
 
 
 def _clone_config(cfg):
+    """Deep-copy a config so we can apply overrides without mutating the original."""
     return copy.deepcopy(cfg)
 
 
 def _prepare_config(base_cfg, spec: ModelSpec, image_size: int):
+    """Clone the base config and apply model-size / resolution overrides."""
     cfg = _clone_config(base_cfg)
     overrides = [
         f"net.hidden_dim={spec.hidden_dim}",
@@ -85,6 +88,7 @@ def _instantiate_wrapper(
     dtype: torch.dtype,
     compile_options: Optional[CompileOptions] = None,
 ):
+    """Build a Lightning wrapper on *device*, optionally applying ``torch.compile``."""
     network = instantiate(cfg.net, in_channels=3, out_channels=3)
     wrapper = instantiate(cfg.lightning_wrapper_class, network=network, cfg=cfg)
     wrapper = wrapper.to(device=device)
@@ -104,14 +108,17 @@ def _instantiate_wrapper(
 
 
 def _make_images(resolution: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """Generate random images in [-1, 1] for benchmarking."""
     return torch.rand((BATCH_SIZE, resolution, resolution, 3), device=device, dtype=dtype) * 2.0 - 1.0
 
 
 def _make_labels(device: torch.device) -> torch.Tensor:
+    """Generate dummy class labels (all zeros)."""
     return torch.zeros((BATCH_SIZE,), device=device, dtype=torch.long)
 
 
 def _measure(fn, device: torch.device, repeat: int) -> tuple[float, float]:
+    """Run *fn* ``repeat`` times and return (avg_seconds, peak_gpu_mb)."""
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
     torch.cuda.synchronize(device)
@@ -125,6 +132,7 @@ def _measure(fn, device: torch.device, repeat: int) -> tuple[float, float]:
 
 
 def _inference_fn(wrapper, resolution: int, dtype: torch.dtype):
+    """Return a zero-arg closure that runs one inference step."""
     device = next(wrapper.parameters()).device
     images = _make_images(resolution, device, dtype)
     labels = _make_labels(device)
@@ -146,6 +154,7 @@ def _inference_fn(wrapper, resolution: int, dtype: torch.dtype):
 
 
 def _training_fn(wrapper, resolution: int, dtype: torch.dtype):
+    """Return a zero-arg closure that runs one train step (fwd + bwd + optimizer)."""
     device = next(wrapper.parameters()).device
     wrapper.train()
     images = _make_images(resolution, device, dtype)
@@ -166,6 +175,7 @@ def _training_fn(wrapper, resolution: int, dtype: torch.dtype):
 
 
 def _is_oom_error(exc: BaseException) -> bool:
+    """Check whether an exception is a CUDA out-of-memory error."""
     message = str(exc).lower()
     return "out of memory" in message
 
@@ -180,6 +190,7 @@ def _run_mode(
     repeat: int,
     dtype_name: str,
 ) -> dict:
+    """Run a single benchmark mode (inference or training), catching OOM gracefully."""
     result = {
         "mode": mode,
         "model": spec.name,
@@ -215,6 +226,7 @@ def benchmark_spec(
     dtype_name: str,
     compile_options: Optional[CompileOptions] = None,
 ) -> list[dict]:
+    """Run memory and latency benchmarks for a single model specification."""
     cfg = _prepare_config(base_cfg, spec, image_size)
     wrapper = _instantiate_wrapper(cfg, device, dtype, compile_options=compile_options)
     if spec.num_params is None:
@@ -272,6 +284,7 @@ def _print_table(rows: Iterable[dict]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the ImageNet diffusion benchmark."""
     parser = argparse.ArgumentParser(description="Benchmark ImageNet diffusion model memory/time.")
     parser.add_argument(
         "--config",
@@ -328,6 +341,7 @@ def _dtype_from_string(name: str) -> torch.dtype:
 
 
 def main() -> None:
+    """Entry point: parse args, instantiate models, and run benchmarks."""
     args = parse_args()
     base_cfg = load_config_from_file(args.config)
     device = _ensure_cuda()
