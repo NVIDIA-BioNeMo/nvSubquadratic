@@ -109,9 +109,9 @@ Time-averaged VRMSE over two windows: steps 6–12 and steps 13–30.
 | Hyperparameter    | Value                                                               |
 | ----------------- | ------------------------------------------------------------------- |
 | Optimizer         | AdamW                                                               |
-| Weight decay      | 0.01 (PyTorch default)                                              |
+| Weight decay      | 1e-4 (overridden in `configs/optimizer/adam.yaml`)                  |
 | Loss              | MSE averaged over fields and space                                  |
-| Precision         | fp32 (single precision — mixed caused instabilities)                |
+| Precision         | fp32 (AMP disabled by default; `enable_amp: False` in reference)    |
 | Compute budget    | 12 hours on 1× NVIDIA H100                                          |
 | Batch size        | Maximized to fill GPU memory per dataset                            |
 | LR search         | Coarse grid: {1e-4, 5e-4, 1e-3, 5e-3, 1e-2}                         |
@@ -153,23 +153,114 @@ Format: LR (epochs completed in 12h)
 
 ## Dataset Overview
 
-| Dataset                       | Dim | Resolution  | Steps    | Trajectories |
-| ----------------------------- | --- | ----------- | -------- | ------------ |
-| acoustic_scattering (maze)    | 2D  | 256×256     | 200      | 2400         |
-| active_matter                 | 2D  | 256×256     | 200      | 2250         |
-| convective_envelope_rsg       | 2D  | 128×128     | 500      | 5            |
-| euler_multi_quadrants         | 2D  | 512×512     | 101      | 3000         |
-| gray_scott_reaction_diffusion | 2D  | 128×128     | 1001     | 1200         |
-| helmholtz_staircase           | 2D  | 256×256     | 200      | 2500         |
-| MHD_64                        | 3D  | 64³         | 20       | 40           |
-| MHD_256                       | 3D  | 256³        | 20       | 40           |
-| planetswe                     | 2D  | 256×512     | 200      | 1560         |
-| post_neutron_star_merger      | 2D  | 512×512     | 200      | 200          |
-| rayleigh_benard               | 2D  | 512×128     | 200      | 1020         |
-| rayleigh_taylor_instability   | 2D  | 128×512     | 501      | 4680         |
-| shear_flow                    | 2D  | 256×256     | 200      | 1080         |
-| supernova_explosion_64        | 3D  | 64³         | 101      | 1000         |
-| turbulence_gravity_cooling    | 2D  | 256×256     | 200      | 2500         |
-| turbulent_radiative_layer_2D  | 2D  | 128×384     | 101      | 90           |
-| turbulent_radiative_layer_3D  | 3D  | 128×128×256 | 101      | 90           |
-| viscoelastic_instability      | 2D  | 512×512     | variable | 260          |
+Verified from HDF5 metadata on disk. Where the paper reports different values, the paper value is noted in parentheses.
+
+| Dataset                       | Dim | Resolution  | Steps/Traj | Grid Type   | Notes                                                    |
+| ----------------------------- | --- | ----------- | ---------- | ----------- | -------------------------------------------------------- |
+| acoustic_scattering (maze)    | 2D  | 256×256     | 202        | Cartesian   | HDF5 attr says 200; time dim shape is 202                |
+| active_matter                 | 2D  | 256×256     | 81         | Cartesian   | Paper says 200 steps — HDF5 has 81                       |
+| convective_envelope_rsg       | 3D  | 256×128×256 | 100        | Spherical   | Paper reports as 2D 128×128; excluded from v2 (non-Cart) |
+| euler_multi_quadrants         | 2D  | 512×512     | 101        | Cartesian   | Dataset on disk: `euler_multi_quadrants_periodicBC`      |
+| gray_scott_reaction_diffusion | 2D  | 128×128     | 1001       | Cartesian   |                                                          |
+| helmholtz_staircase           | 2D  | 1024×256    | 50         | Cartesian   | Paper reports 256×256 — HDF5 has 1024×256                |
+| MHD_64                        | 3D  | 64³         | 20         | Cartesian   |                                                          |
+| MHD_256                       | 3D  | 256³        | 20         | Cartesian   | Excluded from v2 (likely OOM at 256³)                    |
+| planetswe                     | 2D  | 256×512     | 1008       | Equiangular | Excluded from v2 (non-Cartesian)                         |
+| post_neutron_star_merger      | 3D  | 192×128×66  | 181        | Spherical   | Excluded from v2 (non-Cartesian, log-spherical)          |
+| rayleigh_benard               | 2D  | 512×128     | 200        | Cartesian   |                                                          |
+| rayleigh_taylor_instability   | 3D  | 128³        | 119        | Cartesian   | Paper reports 2D 128×512; HDF5 is 3D 128³ (At=0.0625)    |
+| shear_flow                    | 2D  | 256×512     | 200        | Cartesian   | Paper reports 256×256 — HDF5 has 256×512                 |
+| supernova_explosion_64        | 3D  | 64³         | 101        | Cartesian   |                                                          |
+| turbulence_gravity_cooling    | 3D  | 64³         | 50         | Cartesian   | Paper reports 2D 256×256 — HDF5 is 3D 64³                |
+| turbulent_radiative_layer_2D  | 2D  | 128×384     | 101        | Cartesian   |                                                          |
+| turbulent_radiative_layer_3D  | 3D  | 128×128×256 | 101        | Cartesian   |                                                          |
+| viscoelastic_instability      | 2D  | 512×512     | variable   | Cartesian   |                                                          |
+
+## Boundary Conditions
+
+Verified from HDF5 `boundary_conditions` group on disk. Three types: **PERIODIC**, **WALL** (Dirichlet/no-slip), **OPEN** (Neumann/outflow).
+
+### Per-dataset boundary conditions
+
+| Dataset                       | x         | y         | z        | Summary                    |
+| ----------------------------- | --------- | --------- | -------- | -------------------------- |
+| acoustic_scattering (maze)    | WALL+OPEN | WALL+OPEN | —        | Non-periodic               |
+| active_matter                 | PERIODIC  | PERIODIC  | —        | Fully periodic             |
+| euler_multi_quadrants         | PERIODIC  | PERIODIC  | —        | Fully periodic             |
+| gray_scott_reaction_diffusion | PERIODIC  | PERIODIC  | —        | Fully periodic             |
+| helmholtz_staircase           | OPEN      | OPEN+WALL | —        | Non-periodic (+ int. wall) |
+| MHD_64                        | PERIODIC  | PERIODIC  | PERIODIC | Fully periodic             |
+| rayleigh_benard               | PERIODIC  | WALL      | —        | Mixed                      |
+| rayleigh_taylor_instability   | PERIODIC  | PERIODIC  | WALL     | Mixed                      |
+| shear_flow                    | PERIODIC  | PERIODIC  | —        | Fully periodic             |
+| supernova_explosion_64        | OPEN      | OPEN      | OPEN     | Fully open                 |
+| turbulence_gravity_cooling    | OPEN      | OPEN      | OPEN     | Fully open                 |
+| turbulent_radiative_layer_2D  | PERIODIC  | OPEN      | —        | Mixed                      |
+| turbulent_radiative_layer_3D  | PERIODIC  | PERIODIC  | OPEN     | Mixed                      |
+| viscoelastic_instability      | PERIODIC  | WALL      | —        | Mixed                      |
+
+### Groupings for model instantiation
+
+- **Fully periodic** (5): `active_matter`, `euler_multi_quadrants`, `gray_scott`, `shear_flow`, `MHD_64` — natural fit for circular/FFT-based convolutions.
+- **Mixed periodic + non-periodic** (5): `rayleigh_benard`, `viscoelastic_instability`, `turbulent_radiative_layer_2D`, `turbulent_radiative_layer_3D`, `rayleigh_taylor_instability` — periodic in some dims, wall or open in others. Models need per-axis padding strategy.
+- **Fully non-periodic** (4): `acoustic_scattering_maze`, `helmholtz_staircase`, `supernova_explosion_64`, `turbulence_gravity_cooling` — no periodicity; zero-pad or replicate-pad.
+
+______________________________________________________________________
+
+## Our v2 Training Setup
+
+Base configs live in `examples/well/v2/<dataset>/_base.py`. Each file exports a `get_base_config(learning_rate=..., batch_size=..., weight_decay=...)` function that returns a fully configured `ExperimentConfig`. Model-specific configs (`cfg_*.py`) call this function and only set `config.net` and compile flags.
+
+### Shared hyperparameters
+
+| Parameter            | Value         | Reference repo equivalent                    | Match? |
+| -------------------- | ------------- | -------------------------------------------- | ------ |
+| Optimizer            | AdamW         | `configs/optimizer/adam.yaml`                | ✓      |
+| Weight decay         | 1e-4          | `weight_decay: 1E-4`                         | ✓      |
+| LR schedule          | Cosine        | `LinearWarmupCosineAnnealingLR`              | ✓      |
+| Warmup               | 5% of iters   | `warmup_epochs: 5` / 200 epochs = 2.5%       | **≠**  |
+| Training duration    | 110k iters    | 200 epochs                                   | **≠**  |
+| Precision            | bf16-mixed    | fp32                                         | **≠**  |
+| Gradient clipping    | 1.0           | not used in reference                        | **≠**  |
+| Loss                 | MSE           | `the_well.benchmark.metrics.MSE`             | ✓      |
+| n_steps_input        | 4             | `configs/config.yaml`                        | ✓      |
+| n_steps_output       | 1             | `configs/config.yaml`                        | ✓      |
+| max_rollout_steps    | 100           | `configs/trainer/defaults.yaml`              | ✓      |
+| use_normalization    | True          | per-dataset YAML                             | ✓      |
+| min_dt_stride        | 1             | per-dataset YAML                             | ✓      |
+| max_dt_stride        | 1             | per-dataset YAML                             | ✓      |
+| num_workers          | 12            | `data_workers: 14`                           | **≠**  |
+| Val frequency        | every ½ epoch | `val_frequency: 1` (every epoch)             | **≠**  |
+| Checkpoint frequency | every ½ epoch | `checkpoint_frequency: 20` (every 20 epochs) | **≠**  |
+
+### Intentional differences from the paper
+
+| Difference                                | Rationale                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **bf16-mixed** instead of fp32            | Phase 0 ablation will validate whether bf16 degrades accuracy. If it does, we fall back to fp32.                                      |
+| **110k iterations** instead of 200 epochs | Iteration-based training decouples from dataset size, enabling fair cross-dataset comparison. We train beyond the paper's 12h budget. |
+| **5% warmup** instead of 2.5%             | More conservative warmup for stability across diverse datasets and architectures.                                                     |
+| **Gradient clipping (1.0)**               | Not used in the reference repo. Added for training stability with bf16-mixed precision and longer training.                           |
+| **12 workers** instead of 14              | Adapted to our node configuration. Minor performance difference.                                                                      |
+| **½-epoch val/ckpt**                      | More frequent monitoring; the paper's 1-epoch/20-epoch frequencies are too coarse for iteration-based training.                       |
+
+### Batch sizes per dataset (CNextU-net defaults)
+
+All batch sizes match the reference repo (`configs/data/<dataset>.yaml`) exactly.
+
+| Dataset                            | Batch Size | Source                                               |
+| ---------------------------------- | ---------- | ---------------------------------------------------- |
+| `acoustic_scattering_maze`         | 64         | `configs/data/acoustic_scattering_maze.yaml`         |
+| `active_matter`                    | 64         | `configs/data/active_matter.yaml`                    |
+| `euler_multi_quadrants_periodicBC` | 24         | `configs/data/euler_multi_quadrants_periodicBC.yaml` |
+| `gray_scott_reaction_diffusion`    | 256        | `configs/data/gray_scott_reaction_diffusion.yaml`    |
+| `helmholtz_staircase`              | 24         | `configs/data/helmholtz_staircase.yaml`              |
+| `MHD_64`                           | 2          | `configs/data/MHD_64.yaml`                           |
+| `rayleigh_benard`                  | 64         | `configs/data/rayleigh_benard.yaml`                  |
+| `rayleigh_taylor_instability`      | 2          | `configs/data/rayleigh_taylor_instability.yaml`      |
+| `shear_flow`                       | 32         | `configs/data/shear_flow.yaml`                       |
+| `supernova_explosion_64`           | 2          | `configs/data/supernova_explosion_64.yaml`           |
+| `turbulence_gravity_cooling`       | 2          | `configs/data/turbulence_gravity_cooling.yaml`       |
+| `turbulent_radiative_layer_2D`     | 64         | `configs/data/turbulent_radiative_layer_2D.yaml`     |
+| `turbulent_radiative_layer_3D`     | 1          | `configs/data/turbulent_radiative_layer_3D.yaml`     |
+| `viscoelastic_instability`         | 32         | `configs/data/viscoelastic_instability.yaml`         |
