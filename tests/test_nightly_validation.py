@@ -123,6 +123,7 @@ def _run_validation_check(
     config.train.do = False
     config.debug = True
     config.compile = False
+    config.dataset.local_staging_dir = None  # read from /shared, no scratch needed
     config.autoresume = AutoResumeConfig(enabled=False)
     config.start_from_checkpoint = StartFromCheckpointConfig(
         load=True,
