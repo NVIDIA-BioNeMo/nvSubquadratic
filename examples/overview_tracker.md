@@ -44,7 +44,7 @@ Status Legend:
 | 📝 Todo | P2       | @Unassigned  | Conduct a patch size analysis.                                                     |                                           |
 | 📝 Todo | P2       | @Unassigned  | Evaluate if Hyena UNext can achieve (i) better performance, and (ii) faster speed. |                                           |
 
-## ImageNet (Diffusion) (Note: This need some extra planning)
+## ImageNet (Diffusion) (Note: This needs some extra planning)
 
 **Tracker Document:** *To be defined*
 
