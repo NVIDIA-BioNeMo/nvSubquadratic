@@ -7,7 +7,10 @@ Run with:
     conda run -n nv-subq python -m pytest tests/test_h5_caching.py -v
 """
 
+import os
+
 import numpy as np
+import pytest
 import torch
 from the_well.data.datasets import WellDataset
 
@@ -18,6 +21,11 @@ WELL_BASE = "/shared/data/image_datasets/the_well/datasets"
 DATASET = "gray_scott_reaction_diffusion"
 SPLIT = "valid"
 SAMPLE_INDICES = [0, 1, 42, 100]
+
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(os.path.join(WELL_BASE, DATASET)),
+    reason=f"No HDF5 files found in path {os.path.join(WELL_BASE, DATASET)} — dataset not available",
+)
 
 
 def _make_dataset():
