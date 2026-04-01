@@ -278,7 +278,11 @@ class WELLRegressionWrapper(RegressionWrapper):
         return {}
 
     def on_validation_epoch_end(self):
-        """Log best validation loss."""
+        """Log best validation loss (rank 0 only to avoid duplicate wandb logs)."""
+        if self.trainer.sanity_checking:
+            return
+        if not self.trainer.is_global_zero:
+            return
         if "val/loss" in self.trainer.callback_metrics:
             val_loss = self.trainer.callback_metrics["val/loss"]
             if val_loss < self.best_val_loss:

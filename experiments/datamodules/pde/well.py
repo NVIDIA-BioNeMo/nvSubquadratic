@@ -376,8 +376,20 @@ class WellDataModule(pl.LightningDataModule):
         self.well_base_path = str(self._local_staging_dir)
         print("[data-staging] Done.", flush=True)
 
+    def _resolve_staged_path(self) -> None:
+        """Point ``well_base_path`` to local staging dir if staging completed.
+
+        Called from ``setup()`` (runs on **all** DDP ranks) so every rank
+        sees the fast local path.  Only checks the sentinel — no I/O.
+        """
+        if self._local_staging_dir is None:
+            return
+        sentinel = self._local_staging_dir / self.well_dataset_name / ".staging_complete"
+        if sentinel.is_file():
+            self.well_base_path = str(self._local_staging_dir)
+
     def prepare_data(self):
-        """Stage data to local storage if configured, and verify it exists."""
+        """Stage data to local storage if configured (rank 0 only in DDP)."""
         if self._local_staging_dir is not None:
             self._stage_to_local()
 
@@ -389,7 +401,8 @@ class WellDataModule(pl.LightningDataModule):
             )
 
     def setup(self, stage=None):
-        """Setup datasets (called on each process)."""
+        """Setup datasets (called on each process in DDP)."""
+        self._resolve_staged_path()
         print(f"[WellDataModule] Loading {self.well_dataset_name} from {self.well_base_path} …", flush=True)
         from the_well.data.normalization import ZScoreNormalization
 

@@ -98,6 +98,5 @@ class MaskMonitorCallback(pl.Callback):
                 title=f"Mask block {block_id}",
                 xname="step",
             )
-
         if charts:
             trainer.logger.experiment.log({**charts, "trainer/global_step": trainer.global_step})

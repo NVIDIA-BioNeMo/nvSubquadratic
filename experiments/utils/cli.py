@@ -139,16 +139,55 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     return module.get_config()
 
 
+def _safe_arithmetic_eval(expr: str):
+    """Evaluate a restricted arithmetic expression (no arbitrary code execution).
+
+    Supports: integers, floats, +, -, *, /, //, %, **, parentheses.
+    Rejects: function calls, attribute access, imports, etc.
+    """
+    import ast
+
+    allowed_node_types = (
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Constant,
+        # Operators
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.FloorDiv,
+        ast.Mod,
+        ast.Pow,
+        ast.USub,
+        ast.UAdd,
+    )
+    try:
+        tree = ast.parse(expr.strip(), mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"Invalid arithmetic expression: {expr!r}") from e
+
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_node_types):
+            raise ValueError(
+                f"Unsupported operation in eval resolver: {type(node).__name__} in {expr!r}. "
+                f"Only arithmetic (+, -, *, /, //, %, **) on literals is allowed."
+            )
+    return eval(compile(tree, "<eval-resolver>", "eval"))
+
+
 def _register_arithmetic_resolvers(oc: Any) -> None:
-    """Register an ``eval`` OmegaConf resolver for inline arithmetic (idempotent).
+    """Register an ``eval`` OmegaConf resolver for safe inline arithmetic (idempotent).
 
     OmegaConf does not natively support math operators in interpolations.
-    Registering Python's ``eval`` is the recommended workaround::
+    This registers a restricted evaluator that only allows arithmetic on
+    literal numbers — no function calls, imports, or attribute access::
 
         "${eval:'${trainer.samples_per_epoch} // (${train.batch_size} * 2)'}"
     """
     if not oc.has_resolver("eval"):
-        oc.register_new_resolver("eval", eval)
+        oc.register_new_resolver("eval", _safe_arithmetic_eval)
 
 
 def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> ExperimentConfig:

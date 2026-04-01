@@ -3,6 +3,7 @@
 
 """CKConv (long-convolution) implementation for ND signals."""
 
+import copy
 import inspect
 import math
 import warnings
@@ -265,6 +266,8 @@ class CKConvND(torch.nn.Module):
         # spans [-1, 1] for the actual kernel size instead of a truncated subrange.
         effective_L = getattr(kernel_cfg, "L_cache", None)
         if grid_type == "single" and effective_L is not None:
+            # Deepcopy before mutating so shared config objects aren't corrupted.
+            kernel_cfg = copy.deepcopy(kernel_cfg)
             effective_L = (effective_L + 1) // 2
             kernel_cfg.L_cache = effective_L
 
@@ -275,6 +278,8 @@ class CKConvND(torch.nn.Module):
         if effective_L is not None:
             mask_target = _resolve_target(mask_cfg["__target__"]) if "__target__" in mask_cfg else None
             if mask_target is not None and "grid_size" in inspect.signature(mask_target).parameters:
+                # Deepcopy before mutating so shared config objects aren't corrupted.
+                mask_cfg = copy.deepcopy(mask_cfg)
                 mask_cfg.grid_size = 2 * effective_L - 1
 
         # Construct kernel and mask

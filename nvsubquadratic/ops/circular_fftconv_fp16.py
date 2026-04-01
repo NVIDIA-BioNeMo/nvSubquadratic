@@ -323,13 +323,14 @@ def circular_fftconv1d_fp16_bhl(
     )
     _, Hk, K = kernel.shape
     assert H == Hk, "Input and kernel must have the same number of channels (H)."
-    assert K <= L, f"K must be <= L. Got K={K}, L={L}."
+    assert K in (L, L - 1), f"FP16 centering requires K in {{L, L-1}}, got K={K}, L={L}"
 
-    x_fp16 = x.to(torch.float16)
-    k_fp16 = kernel.to(torch.float16)
+    x_fp16 = x.to(torch.float16, copy=True)
+    k_fp16 = kernel.to(torch.float16, copy=True)
     sqrt_N = math.sqrt(L)
 
     # ── Center both x and k in-place (zeros DC bins, no extra allocation) ──
+    # copy=True above ensures we never mutate the caller's tensors.
     x_mean = x_fp16.mean(dim=-1, keepdim=True)  # [B, H, 1]  fp16
     x_fp16.sub_(x_mean)  # x_fp16 is now x_c
 
@@ -374,6 +375,7 @@ def circular_fftconv1d_fp16_bhl(
 
     # ── Inverse FFT (fp16) ──
     y = torch.fft.irfft(fft_x, n=L, dim=2, norm="ortho")
+    del fft_x
 
     # ── Undo ortho scaling + DC correction in one expression (float32) ──
     y = (y.float() * sqrt_N + dc_corr).to(x.dtype)
@@ -438,16 +440,17 @@ def circular_fftconv2d_fp16_bhl(
     )
     _, Hk, K_x, K_y = kernel.shape
     assert H == Hk, "Input and kernel must have the same number of channels (H)."
-    assert K_x <= X, f"K_x must be <= X. Got K_x={K_x}, X={X}."
-    assert K_y <= Y, f"K_y must be <= Y. Got K_y={K_y}, Y={Y}."
+    assert K_x in (X, X - 1), f"FP16 centering requires K_x in {{X, X-1}}, got K_x={K_x}, X={X}"
+    assert K_y in (Y, Y - 1), f"FP16 centering requires K_y in {{Y, Y-1}}, got K_y={K_y}, Y={Y}"
 
     N = X * Y
     sqrt_N = math.sqrt(N)
 
-    x_fp16 = x.to(torch.float16)
-    k_fp16 = kernel.to(torch.float16)
+    x_fp16 = x.to(torch.float16, copy=True)
+    k_fp16 = kernel.to(torch.float16, copy=True)
 
     # ── Center both x and k in-place ──
+    # copy=True above ensures we never mutate the caller's tensors.
     x_mean = x_fp16.mean(dim=(-2, -1), keepdim=True)  # [B, H, 1, 1]
     x_fp16.sub_(x_mean)
 
@@ -493,6 +496,7 @@ def circular_fftconv2d_fp16_bhl(
 
     # ── Inverse FFT (fp16) ──
     y = torch.fft.irfft2(fft_x, s=(X, Y), dim=(2, 3), norm="ortho")
+    del fft_x
 
     # ── Undo ortho scaling (×√N) and add DC correction (T4), in float32 ──
     y = (y.float() * sqrt_N + dc_corr).to(x.dtype)
@@ -557,15 +561,18 @@ def circular_fftconv3d_fp16_bhl(
     )
     _, Hk, Kx, Ky, Kz = kernel.shape
     assert H == Hk, "Input and kernel must have the same number of channels (H)."
-    assert Kx <= X and Ky <= Y and Kz <= Z, "Kernel must be <= input along each axis."
+    assert Kx in (X, X - 1), f"FP16 centering requires Kx in {{X, X-1}}, got Kx={Kx}, X={X}"
+    assert Ky in (Y, Y - 1), f"FP16 centering requires Ky in {{Y, Y-1}}, got Ky={Ky}, Y={Y}"
+    assert Kz in (Z, Z - 1), f"FP16 centering requires Kz in {{Z, Z-1}}, got Kz={Kz}, Z={Z}"
 
     N = X * Y * Z
     sqrt_N = math.sqrt(N)
 
-    x_fp16 = x.to(torch.float16)
-    k_fp16 = kernel.to(torch.float16)
+    x_fp16 = x.to(torch.float16, copy=True)
+    k_fp16 = kernel.to(torch.float16, copy=True)
 
     # ── Center both x and k in-place ──
+    # copy=True above ensures we never mutate the caller's tensors.
     x_mean = x_fp16.mean(dim=(-3, -2, -1), keepdim=True)  # [B, H, 1, 1, 1]
     x_fp16.sub_(x_mean)
 
@@ -614,6 +621,7 @@ def circular_fftconv3d_fp16_bhl(
 
     # ── Inverse FFT (fp16) ──
     y = torch.fft.irfftn(fft_x, s=(X, Y, Z), dim=(2, 3, 4), norm="ortho")
+    del fft_x
 
     # ── Undo ortho scaling (×√N) and add DC correction (T4), in float32 ──
     y = (y.float() * sqrt_N + dc_corr).to(x.dtype)

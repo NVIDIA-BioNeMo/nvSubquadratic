@@ -157,12 +157,38 @@ class TestCircularFP16Conv1D:
             circular_fftconv1d_fp16_bhl(x, kernel, None)
 
     def test_rejects_arbitrary_kernel_size(self, device: str) -> None:
-        """K not in {L, L-1} raises ValueError."""
+        """K not in {L, L-1} raises AssertionError."""
         x = torch.randn(2, 16, 128, device=device, dtype=torch.float32)
         kernel = torch.randn(1, 16, 7, device=device, dtype=torch.float32)
 
-        with pytest.raises(ValueError, match="K=L or K=L-1"):
+        with pytest.raises(AssertionError, match="FP16 centering requires"):
             circular_fftconv1d_fp16_bhl(x, kernel, None)
+
+    def test_does_not_mutate_inputs(self, device: str) -> None:
+        """FP16 1D must not modify the caller's x or kernel tensors."""
+        torch.manual_seed(42)
+        x = torch.randn(2, 16, 64, device=device, dtype=torch.float16)
+        k = torch.randn(1, 16, 64, device=device, dtype=torch.float16)
+        x_orig = x.clone()
+        k_orig = k.clone()
+
+        circular_fftconv1d_fp16_bhl(x, k, None)
+
+        torch.testing.assert_close(x, x_orig)
+        torch.testing.assert_close(k, k_orig)
+
+    def test_does_not_mutate_inputs_fp32(self, device: str) -> None:
+        """FP16 1D must not modify the caller's fp32 x or kernel tensors."""
+        torch.manual_seed(42)
+        x = torch.randn(2, 16, 64, device=device, dtype=torch.float32)
+        k = torch.randn(1, 16, 64, device=device, dtype=torch.float32)
+        x_orig = x.clone()
+        k_orig = k.clone()
+
+        circular_fftconv1d_fp16_bhl(x, k, None)
+
+        torch.testing.assert_close(x, x_orig)
+        torch.testing.assert_close(k, k_orig)
 
     def test_batched_kernel(self, device: str) -> None:
         """FP16 1D supports batched kernels [B, H, K]."""
@@ -255,6 +281,27 @@ class TestCircularFP16Conv2D:
         y = circular_fftconv2d_fp16_bhl_w_reshape(x_blh, k_blh, shortcut)
         assert y.shape == (2, 32, 32, 16)
 
+    def test_does_not_mutate_inputs(self, device: str) -> None:
+        """FP16 2D must not modify the caller's x or kernel tensors."""
+        torch.manual_seed(42)
+        x = torch.randn(2, 8, 16, 16, device=device, dtype=torch.float16)
+        k = torch.randn(1, 8, 16, 16, device=device, dtype=torch.float16)
+        x_orig = x.clone()
+        k_orig = k.clone()
+
+        circular_fftconv2d_fp16_bhl(x, k, None)
+
+        torch.testing.assert_close(x, x_orig)
+        torch.testing.assert_close(k, k_orig)
+
+    def test_rejects_arbitrary_kernel_size(self, device: str) -> None:
+        """K_d not in {N_d, N_d-1} raises AssertionError."""
+        x = torch.randn(2, 8, 32, 32, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 8, 7, 7, device=device, dtype=torch.float32)
+
+        with pytest.raises(AssertionError, match="FP16 centering requires"):
+            circular_fftconv2d_fp16_bhl(x, kernel, None)
+
     def test_rejects_non_power_of_2(self, device: str) -> None:
         """Non-power-of-2 spatial dims raise AssertionError."""
         x = torch.randn(2, 8, 14, 14, device=device, dtype=torch.float32)
@@ -340,6 +387,27 @@ class TestCircularFP16Conv3D:
 
         y = circular_fftconv3d_fp16_bhl_w_reshape(x_blh, k_blh, shortcut)
         assert y.shape == (2, 16, 16, 16, 4)
+
+    def test_does_not_mutate_inputs(self, device: str) -> None:
+        """FP16 3D must not modify the caller's x or kernel tensors."""
+        torch.manual_seed(42)
+        x = torch.randn(2, 4, 8, 8, 8, device=device, dtype=torch.float16)
+        k = torch.randn(1, 4, 8, 8, 8, device=device, dtype=torch.float16)
+        x_orig = x.clone()
+        k_orig = k.clone()
+
+        circular_fftconv3d_fp16_bhl(x, k, None)
+
+        torch.testing.assert_close(x, x_orig)
+        torch.testing.assert_close(k, k_orig)
+
+    def test_rejects_arbitrary_kernel_size(self, device: str) -> None:
+        """K_d not in {N_d, N_d-1} raises AssertionError."""
+        x = torch.randn(2, 4, 16, 16, 16, device=device, dtype=torch.float32)
+        kernel = torch.randn(1, 4, 5, 5, 5, device=device, dtype=torch.float32)
+
+        with pytest.raises(AssertionError, match="FP16 centering requires"):
+            circular_fftconv3d_fp16_bhl(x, kernel, None)
 
     def test_rejects_non_power_of_2(self, device: str) -> None:
         """Non-power-of-2 spatial dims raise AssertionError."""
