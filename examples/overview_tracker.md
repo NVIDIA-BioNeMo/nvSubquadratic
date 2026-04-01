@@ -23,11 +23,11 @@ Status Legend:
 
 ## ImageNet (Classification)
 
-**Tracker Document:** [examples/vit5_imagenet/v5_patch/README.md](examples/vit5_imagenet/v5_patch/tracker.md)
+**Tracker Document:** [examples/vit5_imagenet/TRACKER.md](examples/vit5_imagenet/TRACKER.md)
 
 | Status  | Priority | Assignee     | Task                                                                               | Links / Configs / Notes |
 | :------ | :------- | :----------- | :--------------------------------------------------------------------------------- | :---------------------- |
-| 📝 Todo | P1       | @Alireza     | Run the patch-experiment defined in `examples/vit5_imagenet/v5_patch`.             |                         |
+| 📝 Todo | P1       | @Alireza     | Run the patch-experiment defined in `examples/vit5_imagenet`.                      |                         |
 | 📝 Todo | P2       | @david&david | Investigate whether Hyena with masking/gap can match the performance of Attention. |                         |
 | 📝 Todo | P3       | @Unassigned  | Run best setups for different model-sizes                                          |                         |
 
