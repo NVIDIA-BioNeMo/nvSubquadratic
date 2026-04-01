@@ -10,6 +10,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+import nvsubquadratic.ops.fftconv as _fftconv
 from examples.mnist_classification.ccnn_4_160_hyena_rope_qknorm import get_config
 from experiments.utils.cli import apply_config_overrides
 from nvsubquadratic.lazy_config import instantiate
@@ -19,6 +20,19 @@ _ALLCLOSE_RTOL = 1e-4
 _ALLCLOSE_ATOL = 1e-4
 _GRAD_RTOL = 5e-4
 _GRAD_ATOL = 5e-4
+
+
+@pytest.fixture(autouse=True)
+def _enable_compile_compatible_fft():
+    """Enable real-arithmetic complex multiply so torch.compile/Inductor works.
+
+    Triton cannot codegen complex64 kernels, so the default in-place
+    ``fft_x.mul_(fft_kernel)`` breaks during Inductor lowering.
+    """
+    prev = _fftconv.COMPILE_COMPATIBLE
+    _fftconv.COMPILE_COMPATIBLE = True
+    yield
+    _fftconv.COMPILE_COMPATIBLE = prev
 
 
 @pytest.fixture

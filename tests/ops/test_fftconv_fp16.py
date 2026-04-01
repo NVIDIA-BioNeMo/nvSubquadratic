@@ -640,6 +640,9 @@ class TestNightlyFP16Validation:
         config.train.do = False
         config.debug = True
         config.compile = False
+        # Disable local staging so the test works without NVMe space
+        if hasattr(config.dataset, "local_staging_dir"):
+            config.dataset.local_staging_dir = None
 
         import nvsubquadratic.ops.fftconv as _fftconv
 
