@@ -70,6 +70,9 @@ select = [
 "test_*.py" = ["D"]
 "conftest.py" = ["D"]
 "scripts/*.py" = ["D", "E402"]
+"scripts/**/*.py" = ["D", "E402"]
+"benchmarks/*.py" = ["D", "E402"]
+"benchmarks/**/*.py" = ["D", "E402"]
 "examples/**/ft_ablation/*.py" = ["D"]
 "**/*.ipynb" = ["D"]
 
