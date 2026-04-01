@@ -1,6 +1,6 @@
 """v5_patch ablation — Attention baseline, patch_size=16.
 
-Grid: 14x14 = 196 patches + 1 CLS + 13 registers = 210 tokens.
+Grid: 14x14 = 196 patches + 1 CLS + 4 registers = 201 tokens.
 Batch: 256/gpu x 1 accum x 8 gpus = 2048 effective.
 """
 

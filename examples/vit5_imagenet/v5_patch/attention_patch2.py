@@ -1,6 +1,6 @@
 """v5_patch ablation — Attention baseline, patch_size=2.
 
-Grid: 112x112 = 12544 patches + 1 CLS + 111 registers = 12656 tokens.
+Grid: 112x112 = 12544 patches + 1 CLS + 4 registers = 12549 tokens.
 Batch: 4/gpu x 64 accum x 8 gpus = 2048 effective.
 
 NOTE: O(n^2) attention on ~12.5K tokens is very expensive.
