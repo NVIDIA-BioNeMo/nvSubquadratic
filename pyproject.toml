@@ -70,6 +70,9 @@ select = [
 "test_*.py" = ["D"]
 "conftest.py" = ["D"]
 "scripts/*.py" = ["D", "E402"]
+"scripts/**/*.py" = ["D", "E402"]
+"benchmarks/*.py" = ["D", "E402"]
+"benchmarks/**/*.py" = ["D", "E402"]
 "examples/**/ft_ablation/*.py" = ["D"]
 "**/*.ipynb" = ["D"]
 
@@ -90,5 +93,5 @@ addopts = [
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "nightly: full model validation against ImageNet (requires GPU, DALI, ImageNet data, wandb)",
+    "nightly: full model validation against ImageNet/WELL (requires GPU, data, wandb)",
 ]

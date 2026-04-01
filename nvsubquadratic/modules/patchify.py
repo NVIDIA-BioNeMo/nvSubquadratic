@@ -43,6 +43,7 @@ class Patchify(torch.nn.Module):
         data_dim: int,
         patch_size: int,
         stride: int | None = None,
+        bias: bool = True,
     ):
         """Initialize the Patchify layer.
 
@@ -52,6 +53,8 @@ class Patchify(torch.nn.Module):
             data_dim: The spatial dimensionality (1, 2, or 3).
             patch_size: The size of each patch (kernel_size for the conv).
             stride: The stride for the conv. Defaults to patch_size (non-overlapping).
+            bias: Whether the underlying conv has a learnable bias. Default True
+                for backward compatibility; set False for bias-free architectures.
         """
         super().__init__()
         if data_dim not in _CONV_CLASSES:
@@ -71,6 +74,7 @@ class Patchify(torch.nn.Module):
             kernel_size=patch_size,
             stride=stride,
             padding=0,
+            bias=bias,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -111,6 +115,7 @@ class Unpatchify(torch.nn.Module):
         data_dim: int,
         patch_size: int,
         stride: int | None = None,
+        bias: bool = True,
     ):
         """Initialize the Unpatchify layer.
 
@@ -120,6 +125,8 @@ class Unpatchify(torch.nn.Module):
             data_dim: The spatial dimensionality (1, 2, or 3).
             patch_size: The size of each patch (kernel_size for the deconv).
             stride: The stride for the deconv. Defaults to patch_size (inverse of non-overlapping).
+            bias: Whether the underlying deconv has a learnable bias. Default True
+                for backward compatibility; set False for bias-free architectures.
         """
         super().__init__()
         if data_dim not in _CONV_TRANSPOSE_CLASSES:
@@ -139,6 +146,7 @@ class Unpatchify(torch.nn.Module):
             kernel_size=patch_size,
             stride=stride,
             padding=0,
+            bias=bias,
         )
 
     def forward(self, x: torch.Tensor, output_spatial_shape: Tuple[int, ...] | None = None) -> torch.Tensor:

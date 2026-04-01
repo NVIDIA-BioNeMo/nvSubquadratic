@@ -3,22 +3,35 @@
 
 """CKConv (long-convolution) implementation for ND signals."""
 
+import copy
+import inspect
 import math
+import warnings
 from typing import Literal
 
 import torch
 from einops import rearrange
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.lazy_config import LazyConfig, _resolve_target, instantiate
 
 # Standard FFT convolutions
 from nvsubquadratic.ops.circular_fftconv import (
-    circular_fftconv1d_bhl,
-    circular_fftconv1d_bhl_w_reshape,
-    circular_fftconv2d_bhl,
-    circular_fftconv2d_bhl_w_reshape,
-    circular_fftconv3d_bhl,
-    circular_fftconv3d_bhl_w_reshape,
+    circular_fftconv1d_fp32_bhl,
+    circular_fftconv1d_fp32_bhl_w_reshape,
+    circular_fftconv2d_fp32_bhl,
+    circular_fftconv2d_fp32_bhl_w_reshape,
+    circular_fftconv3d_fp32_bhl,
+    circular_fftconv3d_fp32_bhl_w_reshape,
+)
+
+# FP16 circular FFT convolutions (requires power-of-2 spatial dimensions)
+from nvsubquadratic.ops.circular_fftconv_fp16 import (
+    circular_fftconv1d_fp16_bhl,
+    circular_fftconv1d_fp16_bhl_w_reshape,
+    circular_fftconv2d_fp16_bhl,
+    circular_fftconv2d_fp16_bhl_w_reshape,
+    circular_fftconv3d_fp16_bhl,
+    circular_fftconv3d_fp16_bhl_w_reshape,
 )
 from nvsubquadratic.ops.fftconv import (
     causal_fftconv1d_fp32_bhl,
@@ -83,9 +96,9 @@ from nvsubquadratic.ops.fftconv_fp16 import (
 # Each entry is a tuple: (fn_for_BLH_input (bhl + reshape), fn_for_BHL_input)
 FFT_FUNCTIONS = {
     "circular": {
-        1: (circular_fftconv1d_bhl_w_reshape, circular_fftconv1d_bhl),
-        2: (circular_fftconv2d_bhl_w_reshape, circular_fftconv2d_bhl),
-        3: (circular_fftconv3d_bhl_w_reshape, circular_fftconv3d_bhl),
+        1: (circular_fftconv1d_fp32_bhl_w_reshape, circular_fftconv1d_fp32_bhl),
+        2: (circular_fftconv2d_fp32_bhl_w_reshape, circular_fftconv2d_fp32_bhl),
+        3: (circular_fftconv3d_fp32_bhl_w_reshape, circular_fftconv3d_fp32_bhl),
     },
     "zero": {
         1: (fftconv1d_fp32_bhl_w_reshape, fftconv1d_fp32_bhl),
@@ -114,9 +127,13 @@ FFT_FUNCTIONS_CHUNKED = {
 }
 
 # FP16 versions (power-of-2 padding + ortho normalization to prevent overflow)
-# Note: circular convolutions are not supported in fp16 — cuFFT half-precision
-# requires power-of-2 sizes which circular padding cannot guarantee.
+# Note: circular fp16 requires power-of-2 spatial dimensions (cuFFT constraint).
 FFT_FUNCTIONS_FP16 = {
+    "circular": {
+        1: (circular_fftconv1d_fp16_bhl_w_reshape, circular_fftconv1d_fp16_bhl),
+        2: (circular_fftconv2d_fp16_bhl_w_reshape, circular_fftconv2d_fp16_bhl),
+        3: (circular_fftconv3d_fp16_bhl_w_reshape, circular_fftconv3d_fp16_bhl),
+    },
     "zero": {
         1: (fftconv1d_fp16_bhl_w_reshape, fftconv1d_fp16_bhl),
         2: (fftconv2d_fp16_bhl_w_reshape, fftconv2d_fp16_bhl),
@@ -177,11 +194,12 @@ class CKConvND(torch.nn.Module):
                 intermediates. Typical savings: ~26% memory with ~11% compute overhead.
                 Useful for memory-constrained training with large spatial dimensions
                 in 2D/3D. Default is False.
-            use_fp16_fft: If True, use fp16 FFT convolutions. Pads to power-of-2
-                sizes (cuFFT requirement) and uses ortho normalization to prevent
-                overflow. Saves ~36% peak memory per convolution with ~0.8% mean
-                relative error vs f32. Supported for 1D/2D/3D with zero or causal
-                padding (not circular). Default is False.
+            use_fp16_fft: If True, use fp16 FFT convolutions. Uses ortho
+                normalization to prevent overflow. Saves ~36% peak memory per
+                convolution with ~0.8% mean relative error vs f32. For zero/causal
+                padding, sizes are auto-padded to power-of-2. For circular padding,
+                the input spatial dimensions must already be powers of 2 (a runtime
+                assertion will fire otherwise). Default is False.
             fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
                 uses the torch.fft-based implementations. ``'subq_ops'`` uses the
                 optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
@@ -214,10 +232,12 @@ class CKConvND(torch.nn.Module):
                 "Circular convolutions already have lower memory overhead due to no padding."
             )
 
-        if use_fp16_fft:
-            assert fft_padding != "circular", (
-                "use_fp16_fft does not support circular padding — cuFFT half-precision "
-                "requires power-of-2 sizes which circular padding cannot guarantee."
+        if use_fp16_fft and fft_padding == "circular":
+            warnings.warn(
+                "use_fp16_fft with circular padding requires power-of-2 spatial "
+                "dimensions (cuFFT fp16 constraint). A runtime assertion will fire "
+                "if the input is not power-of-2.",
+                stacklevel=2,
             )
 
         # subq_ops backend constraints
@@ -240,6 +260,27 @@ class CKConvND(torch.nn.Module):
         self.use_chunked_fftconv = use_chunked_fftconv
         self.use_fp16_fft = use_fp16_fft
         self.fft_backend = fft_backend
+
+        # When grid_type="single", grid_lens is halved relative to spatial_dims
+        # (see forward()).  Adjust L_cache so the positional-embedding grid_cache
+        # spans [-1, 1] for the actual kernel size instead of a truncated subrange.
+        effective_L = getattr(kernel_cfg, "L_cache", None)
+        if grid_type == "single" and effective_L is not None:
+            # Deepcopy before mutating so shared config objects aren't corrupted.
+            kernel_cfg = copy.deepcopy(kernel_cfg)
+            effective_L = (effective_L + 1) // 2
+            kernel_cfg.L_cache = effective_L
+
+        # Inject the actual kernel size into mask_cfg so that attenuation-based
+        # initialization (GaussianModulationND) uses the correct grid geometry.
+        # This keeps grid_type logic in one place (here) instead of duplicating
+        # it in the mask.
+        if effective_L is not None:
+            mask_target = _resolve_target(mask_cfg["__target__"]) if "__target__" in mask_cfg else None
+            if mask_target is not None and "grid_size" in inspect.signature(mask_target).parameters:
+                # Deepcopy before mutating so shared config objects aren't corrupted.
+                mask_cfg = copy.deepcopy(mask_cfg)
+                mask_cfg.grid_size = 2 * effective_L - 1
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)
