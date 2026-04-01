@@ -11,6 +11,8 @@ import warnings
 import torch
 import torch.nn as nn
 
+from nvsubquadratic.utils.quack_utils import cuda_supports_quack as _cuda_supports_quack
+
 
 try:
     from quack import rmsnorm as _quack_rmsnorm
@@ -19,14 +21,6 @@ try:
 except ImportError:
     _quack_rmsnorm = None
     _quack_available = False
-
-
-def _cuda_supports_quack(device: torch.device) -> bool:
-    """QuACK kernels are built for Hopper/Blackwell (SM 9.x). Ampere (8.x) and older fail in forward or backward."""
-    if not device.type == "cuda":
-        return False
-    major, _ = torch.cuda.get_device_capability(device)
-    return major >= 9
 
 
 def _rmsnorm_pytorch(x: torch.Tensor, weight: torch.nn.Parameter, eps: float) -> torch.Tensor:

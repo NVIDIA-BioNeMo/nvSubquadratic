@@ -139,15 +139,76 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     return module.get_config()
 
 
+def _safe_arithmetic_eval(expr: str):
+    """Evaluate a restricted arithmetic expression (no arbitrary code execution).
+
+    Supports: integers, floats, +, -, *, /, //, %, **, parentheses.
+    Rejects: function calls, attribute access, imports, etc.
+    """
+    import ast
+
+    allowed_node_types = (
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Constant,
+        # Operators
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.FloorDiv,
+        ast.Mod,
+        ast.Pow,
+        ast.USub,
+        ast.UAdd,
+    )
+    try:
+        tree = ast.parse(expr.strip(), mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"Invalid arithmetic expression: {expr!r}") from e
+
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_node_types):
+            raise ValueError(
+                f"Unsupported operation in eval resolver: {type(node).__name__} in {expr!r}. "
+                f"Only arithmetic (+, -, *, /, //, %, **) on literals is allowed."
+            )
+    return eval(compile(tree, "<eval-resolver>", "eval"))
+
+
+def _register_arithmetic_resolvers(oc: Any) -> None:
+    """Register an ``eval`` OmegaConf resolver for safe inline arithmetic (idempotent).
+
+    OmegaConf does not natively support math operators in interpolations.
+    This registers a restricted evaluator that only allows arithmetic on
+    literal numbers — no function calls, imports, or attribute access::
+
+        "${eval:'${trainer.samples_per_epoch} // (${train.batch_size} * 2)'}"
+    """
+    if not oc.has_resolver("eval"):
+        oc.register_new_resolver("eval", _safe_arithmetic_eval)
+
+
 def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> ExperimentConfig:
     """Apply command-line overrides to a configuration.
 
+    Supports two override formats:
+
+    * ``key=value`` — override an existing key (raises ``ValueError`` if
+      the key does not exist in the config tree).
+    * ``+key=value`` — Hydra-style force-add: creates intermediate dicts
+      as needed and sets the key even if it doesn't already exist.
+
+    Values are auto-parsed as ``int`` > ``float`` > ``bool`` >
+    ``None``/``null`` > ``tuple`` > ``list`` > ``str``.
+
     Args:
-        config: The base configuration
-        overrides: List of overrides in the format "key=value"
+        config: The base configuration.
+        overrides: List of overrides (e.g. ``["train.batch_size=32", "+dataset.preload_to_ram=True"]``).
 
     Returns:
-        Updated configuration
+        A new ``ExperimentConfig`` with the overrides applied.
     """
 
     # Convert config to a nested container that OmegaConf can resolve.
@@ -196,6 +257,11 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
 
         key, value = override.split("=", 1)
 
+        # Support Hydra-style '+key=value' to add new keys that don't yet exist
+        force_add = key.startswith("+")
+        if force_add:
+            key = key[1:]
+
         # Convert value to appropriate type
         try:
             # Try to parse as int
@@ -205,8 +271,11 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
                 # Try to parse as float
                 value = float(value)
             except ValueError:
+                # Handle None/null
+                if value.lower() in ("none", "null"):
+                    value = None
                 # Handle booleans
-                if value.lower() == "true":
+                elif value.lower() == "true":
                     value = True
                 elif value.lower() == "false":
                     value = False
@@ -241,9 +310,12 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
         for i, part in enumerate(key_parts[:-1]):
             path_so_far.append(part)
             if part not in current_dict:
-                raise ValueError(
-                    f"Invalid config override: '{key}'. Path '{'.'.join(path_so_far)}' does not exist in config."
-                )
+                if force_add:
+                    current_dict[part] = {}
+                else:
+                    raise ValueError(
+                        f"Invalid config override: '{key}'. Path '{'.'.join(path_so_far)}' does not exist in config."
+                    )
             current_dict = current_dict[part]
             if not isinstance(current_dict, dict):
                 raise ValueError(
@@ -251,9 +323,9 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
                     f"'{'.'.join(path_so_far)}' is not a nested config (got {type(current_dict).__name__})."
                 )
 
-        # Validate the final key exists before setting
+        # Validate the final key exists before setting (skip when force-adding)
         final_key = key_parts[-1]
-        if final_key not in current_dict:
+        if not force_add and final_key not in current_dict:
             raise ValueError(
                 f"Invalid config override: '{key}'. "
                 f"Key '{final_key}' does not exist in config. "
@@ -266,6 +338,8 @@ def apply_config_overrides(config: ExperimentConfig, overrides: list[str]) -> Ex
     # Resolve ${...} interpolations while preserving DictConfig for dot-access
     from omegaconf import DictConfig as _DictConfig
     from omegaconf import OmegaConf as _OC
+
+    _register_arithmetic_resolvers(_OC)
 
     resolved_conf: _DictConfig = _OC.create(config_dict, flags={"allow_objects": True})
     _OC.resolve(resolved_conf)

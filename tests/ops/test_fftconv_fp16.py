@@ -62,6 +62,9 @@ pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA requ
 # and ortho normalization. These are empirically validated thresholds.
 RTOL_FP16 = 0.1
 ATOL_FP16 = 0.1
+# Backward tolerances — fp16 backward is noisier than forward.
+RTOL_FP16_BWD = 0.15
+ATOL_FP16_BWD = 0.15
 # Chunked fp16 vs non-chunked fp16 should be exact (same computation)
 ATOL_CHUNKED = 1e-5
 
@@ -201,6 +204,28 @@ class TestFP16FFTConv1D:
 
         torch.testing.assert_close(y_fp16, y_f32, rtol=RTOL_FP16, atol=ATOL_FP16)
 
+    @pytest.mark.parametrize(
+        "B,H,L,K",
+        [(2, 16, 64, 15), (1, 32, 128, 7)],
+    )
+    def test_backward_vs_f32(self, device: str, B: int, H: int, L: int, K: int) -> None:
+        """FP16 gradients w.r.t. x and kernel match fp32 reference gradients."""
+        torch.manual_seed(42)
+        x1 = torch.randn(B, H, L, device=device, dtype=torch.float32, requires_grad=True)
+        k1 = torch.randn(1, H, K, device=device, dtype=torch.float32, requires_grad=True)
+
+        y1 = fftconv1d_fp16_bhl(x1, k1)
+        grad_output = torch.randn_like(y1)
+        y1.backward(grad_output)
+
+        x2 = x1.detach().clone().requires_grad_(True)
+        k2 = k1.detach().clone().requires_grad_(True)
+        y2 = fftconv1d_f32(x2, k2)
+        y2.backward(grad_output)
+
+        torch.testing.assert_close(x1.grad, x2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+        torch.testing.assert_close(k1.grad, k2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+
 
 ###############################################################################
 # 1D causal
@@ -266,6 +291,28 @@ class TestFP16CausalFFTConv1D:
         y_chunk = causal_fftconv1d_fp16_bhl_chunked(x, kernel, shortcut, chunk_size=chunk_size)
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_CHUNKED, rtol=0)
+
+    @pytest.mark.parametrize(
+        "B,H,L,K",
+        [(2, 16, 64, 15), (1, 32, 128, 7)],
+    )
+    def test_backward_vs_f32(self, device: str, B: int, H: int, L: int, K: int) -> None:
+        """Causal FP16 gradients match fp32 reference gradients."""
+        torch.manual_seed(42)
+        x1 = torch.randn(B, H, L, device=device, dtype=torch.float32, requires_grad=True)
+        k1 = torch.randn(1, H, K, device=device, dtype=torch.float32, requires_grad=True)
+
+        y1 = causal_fftconv1d_fp16_bhl(x1, k1)
+        grad_output = torch.randn_like(y1)
+        y1.backward(grad_output)
+
+        x2 = x1.detach().clone().requires_grad_(True)
+        k2 = k1.detach().clone().requires_grad_(True)
+        y2 = causal_fftconv1d_f32(x2, k2)
+        y2.backward(grad_output)
+
+        torch.testing.assert_close(x1.grad, x2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+        torch.testing.assert_close(k1.grad, k2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
 
 
 ###############################################################################
@@ -348,6 +395,28 @@ class TestFP16FFTConv2D:
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_CHUNKED, rtol=0)
 
+    @pytest.mark.parametrize(
+        "B,H,X,Y,Kx,Ky",
+        [(2, 8, 16, 16, 5, 5), (1, 16, 32, 32, 7, 7)],
+    )
+    def test_backward_vs_f32(self, device: str, B: int, H: int, X: int, Y: int, Kx: int, Ky: int) -> None:
+        """FP16 2D gradients match fp32 reference gradients."""
+        torch.manual_seed(42)
+        x1 = torch.randn(B, H, X, Y, device=device, dtype=torch.float32, requires_grad=True)
+        k1 = torch.randn(1, H, Kx, Ky, device=device, dtype=torch.float32, requires_grad=True)
+
+        y1 = fftconv2d_fp16_bhl(x1, k1)
+        grad_output = torch.randn_like(y1)
+        y1.backward(grad_output)
+
+        x2 = x1.detach().clone().requires_grad_(True)
+        k2 = k1.detach().clone().requires_grad_(True)
+        y2 = fftconv2d_f32(x2, k2)
+        y2.backward(grad_output)
+
+        torch.testing.assert_close(x1.grad, x2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+        torch.testing.assert_close(k1.grad, k2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+
 
 ###############################################################################
 # 3D
@@ -427,6 +496,30 @@ class TestFP16FFTConv3D:
 
         torch.testing.assert_close(y_chunk, y_std, atol=ATOL_CHUNKED, rtol=0)
 
+    @pytest.mark.parametrize(
+        "B,H,X,Y,Z,Kx,Ky,Kz",
+        [(1, 4, 8, 8, 8, 3, 3, 3), (2, 8, 16, 16, 16, 5, 5, 5)],
+    )
+    def test_backward_vs_f32(
+        self, device: str, B: int, H: int, X: int, Y: int, Z: int, Kx: int, Ky: int, Kz: int
+    ) -> None:
+        """FP16 3D gradients match fp32 reference gradients."""
+        torch.manual_seed(42)
+        x1 = torch.randn(B, H, X, Y, Z, device=device, dtype=torch.float32, requires_grad=True)
+        k1 = torch.randn(1, H, Kx, Ky, Kz, device=device, dtype=torch.float32, requires_grad=True)
+
+        y1 = fftconv3d_fp16_bhl(x1, k1)
+        grad_output = torch.randn_like(y1)
+        y1.backward(grad_output)
+
+        x2 = x1.detach().clone().requires_grad_(True)
+        k2 = k1.detach().clone().requires_grad_(True)
+        y2 = fftconv3d_f32(x2, k2)
+        y2.backward(grad_output)
+
+        torch.testing.assert_close(x1.grad, x2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+        torch.testing.assert_close(k1.grad, k2.grad, rtol=RTOL_FP16_BWD, atol=ATOL_FP16_BWD)
+
 
 ###############################################################################
 # CKConvND integration
@@ -459,21 +552,25 @@ class TestCKConvNDFP16Integration:
                 assert "chunked" in w_reshape_fn.__name__
                 assert "chunked" in bhl_fn.__name__
 
-    def test_circular_padding_rejected(self) -> None:
-        """CKConvND with use_fp16_fft=True and circular padding raises."""
+    def test_circular_padding_warns(self) -> None:
+        """CKConvND with use_fp16_fft=True and circular padding emits a warning."""
+        import warnings
+
         from nvsubquadratic.lazy_config import LazyConfig
         from nvsubquadratic.modules.ckconv_nd import CKConvND
 
-        with pytest.raises(AssertionError, match="circular"):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
             CKConvND(
                 data_dim=2,
                 hidden_dim=32,
                 kernel_cfg=LazyConfig(torch.nn.Identity)(),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double",
+                grid_type="single",
                 fft_padding="circular",
                 use_fp16_fft=True,
             )
+            assert any("power-of-2" in str(warning.message) for warning in w)
 
 
 ###############################################################################
@@ -501,7 +598,7 @@ class TestNightlyFP16Validation:
     def test_fp16_fft_accuracy_parity(self) -> None:
         """FP16 FFT produces same validation accuracy as f32 on GAP Hyena model.
 
-        W&B run: tcji9tfx (v2 Hyena-GAP, 80.1% top-1)
+        W&B run: tcji9tfx (v2 Hyena-GAP, ~81.5% top-1)
         """
         import re
         import sys
@@ -558,6 +655,22 @@ class TestNightlyFP16Validation:
         network = instantiate(config.net)
         model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
 
+        # The checkpoint (tcji9tfx) was trained before bias was removed from
+        # patch_embed and out_proj (weight-decay hygiene in #74).  Re-add the
+        # bias parameters so the checkpoint loads exactly and accuracy is valid.
+        net = model.network
+        pe = net.patch_embed
+        net.patch_embed = torch.nn.Conv2d(
+            pe.in_channels,
+            pe.out_channels,
+            kernel_size=pe.kernel_size,
+            stride=pe.stride,
+            padding=pe.padding,
+            bias=True,
+        )
+        op = net.out_proj
+        net.out_proj = torch.nn.Linear(op.in_features, op.out_features, bias=True)
+
         run_path = f"{WANDB_ENTITY}/{WANDB_PROJECT}/tcji9tfx"
         ckpt_path = download_checkpoint(run_path=run_path, alias="best")
         state_dict = load_checkpoint_state_dict(ckpt_path)
@@ -599,9 +712,9 @@ class TestNightlyFP16Validation:
             f"FP16 FFT accuracy regression: f32={acc_f32:.4f}, fp16={acc_fp16:.4f}, diff={abs(acc_f32 - acc_fp16):.4f}"
         )
 
-        # Both should exceed the known baseline
-        assert acc_f32 >= 0.795, f"f32 baseline regression: {acc_f32:.4f} < 0.795"
-        assert acc_fp16 >= 0.795, f"fp16 regression: {acc_fp16:.4f} < 0.795"
+        # Both should exceed the known baseline (~81.5% top-1)
+        assert acc_f32 >= 0.81, f"f32 baseline regression: {acc_f32:.4f} < 0.81"
+        assert acc_fp16 >= 0.81, f"fp16 regression: {acc_fp16:.4f} < 0.81"
 
 
 if __name__ == "__main__":

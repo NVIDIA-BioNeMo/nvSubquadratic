@@ -188,6 +188,7 @@ def construct_trainer(
         val_check_interval=cfg.trainer.check_val_every_n_iterations,
         check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         limit_val_batches=cfg.trainer.limit_val_batches,
+        limit_test_batches=cfg.trainer.limit_test_batches,
         # Logging frequency
         log_every_n_steps=10,
         enable_progress_bar=True,

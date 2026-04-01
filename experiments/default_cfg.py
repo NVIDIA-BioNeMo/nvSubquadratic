@@ -34,6 +34,11 @@ class TrainConfig:
 class TrainerConfig:
     """Lightning Trainer configuration overrides."""
 
+    # Number of training samples per epoch.  Used with
+    # OmegaConf resolvers to derive step-based validation intervals via
+    # interpolation so that changing batch_size auto-adjusts everything.
+    samples_per_epoch: Optional[int] = None
+
     # Validate every N training iterations (maps to Lightning's val_check_interval).
     # None = rely on check_val_every_n_epoch only.
     check_val_every_n_iterations: Optional[int] = None
@@ -43,6 +48,9 @@ class TrainerConfig:
 
     # Run through all validation batches every epoch by default.
     limit_val_batches: Union[int, float] = 1.0
+
+    # Run through all test batches by default.
+    limit_test_batches: Union[int, float] = 1.0
 
     # Checkpoint saving frequency (in training steps). If None, only save after validation.
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
@@ -134,6 +142,12 @@ class ExperimentConfig:
     )
     experiment_dir: Optional[str] = None
     num_nodes: int = 1
+
+    # Multiprocessing sharing strategy for DataLoader workers.
+    # Set to "file_system" to avoid /dev/shm exhaustion when running many
+    # workers or multiple jobs on the same node.  None keeps the PyTorch
+    # default ("file_descriptor" on Linux, which uses /dev/shm).
+    mp_sharing_strategy: Optional[str] = None
 
     dataset: LazyConfig = PLACEHOLDER
     net: LazyConfig = PLACEHOLDER

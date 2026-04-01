@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Quick correctness and forward-speed check for the CUDA fft_causal_conv1d kernel.
+"""Quick correctness and forward-speed check for the CUDA fft_causal_conv1d kernel.
 
 Example:
     PYTHONPATH=. python scripts/bench_subquadratic_fftconv.py --device cuda
@@ -24,11 +23,13 @@ def _reference_causal_conv1d(x: torch.Tensor, weight: torch.Tensor) -> torch.Ten
 
 
 def _maybe_sync(device: torch.device) -> None:
+    """Synchronize the CUDA stream if we are on a GPU device."""
     if device.type == "cuda":
         torch.cuda.synchronize(device)
 
 
 def _bench(label: str, fn, device: torch.device, warmup: int, steps: int) -> float:
+    """Run *fn* with warmup, then time *steps* iterations and print the average."""
     for _ in range(warmup):
         fn()
     _maybe_sync(device)
@@ -45,6 +46,7 @@ def _bench(label: str, fn, device: torch.device, warmup: int, steps: int) -> flo
 
 
 def main() -> None:
+    """Run latency benchmarks for subquadratic FFT convolution variants."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--heads", type=int, default=64)

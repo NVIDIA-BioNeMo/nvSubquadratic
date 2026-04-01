@@ -12,6 +12,7 @@ Simulates the real pipeline:
 import pytest
 import torch
 
+
 _requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 

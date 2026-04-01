@@ -120,10 +120,9 @@ def get_config() -> ExperimentConfig:
                         mask_cfg=LazyConfig(GaussianModulationND)(
                             data_dim="${net.data_dim}",
                             num_channels="${net.hidden_dim}",
-                            min_std=0.02,
-                            max_std=1.5,
-                            init_std_low=0.05,
-                            init_std_high=1.2,
+                            min_attenuation_at_step=0.1,
+                            max_attenuation_at_limit=0.95,
+                            init_extent=1.0,
                             parametrization="direct",
                         ),
                         grid_type=GRID_TYPE,
