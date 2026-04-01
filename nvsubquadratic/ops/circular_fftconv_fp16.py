@@ -30,11 +30,9 @@ See ``circular_fftconv1d_fp16_bhl`` docstring for the full derivation.
 
 Alignment
 ---------
-By default (``use_phase_shift=True``), alignment is done via a frequency-domain
-phase ramp, the same approach used by the fp32 variants.  The ramp is computed
-in float32 for precision and cast to complex32 before the multiply so all FFT
-intermediates stay in half-precision.  Set ``use_phase_shift=False`` to fall
-back to spatial ``torch.roll`` after the inverse FFT.
+Alignment is done via a frequency-domain phase ramp, the same approach used by
+the fp32 variants.  The ramp is computed in float32 for precision and cast to
+complex32 before the multiply so all FFT intermediates stay in half-precision.
 
 Families provided
 -----------------
@@ -242,7 +240,6 @@ def circular_fftconv1d_fp16_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
-    use_phase_shift: bool = True,
 ) -> torch.Tensor:
     r"""1D circular FFT convolution in fp16 with dual mean-centering.
 
@@ -314,8 +311,6 @@ def circular_fftconv1d_fp16_bhl(
         x: Input tensor ``[B, H, L]`` (any dtype).
         kernel: Kernel tensor ``[1|B, H, K]`` with ``K in {L, L-1}`` (any dtype).
         shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
-        use_phase_shift: If True (default), align via frequency-domain phase
-            ramp.  If False, align via spatial ``torch.roll``.
 
     Returns:
         Tensor ``[B, H, L]`` in the original dtype of *x*.
@@ -354,46 +349,34 @@ def circular_fftconv1d_fp16_bhl(
     # and cast back to complex32 before the large multiply with fft_x.
     shift = -((K - 1) // 2)
 
-    if use_phase_shift:
-        del x_fp16  # x_c no longer needed (correction folded into fft_k)
+    del x_fp16  # x_c no longer needed (correction folded into fft_k)
 
-        fft_k_eff = fft_k.to(torch.complex64)
-        del fft_k
+    fft_k_eff = fft_k.to(torch.complex64)
+    del fft_k
 
-        # Build effective kernel spectrum in one expression per case:
-        #   K=L  :  fft_k_eff = fft_k_c * phase(s)
-        #   K=L-1:  fft_k_eff = fft_k_c * phase(s) - (mu_k / sqrt_N) * phase(s-1)
-        # The K=L-1 form comes from expanding:
-        #   phase(s) * [fft_k_c - (mu_k/sqrt_N) * phase(-1)]
-        if K == L - 1:
+    # Build effective kernel spectrum in one expression per case:
+    #   K=L  :  fft_k_eff = fft_k_c * phase(s)
+    #   K=L-1:  fft_k_eff = fft_k_c * phase(s) - (mu_k / sqrt_N) * phase(s-1)
+    # The K=L-1 form comes from expanding:
+    #   phase(s) * [fft_k_c - (mu_k/sqrt_N) * phase(-1)]
+    if K == L - 1:
+        phase_s = _phase_ramp_cache_1d.get(L, shift, x.device, _PHASE_RAMP_COMPUTE_DTYPE)
+        phase_sm1 = _phase_ramp_cache_1d.get(L, shift - 1, x.device, _PHASE_RAMP_COMPUTE_DTYPE)
+        fft_k_eff = fft_k_eff * phase_s - (k_mean.float() / sqrt_N) * phase_sm1
+    elif K == L:
+        if shift != 0:
             phase_s = _phase_ramp_cache_1d.get(L, shift, x.device, _PHASE_RAMP_COMPUTE_DTYPE)
-            phase_sm1 = _phase_ramp_cache_1d.get(L, shift - 1, x.device, _PHASE_RAMP_COMPUTE_DTYPE)
-            fft_k_eff = fft_k_eff * phase_s - (k_mean.float() / sqrt_N) * phase_sm1
-        elif K == L:
-            if shift != 0:
-                phase_s = _phase_ramp_cache_1d.get(L, shift, x.device, _PHASE_RAMP_COMPUTE_DTYPE)
-                fft_k_eff = fft_k_eff * phase_s
-        else:
-            raise ValueError(f"Dual-centering correction requires K=L or K=L-1, got K={K}, L={L}")
-
-        fft_x.mul_(fft_k_eff.to(torch.complex32))
+            fft_k_eff = fft_k_eff * phase_s
     else:
-        fft_x.mul_(fft_k)
-        del fft_k
+        raise ValueError(f"Dual-centering correction requires K=L or K=L-1, got K={K}, L={L}")
+
+    fft_x.mul_(fft_k_eff.to(torch.complex32))
 
     # ── Inverse FFT (fp16) ──
     y = torch.fft.irfft(fft_x, n=L, dim=2, norm="ortho")
 
-    if not use_phase_shift and shift != 0:
-        y = torch.roll(y, shifts=(shift,), dims=(2,))
-
     # ── Undo ortho scaling + DC correction in one expression (float32) ──
-    if not use_phase_shift and K == L - 1:
-        y = (
-            y.float() * sqrt_N - k_mean.float() * torch.roll(x_fp16.float(), shifts=(shift - 1,), dims=(2,)) + dc_corr
-        ).to(x.dtype)
-    else:
-        y = (y.float() * sqrt_N + dc_corr).to(x.dtype)
+    y = (y.float() * sqrt_N + dc_corr).to(x.dtype)
 
     if shortcut is not None:
         assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
@@ -406,7 +389,6 @@ def circular_fftconv1d_fp16_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
-    use_phase_shift: bool = True,
 ) -> torch.Tensor:
     """1D circular FFT convolution in fp16, for inputs with layout ``[B, L, H]``.
 
@@ -415,7 +397,7 @@ def circular_fftconv1d_fp16_bhl_w_reshape(
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     k_bhl = rearrange(kernel, "b k h -> b h k")
-    y = circular_fftconv1d_fp16_bhl(x_bhl, k_bhl, shortcut, use_phase_shift=use_phase_shift)
+    y = circular_fftconv1d_fp16_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y, "b h l -> b l h")
 
 
@@ -428,7 +410,6 @@ def circular_fftconv2d_fp16_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
-    use_phase_shift: bool = True,
 ) -> torch.Tensor:
     r"""2D circular FFT convolution in fp16 with dual mean-centering.
 
@@ -439,18 +420,10 @@ def circular_fftconv2d_fp16_bhl(
 
     Requires ``X`` and ``Y`` to be powers of 2 (cuFFT fp16 constraint).
 
-    .. note::
-        The T2 centering correction is only applied when ``use_phase_shift=True``
-        (the default and recommended path).  With ``use_phase_shift=False``, the
-        correction is omitted — the result is still exact when ``K_d == N_d`` for
-        all axes, but approximate otherwise.
-
     Args:
         x: Input tensor ``[B, H, X, Y]`` (any dtype).
         kernel: Kernel tensor ``[1|B, H, K_x, K_y]`` (any dtype).
         shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
-        use_phase_shift: If True (default), align via frequency-domain phase
-            ramp.  If False, align via spatial ``torch.roll``.
 
     Returns:
         Tensor ``[B, H, X, Y]`` in the original dtype of *x*.
@@ -491,43 +464,35 @@ def circular_fftconv2d_fp16_bhl(
     shift_x = -((K_x - 1) // 2)
     shift_y = -((K_y - 1) // 2)
 
-    if use_phase_shift:
-        del x_fp16  # x_c no longer needed (correction folded into fft_k)
+    del x_fp16  # x_c no longer needed (correction folded into fft_k)
 
-        # Build effective kernel spectrum in complex64 (small tensor, no batch dim).
-        fft_k_eff = fft_k.to(torch.complex64)
-        del fft_k
+    # Build effective kernel spectrum in complex64 (small tensor, no batch dim).
+    fft_k_eff = fft_k.to(torch.complex64)
+    del fft_k
 
-        # T2: centering correction for zero-padded kernel positions.
-        # The geometric factor is cached and only the scalar mu_k/sqrt_N changes.
-        geo = _centering_geo_cache_2d.get(K_x, K_y, X, Y, x.device)
-        if geo is not None:
-            fft_k_eff = fft_k_eff + (k_mean.float() / sqrt_N) * geo
+    # T2: centering correction for zero-padded kernel positions.
+    # The geometric factor is cached and only the scalar mu_k/sqrt_N changes.
+    geo = _centering_geo_cache_2d.get(K_x, K_y, X, Y, x.device)
+    if geo is not None:
+        fft_k_eff = fft_k_eff + (k_mean.float() / sqrt_N) * geo
 
-        # Apply phase ramp for kernel alignment (spatial centering).
-        if shift_x != 0 or shift_y != 0:
-            phase = _phase_ramp_cache_2d.get(
-                X,
-                Y,
-                shift_x,
-                shift_y,
-                x.device,
-                _PHASE_RAMP_COMPUTE_DTYPE,
-            )
-            fft_k_eff = fft_k_eff * phase
+    # Apply phase ramp for kernel alignment (spatial centering).
+    if shift_x != 0 or shift_y != 0:
+        phase = _phase_ramp_cache_2d.get(
+            X,
+            Y,
+            shift_x,
+            shift_y,
+            x.device,
+            _PHASE_RAMP_COMPUTE_DTYPE,
+        )
+        fft_k_eff = fft_k_eff * phase
 
-        # Multiply in complex32 (large batched tensor stays in half precision).
-        fft_x.mul_(fft_k_eff.to(torch.complex32))
-    else:
-        # Fallback: no T2 correction, no phase ramp — only valid when K_d == N_d.
-        fft_x.mul_(fft_k)
-        del fft_k
+    # Multiply in complex32 (large batched tensor stays in half precision).
+    fft_x.mul_(fft_k_eff.to(torch.complex32))
 
     # ── Inverse FFT (fp16) ──
     y = torch.fft.irfft2(fft_x, s=(X, Y), dim=(2, 3), norm="ortho")
-
-    if not use_phase_shift and (shift_x != 0 or shift_y != 0):
-        y = torch.roll(y, shifts=(shift_x, shift_y), dims=(2, 3))
 
     # ── Undo ortho scaling (×√N) and add DC correction (T4), in float32 ──
     y = (y.float() * sqrt_N + dc_corr).to(x.dtype)
@@ -543,7 +508,6 @@ def circular_fftconv2d_fp16_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
-    use_phase_shift: bool = True,
 ) -> torch.Tensor:
     """2D circular FFT convolution in fp16, for inputs with layout ``[B, X, Y, H]``.
 
@@ -552,7 +516,7 @@ def circular_fftconv2d_fp16_bhl_w_reshape(
     """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     k_bhl = rearrange(kernel, "b kx ky h -> b h kx ky")
-    y = circular_fftconv2d_fp16_bhl(x_bhl, k_bhl, shortcut, use_phase_shift=use_phase_shift)
+    y = circular_fftconv2d_fp16_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y, "b h x y -> b x y h")
 
 
@@ -565,7 +529,6 @@ def circular_fftconv3d_fp16_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
-    use_phase_shift: bool = True,
 ) -> torch.Tensor:
     r"""3D circular FFT convolution in fp16 with dual mean-centering.
 
@@ -576,18 +539,10 @@ def circular_fftconv3d_fp16_bhl(
 
     Requires ``X``, ``Y``, and ``Z`` to be powers of 2 (cuFFT fp16 constraint).
 
-    .. note::
-        The T2 centering correction is only applied when ``use_phase_shift=True``
-        (the default and recommended path).  With ``use_phase_shift=False``, the
-        correction is omitted — the result is still exact when ``K_d == N_d`` for
-        all axes, but approximate otherwise.
-
     Args:
         x: Input tensor ``[B, H, X, Y, Z]`` (any dtype).
         kernel: Kernel tensor ``[1|B, H, Kx, Ky, Kz]`` (any dtype).
         shortcut: Optional per-channel shortcut ``[H]`` (same dtype as *x*).
-        use_phase_shift: If True (default), align via frequency-domain phase
-            ramp.  If False, align via spatial ``torch.roll``.
 
     Returns:
         Tensor ``[B, H, X, Y, Z]`` in the original dtype of *x*.
@@ -628,45 +583,37 @@ def circular_fftconv3d_fp16_bhl(
     shift_y = -((Ky - 1) // 2)
     shift_z = -((Kz - 1) // 2)
 
-    if use_phase_shift:
-        del x_fp16  # x_c no longer needed (correction folded into fft_k)
+    del x_fp16  # x_c no longer needed (correction folded into fft_k)
 
-        # Build effective kernel spectrum in complex64 (small tensor, no batch dim).
-        fft_k_eff = fft_k.to(torch.complex64)
-        del fft_k
+    # Build effective kernel spectrum in complex64 (small tensor, no batch dim).
+    fft_k_eff = fft_k.to(torch.complex64)
+    del fft_k
 
-        # T2: centering correction for zero-padded kernel positions.
-        # The geometric factor is cached and only the scalar mu_k/sqrt_N changes.
-        geo = _centering_geo_cache_3d.get(Kx, Ky, Kz, X, Y, Z, x.device)
-        if geo is not None:
-            fft_k_eff = fft_k_eff + (k_mean.float() / sqrt_N) * geo
+    # T2: centering correction for zero-padded kernel positions.
+    # The geometric factor is cached and only the scalar mu_k/sqrt_N changes.
+    geo = _centering_geo_cache_3d.get(Kx, Ky, Kz, X, Y, Z, x.device)
+    if geo is not None:
+        fft_k_eff = fft_k_eff + (k_mean.float() / sqrt_N) * geo
 
-        # Apply phase ramp for kernel alignment (spatial centering).
-        if shift_x != 0 or shift_y != 0 or shift_z != 0:
-            phase = _phase_ramp_cache_3d.get(
-                X,
-                Y,
-                Z,
-                shift_x,
-                shift_y,
-                shift_z,
-                x.device,
-                _PHASE_RAMP_COMPUTE_DTYPE,
-            )
-            fft_k_eff = fft_k_eff * phase
+    # Apply phase ramp for kernel alignment (spatial centering).
+    if shift_x != 0 or shift_y != 0 or shift_z != 0:
+        phase = _phase_ramp_cache_3d.get(
+            X,
+            Y,
+            Z,
+            shift_x,
+            shift_y,
+            shift_z,
+            x.device,
+            _PHASE_RAMP_COMPUTE_DTYPE,
+        )
+        fft_k_eff = fft_k_eff * phase
 
-        # Multiply in complex32 (large batched tensor stays in half precision).
-        fft_x.mul_(fft_k_eff.to(torch.complex32))
-    else:
-        # Fallback: no T2 correction, no phase ramp — only valid when K_d == N_d.
-        fft_x.mul_(fft_k)
-        del fft_k
+    # Multiply in complex32 (large batched tensor stays in half precision).
+    fft_x.mul_(fft_k_eff.to(torch.complex32))
 
     # ── Inverse FFT (fp16) ──
     y = torch.fft.irfftn(fft_x, s=(X, Y, Z), dim=(2, 3, 4), norm="ortho")
-
-    if not use_phase_shift and (shift_x != 0 or shift_y != 0 or shift_z != 0):
-        y = torch.roll(y, shifts=(shift_x, shift_y, shift_z), dims=(2, 3, 4))
 
     # ── Undo ortho scaling (×√N) and add DC correction (T4), in float32 ──
     y = (y.float() * sqrt_N + dc_corr).to(x.dtype)
@@ -682,7 +629,6 @@ def circular_fftconv3d_fp16_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
-    use_phase_shift: bool = True,
 ) -> torch.Tensor:
     """3D circular FFT convolution in fp16, for inputs with layout ``[B, X, Y, Z, H]``.
 
@@ -691,5 +637,5 @@ def circular_fftconv3d_fp16_bhl_w_reshape(
     """
     x_bhl = rearrange(x, "b x y z h -> b h x y z")
     k_bhl = rearrange(kernel, "b kx ky kz h -> b h kx ky kz")
-    y = circular_fftconv3d_fp16_bhl(x_bhl, k_bhl, shortcut, use_phase_shift=use_phase_shift)
+    y = circular_fftconv3d_fp16_bhl(x_bhl, k_bhl, shortcut)
     return rearrange(y, "b h x y z -> b x y z h")

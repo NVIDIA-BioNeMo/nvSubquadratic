@@ -9,6 +9,20 @@ from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.mlp import MLP, _quack_mlp_available
 
 
+# The quack backend is deliberately disabled in _validate_quack_backend
+# (raises NotImplementedError) while backward correctness + benchmarks
+# are still pending.  Detect this so quack-specific tests can skip.
+_quack_backend_enabled: bool = False
+if _quack_mlp_available:
+    try:
+        MLP(dim=384, activation="glu", dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0), backend="quack")
+        _quack_backend_enabled = True
+    except NotImplementedError:
+        pass
+    except Exception:
+        _quack_backend_enabled = True  # different error → backend is enabled, test will surface the real bug
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 _GATED = ["glu", "swiglu"]
@@ -101,24 +115,24 @@ def test_flop_count_positive(activation: str) -> None:
 
 def test_quack_backend_rejects_bias() -> None:
     """backend='quack' must raise if bias=True."""
-    if not _quack_mlp_available:
-        pytest.skip("quack-kernels MLP not available")
+    if not _quack_backend_enabled:
+        pytest.skip("quack backend not enabled (experimental / not installed)")
     with pytest.raises(ValueError, match="bias=False"):
         _make_mlp(dim=384, bias=True, backend="quack")
 
 
 def test_quack_backend_rejects_bad_dim() -> None:
     """backend='quack' must raise if dim not divisible by 8."""
-    if not _quack_mlp_available:
-        pytest.skip("quack-kernels MLP not available")
+    if not _quack_backend_enabled:
+        pytest.skip("quack backend not enabled (experimental / not installed)")
     with pytest.raises(ValueError, match="divisible by 8"):
         _make_mlp(dim=65, backend="quack")
 
 
 def test_quack_backend_rejects_unsupported_activation() -> None:
     """backend='quack' must raise for unsupported activations."""
-    if not _quack_mlp_available:
-        pytest.skip("quack-kernels MLP not available")
+    if not _quack_backend_enabled:
+        pytest.skip("quack backend not enabled (experimental / not installed)")
     with pytest.raises(ValueError, match="does not support activation"):
         _make_mlp(dim=384, activation="silu", backend="quack")
 
@@ -174,8 +188,8 @@ def test_mlp_backward_cuda(activation: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 def test_mlp_quack_matches_pytorch(activation: str, dtype: torch.dtype) -> None:
     """When QuACK is available, fused output should be close to the PyTorch path."""
-    if not _quack_mlp_available:
-        pytest.skip("quack-kernels MLP not available (version too old or not installed)")
+    if not _quack_backend_enabled:
+        pytest.skip("quack backend not enabled (experimental / not installed)")
 
     major, _ = torch.cuda.get_device_capability()
     if major < 9:
@@ -201,8 +215,8 @@ def test_mlp_quack_matches_pytorch(activation: str, dtype: torch.dtype) -> None:
 @pytest.mark.parametrize("activation", ["glu", "swiglu"])
 def test_mlp_quack_backward_matches_pytorch(activation: str) -> None:
     """Gradients from the QuACK backend should be close to the PyTorch backend."""
-    if not _quack_mlp_available:
-        pytest.skip("quack-kernels MLP not available (version too old or not installed)")
+    if not _quack_backend_enabled:
+        pytest.skip("quack backend not enabled (experimental / not installed)")
 
     major, _ = torch.cuda.get_device_capability()
     if major < 9:

@@ -211,12 +211,20 @@ class TestLogging:
 
         logged = pl_module.log_dict.call_args_list[-1][0][0]
         expected_keys = {
+            # Windowed breakdown
             "perf/iter_per_sec",
             "perf/samples_per_sec",
             "perf/total_ms",
             "perf/fwd_ms",
             "perf/bwd_ms",
             "perf/other_ms",
+            # Wall-clock cumulative
+            "perf/wc_iter_per_sec",
+            "perf/wc_samples_per_sec",
+            "perf/wc_total_sec",
+            # GPU memory
+            "perf/peak_gpu_mb",
+            "perf/current_gpu_mb",
         }
         assert set(logged.keys()) == expected_keys
 

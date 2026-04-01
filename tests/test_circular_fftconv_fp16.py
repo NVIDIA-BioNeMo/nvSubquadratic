@@ -120,17 +120,6 @@ class TestCircularFftconv1dFp16:
         y_sc = circular_fftconv1d_fp16_bhl(x, k, sc)
         assert not torch.allclose(y_no_sc, y_sc), "Shortcut should change the output"
 
-    def test_phase_shift_vs_roll(self):
-        """Phase-shift and roll alignment should give the same result."""
-        torch.manual_seed(0)
-        x = torch.randn(2, 16, 256, device=DEVICE, dtype=torch.float32)
-        k = torch.randn(1, 16, 255, device=DEVICE, dtype=torch.float32)
-
-        y_phase = circular_fftconv1d_fp16_bhl(x, k, use_phase_shift=True)
-        y_roll = circular_fftconv1d_fp16_bhl(x, k, use_phase_shift=False)
-
-        torch.testing.assert_close(y_phase, y_roll, atol=0.1, rtol=0.01)
-
 
 # ─── 2D ──────────────────────────────────────────────────────────────────────
 
