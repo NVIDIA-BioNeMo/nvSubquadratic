@@ -31,27 +31,27 @@ from nvsubquadratic.networks.baselines.unet import (
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-SMALL_2D = dict(
-    dim_in=4,
-    dim_out=2,
-    n_spatial_dims=2,
-    spatial_resolution=(32, 32),
-    stages=2,
-    blocks_per_stage=1,
-    blocks_at_neck=1,
-    init_features=8,
-)
+SMALL_2D = {
+    "dim_in": 4,
+    "dim_out": 2,
+    "n_spatial_dims": 2,
+    "spatial_resolution": (32, 32),
+    "stages": 2,
+    "blocks_per_stage": 1,
+    "blocks_at_neck": 1,
+    "init_features": 8,
+}
 
-SMALL_3D = dict(
-    dim_in=4,
-    dim_out=2,
-    n_spatial_dims=3,
-    spatial_resolution=(16, 16, 16),
-    stages=2,
-    blocks_per_stage=1,
-    blocks_at_neck=1,
-    init_features=8,
-)
+SMALL_3D = {
+    "dim_in": 4,
+    "dim_out": 2,
+    "n_spatial_dims": 3,
+    "spatial_resolution": (16, 16, 16),
+    "stages": 2,
+    "blocks_per_stage": 1,
+    "blocks_at_neck": 1,
+    "init_features": 8,
+}
 
 
 def _convnext_cfg(n_spatial_dims=2):
@@ -183,7 +183,9 @@ class TestHyenaBlock:
 class TestUNet:
     """Tests for the unified UNet class."""
 
-    @pytest.mark.parametrize("block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"])
+    @pytest.mark.parametrize(
+        "block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"]
+    )
     def test_forward_shape_2d(self, block_cfg_fn):
         """UNet output shape must match [B, dim_out, *spatial] for all block types."""
         model = UNet(**SMALL_2D, block_cfg=block_cfg_fn(n_spatial_dims=2))
@@ -193,7 +195,9 @@ class TestUNet:
             y = model(x)
         assert y.shape == (1, SMALL_2D["dim_out"], *SMALL_2D["spatial_resolution"])
 
-    @pytest.mark.parametrize("block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"])
+    @pytest.mark.parametrize(
+        "block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"]
+    )
     def test_forward_shape_3d(self, block_cfg_fn):
         """UNet works with 3D inputs for all block types."""
         model = UNet(**SMALL_3D, block_cfg=block_cfg_fn(n_spatial_dims=3))
@@ -203,7 +207,9 @@ class TestUNet:
             y = model(x)
         assert y.shape == (1, SMALL_3D["dim_out"], *SMALL_3D["spatial_resolution"])
 
-    @pytest.mark.parametrize("block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"])
+    @pytest.mark.parametrize(
+        "block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"]
+    )
     def test_gradient_flow(self, block_cfg_fn):
         """Gradients must flow through to all parameters."""
         model = UNet(**SMALL_2D, block_cfg=block_cfg_fn(n_spatial_dims=2))
@@ -333,7 +339,9 @@ class TestWellUNet:
             out = model(inp)
         assert out["logits"].shape == (1, H, W, SMALL_2D["dim_out"])
 
-    @pytest.mark.parametrize("block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"])
+    @pytest.mark.parametrize(
+        "block_cfg_fn", [_convnext_cfg, _attention_cfg, _hyena_cfg], ids=["convnext", "attention", "hyena"]
+    )
     def test_all_block_types(self, block_cfg_fn):
         """WellUNet works with all block types."""
         model = WellUNet(**SMALL_2D, block_cfg=block_cfg_fn(n_spatial_dims=2))
