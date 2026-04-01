@@ -8,9 +8,10 @@ from typing import Optional
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import wandb
 from einops import rearrange
 from torchvision.utils import make_grid
+
+import wandb
 
 
 class ValidationImageGridCallback(pl.callbacks.Callback):

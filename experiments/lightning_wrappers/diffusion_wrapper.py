@@ -10,11 +10,11 @@ from typing import Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
-import wandb
 from diffusers import DDIMScheduler
 from torchmetrics.image.fid import FrechetInceptionDistance
 from torchvision.utils import make_grid
 
+import wandb
 from experiments.default_cfg import DiffusionExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
