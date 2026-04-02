@@ -7,10 +7,7 @@
 from dataclasses import dataclass, field
 from typing import Literal, Optional, Union
 
-from nvsubquadratic.lazy_config import LazyConfig
-
-
-PLACEHOLDER = None
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
 
 @dataclass

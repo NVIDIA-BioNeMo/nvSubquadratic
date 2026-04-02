@@ -13,12 +13,11 @@ from experiments.default_cfg import (
     WandbConfig,
 )
 from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.networks.huggingface_diffusers import DiffusersDiTWrapper, HuggingFaceDiTConfig
 
 
 WANDB_ENTITY = "dafidofff"
-PLACEHOLDER = None
 
 # Dataset
 BATCH_SIZE = 32

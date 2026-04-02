@@ -9,7 +9,7 @@ import torch
 from experiments.datamodules.tinyimagenet import AugmentConfig, MixupConfig, TinyImageNetDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.classification_wrapper import ClassificationWrapper
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import RandomFourierKernelND
@@ -22,8 +22,10 @@ from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, smal
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
-PLACEHOLDER = None
 WANDB_ENTITY = "dafidofff"
+
+# Dataset parameters
+INPUT_CHANNELS = 3  # RGB images
 DATA_DIM = 2
 
 # Dataset
@@ -45,7 +47,7 @@ DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.1
 GRID_TYPE = "single"
 FFT_PADDING = "circular"
-NUM_CLASSES = 200
+OUTPUT_CHANNELS = NUM_CLASSES = 200
 
 # Optimisation
 TRAINING_ITERATIONS = 600_000
@@ -92,12 +94,13 @@ def get_config() -> ExperimentConfig:
     )
 
     config.net = LazyConfig(ClassificationResNet)(
-        in_channels=PLACEHOLDER,
-        out_channels=PLACEHOLDER,
+        in_channels=INPUT_CHANNELS,
+        out_channels=OUTPUT_CHANNELS,
         num_blocks=NUM_BLOCKS,
         hidden_dim=NUM_HIDDEN_CHANNELS,
-        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
-        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features=PLACEHOLDER, out_features=PLACEHOLDER),
+        data_dim=DATA_DIM,
+        in_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.in_channels}", out_features="${net.hidden_dim}"),
+        out_proj_cfg=LazyConfig(torch.nn.Linear)(in_features="${net.hidden_dim}", out_features="${net.out_channels}"),
         norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
