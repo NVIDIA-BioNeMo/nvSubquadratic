@@ -55,7 +55,14 @@ skip_batch_kernel = pytest.mark.skip(
     reason="B * conv kernels not supported in current subquadratic-ops release; pending next version"
 )
 
-pytestmark = [requires_subq_ops, requires_cuda]
+# TODO(@moradza): remove the skip below when subquadratic-ops produces correct results
+pytestmark = [
+    requires_subq_ops,
+    requires_cuda,
+    pytest.mark.skip(
+        reason="subquadratic_ops_torch does not produce correct results with the currently installed version; pending next release"
+    ),
+]
 
 
 @pytest.fixture
