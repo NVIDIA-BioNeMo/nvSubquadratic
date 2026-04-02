@@ -20,6 +20,7 @@ import torch
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from tests.conftest import requires_subq_ops_v2
 
 
 ATOL = 1e-3
@@ -92,8 +93,7 @@ def _sync_weights(src: CKConvND, dst: CKConvND):
 # ---------------------------------------------------------------------------
 
 
-# TODO(@moradza): remove skip when subquadratic-ops-torch-cu12 >= 0.2.0 is released
-@pytest.mark.skip(reason="subquadratic_ops_torch >= 0.2.0 required; currently on 0.1.1")
+@requires_subq_ops_v2
 class TestForwardBackward:
     """CKConvND with subq_ops produces same output as torch_fft."""
 
@@ -161,7 +161,7 @@ class TestForwardBackward:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="subquadratic_ops_torch >= 0.2.0 required; currently on 0.1.1")
+@requires_subq_ops_v2
 class TestChunked:
     """CKConvND with subq_ops + use_chunked_fftconv matches non-chunked."""
 

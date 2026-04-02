@@ -21,6 +21,8 @@ Usage (requires GPU — run inside SLURM):
 import pytest
 import torch
 
+from tests.conftest import requires_subq_ops_v2
+
 
 # Tolerances for f32 comparison between torch.fft and subq_ops wrapper
 ATOL_F32 = 1e-3
@@ -48,17 +50,9 @@ requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="CUDA not available",
 )
-# TODO(@moradza): remove this skip when subquadratic-ops adds support for B * conv kernels
-skip_batch_kernel = pytest.mark.skip(
-    reason="B * conv kernels not supported in current subquadratic-ops release; pending next version"
-)
+skip_batch_kernel = requires_subq_ops_v2
 
-# TODO(@moradza): remove the skip below when subquadratic-ops-torch-cu12 >= 0.2.0 is released
-pytestmark = [
-    requires_subq_ops,
-    requires_cuda,
-    pytest.mark.skip(reason="subquadratic_ops_torch >= 0.2.0 required; currently on 0.1.1"),
-]
+pytestmark = [requires_subq_ops, requires_cuda, requires_subq_ops_v2]
 
 
 @pytest.fixture
