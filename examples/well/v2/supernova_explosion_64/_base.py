@@ -15,10 +15,8 @@ import torch
 from experiments.datamodules.pde.well import WellDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.well_lightning_wrapper import WELLRegressionWrapper
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 
-
-PLACEHOLDER = None
 
 # ─── Dataset constants ────────────────────────────────────────────────────────
 DATA_DIM = 3
