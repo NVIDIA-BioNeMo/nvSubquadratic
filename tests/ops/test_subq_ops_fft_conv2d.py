@@ -50,6 +50,10 @@ requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="CUDA not available",
 )
+# TODO(@moradza): remove this skip when subquadratic-ops adds support for B * conv kernels
+skip_batch_kernel = pytest.mark.skip(
+    reason="B * conv kernels not supported in current subquadratic-ops release; pending next version"
+)
 
 pytestmark = [requires_subq_ops, requires_cuda]
 
@@ -155,6 +159,7 @@ class TestSharedKernel:
 class TestFiLMKernel:
     """Tests with per-sample (FiLM) batched kernels."""
 
+    @skip_batch_kernel
     @pytest.mark.parametrize(
         "B, H, X, Y, Kx, Ky",
         [
@@ -175,6 +180,7 @@ class TestFiLMKernel:
 
         torch.testing.assert_close(y_subq, y_ref, atol=ATOL_F32, rtol=RTOL_F32)
 
+    @skip_batch_kernel
     def test_per_sample_independence(self, device: str) -> None:
         """Batched FiLM result equals running each sample individually."""
         torch.manual_seed(42)
@@ -194,6 +200,7 @@ class TestFiLMKernel:
                 msg=f"Sample {i} differs between batched and individual execution",
             )
 
+    @skip_batch_kernel
     def test_different_kernels_give_different_outputs(self, device: str) -> None:
         """Verify per-sample kernels actually produce distinct outputs."""
         torch.manual_seed(42)
@@ -244,6 +251,7 @@ class TestBackward:
             (2, 32, 14, 14, 5, 5),
         ],
     )
+    @skip_batch_kernel
     def test_backward_film_kernel(self, device: str, B: int, H: int, X: int, Y: int, Kx: int, Ky: int) -> None:
         """Gradients flow through x and per-sample FiLM kernel."""
         x = torch.randn(B, H, X, Y, device=device, dtype=torch.float32, requires_grad=True)
@@ -286,6 +294,7 @@ class TestBackward:
             (2, 64, 14, 14, 7, 7),
         ],
     )
+    @skip_batch_kernel
     def test_backward_matches_reference_film(
         self, device: str, B: int, H: int, X: int, Y: int, Kx: int, Ky: int
     ) -> None:

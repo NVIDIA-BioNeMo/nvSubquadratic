@@ -48,6 +48,10 @@ requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="CUDA not available",
 )
+# TODO(@moradza): remove this skip when subquadratic-ops adds support for B * conv kernels
+skip_batch_kernel = pytest.mark.skip(
+    reason="B * conv kernels not supported in current subquadratic-ops release; pending next version"
+)
 
 pytestmark = [requires_subq_ops, requires_cuda]
 
@@ -163,6 +167,7 @@ FILM_SHAPES = [
 class TestForwardFiLMKernel:
     """Forward correctness for per-sample FiLM kernels [B, H, Kx, Ky]."""
 
+    @skip_batch_kernel
     @pytest.mark.parametrize("B, H, X, Y, Kx, Ky", FILM_SHAPES)
     def test_matches_reference(self, device, B, H, X, Y, Kx, Ky):
         """Custom wrapper matches torch.fft reference for FiLM kernels."""
@@ -211,6 +216,7 @@ class TestChunked:
             (2, 128, 14, 14, 7, 7),
         ],
     )
+    @skip_batch_kernel
     def test_chunked_matches_non_chunked_film(self, device, B, H, X, Y, Kx, Ky):
         """Chunked and non-chunked produce identical output for FiLM kernels."""
         torch.manual_seed(42)
@@ -288,6 +294,7 @@ class TestBackward:
             (2, 64, 14, 14, 7, 7),
         ],
     )
+    @skip_batch_kernel
     def test_backward_film_kernel(self, device, B, H, X, Y, Kx, Ky):
         """Gradients match reference for FiLM (per-sample) kernels."""
         torch.manual_seed(42)
@@ -329,6 +336,7 @@ class TestShortcut:
 
         torch.testing.assert_close(y_custom, y_ref, atol=ATOL_F32, rtol=RTOL_F32)
 
+    @skip_batch_kernel
     def test_shortcut_film_kernel(self, device):
         """Shortcut applied correctly for FiLM kernel."""
         torch.manual_seed(42)
