@@ -2,6 +2,15 @@
 
 <!-- What does this PR change and why? -->
 
+## Environment setup
+
+Create the conda environment (required to run tests):
+
+```bash
+bash setup_conda_env.sh
+conda activate nvsubquadratic
+```
+
 ## Pre-commit
 
 Run locally before pushing (hooks also run on `git push` if installed):

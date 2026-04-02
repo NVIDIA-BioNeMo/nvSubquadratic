@@ -64,7 +64,7 @@ repos:
         pass_filenames: false
         always_run: false
         description: Ensure all Python files have proper NVIDIA license headers
-        stages: [manual]  # Only run license check when explicitly invoked.
+        stages: [manual] # Only run license check when explicitly invoked.
       - id: pytest-pre-push
         name: pytest-pre-push
         # Write coverage to /tmp so the hook does not modify any file in the repo (avoids "files were modified" failure).
@@ -75,7 +75,7 @@ repos:
         pass_filenames: false
       - id: torchrun-cp-tests
         name: torchrun-cp-tests (1D, 2D, 3D)
-        entry: bash -c 'if [ $(python -c "import torch; print(torch.cuda.device_count())") -ge 2 ]; then echo "Running distributed CP tests for all dimensions..." && torchrun --nproc_per_node=2 tests/torchrun_sequence_mixer_cp_test.py --context_parallel_size=2 --dtype=float32; else echo "Skipping torchrun tests (requires 2+ GPUs)"; fi'
+        entry: bash -c 'if [ $(python -c "import torch; print(torch.cuda.device_count())") -ge 2 ]; then echo "Running distributed CP tests for all dimensions..." && torchrun --nproc_per_node=2 tests/modules/torchrun_sequence_mixer_cp_test.py --context_parallel_size=2 --dtype=float32; else echo "Skipping torchrun tests (requires 2+ GPUs)"; fi'
         language: system
         stages: [pre-push]
         pass_filenames: false

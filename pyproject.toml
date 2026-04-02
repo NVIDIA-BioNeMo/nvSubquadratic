@@ -20,14 +20,13 @@ dependencies = [
     "pytorch-lightning>=2.0.0",
     "omegaconf>=2.3.0",
     "wandb>=0.15.0",
-    "protobuf>=4.23.0,<6.0.0",     # Required for wandb gRPC transport provider
-    "grpcio>=1.50.0",              # Required for wandb Connect transport provider
+    "protobuf>=4.23.0",
     "rich>=13.0.0",
     "Pillow",
     "huggingface_hub",
     "subquadratic-ops-torch-cu12",
-    "timm==1.0.22",
-    "nvidia-dali-cuda120",
+    "timm==1.0.24",
+    "nvidia-dali-cuda120==1.53.0",
 ]
 
 [project.optional-dependencies]
