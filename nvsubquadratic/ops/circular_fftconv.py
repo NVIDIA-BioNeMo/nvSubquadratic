@@ -35,12 +35,12 @@ from __future__ import annotations
 
 
 __all__ = [
-    "circular_fftconv1d_bhl",
-    "circular_fftconv1d_bhl_w_reshape",
-    "circular_fftconv2d_bhl",
-    "circular_fftconv2d_bhl_w_reshape",
-    "circular_fftconv3d_bhl",
-    "circular_fftconv3d_bhl_w_reshape",
+    "circular_fftconv1d_fp32_bhl",
+    "circular_fftconv1d_fp32_bhl_w_reshape",
+    "circular_fftconv2d_fp32_bhl",
+    "circular_fftconv2d_fp32_bhl_w_reshape",
+    "circular_fftconv3d_fp32_bhl",
+    "circular_fftconv3d_fp32_bhl_w_reshape",
 ]
 
 import math
@@ -293,7 +293,7 @@ class _PhaseRampCache3D:
 _phase_ramp_cache_3d = _PhaseRampCache3D(maxsize=64)
 
 
-def circular_fftconv1d_bhl(
+def circular_fftconv1d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -338,33 +338,29 @@ def circular_fftconv1d_bhl(
       across all layers/callers within the same process.
 
     Args:
-        x (Tensor): ``[B, H, L]``, dtype float32.
-        kernel (Tensor): ``[1|B, H, K]``, dtype float32.
+        x (Tensor): ``[B, H, L]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, H, K]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
+            Never cast; the multiply auto-upcasts.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, H, L]``
+        Tensor: ``[B, H, L]``, in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
-
     B, H, L = x.shape
     assert len(kernel.shape) == 3, f"Unexpected kernel shape: {kernel.shape}."
     assert kernel.shape[0] in (1, B), (
         f"Leading dimension must be 1 or batch_size ({B}). Got kernel.shape={kernel.shape}."
     )
     _, Hk, K = kernel.shape
-
-    # For same-size FFT (circular conv), enforce kernel dims not exceeding input dims
     assert H == Hk, "Input and kernel must have the same number of channels (H)."
     assert K <= L, f"K must be <= L. Got K={K}, L={L}."
 
-    # Same-size real FFTs (circular convolution)
-    fft_x = torch.fft.rfft(x, n=L, dim=2)
-    fft_kernel = torch.fft.rfft(kernel, n=L, dim=2)
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
+
+    fft_x = torch.fft.rfft(x_fp32, n=L, dim=2)
+    fft_k = torch.fft.rfft(k_fp32, n=L, dim=2)
 
     # Alignment via integer shift:
     # - We want outputs to match a spatial “same” circular convolution with a flipped
@@ -374,25 +370,25 @@ def circular_fftconv1d_bhl(
     #   (1) frequency-domain phase ramp (preferred: no extra memory move),
     #   (2) spatial torch.roll after iFFT (simple but moves real memory).
     shift = -((K - 1) // 2)
-    if use_phase_shift:
-        phase = _phase_ramp_cache_1d.get(L, shift, x.device, x.dtype)  # [Lf]
-        fft_kernel = fft_kernel * phase  # broadcast over (B|1, H)
+    if use_phase_shift and shift != 0:
+        phase = _phase_ramp_cache_1d.get(L, shift, x_fp32.device, x_fp32.dtype)  # [Lf]
+        fft_k = fft_k * phase  # broadcast over (B|1, H)
 
-    # Depthwise per-channel multiplication
-    fft_x = fft_x * fft_kernel
+    fft_x.mul_(fft_k)
 
     y = torch.fft.irfft(fft_x, n=L, dim=2)
-    if not use_phase_shift:
+    if not use_phase_shift and shift != 0:
         y = torch.roll(y, shifts=(shift,), dims=(2,))
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (H,)
         y = y + rearrange(shortcut, "h -> 1 h 1") * x
-
     return y
 
 
-def circular_fftconv2d_bhl(
+def circular_fftconv2d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -410,14 +406,15 @@ def circular_fftconv2d_bhl(
     By doing so, this makes the convolution faster and more memory efficient.
 
     Args:
-        x: Tensor of shape (B, H, X_in, Y_in), dtype float32.
-        kernel: Tensor of shape (1|B, H, K_x, K_y), dtype float32.
-        shortcut: Optional tensor of shape (H,), dtype float32.
+        x: Tensor of shape (B, H, X_in, Y_in), any dtype (internally cast to float32).
+        kernel: Tensor of shape (1|B, H, K_x, K_y), any dtype (internally cast to float32).
+        shortcut: Optional tensor of shape (H,).
+            Never cast; the multiply auto-upcasts.
         use_phase_shift: If True, apply alignment via frequency-domain phase ramp.
             If False, align via spatial torch.roll after iFFT.
 
     Returns:
-        Tensor of shape (B, H, X_in, Y_in).
+        Tensor of shape (B, H, X_in, Y_in), in the original dtype of ``x``.
 
     Notes:
         When ``use_phase_shift=True``, the phase ramp is retrieved from a global,
@@ -425,28 +422,21 @@ def circular_fftconv2d_bhl(
         Python process). This avoids recomputing the ramp for repeated sizes and
         shifts on the same device/dtype.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
-
     B, H, X_in, Y_in = x.shape
-
     assert len(kernel.shape) == 4, f"Unexpected kernel shape: {kernel.shape}."
     assert kernel.shape[0] in (1, B), (
         f"Leading dimension must be 1 or batch_size ({B}). Got kernel.shape={kernel.shape}."
     )
-
     _, Hk, K_x, K_y = kernel.shape
     assert H == Hk, "Input and kernel must have the same number of channels (H)."
-
-    # For same-size FFT (circular conv), enforce kernel dims not exceeding input dims
     assert K_x <= X_in, f"K_x must be <= X_in. Got K_x={K_x}, X_in={X_in}."
     assert K_y <= Y_in, f"K_y must be <= Y_in. Got K_y={K_y}, Y_in={Y_in}."
 
-    # Same-size real FFTs (circular convolution)
-    fft_x = torch.fft.rfft2(x, s=(X_in, Y_in), dim=(2, 3))
-    fft_kernel = torch.fft.rfft2(kernel, s=(X_in, Y_in), dim=(2, 3))
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
+
+    fft_x = torch.fft.rfft2(x_fp32, s=(X_in, Y_in), dim=(2, 3))
+    fft_k = torch.fft.rfft2(k_fp32, s=(X_in, Y_in), dim=(2, 3))
 
     # Alignment via integer pixel shifts:
     # - We want outputs to match a spatial “same” circular convolution with a flipped
@@ -458,25 +448,25 @@ def circular_fftconv2d_bhl(
     #   (2) spatial torch.roll after iFFT (simple but moves real memory).
     shift_x = -((K_x - 1) // 2)
     shift_y = -((K_y - 1) // 2)
-    if use_phase_shift:
-        phase = _phase_ramp_cache_2d.get(X_in, Y_in, shift_x, shift_y, x.device, x.dtype)
-        fft_kernel = fft_kernel * phase  # broadcast over (B|1, H)
+    if use_phase_shift and (shift_x != 0 or shift_y != 0):
+        phase = _phase_ramp_cache_2d.get(X_in, Y_in, shift_x, shift_y, x_fp32.device, x_fp32.dtype)
+        fft_k = fft_k * phase  # broadcast over (B|1, H)
 
-    # Depthwise per-channel multiplication
-    fft_x = fft_x * fft_kernel
+    fft_x.mul_(fft_k)
 
     y = torch.fft.irfft2(fft_x, s=(X_in, Y_in), dim=(2, 3))
-    if not use_phase_shift:
+    if not use_phase_shift and (shift_x != 0 or shift_y != 0):
         y = torch.roll(y, shifts=(shift_x, shift_y), dims=(2, 3))
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (H,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1") * x
-
     return y
 
 
-def circular_fftconv3d_bhl(
+def circular_fftconv3d_fp32_bhl(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -521,33 +511,29 @@ def circular_fftconv3d_bhl(
       shared across all layers/callers within the same process.
 
     Args:
-        x (Tensor): ``[B, H, X, Y, Z]``, dtype float32.
-        kernel (Tensor): ``[1|B, H, Kx, Ky, Kz]``, dtype float32.
+        x (Tensor): ``[B, H, X, Y, Z]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, H, Kx, Ky, Kz]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
+            Never cast; the multiply auto-upcasts.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, H, X, Y, Z]``
+        Tensor: ``[B, H, X, Y, Z]``, in the original dtype of ``x``.
     """
-    assert x.dtype == torch.float32, f"x must be float32. Current dtype: {x.dtype}"
-    assert kernel.dtype == torch.float32, f"kernel must be float32. Current dtype: {kernel.dtype}"
-    if shortcut is not None:
-        assert shortcut.dtype == torch.float32, f"shortcut must be float32. Current dtype: {shortcut.dtype}"
-
     B, H, X, Y, Z = x.shape
     assert len(kernel.shape) == 5, f"Unexpected kernel shape: {kernel.shape}."
     assert kernel.shape[0] in (1, B), (
         f"Leading dimension must be 1 or batch_size ({B}). Got kernel.shape={kernel.shape}."
     )
     _, Hk, Kx_, Ky_, Kz_ = kernel.shape
-
-    # For same-size FFT (circular conv), enforce kernel dims not exceeding input dims
     assert H == Hk, "Input and kernel must have the same number of channels (H)."
     assert Kx_ <= X and Ky_ <= Y and Kz_ <= Z, "Kernel must be <= input along each axis."
 
-    # Same-size real FFTs (circular convolution)
-    fft_x = torch.fft.rfftn(x, s=(X, Y, Z), dim=(2, 3, 4))
-    fft_kernel = torch.fft.rfftn(kernel, s=(X, Y, Z), dim=(2, 3, 4))
+    x_fp32 = x.to(torch.float32)
+    k_fp32 = kernel.to(torch.float32)
+
+    fft_x = torch.fft.rfftn(x_fp32, s=(X, Y, Z), dim=(2, 3, 4))
+    fft_k = torch.fft.rfftn(k_fp32, s=(X, Y, Z), dim=(2, 3, 4))
 
     # Alignment via integer shift:
     # - We want outputs to match a spatial “same” circular convolution with a flipped
@@ -560,25 +546,25 @@ def circular_fftconv3d_bhl(
     shift_x = -((Kx_ - 1) // 2)
     shift_y = -((Ky_ - 1) // 2)
     shift_z = -((Kz_ - 1) // 2)
-    if use_phase_shift:
-        phase = _phase_ramp_cache_3d.get(X, Y, Z, shift_x, shift_y, shift_z, x.device, x.dtype)  # [X,Y,Zf]
-        fft_kernel = fft_kernel * phase  # broadcast over (B|1, H)
+    if use_phase_shift and (shift_x != 0 or shift_y != 0 or shift_z != 0):
+        phase = _phase_ramp_cache_3d.get(X, Y, Z, shift_x, shift_y, shift_z, x_fp32.device, x_fp32.dtype)  # [X,Y,Zf]
+        fft_k = fft_k * phase  # broadcast over (B|1, H)
 
-    # Depthwise per-channel multiplication
-    fft_x = fft_x * fft_kernel
+    fft_x.mul_(fft_k)
 
     y = torch.fft.irfftn(fft_x, s=(X, Y, Z), dim=(2, 3, 4))
-    if not use_phase_shift:
+    if not use_phase_shift and (shift_x != 0 or shift_y != 0 or shift_z != 0):
         y = torch.roll(y, shifts=(shift_x, shift_y, shift_z), dims=(2, 3, 4))
 
+    y = y.to(x.dtype)
     if shortcut is not None:
+        assert shortcut.dtype == x.dtype, f"shortcut.dtype ({shortcut.dtype}) must match x.dtype ({x.dtype})"
         assert shortcut.shape == (H,)
         y = y + rearrange(shortcut, "h -> 1 h 1 1 1") * x
-
     return y
 
 
-def circular_fftconv1d_bhl_w_reshape(
+def circular_fftconv1d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -586,24 +572,24 @@ def circular_fftconv1d_bhl_w_reshape(
 ) -> torch.Tensor:
     """1D circular FFT conv wrapper for BLH layout (batch, length, hidden).
 
-    This reshapes BLH -> BHL, calls ``circular_fftconv1d_bhl``, and reshapes back.
+    This reshapes BLH -> BHL, calls ``circular_fftconv1d_fp32_bhl``, and reshapes back.
 
     Args:
-        x (Tensor): ``[B, L, H]``, dtype float32.
-        kernel (Tensor): ``[1|B, K, H]``, dtype float32.
+        x (Tensor): ``[B, L, H]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, K, H]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, L, H]``
+        Tensor: ``[B, L, H]``, in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     kernel_bhl = rearrange(kernel, "b k h -> b h k")
-    y_bhl = circular_fftconv1d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
+    y_bhl = circular_fftconv1d_fp32_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
     return rearrange(y_bhl, "b h l -> b l h")
 
 
-def circular_fftconv2d_bhl_w_reshape(
+def circular_fftconv2d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -611,24 +597,24 @@ def circular_fftconv2d_bhl_w_reshape(
 ) -> torch.Tensor:
     """2D circular FFT conv wrapper for BLH layout (batch, height, width, hidden).
 
-    This reshapes BLH -> BHL, calls ``circular_fftconv2d_bhl``, and reshapes back.
+    This reshapes BLH -> BHL, calls ``circular_fftconv2d_fp32_bhl``, and reshapes back.
 
     Args:
-        x (Tensor): ``[B, X, Y, H]``, dtype float32.
-        kernel (Tensor): ``[1|B, Kx, Ky, H]``, dtype float32.
+        x (Tensor): ``[B, X, Y, H]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, Kx, Ky, H]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, X, Y, H]``
+        Tensor: ``[B, X, Y, H]``, in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     kernel_bhl = rearrange(kernel, "b kx ky h -> b h kx ky")
-    y_bhl = circular_fftconv2d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
+    y_bhl = circular_fftconv2d_fp32_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
     return rearrange(y_bhl, "b h x y -> b x y h")
 
 
-def circular_fftconv3d_bhl_w_reshape(
+def circular_fftconv3d_fp32_bhl_w_reshape(
     x: torch.Tensor,
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
@@ -636,20 +622,20 @@ def circular_fftconv3d_bhl_w_reshape(
 ) -> torch.Tensor:
     """3D circular FFT conv wrapper for BLH layout (batch, depth, height, width, hidden).
 
-    This reshapes BLH -> BHL, calls ``circular_fftconv3d_bhl``, and reshapes back.
+    This reshapes BLH -> BHL, calls ``circular_fftconv3d_fp32_bhl``, and reshapes back.
 
     Args:
-        x (Tensor): ``[B, X, Y, Z, H]``, dtype float32.
-        kernel (Tensor): ``[1|B, Kx, Ky, Kz, H]``, dtype float32.
+        x (Tensor): ``[B, X, Y, Z, H]``, any dtype (internally cast to float32).
+        kernel (Tensor): ``[1|B, Kx, Ky, Kz, H]``, any dtype (internally cast to float32).
         shortcut (Tensor | None): Optional ``[H]`` per-channel residual scale.
         use_phase_shift (bool): Use frequency-domain shift if True; else spatial roll.
 
     Returns:
-        Tensor: ``[B, X, Y, Z, H]``
+        Tensor: ``[B, X, Y, Z, H]``, in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y z h -> b h x y z")
     kernel_bhl = rearrange(kernel, "b kx ky kz h -> b h kx ky kz")
-    y_bhl = circular_fftconv3d_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
+    y_bhl = circular_fftconv3d_fp32_bhl(x_bhl, kernel_bhl, shortcut, use_phase_shift=use_phase_shift)
     return rearrange(y_bhl, "b h x y z -> b x y z h")
 
 
@@ -710,8 +696,8 @@ if __name__ == "__main__":
     pad_right_s = k_small.shape[-1] - 1 - k_small.shape[-1] // 2
     padded_small = torch.nn.functional.pad(x_small, (pad_left_s, pad_right_s), mode="circular")
     ref_small = torch.nn.functional.conv1d(padded_small, k_small_flip, groups=2, padding=0)
-    y_phase_small = circular_fftconv1d_bhl(x_small, rearrange(k_small, "h k -> 1 h k"), use_phase_shift=True)
-    y_roll_small = circular_fftconv1d_bhl(x_small, rearrange(k_small, "h k -> 1 h k"), use_phase_shift=False)
+    y_phase_small = circular_fftconv1d_fp32_bhl(x_small, rearrange(k_small, "h k -> 1 h k"), use_phase_shift=True)
+    y_roll_small = circular_fftconv1d_fp32_bhl(x_small, rearrange(k_small, "h k -> 1 h k"), use_phase_shift=False)
     print("max abs diff (phase vs ref):", (y_phase_small - ref_small).abs().max().item())
     print("max abs diff (roll  vs ref):", (y_roll_small - ref_small).abs().max().item())
     print("max abs diff (phase vs roll):", (y_phase_small - y_roll_small).abs().max().item())
@@ -726,19 +712,19 @@ if __name__ == "__main__":
         kN_ = rearrange(kN, "h k -> 1 h k")
         # Warmup
         for _ in range(10):
-            _ = circular_fftconv1d_bhl(xN, kN_, use_phase_shift=True)
-            _ = circular_fftconv1d_bhl(xN, kN_, use_phase_shift=False)
+            _ = circular_fftconv1d_fp32_bhl(xN, kN_, use_phase_shift=True)
+            _ = circular_fftconv1d_fp32_bhl(xN, kN_, use_phase_shift=False)
         reps = 20
         if device == "cuda":
             torch.cuda.synchronize()
         t0 = time.perf_counter()
         for _ in range(reps):
-            y_phase = circular_fftconv1d_bhl(xN, kN_, use_phase_shift=True)
+            y_phase = circular_fftconv1d_fp32_bhl(xN, kN_, use_phase_shift=True)
         if device == "cuda":
             torch.cuda.synchronize()
         t1 = time.perf_counter()
         for _ in range(reps):
-            y_roll = circular_fftconv1d_bhl(xN, kN_, use_phase_shift=False)
+            y_roll = circular_fftconv1d_fp32_bhl(xN, kN_, use_phase_shift=False)
         if device == "cuda":
             torch.cuda.synchronize()
         t2 = time.perf_counter()
@@ -770,8 +756,8 @@ if __name__ == "__main__":
     pad_h_bottom = Kx2 - 1 - Kx2 // 2
     padded2 = torch.nn.functional.pad(x2, (pad_w_left, pad_w_right, pad_h_top, pad_h_bottom), mode="circular")
     ref2 = torch.nn.functional.conv2d(padded2, k2_flip, groups=H, padding=0)
-    y2_phase = circular_fftconv2d_bhl(x2, rearrange(k2, "h kx ky -> 1 h kx ky"), use_phase_shift=True)
-    y2_roll = circular_fftconv2d_bhl(x2, rearrange(k2, "h kx ky -> 1 h kx ky"), use_phase_shift=False)
+    y2_phase = circular_fftconv2d_fp32_bhl(x2, rearrange(k2, "h kx ky -> 1 h kx ky"), use_phase_shift=True)
+    y2_roll = circular_fftconv2d_fp32_bhl(x2, rearrange(k2, "h kx ky -> 1 h kx ky"), use_phase_shift=False)
     print("2D max abs diff (phase vs ref):", (y2_phase - ref2).abs().max().item())
     print("2D max abs diff (roll  vs ref):", (y2_roll - ref2).abs().max().item())
     print("2D max abs diff (phase vs roll):", (y2_phase - y2_roll).abs().max().item())
@@ -787,19 +773,19 @@ if __name__ == "__main__":
         kN_ = rearrange(kN, "h kx ky -> 1 h kx ky")
         # Warmup
         for _ in range(10):
-            _ = circular_fftconv2d_bhl(xN, kN_, use_phase_shift=True)
-            _ = circular_fftconv2d_bhl(xN, kN_, use_phase_shift=False)
+            _ = circular_fftconv2d_fp32_bhl(xN, kN_, use_phase_shift=True)
+            _ = circular_fftconv2d_fp32_bhl(xN, kN_, use_phase_shift=False)
         reps = 20
         if device == "cuda":
             torch.cuda.synchronize()
         t0 = time.perf_counter()
         for _ in range(reps):
-            y_phase = circular_fftconv2d_bhl(xN, kN_, use_phase_shift=True)
+            y_phase = circular_fftconv2d_fp32_bhl(xN, kN_, use_phase_shift=True)
         if device == "cuda":
             torch.cuda.synchronize()
         t1 = time.perf_counter()
         for _ in range(reps):
-            y_roll = circular_fftconv2d_bhl(xN, kN_, use_phase_shift=False)
+            y_roll = circular_fftconv2d_fp32_bhl(xN, kN_, use_phase_shift=False)
         if device == "cuda":
             torch.cuda.synchronize()
         t2 = time.perf_counter()
@@ -835,8 +821,8 @@ if __name__ == "__main__":
         x3, (pad_w_left, pad_w_right, pad_h_top, pad_h_bottom, pad_d_front, pad_d_back), mode="circular"
     )
     ref3 = torch.nn.functional.conv3d(padded3, k3_flip, groups=H, padding=0)
-    y3_phase = circular_fftconv3d_bhl(x3, rearrange(k3, "h kx ky kz -> 1 h kx ky kz"), use_phase_shift=True)
-    y3_roll = circular_fftconv3d_bhl(x3, rearrange(k3, "h kx ky kz -> 1 h kx ky kz"), use_phase_shift=False)
+    y3_phase = circular_fftconv3d_fp32_bhl(x3, rearrange(k3, "h kx ky kz -> 1 h kx ky kz"), use_phase_shift=True)
+    y3_roll = circular_fftconv3d_fp32_bhl(x3, rearrange(k3, "h kx ky kz -> 1 h kx ky kz"), use_phase_shift=False)
     print("3D max abs diff (phase vs ref):", (y3_phase - ref3).abs().max().item())
     print("3D max abs diff (roll  vs ref):", (y3_roll - ref3).abs().max().item())
     print("3D max abs diff (phase vs roll):", (y3_phase - y3_roll).abs().max().item())
@@ -852,19 +838,19 @@ if __name__ == "__main__":
         kN_ = rearrange(kN, "h kx ky kz -> 1 h kx ky kz")
         # Warmup
         for _ in range(10):
-            _ = circular_fftconv3d_bhl(xN, kN_, use_phase_shift=True)
-            _ = circular_fftconv3d_bhl(xN, kN_, use_phase_shift=False)
+            _ = circular_fftconv3d_fp32_bhl(xN, kN_, use_phase_shift=True)
+            _ = circular_fftconv3d_fp32_bhl(xN, kN_, use_phase_shift=False)
         reps = 20
         if device == "cuda":
             torch.cuda.synchronize()
         t0 = time.perf_counter()
         for _ in range(reps):
-            y_phase = circular_fftconv3d_bhl(xN, kN_, use_phase_shift=True)
+            y_phase = circular_fftconv3d_fp32_bhl(xN, kN_, use_phase_shift=True)
         if device == "cuda":
             torch.cuda.synchronize()
         t1 = time.perf_counter()
         for _ in range(reps):
-            y_roll = circular_fftconv3d_bhl(xN, kN_, use_phase_shift=False)
+            y_roll = circular_fftconv3d_fp32_bhl(xN, kN_, use_phase_shift=False)
         if device == "cuda":
             torch.cuda.synchronize()
         t2 = time.perf_counter()

@@ -22,11 +22,12 @@ PIL.Image.init()
 
 import pytorch_lightning as pl  # noqa: E402
 import torch  # noqa: E402
-import wandb  # noqa: E402
+import torch.multiprocessing  # noqa: E402
 from pytorch_lightning.loggers import WandbLogger  # noqa: E402
 from rich import print as rprint  # noqa: E402
 from rich.tree import Tree  # noqa: E402
 
+import wandb  # noqa: E402
 from experiments.trainer import construct_trainer  # noqa: E402
 from experiments.utils.checkpointing import (  # noqa: E402
     download_checkpoint,
@@ -103,6 +104,9 @@ def main() -> None:
     7.  Constructing the PyTorch Lightning trainer with appropriate callbacks.
     8.  Executing the training, validation, and testing phases of the experiment.
     """
+    # Initialize PIL plugins in the main process before any dataloader workers are created.
+    PIL.Image.init()
+
     # Parse command line arguments
     args = parse_args()
 
@@ -132,10 +136,19 @@ def main() -> None:
     base_triton_dir = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
     os.environ["TRITON_CACHE_DIR"] = os.path.join(base_triton_dir, f"rank_{local_rank}")
 
+    # Override multiprocessing sharing strategy if requested (e.g. "file_system"
+    # to avoid /dev/shm exhaustion with many workers on a shared node).
+    if getattr(config, "mp_sharing_strategy", None):
+        torch.multiprocessing.set_sharing_strategy(config.mp_sharing_strategy)
+        print(f"[run] multiprocessing sharing strategy → {config.mp_sharing_strategy}", flush=True)
+
     # Construct data_module, prepare and setup
     datamodule = instantiate(config.dataset)
+    print("[run] prepare_data …", flush=True)
     datamodule.prepare_data()
+    print("[run] setup …", flush=True)
     datamodule.setup()
+    print("[run] datamodule ready.", flush=True)
 
     # Construct model
     network = instantiate(config.net)
@@ -156,7 +169,12 @@ def main() -> None:
         network = torch.compile(network, **compile_kwargs)
 
     # Wrap network in a pl.LightningModule
-    model = instantiate(config.lightning_wrapper_class, network=network, cfg=config)
+    wrapper_kwargs: dict = {"network": network, "cfg": config}
+    if hasattr(datamodule, "metadata"):
+        wrapper_kwargs["metadata"] = datamodule.metadata
+    if hasattr(datamodule, "normalization"):
+        wrapper_kwargs["normalization"] = datamodule.normalization
+    model = instantiate(config.lightning_wrapper_class, **wrapper_kwargs)
 
     # Initialize wandb logger
     if config.debug:

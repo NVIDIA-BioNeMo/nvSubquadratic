@@ -8,7 +8,7 @@ parallelism enabled. The tests verify both forward pass correctness and gradient
 computation across multiple GPUs.
 
 Example Usage:
-    torchrun --nproc_per_node=2 tests/test_sequence_mixer_cp_torchrun.py --context_parallel_size=2
+    torchrun --nproc_per_node=2 tests/modules/torchrun_sequence_mixer_cp_test.py --context_parallel_size=2
 """
 
 import argparse
@@ -87,10 +87,10 @@ def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
                 mask_cfg=LazyConfig(GaussianModulationND)(
                     data_dim=data_dim,
                     num_channels=128,
-                    min_std=0.025,
-                    max_std=1.25,
-                    init_std_low=0.05,
-                    init_std_high=1.0,
+                    # grid_size is injected by CKConvND from the kernel grid.
+                    min_attenuation_at_step=0.1,
+                    max_attenuation_at_limit=0.95,
+                    init_extent=1.0,
                     parametrization="direct",
                 ),
                 grid_type="single",

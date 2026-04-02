@@ -3,7 +3,7 @@
 # Build instructions:
 #   docker build -t nvsubquadratic:dev .
 
-FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.9.0-devel-ubuntu22.04
 
 ARG MINIFORGE_NAME=Miniforge3
 ARG MINIFORGE_VERSION=25.3.0-3
@@ -36,7 +36,7 @@ RUN conda install --yes \
     && conda clean --all --yes
 
 RUN pip install --no-cache-dir \
-    torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
+    torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129 \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
@@ -52,6 +52,7 @@ WORKDIR /workspaces/nvSubquadratic-private
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ninja-build \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -66,11 +67,17 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 # come from pyproject.toml and stay on cu128 via the install below.
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-# Install the package (as root, system-wide). Apex and quack are not installed;
-# tests that need apex are skipped; RMSNorm uses the pure-PyTorch fallback.
-# extra-index-url lets the resolver pick cu128 wheels that match this image.
-RUN pip install --no-cache-dir --no-build-isolation . \
-    --extra-index-url https://download.pytorch.org/whl/cu128
+# Install the package with quack-kernels (as root, system-wide).
+# extra-index-url ensures the resolver picks cu129 wheels that match this image
+# and does not replace them with a CPU or different-CUDA build from PyPI.
+RUN pip install --no-cache-dir --no-build-isolation ".[quack]" \
+    --extra-index-url https://download.pytorch.org/whl/cu129
+
+# Build and install NVIDIA Apex with C++ and CUDA extensions.
+RUN pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
+    --config-settings "--build-option=--cpp_ext" \
+    --config-settings "--build-option=--cuda_ext" \
+    git+https://github.com/NVIDIA/apex.git
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \
