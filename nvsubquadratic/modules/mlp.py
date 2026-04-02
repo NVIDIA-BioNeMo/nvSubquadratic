@@ -120,6 +120,12 @@ def _validate_quack_backend(
     hidden_dim: int,
 ) -> None:
     """Raise ``ValueError`` at init time if QuACK constraints are not met."""
+    raise NotImplementedError(
+        "MLP backend='quack' is experimental and needs more testing "
+        "(forward correctness verified, backward + benchmark pending). "
+        "Use backend='torch' for now."
+    )
+
     min_ver = ".".join(str(v) for v in _QUACK_MLP_MIN_VERSION)
 
     if not _quack_mlp_available:
