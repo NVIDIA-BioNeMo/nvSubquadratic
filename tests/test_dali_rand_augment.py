@@ -236,87 +236,6 @@ except ImportError:
     pass
 
 
-# ---------------------------------------------------------------------------
-# Module-level pipeline functions for TestDALIPipelineIntegration and
-# TestFullPipelineStatistics.  They must live at module scope so that DALI's
-# autograph can locate and read their source when enable_conditionals=True.
-# ---------------------------------------------------------------------------
-if _DALI_AVAILABLE:
-    from nvidia.dali import fn as _fn
-    from nvidia.dali import pipeline_def as _pipeline_def
-    from nvidia.dali import types as _types
-
-    @_pipeline_def(batch_size=4, num_threads=2, device_id=0, enable_conditionals=True)
-    def _pipe_with_rand_augment(file_root):
-        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
-
-        jpegs, labels = _fn.readers.file(file_root=file_root, random_shuffle=True, name="reader")
-        images = _fn.decoders.image(jpegs, device="mixed", output_type=_types.RGB)
-        images = _fn.resize(images, size=(224, 224))
-        images = dali_rand_augment(images, "rand-m9-mstd0.5-inc1", shape=(224, 224))
-        images = _fn.crop_mirror_normalize(
-            images,
-            dtype=_types.FLOAT,
-            output_layout="CHW",
-            mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
-            std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
-        )
-        return images, labels
-
-    @_pipeline_def(batch_size=4, num_threads=2, device_id=0, enable_conditionals=True)
-    def _pipe_three_augment(file_root):
-        from experiments.datamodules.dali_imagenet_fused import _solarize
-        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
-
-        jpegs, labels = _fn.readers.file(file_root=file_root, random_shuffle=True, name="reader")
-        images = _fn.decoders.image(jpegs, device="mixed", output_type=_types.RGB)
-        images = _fn.resize(images, size=(224, 224))
-        coin = _fn.random.uniform(range=(0.0, 1.0))
-        if coin < (1.0 / 3.0):
-            grey = _fn.color_space_conversion(images, image_type=_types.RGB, output_type=_types.GRAY)
-            images = _fn.cat(grey, grey, grey, axis=2)
-        else:
-            if coin < (2.0 / 3.0):
-                images = _solarize(images)
-            else:
-                images = _fn.gaussian_blur(images, sigma=_fn.random.uniform(range=(0.1, 2.0)), window_size=5)
-        images = dali_rand_augment(images, "rand-m9-mstd0.5-inc1", shape=(224, 224))
-        images = _fn.crop_mirror_normalize(
-            images,
-            dtype=_types.FLOAT,
-            output_layout="CHW",
-            mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
-            std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
-        )
-        return images, labels
-
-    @_pipeline_def(batch_size=4, num_threads=2, device_id=0, enable_conditionals=True)
-    def _pipe_fixed_magnitude(file_root):
-        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
-
-        jpegs, labels = _fn.readers.file(file_root=file_root, random_shuffle=True, name="reader")
-        images = _fn.decoders.image(jpegs, device="mixed", output_type=_types.RGB)
-        images = _fn.resize(images, size=(224, 224))
-        images = dali_rand_augment(images, "rand-m9-inc1", shape=(224, 224))
-        images = _fn.crop_mirror_normalize(
-            images,
-            dtype=_types.FLOAT,
-            output_layout="CHW",
-            mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
-            std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
-        )
-        return images, labels
-
-    @_pipeline_def(num_threads=2, device_id=0, enable_conditionals=True)
-    def _pipe_dali_augment_batch():
-        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
-
-        images = _fn.external_source(name="input", layout="HWC")
-        images = images.gpu()
-        images = dali_rand_augment(images, "rand-m9-mstd0.5-inc1", shape=(224, 224))
-        return images
-
-
 @pytest.fixture
 def test_image():
     """Deterministic 224x224 RGB uint8 image with varied pixel values."""
@@ -518,7 +437,6 @@ class TestTimmDALIPixelConsistency:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.skip(reason="DALI DataNode used in conditional context — incompatible DALI version")
 @pytest.mark.skipif(not _DALI_AVAILABLE, reason="DALI not installed")
 class TestDALIPipelineIntegration:
     """Build and run complete DALI pipelines to verify they produce tensors
@@ -526,7 +444,30 @@ class TestDALIPipelineIntegration:
     """
 
     def test_pipeline_with_rand_augment(self, dummy_image_dir):
-        pipe = _pipe_with_rand_augment(file_root=str(dummy_image_dir / "train"))
+        from nvidia.dali import fn, pipeline_def, types
+
+        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
+
+        @pipeline_def(batch_size=4, num_threads=2, device_id=0, enable_conditionals=True)
+        def test_pipe():
+            jpegs, labels = fn.readers.file(
+                file_root=str(dummy_image_dir / "train"),
+                random_shuffle=True,
+                name="reader",
+            )
+            images = fn.decoders.image(jpegs, device="mixed", output_type=types.RGB)
+            images = fn.resize(images, size=(224, 224))
+            images = dali_rand_augment(images, "rand-m9-mstd0.5-inc1", shape=(224, 224))
+            images = fn.crop_mirror_normalize(
+                images,
+                dtype=types.FLOAT,
+                output_layout="CHW",
+                mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
+                std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
+            )
+            return images, labels
+
+        pipe = test_pipe()
         pipe.build()
         imgs = pipe.run()[0].as_cpu().as_array()
         assert imgs.shape == (4, 3, 224, 224) and imgs.dtype == np.float32
@@ -558,12 +499,68 @@ class TestDALIPipelineIntegration:
 
     def test_three_augment_plus_rand_augment(self, dummy_image_dir):
         """ThreeAugment and RandAugment applied sequentially (not mutually exclusive)."""
-        pipe = _pipe_three_augment(file_root=str(dummy_image_dir / "train"))
+        from nvidia.dali import fn, pipeline_def, types
+
+        from experiments.datamodules.dali_imagenet_fused import _solarize
+        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
+
+        @pipeline_def(batch_size=4, num_threads=2, device_id=0, enable_conditionals=True)
+        def test_pipe():
+            jpegs, labels = fn.readers.file(
+                file_root=str(dummy_image_dir / "train"),
+                random_shuffle=True,
+                name="reader",
+            )
+            images = fn.decoders.image(jpegs, device="mixed", output_type=types.RGB)
+            images = fn.resize(images, size=(224, 224))
+            coin = fn.random.uniform(range=(0.0, 1.0))
+            if coin < (1.0 / 3.0):
+                grey = fn.color_space_conversion(images, image_type=types.RGB, output_type=types.GRAY)
+                images = fn.cat(grey, grey, grey, axis=2)
+            else:
+                if coin < (2.0 / 3.0):
+                    images = _solarize(images)
+                else:
+                    images = fn.gaussian_blur(images, sigma=fn.random.uniform(range=(0.1, 2.0)), window_size=5)
+            images = dali_rand_augment(images, "rand-m9-mstd0.5-inc1", shape=(224, 224))
+            images = fn.crop_mirror_normalize(
+                images,
+                dtype=types.FLOAT,
+                output_layout="CHW",
+                mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
+                std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
+            )
+            return images, labels
+
+        pipe = test_pipe()
         pipe.build()
         assert pipe.run()[0].as_cpu().as_array().shape == (4, 3, 224, 224)
 
     def test_fixed_magnitude_no_mstd(self, dummy_image_dir):
-        pipe = _pipe_fixed_magnitude(file_root=str(dummy_image_dir / "train"))
+        from nvidia.dali import fn, pipeline_def, types
+
+        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
+
+        @pipeline_def(batch_size=4, num_threads=2, device_id=0, enable_conditionals=True)
+        def test_pipe():
+            jpegs, labels = fn.readers.file(
+                file_root=str(dummy_image_dir / "train"),
+                random_shuffle=True,
+                name="reader",
+            )
+            images = fn.decoders.image(jpegs, device="mixed", output_type=types.RGB)
+            images = fn.resize(images, size=(224, 224))
+            images = dali_rand_augment(images, "rand-m9-inc1", shape=(224, 224))
+            images = fn.crop_mirror_normalize(
+                images,
+                dtype=types.FLOAT,
+                output_layout="CHW",
+                mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
+                std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
+            )
+            return images, labels
+
+        pipe = test_pipe()
         pipe.build()
         assert pipe.run()[0].as_cpu().as_array().shape == (4, 3, 224, 224)
 
@@ -618,7 +615,6 @@ class TestDALIPipelineIntegration:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.skip(reason="DALI DataNode used in conditional context — incompatible DALI version")
 @pytest.mark.skipif(not _DALI_AVAILABLE, reason="DALI not installed")
 class TestFullPipelineStatistics:
     """Run both timm and DALI RandAugment over many random images and
@@ -650,9 +646,20 @@ class TestFullPipelineStatistics:
 
     def _dali_augment_batch(self, images_np):
         """Apply DALI's RandAugment to a batch of uint8 HWC numpy images."""
+        from nvidia.dali import fn, pipeline_def
+
+        from experiments.datamodules.utils.dali_rand_augment import dali_rand_augment
+
         batch_size = len(images_np)
 
-        p = _pipe_dali_augment_batch(batch_size=batch_size)
+        @pipeline_def(batch_size=batch_size, num_threads=2, device_id=0, enable_conditionals=True)
+        def pipe():
+            images = fn.external_source(name="input", layout="HWC")
+            images = images.gpu()
+            images = dali_rand_augment(images, "rand-m9-mstd0.5-inc1", shape=(224, 224))
+            return images
+
+        p = pipe()
         p.build()
         p.feed_input("input", list(images_np))
         output = p.run()
