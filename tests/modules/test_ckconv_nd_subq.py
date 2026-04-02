@@ -92,6 +92,8 @@ def _sync_weights(src: CKConvND, dst: CKConvND):
 # ---------------------------------------------------------------------------
 
 
+# TODO(@moradza): remove skip when subquadratic-ops-torch-cu12 >= 0.2.0 is released
+@pytest.mark.skip(reason="subquadratic_ops_torch >= 0.2.0 required; currently on 0.1.1")
 class TestForwardBackward:
     """CKConvND with subq_ops produces same output as torch_fft."""
 
@@ -159,6 +161,7 @@ class TestForwardBackward:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="subquadratic_ops_torch >= 0.2.0 required; currently on 0.1.1")
 class TestChunked:
     """CKConvND with subq_ops + use_chunked_fftconv matches non-chunked."""
 
