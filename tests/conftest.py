@@ -6,6 +6,34 @@ import pytest
 import torch
 
 
+# ---------------------------------------------------------------------------
+# subquadratic-ops version gate
+# ---------------------------------------------------------------------------
+
+
+def _subq_ops_version() -> tuple[int, ...]:
+    """Return the installed subquadratic-ops-torch-cu12 version as an int tuple."""
+    try:
+        from importlib.metadata import version
+
+        return tuple(int(x) for x in version("subquadratic-ops-torch-cu12").split(".")[:3])
+    except Exception:
+        return (0, 0, 0)
+
+
+_SUBQ_OPS_MIN_VERSION = (0, 2, 0)
+_subq_installed = _subq_ops_version()
+
+# TODO(@moradza): remove skip once subquadratic-ops-torch-cu12 >= 0.2.0 is released
+requires_subq_ops_v2 = pytest.mark.skipif(
+    _subq_installed < _SUBQ_OPS_MIN_VERSION,
+    reason=(
+        f"subquadratic_ops_torch >= {'.'.join(str(x) for x in _SUBQ_OPS_MIN_VERSION)} required "
+        f"(installed: {'.'.join(str(x) for x in _subq_installed)})"
+    ),
+)
+
+
 @pytest.fixture
 def device():
     """Get CUDA device if available, otherwise CPU."""

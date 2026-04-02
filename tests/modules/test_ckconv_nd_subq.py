@@ -20,6 +20,7 @@ import torch
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from tests.conftest import requires_subq_ops_v2
 
 
 ATOL = 1e-3
@@ -92,6 +93,7 @@ def _sync_weights(src: CKConvND, dst: CKConvND):
 # ---------------------------------------------------------------------------
 
 
+@requires_subq_ops_v2
 class TestForwardBackward:
     """CKConvND with subq_ops produces same output as torch_fft."""
 
@@ -159,6 +161,7 @@ class TestForwardBackward:
 # ---------------------------------------------------------------------------
 
 
+@requires_subq_ops_v2
 class TestChunked:
     """CKConvND with subq_ops + use_chunked_fftconv matches non-chunked."""
 

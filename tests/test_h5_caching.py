@@ -7,7 +7,10 @@ Run with:
     conda run -n nv-subq python -m pytest tests/test_h5_caching.py -v
 """
 
+import pathlib
+
 import numpy as np
+import pytest
 import torch
 from the_well.data.datasets import WellDataset
 
@@ -15,6 +18,11 @@ from experiments.datamodules.pde.well import _enable_h5_caching
 
 
 WELL_BASE = "/shared/data/image_datasets/the_well/datasets"
+
+pytestmark = pytest.mark.skipif(
+    not pathlib.Path(WELL_BASE).exists(),
+    reason=f"WELL dataset not available at {WELL_BASE}",
+)
 DATASET = "gray_scott_reaction_diffusion"
 SPLIT = "valid"
 SAMPLE_INDICES = [0, 1, 42, 100]

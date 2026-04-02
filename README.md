@@ -69,15 +69,24 @@ apptainer exec --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadra
 apptainer run --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif --no-browser
 ```
 
-### Local Installation
+### Conda (recommended for local development)
 
 ```bash
-# Create and activate a virtual environment (recommended)
+bash setup_conda_env.sh
+conda activate nvsubquadratic
+```
+
+This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.10 (CUDA 12.9), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
+
+### Local Installation (venv)
+
+```bash
+# Create and activate a virtual environment
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Install PyTorch with CUDA support first (before package dependencies)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129
 
 # Install development dependencies
 pip install -r requirements-dev.txt
