@@ -6,7 +6,7 @@ repos:
       - id: check-yaml
         exclude: "mkdocs.yml"
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.15.9
     hooks:
       - id: ruff
         # 1. Attempt to automatically fix any lint issues.
