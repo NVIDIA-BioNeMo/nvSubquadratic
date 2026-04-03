@@ -146,7 +146,7 @@ class TestFFTConv1D:
         kernel = torch.randn(1, 16, 7, device=device, dtype=torch.bfloat16)
         shortcut_bad = torch.randn(16, device=device, dtype=torch.float32)
 
-        with pytest.raises(AssertionError, match="shortcut.dtype"):
+        with pytest.raises(AssertionError, match=r"shortcut\.dtype"):
             fftconv1d_fp32_bhl(x, kernel, shortcut_bad)
 
     @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])

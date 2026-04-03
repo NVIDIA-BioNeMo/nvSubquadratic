@@ -50,9 +50,7 @@ jobs:
         run: |
           docker run --rm --gpus all \
             nvsubquadratic-ci:${{ github.sha }} \
-            python -m pytest nvsubquadratic/ tests/ -v --tb=short \
-              --ignore=tests/test_h5_caching.py \
-              --ignore=tests/test_well_staging_ddp.py
+            python -m pytest nvsubquadratic/ tests/ -v --tb=short
 
       - name: Run distributed CP tests
         run: |

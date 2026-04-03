@@ -8,8 +8,8 @@ Identical to vit5_small_pretrain_apex.py except:
 import os
 
 import torch
-
 from experiments.datamodules.dali_imagenet import DALIImageNetDataModule
+
 from experiments.datamodules.dali_imagenet_fused import AugmentConfig, MixupConfig
 from experiments.default_cfg import (
     AutoResumeConfig,
