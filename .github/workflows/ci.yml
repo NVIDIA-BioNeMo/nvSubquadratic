@@ -27,14 +27,7 @@ jobs:
           pip install pre-commit
           # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets
           # Does NOT run pytest-pre-push / torchrun-cp-tests (those are pre-push stage)
-          pre-commit run --all-files --hook-stage commit || true
-
-      - name: Commit auto-fixes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet || git commit -am "style: auto-fix lint issues"
-          git push
+          pre-commit run --all-files --hook-stage commit --show-diff-on-failure --color always
 
   # ── GPU tests ───────────────────────────────────────────────────────────────
   # Runs on a self-hosted Colossus machine provisioned via the Ansible playbook.
