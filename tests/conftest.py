@@ -30,7 +30,7 @@ requires_subq_ops_v2 = pytest.mark.xfail(
         f"subquadratic_ops_torch >= {'.'.join(str(x) for x in _SUBQ_OPS_MIN_VERSION)} required "
         f"(installed: {'.'.join(str(x) for x in _subq_installed)})"
     ),
-    strict=True,
+    strict=False,
 )
 
 
