@@ -57,18 +57,10 @@ class ARCWrapper(LightningWrapperBase):
 
         return out["loss"]
 
-    def validation_step(self, batch: Dict[str, Any], batch_idx: int, dataloader_idx: int = 0) -> None:
+    def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> None:
         """Accumulate val metrics for epoch-end aggregation."""
         out = self._step(batch)
-        prefix = "val"
-        if len(getattr(self.trainer, "val_dataloaders", [])) > 1:
-            dl_names = getattr(self.trainer.datamodule, "val_dataloader_names", None)
-            if dl_names and dataloader_idx < len(dl_names):
-                prefix = dl_names[dataloader_idx]
-            else:
-                prefix = f"val_{dataloader_idx}"
-
-        self.validation_step_outputs[prefix].append(
+        self.validation_step_outputs["val"].append(
             {"loss": out["loss"], "pixel_acc": out["pixel_acc"], "exact_match": out["exact_match"]}
         )
 

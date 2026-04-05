@@ -86,16 +86,30 @@ ______________________________________________________________________
 
 **If switching back to 10:** set `num_colors=10` in `examples/arc/cfg_vit.py`. The clamp is already in place so no other code changes needed.
 
+### 3. `training_iterations` formula doesn't account for DDP `num_gpus`
+
+**Current formula:** `ceil(NUM_EPOCHS × NUM_TRAINING_SAMPLES / batch_size)` = 844 steps with batch_size=128.  With 2 GPUs, each epoch takes 46 steps (not 84), so 844 steps = **~18 effective epochs**, not 10.
+
+**Fix:** divide by `num_gpus`: `ceil(10 × 10_800 / (128 × 2)) = 422` for exact 10-epoch correspondence.  Or accept 18 epochs as a reasonable approximation (no overfitting observed at this scale).
+
+### 4. Val split uses held-out training tasks, not the evaluation split
+
+**Current:** 10% of training tasks (40 tasks, ~124 examples, **1 val batch**) are withheld.  Metric resolution = 1/124 ≈ 0.8% — too coarse to show any gradient of improvement.  VARC trains on all 400 training tasks and evaluates on the separate 400-task evaluation split.
+
+**Fix:** set `val_fraction=0` in the datamodule config and rely on `test_0/exact_match` (evaluation split) as the primary metric.  This also gives the model 40 more training tasks.
+
 ______________________________________________________________________
 
 ## 📊 Experiment Tracking
 
 ### 1. Offline Pretraining Logs
 
-| Model  | Params | Global Batch Size | GPUs     | Training Time          | End `val/exact_match` | Notes / WandB                                                                                              |
-| :----- | :----- | :---------------- | :------- | :--------------------- | :-------------------- | :--------------------------------------------------------------------------------------------------------- |
-| ARCViT | ~18M   | 256 (128x2)       | 2x A5000 | Running (SLURM 153461) | *Pending*             | Config: `cfg_vit.py` · [WandB 97tf96wk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/97tf96wk) |
-| Hyena  | ~18M   | 256 (128x2)       | 2x A5000 | *Pending*              | *Pending*             | Config: `cfg_hyena.py`                                                                                     |
+| Model  | Params | Global Batch Size | GPUs       | Training Time             | End `val/exact_match`      | Notes / WandB                                                                                                                                                                  |
+| :----- | :----- | :---------------- | :--------- | :------------------------ | :------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ARCViT | ~3.7M  | 256 (128×2)       | 2x geodude | ❌ Overfit (SLURM 153461) | 2.4% (best epoch 1)        | Config: `cfg_vit.py` · [WandB 97tf96wk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/97tf96wk) · Bug: 50k iters = ~600 epochs                                      |
+| ARCViT | ~3.7M  | 256 (128×2)       | 2x geodude | ✅ Done (SLURM 153525)    | 0.81% val / **0.72% test** | Config: `cfg_vit.py` · [WandB r1zfe0wv](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r1zfe0wv) · 844 steps (~18 effective epochs); no overfitting; train loss ~0.8 |
+| ARCViT | ~3.7M  | 256 (128×2)       | 2x geodude | 🔄 Running (SLURM 153598) | *Pending*                  | Fixed val: all 400 training tasks used; val = eval-split demos; TTT callback every 5 epochs                                                                                    |
+| Hyena  | ~18M   | 256 (128×2)       | 2x geodude | *Pending*                 | *Pending*                  | Config: `cfg_hyena.py`                                                                                                                                                         |
 
 ### 2. TTT Final Evaluation (ARC-1)
 
@@ -103,5 +117,5 @@ ______________________________________________________________________
 | :------------ | :----------- | :--------- | :--------------- | :------------- | :--------------------------------- |
 | VARC Paper    | N/A          | 100        | None             | 52-56%         | Original paper result (Single Run) |
 | VARC Paper    | N/A          | 100        | 10 + color perm. | 60.4%          | Original paper result (Ensemble)   |
-| ARCViT (Ours) | *Pending*    | 100        | None             | *Pending*      | Baseline reproduction              |
+| ARCViT (Ours) | *Pending*    | 100        | None             | *Pending*      | Run 3 (fixed val) in progress      |
 | Hyena (Ours)  | *Pending*    | 100        | None             | *Pending*      | Subquadratic benchmark             |

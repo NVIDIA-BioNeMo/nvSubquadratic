@@ -238,14 +238,18 @@ class ARCDataModule(pl.LightningDataModule):
         batch_size: Batch size per GPU.
         num_workers: DataLoader worker processes.
         pin_memory: Pin CPU tensors before transfer to GPU.
-        seed: Random seed for val split and augmentation sampling.
+        seed: Random seed for augmentation sampling.
         max_size: Canvas size (square).  Grids are padded to *max_size × max_size*.
-        val_fraction: Fraction of training tasks held out for validation.
         disable_translation: Disable spatial-translation augmentation.
         disable_resolution_aug: Disable resolution-scaling augmentation.
         fix_scale_factor: Fixed scale when resolution augmentation is disabled.
         num_color_permutations: Colour-permutation copies per example during
             training (0 = no colour augmentation).
+
+    Attributes:
+        _eval_task_files: List of *(task_id, path)* pairs for evaluation tasks.
+            Set during ``setup()``; used by ``ARCTTTValidationCallback`` to access
+            task JSON files for per-task TTT validation.
     """
 
     def __init__(
@@ -256,7 +260,6 @@ class ARCDataModule(pl.LightningDataModule):
         pin_memory: bool,
         seed: int = 42,
         max_size: int = 32,
-        val_fraction: float = 0.1,
         disable_translation: bool = False,
         disable_resolution_aug: bool = False,
         fix_scale_factor: int = 1,
@@ -270,7 +273,6 @@ class ARCDataModule(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.seed = seed
         self.max_size = max_size
-        self.val_fraction = val_fraction
         self.disable_translation = disable_translation
         self.disable_resolution_aug = disable_resolution_aug
         self.fix_scale_factor = fix_scale_factor
@@ -282,6 +284,8 @@ class ARCDataModule(pl.LightningDataModule):
 
         # num_tasks is populated in setup() and used by the network configs
         self.num_tasks: int | None = None
+        # Populated in setup(); used by ARCTTTValidationCallback
+        self._eval_task_files: list[tuple[int, Path]] | None = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -315,32 +319,32 @@ class ARCDataModule(pl.LightningDataModule):
     # ------------------------------------------------------------------
 
     def setup(self, stage: str | None = None) -> None:
-        """Split training tasks into train/val and set up test from evaluation."""
+        """Build train/val/test datasets.
+
+        - **Train**: all 400 training tasks, 'train' demonstrations, with augmentation.
+        - **Val**: evaluation-split tasks, 'train' demonstrations, no augmentation.
+          Uses a random task token (no TTT); actual TTT metric comes from
+          ``ARCTTTValidationCallback`` which reads ``_eval_task_files``.
+        - **Test**: same evaluation-split tasks, 'train' demonstrations, no augmentation.
+        """
         train_files = self._load_task_files("training")
-        test_files = self._load_task_files("evaluation")
+        eval_files = self._load_task_files("evaluation")
 
         # Assign global task ids: training tasks 0..N-1, eval tasks N..N+M-1
         n_train_tasks = len(train_files)
-        test_files = [(task_id + n_train_tasks, p) for task_id, p in test_files]
+        eval_files = [(task_id + n_train_tasks, p) for task_id, p in eval_files]
 
-        self.num_tasks = n_train_tasks + len(test_files)
+        self.num_tasks = n_train_tasks + len(eval_files)
 
-        # Split training tasks into train / val
-        rng = random.Random(self.seed)
-        shuffled = list(train_files)
-        rng.shuffle(shuffled)
-        n_val = max(1, int(len(shuffled) * self.val_fraction))
-        val_task_files = shuffled[:n_val]
-        train_task_files = shuffled[n_val:]
+        # Store for ARCTTTValidationCallback
+        self._eval_task_files = eval_files
 
         if stage in ("fit", None):
-            # "train" subset = the 'train' examples inside each task JSON
-            self.train_dataset = self._build_dataset(train_task_files, "train", augment=True)
-            # Val uses the same 'train' examples (ARC test inputs have no labels)
-            self.val_dataset = self._build_dataset(val_task_files, "train", augment=False)
+            self.train_dataset = self._build_dataset(train_files, "train", augment=True)
+            self.val_dataset = self._build_dataset(eval_files, "train", augment=False)
 
         if stage in ("test", None):
-            self.test_dataset = self._build_dataset(test_files, "train", augment=False)
+            self.test_dataset = self._build_dataset(eval_files, "train", augment=False)
 
     def _build_loader(self, dataset: ARCDataset, shuffle: bool, drop_last: bool = False) -> DataLoader:
         return DataLoader(
