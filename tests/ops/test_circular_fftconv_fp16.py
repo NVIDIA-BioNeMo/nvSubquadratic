@@ -145,7 +145,7 @@ class TestCircularFP16Conv1D:
         kernel = torch.randn(1, 32, 64, device=device, dtype=torch.float16)
         shortcut_bad = torch.randn(32, device=device, dtype=torch.float32)
 
-        with pytest.raises(AssertionError, match="shortcut.dtype"):
+        with pytest.raises(AssertionError, match=r"shortcut\.dtype"):
             circular_fftconv1d_fp16_bhl(x, kernel, shortcut_bad)
 
     def test_rejects_non_power_of_2(self, device: str) -> None:
