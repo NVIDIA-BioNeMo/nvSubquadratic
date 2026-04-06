@@ -106,7 +106,7 @@ def _run_eval_variant(trainer, model, datamodule, *, val_shuffle, val_drop_last,
 
 def _load_config_and_model(wandb_run_id: str, batch_size: int = 64, num_workers: int = 4):
     """Load config, download checkpoint, and return (model, datamodule)."""
-    from examples.well.gray_scott_reaction_diffusion.cfg_hyena_gaussian_mask import (
+    from examples.well.v1.gray_scott_reaction_diffusion.cfg_hyena_gaussian_mask import (
         get_config,
     )
 

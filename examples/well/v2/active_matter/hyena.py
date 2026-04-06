@@ -1,32 +1,29 @@
-"""Hyena + Gaussian mask config for gray_scott_reaction_diffusion.
+"""Hyena config for active_matter (v2).
 
-With patch_size=2 the effective sequence resolution is 64×64 (4096 tokens).
-This matches the token count of the Euler patch_size=8 setup.
+Uses a ResidualNetwork with Hyena (QKV + CKConv global conv) as the
+sequence mixer.  Circular FFT padding matches the dataset's periodic
+boundary conditions.  With patch_size=16 the effective sequence
+resolution is 16×16.
 
-For raw-pixel experiments (patch_size=1 → 128×128 = 16384 tokens),
-override via CLI:
-    net.in_proj_cfg.patch_size=1  net.in_proj_cfg.stride=1
-    net.out_proj_cfg.patch_size=1  net.out_proj_cfg.stride=1
-    net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.kernel_cfg.L_cache=128
-    dataset.batch_size=6
+Patch-size CLI override
+-----------------------
+Only ``net.in_proj_cfg.patch_size=P`` is needed; stride, out_proj patch_size,
+and kernel L_cache are derived via OmegaConf interpolators.
 """
 
 import torch
 
-from examples.well.v1.gray_scott_reaction_diffusion._base import (
+from examples.well.v2.active_matter._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,
     get_base_config,
 )
-from experiments.callbacks.iteration_speed import IterationSpeedCallback
-from experiments.callbacks.mask_monitor import MaskMonitorCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
@@ -37,37 +34,24 @@ from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, smal
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
-PLACEHOLDER = None
-
 # ─── Model hyperparameters ────────────────────────────────────────────────────
-BATCH_SIZE = 24
 NUM_HIDDEN_CHANNELS = 384
 NUM_BLOCKS = 12
-PATCH_SIZE = 2
+PATCH_SIZE = 16
 
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
-FFT_PADDING = "circular"  # Periodic boundary conditions
+FFT_PADDING = "circular"  # periodic boundary conditions
 OMEGA_0 = 30.0
-
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-5
-
-PATCHED_RESOLUTION = 128 // PATCH_SIZE  # 64
 
 
 def get_config() -> ExperimentConfig:
-    """Build Hyena + Gaussian mask config for gray_scott_reaction_diffusion."""
-    config = get_base_config(
-        batch_size=BATCH_SIZE,
-        learning_rate=LEARNING_RATE,
-        weight_decay=WEIGHT_DECAY,
-    )
+    """Build Hyena experiment config for active_matter."""
+    config = get_base_config()
 
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
-    config.compile_compatible_fftconv = False
 
     norm_cfg = LazyConfig(RMSNorm)(dim=NUM_HIDDEN_CHANNELS)
 
@@ -82,14 +66,14 @@ def get_config() -> ExperimentConfig:
             out_features=NUM_HIDDEN_CHANNELS,
             data_dim=DATA_DIM,
             patch_size=PATCH_SIZE,
-            stride=PATCH_SIZE,
+            stride="${net.in_proj_cfg.patch_size}",
         ),
         out_proj_cfg=LazyConfig(Unpatchify)(
             in_features=NUM_HIDDEN_CHANNELS,
             out_features=OUT_CHANNELS,
             data_dim=DATA_DIM,
-            patch_size=PATCH_SIZE,
-            stride=PATCH_SIZE,
+            patch_size="${net.in_proj_cfg.patch_size}",
+            stride="${net.in_proj_cfg.patch_size}",
         ),
         norm_cfg=norm_cfg,
         block_cfg=LazyConfig(ResidualBlock)(
@@ -108,18 +92,11 @@ def get_config() -> ExperimentConfig:
                             num_layers=3,
                             embedding_dim=64,
                             omega_0=OMEGA_0,
-                            L_cache=PATCHED_RESOLUTION,
+                            L_cache="${eval:'256 // ${net.in_proj_cfg.patch_size}'}",
                             use_bias=True,
                             hidden_omega_0=1.0,
                         ),
-                        mask_cfg=LazyConfig(GaussianModulationND)(
-                            data_dim=DATA_DIM,
-                            num_channels=NUM_HIDDEN_CHANNELS,
-                            min_attenuation_at_step=0.1,
-                            max_attenuation_at_limit=0.95,
-                            init_extent=0.75,
-                            parametrization="direct",
-                        ),
+                        mask_cfg=LazyConfig(torch.nn.Identity)(),
                         grid_type=GRID_TYPE,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
@@ -160,8 +137,5 @@ def get_config() -> ExperimentConfig:
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
     )
-
-    config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))
-    config.callbacks.append(LazyConfig(IterationSpeedCallback)(log_every_n_steps=10))
 
     return config

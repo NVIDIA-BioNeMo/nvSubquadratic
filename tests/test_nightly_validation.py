@@ -123,6 +123,7 @@ def _run_validation_check(
     config.train.do = False
     config.debug = True
     config.compile = False
+    config.dataset.local_staging_dir = None  # read from /shared, no scratch needed
     config.autoresume = AutoResumeConfig(enabled=False)
     config.start_from_checkpoint = StartFromCheckpointConfig(
         load=True,
@@ -165,6 +166,15 @@ def _run_validation_check(
     # Apply StripCompiledPrefix callback
     strip = StripCompiledPrefix()
     state_dict = strip(state_dict=state_dict, model=model)
+
+    # Drop checkpoint keys absent from model (e.g. bias params removed after
+    # the checkpoint was saved).  Keep strict=True semantics for missing keys.
+    model_keys = set(model.state_dict().keys())
+    extra = set(state_dict.keys()) - model_keys
+    if extra:
+        print(f"[nightly] Dropping {len(extra)} extra checkpoint keys: {sorted(extra)}")
+        for k in extra:
+            del state_dict[k]
 
     model.load_state_dict(state_dict, strict=True)
 
