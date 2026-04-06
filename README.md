@@ -130,6 +130,13 @@ PYTHONPATH=. python -m pytest tests/ -m "not nightly" -v -o addopts=""
 source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
 ```
 
+### CI
+
+GPU tests run automatically on pull requests via a self-hosted [Colossus](https://colossus.nvidia.com) runner.
+The runner is provisioned using the Ansible playbook at
+[gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook](https://gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook)
+— see that repo for setup instructions.
+
 ### Pre-commit Hooks
 
 **On commit:**
@@ -139,9 +146,3 @@ source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
 - YAML validation
 - Markdown formatting
 - Secret detection
-
-**On push:**
-
-- Runs all tests (pytest)
-- Runs distributed tests with torchrun (if 2+ GPUs available)
-- Push is blocked if tests fail

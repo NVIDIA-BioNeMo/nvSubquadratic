@@ -18,14 +18,13 @@ ENV CONDA_DIR=/opt/conda
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV PATH=${CONDA_DIR}/bin:${PATH}
 
-RUN apt-get update > /dev/null && \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    apt-get update > /dev/null && \
     apt-get install --no-install-recommends --yes \
     wget bzip2 ca-certificates \
     git \
     tini \
     > /dev/null && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
     wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/${MINIFORGE_NAME}-${MINIFORGE_VERSION}-Linux-$(uname -m).sh -O /tmp/miniforge.sh && \
     /bin/bash /tmp/miniforge.sh -b -p ${CONDA_DIR} && \
     rm /tmp/miniforge.sh && \
@@ -46,18 +45,18 @@ RUN pip install --no-cache-dir \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
-RUN apt-get update && apt-get install -y sudo && \
-    rm -rf /var/lib/apt/lists/* && \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y sudo && \
     groupadd -r ubuntu && \
     useradd -r -g ubuntu -G sudo -m -s /bin/bash ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Install system build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ninja-build \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+    git
 
 WORKDIR /workspaces/nvSubquadratic-private
 
