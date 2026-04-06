@@ -54,7 +54,7 @@ class TestSafeArithmeticEval:
         ],
     )
     def test_rejects_dangerous_expressions(self, expr: str) -> None:
-        with pytest.raises(ValueError, match="(Unsupported operation|Invalid arithmetic)"):
+        with pytest.raises(ValueError, match=r"(Unsupported operation|Invalid arithmetic)"):
             _safe_arithmetic_eval(expr)
 
     def test_rejects_attribute_access(self) -> None:

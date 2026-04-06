@@ -132,7 +132,7 @@ class TestRepeatedAugSource:
 
         # Same data as idx_in_epoch=0
         info_first = FakeSampleInfo(idx_in_epoch=0, idx_in_batch=0, iteration=0, epoch_idx=0)
-        jpeg_first, label_first = src(info_first)
+        _jpeg_first, label_first = src(info_first)
         np.testing.assert_array_equal(label, label_first)
 
     def test_epoch_transition_reshuffles(self, tiny_folder):
@@ -167,7 +167,7 @@ class TestRepeatedAugSource:
 
         # First sample of epoch 1 must work
         info_new = FakeSampleInfo(idx_in_epoch=0, idx_in_batch=0, iteration=0, epoch_idx=1)
-        jpeg, label = src(info_new)
+        jpeg, _label = src(info_new)
         assert isinstance(jpeg, np.ndarray)
 
     def test_multiple_epoch_transitions(self, tiny_folder):

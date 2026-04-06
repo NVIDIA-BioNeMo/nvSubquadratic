@@ -488,7 +488,7 @@ def scaling_analysis():
 
         # Mark current resolution (14x14 = 196 patches)
         ax.axvline(x=196, color="gray", linestyle="--", linewidth=1, alpha=0.6)
-        y_lo, y_hi = ax.get_ylim()
+        y_lo, _y_hi = ax.get_ylim()
         ax.text(196 * 1.12, y_lo * 1.5, "14x14\n(224px)", color="gray", fontsize=8, va="bottom", ha="left")
 
         ax.set_xlabel("Number of patches (grid_side²)", fontsize=11)

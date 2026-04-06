@@ -2,6 +2,12 @@
 #
 # Build instructions:
 #   docker build -t nvsubquadratic:dev .
+#
+# Layer order is intentional for CI cache efficiency:
+#   1. Base image + conda + torch  (never changes)
+#   2. Apex build                  (changes only if apex version bumped)
+#   3. requirements-dev.txt        (changes when dev deps change)
+#   4. COPY . . + pip install      (changes on every code push — fast)
 
 FROM nvcr.io/nvidia/cuda:12.9.0-devel-ubuntu22.04
 
@@ -12,14 +18,13 @@ ENV CONDA_DIR=/opt/conda
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV PATH=${CONDA_DIR}/bin:${PATH}
 
-RUN apt-get update > /dev/null && \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    apt-get update > /dev/null && \
     apt-get install --no-install-recommends --yes \
     wget bzip2 ca-certificates \
     git \
     tini \
     > /dev/null && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
     wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/${MINIFORGE_NAME}-${MINIFORGE_VERSION}-Linux-$(uname -m).sh -O /tmp/miniforge.sh && \
     /bin/bash /tmp/miniforge.sh -b -p ${CONDA_DIR} && \
     rm /tmp/miniforge.sh && \
@@ -40,44 +45,40 @@ RUN pip install --no-cache-dir \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
-RUN apt-get update && apt-get install -y sudo && \
-    rm -rf /var/lib/apt/lists/* && \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y sudo && \
     groupadd -r ubuntu && \
     useradd -r -g ubuntu -G sudo -m -s /bin/bash ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Set working directory
-WORKDIR /workspaces/nvSubquadratic-private
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system build dependencies
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ninja-build \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+    git
 
-# Copy the entire project for development (as root first for package installation)
-COPY . .
+WORKDIR /workspaces/nvSubquadratic-private
 
-# Set up git safe directory
-RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
-
-# Install development dependencies first (as root, system-wide).
-# requirements-dev.txt intentionally omits torch/torchvision (see that file); they
-# come from pyproject.toml and stay on cu128 via the install below.
-RUN pip install --no-cache-dir -r requirements-dev.txt
-
-# Install the package with quack-kernels (as root, system-wide).
-# extra-index-url ensures the resolver picks cu129 wheels that match this image
-# and does not replace them with a CPU or different-CUDA build from PyPI.
-RUN pip install --no-cache-dir --no-build-isolation ".[quack]" \
-    --extra-index-url https://download.pytorch.org/whl/cu129
-
-# Build and install NVIDIA Apex with C++ and CUDA extensions.
+# ── Heavy build: Apex from source (cached until apex commit changes) ──────────
+# This layer is intentionally placed before COPY so code changes do not
+# trigger a rebuild. Apex does not depend on the project source.
 RUN pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
     --config-settings "--build-option=--cpp_ext" \
     --config-settings "--build-option=--cuda_ext" \
     git+https://github.com/NVIDIA/apex.git
+
+# ── Dev deps: cached until requirements-dev.txt changes ──────────────────────
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# ── Source: invalidated on every code change (fast — just package install) ────
+COPY . .
+
+RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
+
+RUN pip install --no-cache-dir --no-build-isolation ".[quack]" \
+    --extra-index-url https://download.pytorch.org/whl/cu129
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \

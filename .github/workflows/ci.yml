@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel in-flight runs for the same PR/branch when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint ────────────────────────────────────────────────────────────────────
+  # Runs on GitHub-hosted runner — no GPU needed, fast feedback.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run pre-commit (commit-stage hooks)
+        run: |
+          pip install pre-commit
+          # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets
+          # Does NOT run pytest-pre-push / torchrun-cp-tests (those are pre-push stage)
+          pre-commit run --all-files --hook-stage commit --show-diff-on-failure --color always
+
+  # ── GPU tests ───────────────────────────────────────────────────────────────
+  # Runs on a self-hosted Colossus machine provisioned via the Ansible playbook at
+  # https://gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook
+  # GHCR registry cache means even a fresh runner skips the Apex compile (~30 min)
+  # by pulling cached layers. Warm runs (code-only changes) are ~5 min.
+  gpu-tests:
+    runs-on: [self-hosted, gpu, colossus]
+    needs: lint
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure build cache
+        uses: int128/docker-build-cache-config-action@v1
+        id: cache
+        with:
+          image: ghcr.io/nvidia-digital-bio/nvsubquadratic-private/ci-cache
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: |
+            nvsubquadratic-ci:${{ github.sha }}
+            nvsubquadratic-ci:latest
+          cache-from: |
+            ${{ steps.cache.outputs.cache-from }}
+            type=registry,ref=ghcr.io/nvidia-digital-bio/nvsubquadratic-private/ci-cache:main
+          cache-to: ${{ steps.cache.outputs.cache-to }}
+
+      - name: Run pytest
+        run: |
+          docker run --rm --gpus all \
+            nvsubquadratic-ci:${{ github.sha }} \
+            python -m pytest nvsubquadratic/ tests/ -v --tb=short
+
+      - name: Run distributed CP tests
+        run: |
+          GPU_COUNT=$(docker run --rm --gpus all \
+            nvsubquadratic-ci:${{ github.sha }} \
+            python -c "import torch; print(torch.cuda.device_count())")
+          if [ "$GPU_COUNT" -ge 2 ]; then
+            docker run --rm --gpus all \
+              nvsubquadratic-ci:${{ github.sha }} \
+              torchrun --nproc_per_node=2 \
+                tests/modules/torchrun_sequence_mixer_cp_test.py \
+                --context_parallel_size=2 --dtype=float32
+          else
+            echo "Skipping distributed tests: $GPU_COUNT GPU(s) available, need 2+"
+          fi
+
+      - name: Clean up old images
+        if: always()
+        run: docker image prune -f --filter "until=24h"

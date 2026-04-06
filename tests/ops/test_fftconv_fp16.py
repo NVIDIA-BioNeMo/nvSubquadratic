@@ -164,7 +164,7 @@ class TestFP16FFTConv1D:
         kernel_fp16 = torch.randn(1, 32, 7, device=device, dtype=torch.float16)
         shortcut_f32 = torch.randn(32, device=device, dtype=torch.float32)
 
-        with pytest.raises(AssertionError, match="shortcut.dtype"):
+        with pytest.raises(AssertionError, match=r"shortcut\.dtype"):
             fftconv1d_fp16_bhl(x, kernel_fp16, shortcut_f32)
 
     @pytest.mark.parametrize("chunk_size", [16, 32, 64])

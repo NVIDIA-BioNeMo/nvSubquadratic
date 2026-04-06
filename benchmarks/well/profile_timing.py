@@ -7,8 +7,8 @@ import time
 
 import numpy as np
 import torch
-
 from examples.well.gray_scott_reaction_diffusion.cfg_hyena_gaussian_mask import get_config
+
 from nvsubquadratic.lazy_config import instantiate
 
 
