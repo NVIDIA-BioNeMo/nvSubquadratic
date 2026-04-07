@@ -774,11 +774,31 @@ class TestGAPReadoutAndTokenLayout:
             assert out["logits"].shape == (2, 1000)
 
     def test_cls_prepend_registers_layout(self, device: torch.device) -> None:
-        """With CLS + ``prepend_registers``, layout is ``[CLS, regs, patches]``."""
+        """With CLS + ``prepend_registers``, layout is ``[CLS, regs, (pad), patches]``."""
         net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
+
+    def test_cls_prepend_fewer_registers_zero_padded(self, device: torch.device) -> None:
+        """CLS-row with fewer registers than grid width creates zero-padding.
+
+        With patch_size=16 and image_size=224, num_patches_w=14.
+        CLS-row needs 1 + regs + pad = num_patches_w, so pad = 14 - 1 - 2 = 11.
+        Total T = 14 (first row) + 196 (patches) = 210, divisible by grid_w=14.
+        """
+        net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=2)
+        net.eval()
+        # Verify zero-pad buffer exists with correct size
+        assert net.reg_zero_pad is not None
+        assert net.reg_zero_pad.shape == (1, 11, 384)  # pad = 14 - 1 - 2 = 11
+        out = self._forward(net, device)
+        assert out["logits"].shape == (2, 1000)
+
+    def test_cls_prepend_full_row_no_padding(self, device: torch.device) -> None:
+        """CLS-row with num_registers = num_patches_w - 1 creates no padding."""
+        net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=13)
+        assert net.reg_zero_pad is None
 
     def test_cls_append_registers_layout(self, device: torch.device) -> None:
         """With CLS + appended registers, layout is ``[CLS, patches, regs]``."""

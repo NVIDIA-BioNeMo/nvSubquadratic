@@ -36,6 +36,9 @@ class ViT5ResidualBlock(nn.Module):
         register_start_idx: Start index of register tokens in the sequence.
             Default 1 for [CLS, regs, patches] layout; set to 0 for GAP models
             without CLS where registers are prepended directly.
+        grn_cfg: Optional LazyConfig for GlobalResponseNorm (ConvNeXt V2).
+            When provided, GRN is applied after the sequence mixer output
+            to promote inter-channel feature competition.
     """
 
     def __init__(
@@ -50,6 +53,7 @@ class ViT5ResidualBlock(nn.Module):
         register_pooling_cfg: LazyConfig | None = None,
         num_registers: int = 0,
         register_start_idx: int = 1,
+        grn_cfg: LazyConfig | None = None,
     ):
         """Instantiate norms, sequence mixer, MLP, and optional register pooling."""
         super().__init__()
@@ -78,6 +82,9 @@ class ViT5ResidualBlock(nn.Module):
         else:
             self.register_pooling = None
 
+        # Optional GRN (Global Response Normalization) after mixer
+        self.grn = instantiate(grn_cfg) if grn_cfg is not None else None
+
     def flop_count(self, num_tokens: int, inference: bool = False) -> int:
         """Count FLOPs for one ViT-5 residual block.
 
@@ -94,12 +101,14 @@ class ViT5ResidualBlock(nn.Module):
              D is inferred from ``self.input_norm.weight.shape[0]``.
           3. sequence_mixer:         ``self.sequence_mixer.flop_count(T, inference)``
              Dispatches to ViT5Attention or ViT5HyenaAdapter depending on config.
-          4. ls_attn (LayerScale):   ``self.ls_attn.flop_count(T)``
+          4. grn:                    ``self.grn.flop_count(T)``
+             Skipped when GRN is disabled.
+          5. ls_attn (LayerScale):   ``self.ls_attn.flop_count(T)``
              Skipped when LayerScale is replaced by Identity (init_value=0).
-          5. drop_path:              0  (stochastic identity)
-          6. mlp_norm (RMSNorm):     ``self.mlp_norm.flop_count(T)``
-          7. mlp:                    ``self.mlp.flop_count(T)``
-          8. ls_mlp (LayerScale):    ``self.ls_mlp.flop_count(T)``
+          6. drop_path:              0  (stochastic identity)
+          7. mlp_norm (RMSNorm):     ``self.mlp_norm.flop_count(T)``
+          8. mlp:                    ``self.mlp.flop_count(T)``
+          9. ls_mlp (LayerScale):    ``self.ls_mlp.flop_count(T)``
 
         Args:
             num_tokens: Sequence length T.
@@ -120,6 +129,11 @@ class ViT5ResidualBlock(nn.Module):
 
         # Sequence mixer
         flops += self.sequence_mixer.flop_count(num_tokens, inference=inference)
+
+        # GRN
+        if self.grn is not None:
+            # We assume GlobalResponseNorm implements a flop_count(num_tokens) property/method if present
+            flops += getattr(self.grn, "flop_count", lambda t: 0)(num_tokens)
 
         # LayerScale (attention branch)
         if isinstance(self.ls_attn, LayerScale):
@@ -155,6 +169,9 @@ class ViT5ResidualBlock(nn.Module):
             regs = x_normed[:, s : s + self.num_registers, :]  # [B, num_registers, C]
             mixer_kwargs["conditioning"] = self.register_pooling(regs)  # [B, C]
 
-        x = x + self.drop_path(self.ls_attn(self.sequence_mixer(x_normed, **mixer_kwargs)))
+        mixer_out = self.sequence_mixer(x_normed, **mixer_kwargs)
+        if self.grn is not None:
+            mixer_out = self.grn(mixer_out)
+        x = x + self.drop_path(self.ls_attn(mixer_out))
         x = x + self.drop_path(self.ls_mlp(self.mlp(self.mlp_norm(x))))
         return x

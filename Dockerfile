@@ -4,10 +4,10 @@
 #   docker build -t nvsubquadratic:dev .
 #
 # Layer order is intentional for CI cache efficiency:
-#   1. Base image + conda + torch  (never changes)
-#   2. Apex build                  (changes only if apex version bumped)
-#   3. requirements-dev.txt        (changes when dev deps change)
-#   4. COPY . . + pip install      (changes on every code push — fast)
+#   1. Base image + conda + torch + DALI  (never changes)
+#   2. Apex build                         (changes only if apex version bumped)
+#   3. requirements-dev.txt               (changes when dev deps change)
+#   4. COPY . . + pip install             (changes on every code push — fast)
 
 FROM nvcr.io/nvidia/cuda:12.9.0-devel-ubuntu22.04
 
@@ -42,6 +42,9 @@ RUN conda install --yes \
 
 RUN pip install --no-cache-dir \
     torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129 \
+    && pip install --no-cache-dir nvidia-dali-cuda120 \
+    && pip install --no-cache-dir \
+       torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129 \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
@@ -77,8 +80,9 @@ COPY . .
 
 RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 
-RUN pip install --no-cache-dir --no-build-isolation ".[quack]" \
-    --extra-index-url https://download.pytorch.org/whl/cu129
+RUN pip install --no-cache-dir wheel-stub \
+    && pip install --no-cache-dir --no-build-isolation ".[quack]" \
+       --extra-index-url https://download.pytorch.org/whl/cu129
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \
