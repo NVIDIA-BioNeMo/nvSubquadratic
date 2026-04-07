@@ -80,8 +80,9 @@ COPY . .
 
 RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 
-RUN pip install --no-cache-dir --no-build-isolation ".[quack]" \
-    --extra-index-url https://download.pytorch.org/whl/cu129
+RUN pip install --no-cache-dir wheel-stub \
+    && pip install --no-cache-dir --no-build-isolation ".[quack]" \
+       --extra-index-url https://download.pytorch.org/whl/cu129
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \
