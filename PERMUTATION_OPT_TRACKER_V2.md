@@ -35,7 +35,20 @@ ______________________________________________________________________
 
 The Phase 1 optimization requires `_apply_norm_bchw` to be excluded from
 `torch.compile` to avoid an `InductorError: KeyError 'complex64'` when the
-compiler tries to fuse norm ops with FFT ops.  Three approaches were tested:
+compiler tries to fuse norm ops with FFT ops.
+
+**Root cause**: `_apply_norm_bchw` itself is purely real-valued — it never
+touches complex tensors.  The error occurs because removing the
+`movedim(1,-1) → norm → movedim(-1,1)` round-trips eliminates implicit
+*fusion barriers* in the Inductor graph.  In the baseline, the movedim ops
+separate the norm from the downstream `CKConvND.global_conv` (which uses
+`torch.fft.rfft2` → complex64).  Without them, Inductor attempts to fuse the
+real-valued norm directly into the complex-valued FFT kernel and hits a
+codegen path that doesn't handle `complex64`.  This is a **PyTorch Inductor
+bug** — the compiler should insert a fusion boundary when dtypes change from
+real to complex.
+
+Three decorator approaches were tested:
 
 | Decorator                                  | Behavior                                  | Result                                      |
 | ------------------------------------------ | ----------------------------------------- | ------------------------------------------- |
@@ -127,12 +140,14 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-## WandB v2 runs
+## All v2 SLURM jobs
 
-| SLURM Job | v_num | Config                              |
-| --------- | ----- | ----------------------------------- |
-| 39381     | 6fa0  | Baseline p16 b32                    |
-| 39382     | z8au  | Baseline p4 b64                     |
-| 39385     | jyca  | Phase 1+2 p16 b32 (recursive=False) |
-| 39386     | z4rb  | Phase 1+2 p4 b64 (recursive=False)  |
-| 39388     | 2l7j  | Phase 1+2 p16 b32 (recursive=True)  |
+| SLURM Job | v_num | Config                                           | Outcome               |
+| --------- | ----- | ------------------------------------------------ | --------------------- |
+| 39379     | byvo  | Phase 1+2, no decorator, p16 b32 (compile test)  | **Crashed** complex64 |
+| 39380     | —     | Phase 1+2, `recursive=False`, p16 b32 (50 iters) | Compiled OK           |
+| 39381     | 6fa0  | Baseline p16 b32 (2000 iters)                    | **5.07 it/s** peak    |
+| 39382     | z8au  | Baseline p4 b64 (2000 iters)                     | **2.21 it/s** peak    |
+| 39385     | jyca  | Phase 1+2, `recursive=False`, p16 b32            | 4.27 it/s peak        |
+| 39386     | z4rb  | Phase 1+2, `recursive=False`, p4 b64             | 1.78 it/s peak        |
+| 39388     | 2l7j  | Phase 1+2, `@torch.compiler.disable`, p16 b32    | 4.53 it/s peak (solo) |
