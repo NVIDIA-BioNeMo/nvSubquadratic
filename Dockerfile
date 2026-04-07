@@ -65,10 +65,11 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
 # Install development dependencies first (as root, system-wide)
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
+
 # Install the package with quack-kernels (as root, system-wide).
 # extra-index-url ensures the resolver picks cu129 wheels that match this image
 # and does not replace them with a CPU or different-CUDA build from PyPI.
-RUN pip install --no-cache-dir --no-build-isolation ".[quack]" \
+RUN pip install --no-cache-dir  ".[quack]" \
     --extra-index-url https://download.pytorch.org/whl/cu129
 
 # Build and install NVIDIA Apex with C++ and CUDA extensions.

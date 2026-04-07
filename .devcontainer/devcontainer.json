@@ -2,7 +2,7 @@
 	"name": "nvSubquadratic Development Container",
 	"runArgs": [
 		"--gpus=all",
-		"--shm-size=4g"
+		"--shm-size=8g"
 	],
 	"build": {
 		"context": "${localWorkspaceFolder}",
@@ -17,7 +17,7 @@
 		"source=${localEnv:HOME}/.netrc,target=/home/ubuntu/.netrc,readonly,type=bind,consistency=cached",
 		// Mount bash history file for persistence. Created if it doesn't exist in initializeCommand.sh
 		"source=${localEnv:HOME}/.bash_history_devcontainer,target=/home/ubuntu/.bash_history,type=bind,consistency=cached",
-		"source=${localEnv:HOME}/scratch/data/well_data,target=/.data/well_data,type=bind"
+		"source=${localEnv:HOME}/scratch/data/well_data,target=/workspaces/nvSubquadratic-private/data/the_well,type=bind"
 	],
 	"containerEnv": {
 		"TMPDIR": "/tmp"
