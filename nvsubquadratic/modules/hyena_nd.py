@@ -35,6 +35,7 @@ the gated attention formulation.
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
@@ -43,8 +44,52 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv2d,
     DistributedDepthwiseConv3d,
 )
+from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
 from nvsubquadratic.utils import rope
+from nvsubquadratic.utils.qk_norm import L2Norm
+
+
+# ── Channels-first norm helpers ──────────────────────────────────────────────
+# These allow applying norms directly on [B, C, *spatial] tensors without the
+# costly movedim/reshape round-trips that the channel-last norms require.
+
+
+def _rmsnorm_channels_first(x: torch.Tensor, weight: torch.nn.Parameter, eps: float) -> torch.Tensor:
+    """RMSNorm along the channel dimension (dim=1) for BCHW tensors.
+
+    Equivalent to the standard channel-last RMSNorm but avoids layout changes.
+    """
+    dtype = x.dtype
+    x = x.float()
+    rms = x.pow(2).mean(dim=1, keepdim=True).add(eps).rsqrt()
+    shape = [1, -1] + [1] * (x.ndim - 2)  # [1, C, 1, 1, ...]
+    return (x * rms * weight.view(*shape)).to(dtype)
+
+
+@torch.compiler.disable
+def _apply_norm_bchw(norm: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """Apply a norm module to a [B, C, *spatial] tensor without layout changes.
+
+    Fully excluded from compilation to prevent Inductor from fusing the norm
+    with surrounding FFT operations (which use complex64 and trigger a codegen
+    KeyError).  The norm computations themselves are lightweight (element-wise
+    ops) so the eager-mode overhead is small.
+
+    Dispatches based on norm type:
+    - GroupNorm: already BCHW-native, pass through.
+    - RMSNorm: use _rmsnorm_channels_first (dim=1).
+    - L2Norm: F.normalize along dim=1.
+    - Fallback: movedim round-trip for unknown norm types.
+    """
+    if isinstance(norm, torch.nn.GroupNorm):
+        return norm(x)
+    if isinstance(norm, RMSNorm):
+        return _rmsnorm_channels_first(x, norm.weight, norm.eps)
+    if isinstance(norm, L2Norm):
+        return F.normalize(x, p=2.0, dim=1, eps=norm.eps)
+    # Fallback: movedim round-trip (preserves correctness for unknown norms)
+    return norm(x.movedim(1, -1)).movedim(-1, 1)
 
 
 class Hyena(torch.nn.Module):
@@ -80,6 +125,7 @@ class Hyena(torch.nn.Module):
         rope_base: float = 10000.0,
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
         gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
+        channels_first_io: bool = False,
     ):
         """Constructor.
 
@@ -99,6 +145,8 @@ class Hyena(torch.nn.Module):
             output_norm_cfg: Normalization after the second gate.  Defaults to Identity.
             gate_nonlinear_2_cfg: Activation for the second multiplicative gate.
                 If None (default), reuses gate_nonlinear_cfg for both gates.
+            channels_first_io: When True, expect Q/K/V in [B, C, *spatial] layout
+                and return output in the same layout, skipping entry/exit rearranges.
         """
         super().__init__()
 
@@ -146,6 +194,9 @@ class Hyena(torch.nn.Module):
             self.q_norm = None
             self.k_norm = None
 
+        # I/O layout flag: when True, q/k/v arrive as BCHW and output is BCHW
+        self.channels_first_io = channels_first_io
+
         # RoPE
         self.use_rope = use_rope
         self.rope_base = rope_base
@@ -159,7 +210,7 @@ class Hyena(torch.nn.Module):
         """Return extra representation string for the module."""
         is_causal = getattr(self.global_conv, "is_causal", None)
         qk_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
-        parts = [f"qk_norm={qk_norm_str}", f"use_rope={self.use_rope}"]
+        parts = [f"qk_norm={qk_norm_str}", f"use_rope={self.use_rope}", f"channels_first_io={self.channels_first_io}"]
         if self.gate_nonlinear is not self.gate_nonlinear_2:
             g1 = self.gate_nonlinear.__class__.__name__
             g2 = self.gate_nonlinear_2.__class__.__name__
@@ -370,9 +421,10 @@ class Hyena(torch.nn.Module):
             [B, *spatial, C] output tensor.
         """
         # Reshape query, key, and value to [B, C, * spatial_dims] (Required for short convolutional projections).
-        query = rearrange(query, "b ... c -> b c ...")
-        key = rearrange(key, "b ... c -> b c ...")
-        value = rearrange(value, "b ... c -> b c ...")
+        if not self.channels_first_io:
+            query = rearrange(query, "b ... c -> b c ...")
+            key = rearrange(key, "b ... c -> b c ...")
+            value = rearrange(value, "b ... c -> b c ...")
 
         # Apply short convolutional projection
         if not isinstance(self.short_conv, torch.nn.Identity):
@@ -451,27 +503,21 @@ class Hyena(torch.nn.Module):
                 raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
 
         # QK normalization (after RoPE).
-        # Tensors are BHL: [B, C, *spatial]. Move C to last dim for norms that
-        # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
+        # Tensors are [B, C, *spatial]. Norms are applied via _apply_norm_bchw
+        # which dispatches channels-first without layout changes.
         # K is only normalized when gate_nonlinear is Identity (linear gating),
         # because a nonlinear σ(K) already bounds the magnitude.
         if self.q_norm is not None:
-            query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
+            query = _apply_norm_bchw(self.q_norm, query)
             if isinstance(self.gate_nonlinear, torch.nn.Identity):
-                key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
+                key = _apply_norm_bchw(self.k_norm, key)
 
         # First gate: z = Q ⊙ σ(K)
         query = query * self.gate_nonlinear(key)
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
-            if isinstance(self.pixelhyena_norm, torch.nn.GroupNorm):
-                query = self.pixelhyena_norm(query)
-            else:
-                shape = query.shape  # [B, C, *spatial]
-                query = query.movedim(1, -1).reshape(-1, shape[1])
-                query = self.pixelhyena_norm(query)
-                query = query.view(shape[0], *shape[2:], shape[1]).movedim(-1, 1)
+            query = _apply_norm_bchw(self.pixelhyena_norm, query)
 
         # CP communication - gather along first spatial dimension while splitting across channels/hidden dimension
         if cp_group is not None and cp_group.size() > 1:
@@ -489,13 +535,9 @@ class Hyena(torch.nn.Module):
 
         # Output normalization (after the second gate).
         if not isinstance(self.output_norm, torch.nn.Identity):
-            if isinstance(self.output_norm, torch.nn.GroupNorm):
-                y = self.output_norm(y)
-            else:
-                shape = y.shape  # [B, C, *spatial]
-                y = y.movedim(1, -1).reshape(-1, shape[1])
-                y = self.output_norm(y)
-                y = y.view(shape[0], *shape[2:], shape[1]).movedim(-1, 1)
+            y = _apply_norm_bchw(self.output_norm, y)
 
-        # Reshape back to [B, * spatial_dims, C]
-        return rearrange(y, "b c ... -> b ... c")
+        # Reshape back to [B, * spatial_dims, C] (skip when channels_first_io)
+        if not self.channels_first_io:
+            return rearrange(y, "b c ... -> b ... c")
+        return y

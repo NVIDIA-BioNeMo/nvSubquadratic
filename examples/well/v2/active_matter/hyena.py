@@ -79,7 +79,9 @@ def get_config() -> ExperimentConfig:
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim=NUM_HIDDEN_CHANNELS,
+                channels_first=True,
                 mixer_cfg=LazyConfig(Hyena)(
+                    channels_first_io=True,
                     global_conv_cfg=LazyConfig(CKConvND)(
                         data_dim=DATA_DIM,
                         hidden_dim=NUM_HIDDEN_CHANNELS,

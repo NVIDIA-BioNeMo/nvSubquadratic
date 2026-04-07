@@ -6,6 +6,7 @@
 from typing import Callable
 
 import torch
+from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
@@ -25,6 +26,7 @@ class QKVSequenceMixer(torch.nn.Module):
         out_proj_bias: bool = False,
         init_method_in: Callable[[int], Callable[[torch.Tensor], torch.Tensor]] | None = None,
         init_method_out: Callable[[int], Callable[[torch.Tensor], torch.Tensor]] | None = None,
+        channels_first: bool = False,
     ):
         """Initialize the QKV sequence mixer.
 
@@ -37,9 +39,14 @@ class QKVSequenceMixer(torch.nn.Module):
                 for the QKV projection weights (and zero-init for bias if present).
             init_method_out: Optional curried initializer ``fn(dim) -> fn(tensor)``
                 for the output projection weights (and zero-init for bias if present).
+            channels_first: When True, rearrange to BCHW before splitting QKV
+                and pass channels-first tensors to the inner mixer (which must
+                accept ``channels_first_io=True``).  Eliminates 2 rearranges
+                per block compared to the default path.
         """
         super().__init__()
 
+        self.channels_first = channels_first
         self.mixer = instantiate(mixer_cfg)
 
         self.qkv_proj = torch.nn.Linear(hidden_dim, 3 * hidden_dim, bias=qkv_bias)
@@ -104,11 +111,20 @@ class QKVSequenceMixer(torch.nn.Module):
         Returns:
             torch.Tensor - The output tensor of shape [batch_size, *spatial_dims, hidden_dim].
         """
-        # Q, K, V projections via single linear
+        # Q, K, V projections via single linear (channels-last)
         qkv = self.qkv_proj(x)
-        q, k, v = torch.chunk(qkv, 3, dim=-1)
-        # Sequence mixer (e.g., self-attention, hyena, etc.)
-        x = self.mixer(q, k, v, cp_group, **mixer_kwargs)
+
+        if self.channels_first:
+            # Rearrange once to BCHW, then split on channel dim.
+            # The mixer receives BCHW tensors and returns BCHW.
+            qkv = rearrange(qkv, "b ... c -> b c ...")
+            q, k, v = torch.chunk(qkv, 3, dim=1)
+            x = self.mixer(q, k, v, cp_group, **mixer_kwargs)
+            x = rearrange(x, "b c ... -> b ... c")
+        else:
+            q, k, v = torch.chunk(qkv, 3, dim=-1)
+            x = self.mixer(q, k, v, cp_group, **mixer_kwargs)
+
         # Output projection
         x = self.out_proj(x)
         return x

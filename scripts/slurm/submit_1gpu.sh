@@ -37,6 +37,7 @@ export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor_${USER}_torch2.10
 export TRITON_CACHE_DIR=/tmp/triton_cache_${USER}_${SLURM_JOB_ID}
 export DALI_NO_MMAP=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 cd /home/dwromero/projects/nvSubquadratic-private
 
