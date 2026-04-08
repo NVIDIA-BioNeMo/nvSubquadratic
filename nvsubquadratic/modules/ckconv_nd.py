@@ -160,7 +160,38 @@ FFT_FUNCTIONS_FP16_CHUNKED = {
 
 
 class CKConvND(torch.nn.Module):
-    """CKConv (long-convolution) implementation for ND signals."""
+    """CKConv (long-convolution) implementation for ND signals.
+
+    Args:
+        data_dim: Dimension of input data (1D for sequences, 2D for images, 3D for videos, etc.).
+        hidden_dim: Hidden dimension.
+        kernel_cfg: LazyConfig for the kernel.
+        mask_cfg: LazyConfig for the mask.
+        grid_type: Type of grid to use.
+        fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
+            cropping (conventional FFT-based conv). 'circular' uses periodic
+            (wrap-around) convolution implemented via frequency-domain phase ramps.
+            Must be 'zero' when is_causal=True.
+        is_causal: If True, use causal (left-only) convolution where output at position i
+            only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
+        use_chunked_fftconv: If True, use memory-efficient chunked FFT convolutions.
+            Processes channels in chunks to reduce peak memory from complex FFT
+            intermediates. Typical savings: ~26% memory with ~11% compute overhead.
+            Useful for memory-constrained training with large spatial dimensions
+            in 2D/3D. Default is False.
+        use_fp16_fft: If True, use fp16 FFT convolutions. Uses ortho
+            normalization to prevent overflow. Saves ~36% peak memory per
+            convolution with ~0.8% mean relative error vs f32. For zero/causal
+            padding, sizes are auto-padded to power-of-2. For circular padding,
+            the input spatial dimensions must already be powers of 2 (a runtime
+            assertion will fire otherwise). Default is False.
+        fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
+            uses the torch.fft-based implementations. ``'subq_ops'`` uses the
+            optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
+            backend currently only supports 2D, zero-padded, non-causal
+            convolutions and does not support fp16 FFT. It supports chunked
+            convolutions via channel-wise chunking.
+    """
 
     def __init__(
         self,
@@ -175,38 +206,7 @@ class CKConvND(torch.nn.Module):
         use_fp16_fft: bool = False,
         fft_backend: Literal["torch_fft", "subq_ops"] = "torch_fft",
     ):
-        """Initialize the CKConvND.
-
-        Args:
-            data_dim: Dimension of input data (1D for sequences, 2D for images, 3D for videos, etc.).
-            hidden_dim: Hidden dimension.
-            kernel_cfg: LazyConfig for the kernel.
-            mask_cfg: LazyConfig for the mask.
-            grid_type: Type of grid to use.
-            fft_padding: Boundary behavior of the FFT convolution. 'zero' uses zero-padding with
-                cropping (conventional FFT-based conv). 'circular' uses periodic
-                (wrap-around) convolution implemented via frequency-domain phase ramps.
-                Must be 'zero' when is_causal=True.
-            is_causal: If True, use causal (left-only) convolution where output at position i
-                only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
-            use_chunked_fftconv: If True, use memory-efficient chunked FFT convolutions.
-                Processes channels in chunks to reduce peak memory from complex FFT
-                intermediates. Typical savings: ~26% memory with ~11% compute overhead.
-                Useful for memory-constrained training with large spatial dimensions
-                in 2D/3D. Default is False.
-            use_fp16_fft: If True, use fp16 FFT convolutions. Uses ortho
-                normalization to prevent overflow. Saves ~36% peak memory per
-                convolution with ~0.8% mean relative error vs f32. For zero/causal
-                padding, sizes are auto-padded to power-of-2. For circular padding,
-                the input spatial dimensions must already be powers of 2 (a runtime
-                assertion will fire otherwise). Default is False.
-            fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
-                uses the torch.fft-based implementations. ``'subq_ops'`` uses the
-                optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
-                backend currently only supports 2D, zero-padded, non-causal
-                convolutions and does not support fp16 FFT. It supports chunked
-                convolutions via channel-wise chunking.
-        """
+        """Initialize the CKConvND."""
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
             f"Invalid FFT padding: {fft_padding}. Must be 'zero' or 'circular'."
