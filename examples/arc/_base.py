@@ -15,7 +15,11 @@ from nvsubquadratic.lazy_config import LazyConfig
 NUM_TRAINING_SAMPLES = 12_000
 
 # ── Training schedule ─────────────────────────────────────────────────────────
-NUM_EPOCHS = 10  # matches VARC offline-training protocol
+# With DDP (2 GPUs), DistributedSampler splits data across GPUs, so each epoch
+# takes ceil(N / (batch_size * num_gpus)) steps. Divide by num_gpus to get the
+# correct step count for the intended number of epochs.
+NUM_EPOCHS = 500
+NUM_GPUS = 2
 NUM_WORKERS = 8
 BATCH_SIZE = 128  # 128 per GPU × 2 GPUs = 256 global batch size (matches VARC's global BS)
 LEARNING_RATE = 3e-4
@@ -25,7 +29,7 @@ PLACEHOLDER = None
 def get_base_config(
     *, data_dir: str, batch_size: int, learning_rate: float, weight_decay: float = 0.0
 ) -> ExperimentConfig:
-    training_iterations = math.ceil(NUM_EPOCHS * NUM_TRAINING_SAMPLES / batch_size)
+    training_iterations = math.ceil(NUM_EPOCHS * NUM_TRAINING_SAMPLES / (batch_size * NUM_GPUS))
 
     config = ExperimentConfig()
     config.debug = False

@@ -35,7 +35,7 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,123 @@ class ARCDataset(Dataset):
 
 
 # ---------------------------------------------------------------------------
+# RE-ARC dataset (synthetic examples, flat JSON format)
+# ---------------------------------------------------------------------------
+
+
+class REARCDataset(Dataset):
+    """Dataset wrapping RE-ARC synthetic task examples.
+
+    RE-ARC JSON files are stored under ``<rearc_dir>/tasks/`` and each file
+    is a **list** of ``{"input": ..., "output": ...}`` dicts (not the nested
+    ``{"train": [...], "test": [...]}`` format used by standard ARC files).
+
+    Args:
+        task_files: List of *(task_id, path)* pairs — same task IDs as the
+            corresponding ARC training tasks, matched by filename stem.
+        max_size: Canvas size (square).
+        disable_translation: Pin grid at offset (1, 1).
+        disable_resolution_aug: Use *fix_scale_factor* as fixed scale.
+        fix_scale_factor: Scale when resolution augmentation is disabled.
+        num_color_permutations: Extra colour-permuted copies per example.
+        augment: Master toggle for all augmentations.
+        seed: RNG seed.
+    """
+
+    def __init__(
+        self,
+        task_files: list[tuple[int, Path]],
+        max_size: int = 32,
+        disable_translation: bool = False,
+        disable_resolution_aug: bool = False,
+        fix_scale_factor: int = 1,
+        num_color_permutations: int = 9,
+        augment: bool = True,
+        seed: int = 42,
+    ) -> None:
+        """Build the flat index of (task_id, example, colour_perm) triples."""
+        super().__init__()
+        self.max_size = max_size
+        self.disable_translation = disable_translation
+        self.disable_resolution_aug = disable_resolution_aug
+        self.fix_scale_factor = fix_scale_factor
+        self.augment = augment
+
+        rng = random.Random(seed)
+        max_grid_dim = max_size - 2
+
+        # index: (task_id, example_dict, colour_perm | None)
+        self._index: list[tuple[int, dict, list[int] | None]] = []
+        for task_id, path in task_files:
+            examples: list[dict] = json.loads(path.read_text())
+            n_perms = num_color_permutations if augment else 0
+            for example in examples:
+                inp = np.array(example["input"], dtype=np.int64)
+                out = np.array(example["output"], dtype=np.int64)
+                if max(inp.shape[0], inp.shape[1], out.shape[0], out.shape[1]) > max_grid_dim:
+                    continue
+                self._index.append((task_id, example, None))
+                for _ in range(n_perms):
+                    perm = list(range(NUM_COLORS))
+                    rng.shuffle(perm)
+                    self._index.append((task_id, example, perm))
+
+    def __len__(self) -> int:
+        """Return number of (example, perm) entries in the dataset."""
+        return len(self._index)
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        """Return a single (input, output, task_id) sample."""
+        task_id, example, perm = self._index[idx]
+
+        inp = np.array(example["input"], dtype=np.int64)
+        out = np.array(example["output"], dtype=np.int64)
+
+        if perm is not None:
+            perm_arr = np.array(perm, dtype=np.int64)
+            inp = perm_arr[inp]
+            out = perm_arr[out]
+
+        max_dim = max(inp.shape[0], inp.shape[1], out.shape[0], out.shape[1])
+        if self.disable_resolution_aug or not self.augment:
+            scale = self.fix_scale_factor
+        else:
+            max_scale = max(1, (self.max_size - 2) // max_dim)
+            scale = random.randint(1, max_scale)
+
+        inp = _scale_grid(inp, scale)
+        out = _scale_grid(out, scale)
+
+        in_h, in_w = inp.shape
+        out_h, out_w = out.shape
+
+        scaled_max = max(in_h, in_w, out_h, out_w)
+        avail = max(0, self.max_size - scaled_max - 2)
+        if self.disable_translation or not self.augment:
+            y_off = x_off = 1
+        else:
+            y_off = random.randint(1, 1 + avail)
+            x_off = random.randint(1, 1 + avail)
+
+        inp_canvas = _place_on_canvas(inp, self.max_size, y_off, x_off, IGNORE_INDEX)
+        out_canvas = _place_on_canvas(out, self.max_size, y_off, x_off, IGNORE_INDEX)
+
+        attn_mask = (inp_canvas != IGNORE_INDEX).astype(np.int64)
+
+        if x_off + out_w < self.max_size:
+            out_canvas[y_off : y_off + out_h, x_off + out_w] = PAD_INDEX
+        if y_off + out_h < self.max_size:
+            out_canvas[y_off + out_h, x_off : x_off + out_w + 1] = PAD_INDEX
+
+        return {
+            "input": torch.from_numpy(inp_canvas),
+            "label": torch.from_numpy(out_canvas),
+            "attention_mask": torch.from_numpy(attn_mask),
+            "task_id": torch.tensor(task_id, dtype=torch.long),
+        }
+
+
+# ---------------------------------------------------------------------------
 # Collate function
 # ---------------------------------------------------------------------------
 
@@ -264,6 +381,10 @@ class ARCDataModule(pl.LightningDataModule):
         disable_resolution_aug: bool = False,
         fix_scale_factor: int = 1,
         num_color_permutations: int = 9,
+        rearc_dir: str | None = None,
+        rearc_num_color_permutations: int = 0,
+        val_task_split: str = "evaluation",
+        val_subset: str = "train",
     ) -> None:
         """Store datamodule configuration; datasets are built lazily in ``setup()``."""
         super().__init__()
@@ -277,6 +398,10 @@ class ARCDataModule(pl.LightningDataModule):
         self.disable_resolution_aug = disable_resolution_aug
         self.fix_scale_factor = fix_scale_factor
         self.num_color_permutations = num_color_permutations
+        self.rearc_dir = Path(rearc_dir) if rearc_dir is not None else None
+        self.rearc_num_color_permutations = rearc_num_color_permutations
+        self.val_task_split = val_task_split
+        self.val_subset = val_subset
 
         self.train_dataset: ARCDataset | None = None
         self.val_dataset: ARCDataset | None = None
@@ -290,6 +415,22 @@ class ARCDataModule(pl.LightningDataModule):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _load_rearc_task_files(self, train_files: list[tuple[int, Path]]) -> list[tuple[int, Path]]:
+        """Map RE-ARC task JSONs to the same task IDs as ARC training files.
+
+        RE-ARC files live under ``<rearc_dir>/tasks/`` and are named with the
+        same stems as ARC training tasks (e.g. ``007bbfb7.json``).  We match
+        by stem so RE-ARC examples share task tokens with their ARC counterparts.
+        """
+        stem_to_id = {p.stem: tid for tid, p in train_files}
+        tasks_dir = self.rearc_dir / "tasks"
+        result = []
+        for path in sorted(tasks_dir.glob("*.json")):
+            task_id = stem_to_id.get(path.stem)
+            if task_id is not None:
+                result.append((task_id, path))
+        return result
 
     def _load_task_files(self, split_dir: str) -> list[tuple[int, Path]]:
         """Return sorted list of *(task_id, path)* from a split directory."""
@@ -330,21 +471,43 @@ class ARCDataModule(pl.LightningDataModule):
         train_files = self._load_task_files("training")
         eval_files = self._load_task_files("evaluation")
 
-        # Assign global task ids: training tasks 0..N-1, eval tasks N..N+M-1
         n_train_tasks = len(train_files)
-        eval_files = [(task_id + n_train_tasks, p) for task_id, p in eval_files]
 
-        self.num_tasks = n_train_tasks + len(eval_files)
+        # Assign global task ids: eval tasks follow training tasks
+        eval_files_with_ids = [(task_id + n_train_tasks, p) for task_id, p in eval_files]
+
+        # num_tasks: only training tasks need embeddings when val is on training split
+        if self.val_task_split == "training":
+            self.num_tasks = n_train_tasks
+        else:
+            self.num_tasks = n_train_tasks + len(eval_files)
 
         # Store for ARCTTTValidationCallback
-        self._eval_task_files = eval_files
+        self._eval_task_files = eval_files_with_ids
 
         if stage in ("fit", None):
-            self.train_dataset = self._build_dataset(train_files, "train", augment=True)
-            self.val_dataset = self._build_dataset(eval_files, "train", augment=False)
+            arc_train = self._build_dataset(train_files, "train", augment=True)
+            if self.rearc_dir is not None:
+                rearc_files = self._load_rearc_task_files(train_files)
+                rearc_train = REARCDataset(
+                    task_files=rearc_files,
+                    max_size=self.max_size,
+                    disable_translation=self.disable_translation,
+                    disable_resolution_aug=self.disable_resolution_aug,
+                    fix_scale_factor=self.fix_scale_factor,
+                    num_color_permutations=self.rearc_num_color_permutations,
+                    augment=True,
+                    seed=self.seed,
+                )
+                print(f"RE-ARC: {len(rearc_train)} examples from {self.rearc_dir}")
+                self.train_dataset = ConcatDataset([arc_train, rearc_train])
+            else:
+                self.train_dataset = arc_train
+            val_files = train_files if self.val_task_split == "training" else eval_files_with_ids
+            self.val_dataset = self._build_dataset(val_files, self.val_subset, augment=False)
 
         if stage in ("test", None):
-            self.test_dataset = self._build_dataset(eval_files, "train", augment=False)
+            self.test_dataset = self._build_dataset(eval_files_with_ids, "train", augment=False)
 
     def _build_loader(self, dataset: ARCDataset, shuffle: bool, drop_last: bool = False) -> DataLoader:
         return DataLoader(

@@ -44,4 +44,7 @@ cd /home/dwessel/code/nvSubquadratic-private
 mkdir -p logs
 
 # Use torchrun for 2 GPUs
-PYTHONPATH=. torchrun --nproc_per_node=2 experiments/run.py --config "$CONFIG" "$@"
+# Pick a free master port: default 29500 + offset derived from SLURM job ID
+# to avoid conflicts when multiple jobs land on the same node.
+MASTER_PORT=$(( 29500 + (SLURM_JOB_ID % 1000) ))
+PYTHONPATH=. torchrun --nproc_per_node=2 --master-port=$MASTER_PORT experiments/run.py --config "$CONFIG" "$@"

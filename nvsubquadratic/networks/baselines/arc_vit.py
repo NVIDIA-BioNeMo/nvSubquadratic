@@ -2,6 +2,7 @@ from math import pi
 from typing import Any, Dict, Optional
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange, repeat
 from timm.models.vision_transformer import PatchEmbed
 from torch import nn
@@ -140,19 +141,18 @@ class MultiHeadSelfAttention(nn.Module):
         q = self.rotary(q)
         k = self.rotary(k)
 
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-
+        attn_mask = None
         if key_padding_mask is not None:
-            mask = key_padding_mask[:, None, None, :].to(dtype=torch.bool)
-            attn_scores = attn_scores.masked_fill(
-                mask,
-                torch.finfo(attn_scores.dtype).min,
-            )
+            # SDPA expects True = attend; key_padding_mask has True = ignore → invert
+            attn_mask = ~key_padding_mask[:, None, None, :].to(dtype=torch.bool)
 
-        attn_weights = torch.softmax(attn_scores, dim=-1)
-        attn_weights = self.attn_dropout(attn_weights)
-
-        context = torch.matmul(attn_weights, v)
+        context = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=self.attn_dropout.p if self.training else 0.0,
+        )
         context = context.transpose(1, 2).reshape(batch_size, seq_len, self.embed_dim)
         context = self.proj(context)
         context = self.proj_dropout(context)

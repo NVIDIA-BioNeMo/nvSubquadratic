@@ -92,6 +92,16 @@ ______________________________________________________________________
 
 **Fix:** divide by `num_gpus`: `ceil(10 × 10_800 / (128 × 2)) = 422` for exact 10-epoch correspondence.  Or accept 18 epochs as a reasonable approximation (no overfitting observed at this scale).
 
+### 5. Color permutation strategy: fixed copies (ours) vs on-the-fly (VARC)
+
+**Current:** `ARCDataset` pre-generates 9 fixed colour permutations per example at index-build time, storing 10 copies (1 identity + 9 fixed) in the flat index. One full pass through the dataset sees the same 9 perms repeatedly.
+
+**VARC:** samples a fresh random permutation in `__getitem__` on every access — a different perm each epoch, giving strictly more variety over the course of training.
+
+**Impact:** over many epochs our model sees less colour diversity per example than VARC does. This could hurt generalisation if colour invariance is important to performance.
+
+**If switching:** replace the pre-generated perm loop in `ARCDataset.__init__` with a single entry per example (no perm), and apply a random `perm_arr` sampled from `random.sample(range(10), 10)` inside `__getitem__`. This would also shrink the index by ~10×, reducing memory and data-loading overhead.
+
 ### 4. Val split uses held-out training tasks, not the evaluation split
 
 **Current:** 10% of training tasks (40 tasks, ~124 examples, **1 val batch**) are withheld.  Metric resolution = 1/124 ≈ 0.8% — too coarse to show any gradient of improvement.  VARC trains on all 400 training tasks and evaluates on the separate 400-task evaluation split.
@@ -104,12 +114,22 @@ ______________________________________________________________________
 
 ### 1. Offline Pretraining Logs
 
-| Model  | Params | Global Batch Size | GPUs       | Training Time             | End `val/exact_match`      | Notes / WandB                                                                                                                                                                  |
-| :----- | :----- | :---------------- | :--------- | :------------------------ | :------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ARCViT | ~3.7M  | 256 (128×2)       | 2x geodude | ❌ Overfit (SLURM 153461) | 2.4% (best epoch 1)        | Config: `cfg_vit.py` · [WandB 97tf96wk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/97tf96wk) · Bug: 50k iters = ~600 epochs                                      |
-| ARCViT | ~3.7M  | 256 (128×2)       | 2x geodude | ✅ Done (SLURM 153525)    | 0.81% val / **0.72% test** | Config: `cfg_vit.py` · [WandB r1zfe0wv](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r1zfe0wv) · 844 steps (~18 effective epochs); no overfitting; train loss ~0.8 |
-| ARCViT | ~3.7M  | 256 (128×2)       | 2x geodude | 🔄 Running (SLURM 153598) | *Pending*                  | Fixed val: all 400 training tasks used; val = eval-split demos; TTT callback every 5 epochs                                                                                    |
-| Hyena  | ~18M   | 256 (128×2)       | 2x geodude | *Pending*                 | *Pending*                  | Config: `cfg_hyena.py`                                                                                                                                                         |
+#### Our codebase (ARCViT + Hyena)
+
+| Model  | Params | Global BS   | GPUs       | Status                      | Best `val/exact_match` | Notes / WandB                                                                                                                                                             |
+| :----- | :----- | :---------- | :--------- | :-------------------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ❌ Overfit (SLURM 153461)   | 2.4% (epoch 1)         | Config: `cfg_vit.py` · [WandB 97tf96wk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/97tf96wk) · Bug: 50k iters = ~600 epochs                                 |
+| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ✅ Done (SLURM 153525)      | 0.81% val / 0.72% test | Config: `cfg_vit.py` · [WandB r1zfe0wv](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r1zfe0wv) · 844 steps (~18 effective epochs); train loss ~0.8            |
+| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ❌ Cancelled (SLURM 153598) | *N/A*                  | Fixed val config; cancelled to fix max_size bug (was 64 instead of 32)                                                                                                    |
+| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ❌ Cancelled (SLURM 153747) | 31.2% (epoch 49)       | Config: `cfg_vit_rearc.py` · [WandB q4uuikbj](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/q4uuikbj) · Cancelled at wall-time; max_size=64 (wrong, was a bug) |
+| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | 🔄 Running (SLURM 153872)   | *Pending*              | Config: `cfg_vit_rearc.py` · max_size=32 (fixed) · RE-ARC data · val on training task test queries                                                                        |
+| Hyena  | ~18M   | 256 (128×2) | 2x geodude | 🔄 Running (SLURM 153871)   | *Pending*              | Config: `cfg_hyena_rearc.py` · max_size=32 · compile=True, compile_compatible_fftconv=True, mode=max-autotune-no-cudagraphs                                               |
+
+#### VARC reference codebase
+
+| Model  | Params | Global BS | GPUs       | Status                      | Best `eval_acc`  | Notes / WandB                                                                                                                |
+| :----- | :----- | :-------- | :--------- | :-------------------------- | :--------------- | :--------------------------------------------------------------------------------------------------------------------------- |
+| ARCViT | 17.4M  | 64 (32×2) | 2x geodude | ❌ Cancelled (SLURM 153674) | 50.5% (epoch 31) | [WandB 3z3qtr79](https://wandb.ai/dafidofff/nvsubquadratic/runs/3z3qtr79) · Hit wall-time; strong trajectory, ~41h remaining |
 
 ### 2. TTT Final Evaluation (ARC-1)
 
@@ -117,5 +137,5 @@ ______________________________________________________________________
 | :------------ | :----------- | :--------- | :--------------- | :------------- | :--------------------------------- |
 | VARC Paper    | N/A          | 100        | None             | 52-56%         | Original paper result (Single Run) |
 | VARC Paper    | N/A          | 100        | 10 + color perm. | 60.4%          | Original paper result (Ensemble)   |
-| ARCViT (Ours) | *Pending*    | 100        | None             | *Pending*      | Run 3 (fixed val) in progress      |
-| Hyena (Ours)  | *Pending*    | 100        | None             | *Pending*      | Subquadratic benchmark             |
+| ARCViT (Ours) | *Pending*    | 100        | None             | *Pending*      | SLURM 153872 in progress           |
+| Hyena (Ours)  | *Pending*    | 100        | None             | *Pending*      | SLURM 153871 in progress           |

@@ -188,8 +188,8 @@ def construct_trainer(
         check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         limit_val_batches=cfg.trainer.limit_val_batches,
         limit_test_batches=cfg.trainer.limit_test_batches,
-        # Logging frequency
-        log_every_n_steps=10,
+        # Logging frequency: 50 steps reduces DDP sync overhead vs default of 10.
+        log_every_n_steps=50,
         enable_progress_bar=True,
     )
     return trainer, checkpoint_callback

@@ -51,9 +51,11 @@ class ARCWrapper(LightningWrapperBase):
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         """Compute loss and log train metrics for one batch."""
         out = self._step(batch)
-        self.log("train/loss", out["loss"], sync_dist=True, prog_bar=True)
-        self.log("train/pixel_acc", out["pixel_acc"], sync_dist=True)
-        self.log("train/exact_match", out["exact_match"], sync_dist=True)
+        # sync_dist=False: train metrics are for monitoring only; no need to
+        # all-reduce across GPUs every step (saves significant DDP overhead).
+        self.log("train/loss", out["loss"], sync_dist=False, prog_bar=True)
+        self.log("train/pixel_acc", out["pixel_acc"], sync_dist=False)
+        self.log("train/exact_match", out["exact_match"], sync_dist=False)
 
         return out["loss"]
 
