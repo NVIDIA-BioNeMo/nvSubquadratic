@@ -47,27 +47,27 @@ If OOM at batch 64, add:
 
 ## Results — CNextU-net (baseline)
 
-| Batch/GPU | Grad Accum | GPUs | WandB Run | val/MSE | it/s |
-| --------- | ---------- | ---- | --------- | ------- | ---- |
-| 64        | 1          | 1    |           |         |      |
+| Batch/GPU | Grad Accum | GPUs | WandB Run | val/MSE | it/s  | WANDB                                                               |
+| --------- | ---------- | ---- | --------- | ------- | ----- | ------------------------------------------------------------------- |
+| 64        | 1          | 1    |           |         | 1.308 | UB_examples_well_v2_active_matter_unet_convnext_2026-04-03-15-36-52 |
 
 ## Results — Attention
 
-| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run | val/MSE | it/s |
-| ----- | ---------- | --------- | ---------- | ---- | --------- | ------- | ---- |
-| 16    | 256        | 64        | 1          | 1    |           |         |      |
-| 8     | 1,024      | 64        | 1          | 1    |           |         |      |
-| 4     | 4,096      | 64        | 1          | 1    |           |         |      |
-| 2     | 16,384     | 32        | 2          | 1    |           |         |      |
+| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run                                                                    | val/MSE | it/s  |
+| ----- | ---------- | --------- | ---------- | ---- | ---------------------------------------------------------------------------- | ------- | ----- |
+| 16    | 256        | 64        | 1          | 1    | UB_examples_well_v2_active_matter_attention_2026-04-03-17-41-55              |         | 0.983 |
+| 8     | 1,024      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_attention_patch_size_8_2026-04-03-18-50-30 | 0.067   | 1.213 |
+| 4     | 4,096      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_attention_patch_size_4_2026-04-03-18-54-10 |         |       |
+| 2     | 16,384     | 32        | 2          | 1    |                                                                              |         |       |
 
 ## Results — Hyena + Gaussian Mask
 
-| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run | val/MSE | it/s |
-| ----- | ---------- | --------- | ---------- | ---- | --------- | ------- | ---- |
-| 16    | 256        | 64        | 1          | 1    |           |         |      |
-| 8     | 1,024      | 64        | 1          | 1    |           |         |      |
-| 4     | 4,096      | 64        | 1          | 1    |           |         |      |
-| 2     | 16,384     | 16        | 4          | 1    |           |         |      |
+| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run                                                                               | val/MSE | it/s  |
+| ----- | ---------- | --------- | ---------- | ---- | --------------------------------------------------------------------------------------- | ------- | ----- |
+| 16    | 256        | 64        | 1          | 1    | UB_examples_well_v2_active_matter_hyena_gaussian_mask_patch_size_16_2026-04-03-17-08-22 | 0.0198  | 1.258 |
+| 8     | 1,024      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_hyena_gaussian_mask_patch_size_8_2026-04-03-18-46-37  |         | 1.145 |
+| 4     | 4,096      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_hyena_gaussian_mask_patch_size_4_2026-04-03-18-53-17  |         |       |
+| 2     | 16,384     | 16        | 4          | 1    |                                                                                         |         |       |
 
 ## Memory Probing Notes (1×H100 80GB, with torch.compile max-autotune-no-cudagraphs)
 
