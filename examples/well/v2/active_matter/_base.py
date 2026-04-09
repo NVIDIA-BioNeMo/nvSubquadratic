@@ -24,7 +24,7 @@ DATA_DIM = 2
 SPATIAL_RESOLUTION = (256, 256)
 WELL_BASE_PATH = os.environ.get(
     "WELL_DATA_PATH",
-    "/shared/data/image_datasets/the_well/datasets",
+    "/workspaces/nvSubquadratic-private/data/the_well/datasets/",
 )
 WELL_DATASET_NAME = "active_matter"
 
@@ -47,7 +47,7 @@ TRAINING_ITERATIONS = 110_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 
 BATCH_SIZE = 64  # configs/data/active_matter.yaml
-NUM_WORKERS = 12
+NUM_WORKERS = 4  # 12
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
 LEARNING_RATE = 5e-3
