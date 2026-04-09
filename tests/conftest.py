@@ -24,13 +24,13 @@ def _subq_ops_version() -> tuple[int, ...]:
 _SUBQ_OPS_MIN_VERSION = (0, 2, 0)
 _subq_installed = _subq_ops_version()
 
-# TODO(@moradza): remove skip once subquadratic-ops-torch-cu12 >= 0.2.0 is released
-requires_subq_ops_v2 = pytest.mark.skipif(
+requires_subq_ops_v2 = pytest.mark.xfail(
     _subq_installed < _SUBQ_OPS_MIN_VERSION,
     reason=(
         f"subquadratic_ops_torch >= {'.'.join(str(x) for x in _SUBQ_OPS_MIN_VERSION)} required "
         f"(installed: {'.'.join(str(x) for x in _subq_installed)})"
     ),
+    strict=False,
 )
 
 

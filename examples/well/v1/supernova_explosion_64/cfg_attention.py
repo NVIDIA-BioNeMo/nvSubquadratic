@@ -14,7 +14,7 @@ import torch
 from experiments.datamodules.pde.well import WellDataModule
 from experiments.default_cfg import ExperimentConfig, SchedulerConfig, TrainConfig, WandbConfig
 from experiments.lightning_wrappers.well_lightning_wrapper import WELLRegressionWrapper
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import PLACEHOLDER, LazyConfig
 from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
@@ -23,8 +23,6 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 
-
-PLACEHOLDER = None
 
 # Dataset parameters
 DATA_DIM = 3
