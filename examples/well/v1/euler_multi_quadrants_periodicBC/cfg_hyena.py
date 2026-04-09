@@ -30,8 +30,6 @@ from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, smal
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
-PLACEHOLDER = None
-
 # ─── Model hyperparameters ────────────────────────────────────────────────────
 BATCH_SIZE = 24  # same as the baseline (unet_convnext)
 NUM_HIDDEN_CHANNELS = 384

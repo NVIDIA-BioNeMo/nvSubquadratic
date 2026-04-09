@@ -26,8 +26,6 @@ from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
 
 
-PLACEHOLDER = None
-
 # ─── Model hyperparameters ────────────────────────────────────────────────────
 BATCH_SIZE = 24
 NUM_HIDDEN_CHANNELS = 384
