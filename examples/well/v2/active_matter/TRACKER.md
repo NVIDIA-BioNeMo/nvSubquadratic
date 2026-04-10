@@ -47,27 +47,27 @@ If OOM at batch 64, add:
 
 ## Results — CNextU-net (baseline)
 
-| Batch/GPU | Grad Accum | GPUs | WandB Run | val/MSE | it/s  | WANDB                                                               |
-| --------- | ---------- | ---- | --------- | ------- | ----- | ------------------------------------------------------------------- |
-| 64        | 1          | 1    |           |         | 1.308 | UB_examples_well_v2_active_matter_unet_convnext_2026-04-03-15-36-52 |
+| Batch/GPU | Grad Accum | GPUs | WandB Run | val/MSE | it/s | WANDB                                                                                                                                                                                   |
+| --------- | ---------- | ---- | --------- | ------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 64        | 1          | 1    |           |         |      | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_cfg_unet_convnext_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_run_start_time_177_2026-04-10-07-57-59 |
 
 ## Results — Attention
 
-| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run                                                                    | val/MSE | it/s  |
-| ----- | ---------- | --------- | ---------- | ---- | ---------------------------------------------------------------------------- | ------- | ----- |
-| 16    | 256        | 64        | 1          | 1    | UB_examples_well_v2_active_matter_attention_2026-04-03-17-41-55              |         | 0.983 |
-| 8     | 1,024      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_attention_patch_size_8_2026-04-03-18-50-30 | 0.067   | 1.213 |
-| 4     | 4,096      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_attention_patch_size_4_2026-04-03-18-54-10 |         |       |
-| 2     | 16,384     | 32        | 2          | 1    |                                                                              |         |       |
+| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run                                                                                                                                                                               | val/MSE | it/s |
+| ----- | ---------- | --------- | ---------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---- |
+| 16    | 256        | 64        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_attention_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_16_run_start_ti_2026-04-10-07-53-21 |         |      |
+| 8     | 1,024      | 64        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_attention_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_8_run_start_tim_2026-04-10-07-53-30 |         |      |
+| 4     | 4,096      | 64        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_attention_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_4_run_start_tim_2026-04-10-07-53-41 |         |      |
+| 2     | 16,384     | 32        | 2          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_attention_bs_32_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_2_run_sta_2026-04-10-07-54-08 |         |      |
 
 ## Results — Hyena + Gaussian Mask
 
-| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run                                                                               | val/MSE | it/s  |
-| ----- | ---------- | --------- | ---------- | ---- | --------------------------------------------------------------------------------------- | ------- | ----- |
-| 16    | 256        | 64        | 1          | 1    | UB_examples_well_v2_active_matter_hyena_gaussian_mask_patch_size_16_2026-04-03-17-08-22 | 0.0198  | 1.258 |
-| 8     | 1,024      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_hyena_gaussian_mask_patch_size_8_2026-04-03-18-46-37  |         | 1.145 |
-| 4     | 4,096      | 64        | 1          | 1    | UB_examples_well_v2_active_matter_hyena_gaussian_mask_patch_size_4_2026-04-03-18-53-17  |         |       |
-| 2     | 16,384     | 16        | 4          | 1    |                                                                                         |         |       |
+| Patch | Tokens/img | Batch/GPU | Grad Accum | GPUs | WandB Run                                                                                                                                                                               | val/MSE | it/s |
+| ----- | ---------- | --------- | ---------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---- |
+| 16    | 256        | 64        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_hyena_gaussian_mask_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_16_ru_2026-04-10-07-41-33 |         |      |
+| 8     | 1,024      | 64        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_hyena_gaussian_mask_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_8_run_2026-04-10-07-42-04 |         |      |
+| 4     | 4,096      | 64        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_hyena_gaussian_mask_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_4_run_2026-04-10-07-42-12 |         |      |
+| 2     | 16,384     | 16        | 1          | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_active_matter_hyena_gaussian_mask_bs_16_experiment_dir\_/workspace/results_lr_0.005_num_nodes_1_patch_size_2026-04-10-07-44-00 |         |      |
 
 ## Memory Probing Notes (1×H100 80GB, with torch.compile max-autotune-no-cudagraphs)
 
