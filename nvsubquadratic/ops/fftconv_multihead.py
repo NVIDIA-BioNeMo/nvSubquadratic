@@ -21,8 +21,8 @@ enabling cross-channel learning while maintaining head isolation.
 
 __all__ = [
     "fftconv2d_multihead_bhl",
-    "fftconv2d_multihead_lowrank_bhl",
     "fftconv2d_multihead_circular_bhl",
+    "fftconv2d_multihead_lowrank_bhl",
     "fftconv2d_multihead_lowrank_circular_bhl",
 ]
 
@@ -121,8 +121,8 @@ def fftconv2d_multihead_lowrank_bhl(
     Returns:
         Output tensor [B, num_heads, head_dim, H, W]
     """
-    B, num_heads, head_dim, H, W = x.shape
-    _, _, rank, K_x, K_y = kernel_u.shape
+    _B, num_heads, head_dim, H, W = x.shape
+    _, _, _rank, K_x, K_y = kernel_u.shape
 
     # Determine FFT size for linear convolution
     fft_h = min(H + (K_x + 1) // 2, 2 * H)
@@ -216,7 +216,7 @@ def fftconv2d_multihead_lowrank_circular_bhl(
     Returns:
         Output tensor [B, num_heads, head_dim, H, W]
     """
-    B, num_heads, head_dim, H, W = x.shape
+    _B, num_heads, head_dim, H, W = x.shape
 
     x_fft = torch.fft.rfft2(x)
     u_fft = torch.fft.rfft2(kernel_u, s=(H, W))

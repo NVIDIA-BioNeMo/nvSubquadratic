@@ -23,7 +23,6 @@ from nvsubquadratic.modules.film import KernelFiLMGenerator
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.ops.fftconv_multihead import (
     fftconv2d_multihead_bhl,
-    fftconv2d_multihead_circular_bhl,
     fftconv2d_multihead_lowrank_bhl,
     fftconv2d_multihead_lowrank_circular_bhl,
 )
@@ -35,7 +34,7 @@ from nvsubquadratic.ops.fftconv_multihead import (
 @pytest.fixture
 def multihead_dims():
     """Standard dimensions used across tests."""
-    return dict(B=2, num_heads=6, head_dim=64, H=14, W=14, hidden_dim=384)
+    return {"B": 2, "num_heads": 6, "head_dim": 64, "H": 14, "W": 14, "hidden_dim": 384}
 
 
 @pytest.fixture
@@ -238,9 +237,7 @@ class TestCKConvMultiheadNDLowRank:
     def test_lowrank_with_film(self, multihead_dims, film_cfg):
         """Low-rank works with FiLM conditioning (batched kernels)."""
         d = multihead_dims
-        model = _make_ckconv(
-            hidden_dim=d["hidden_dim"], num_heads=d["num_heads"], kernel_rank=8, film_cfg=film_cfg
-        )
+        model = _make_ckconv(hidden_dim=d["hidden_dim"], num_heads=d["num_heads"], kernel_rank=8, film_cfg=film_cfg)
         x = torch.randn(d["B"], d["H"], d["W"], d["hidden_dim"])
         cond = torch.randn(d["B"], d["hidden_dim"])
         out = model(x, conditioning=cond)
@@ -254,9 +251,7 @@ class TestCKConvMultiheadNDLowRank:
     def test_fullrank_still_works(self, multihead_dims, film_cfg):
         """Full-rank path (kernel_rank=None) is not broken."""
         d = multihead_dims
-        model = _make_ckconv(
-            hidden_dim=d["hidden_dim"], num_heads=d["num_heads"], kernel_rank=None, film_cfg=film_cfg
-        )
+        model = _make_ckconv(hidden_dim=d["hidden_dim"], num_heads=d["num_heads"], kernel_rank=None, film_cfg=film_cfg)
         x = torch.randn(d["B"], d["H"], d["W"], d["hidden_dim"])
         cond = torch.randn(d["B"], d["hidden_dim"])
         out = model(x, conditioning=cond)
@@ -276,7 +271,9 @@ class TestCKConvMultiheadNDLowRank:
         params_lr = sum(p.numel() for p in model_lr.parameters())
         params_full = sum(p.numel() for p in model_full.parameters())
 
-        assert params_lr < params_full, f"Low-rank ({params_lr}) should have fewer params than full-rank ({params_full})"
+        assert params_lr < params_full, (
+            f"Low-rank ({params_lr}) should have fewer params than full-rank ({params_full})"
+        )
         # With rank=8 and head_dim=64, SIREN output is 4x smaller
         # so the SIREN out_linear should be ~4x smaller
         ratio = params_full / params_lr

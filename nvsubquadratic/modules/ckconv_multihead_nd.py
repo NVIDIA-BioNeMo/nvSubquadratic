@@ -140,7 +140,8 @@ class CKConvMultiheadND(torch.nn.Module):
 
         Args:
             conv_kernel_flat: [..., K_x, K_y, num_heads * 2 * rank * head_dim]
-            K_x, K_y: Spatial kernel dimensions.
+            K_x: Spatial kernel height dimension.
+            K_y: Spatial kernel width dimension.
             B: Batch size (for FiLM-batched kernels), or None for unbatched.
 
         Returns:
@@ -237,7 +238,7 @@ class CKConvMultiheadND(torch.nn.Module):
         conv_kernel = conv_kernel.to(torch.float32)
         shortcut = shortcut.to(torch.float32)
 
-        B, num_heads, head_dim, H, W = x.shape
+        _B, num_heads, head_dim, H, W = x.shape
         K_x, K_y = conv_kernel.shape[-2], conv_kernel.shape[-1]
 
         fft_h = min(H + (K_x + 1) // 2, 2 * H)
@@ -282,7 +283,7 @@ class CKConvMultiheadND(torch.nn.Module):
         kernel_v = kernel_v.to(torch.float32)
         shortcut = shortcut.to(torch.float32)
 
-        B, num_heads, head_dim, H, W = x.shape
+        _B, num_heads, head_dim, H, W = x.shape
         K_x, K_y = kernel_u.shape[-2], kernel_u.shape[-1]
 
         fft_h = min(H + (K_x + 1) // 2, 2 * H)
