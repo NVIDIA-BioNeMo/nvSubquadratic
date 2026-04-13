@@ -34,6 +34,7 @@ class ResidualBlock(torch.nn.Module):
         mlp_cfg: LazyConfig,
         mlp_norm_cfg: LazyConfig,
         dropout_cfg: LazyConfig,
+        pass_condition_to_sequence_mixer: bool = False,
     ):
         """Initialize the ResidualBlock.
 
@@ -45,6 +46,7 @@ class ResidualBlock(torch.nn.Module):
             mlp_cfg: LazyConfig for the MLP layer.
             mlp_norm_cfg: LazyConfig for the MLP norm.
             dropout_cfg: LazyConfig for the dropout layer.
+            pass_condition_to_sequence_mixer: Whether to pass the condition tensor to the sequence mixer.
         """
         if sequence_mixer_cfg.__target__ == torch.nn.Identity:
             assert sequence_mixer_norm_cfg.__target__ == torch.nn.Identity, (
@@ -58,6 +60,8 @@ class ResidualBlock(torch.nn.Module):
             )
 
         super().__init__()
+        self.pass_condition_to_sequence_mixer = pass_condition_to_sequence_mixer
+
         # Instantiate sequence mixer layer
         self.sequence_mixer = instantiate(sequence_mixer_cfg)
         # Instantiate input norm
@@ -99,7 +103,10 @@ class ResidualBlock(torch.nn.Module):
         if not isinstance(self.sequence_mixer, torch.nn.Identity):
             residual = x
             x = self.input_norm(x)
-            x = self.sequence_mixer(x)
+            if self.pass_condition_to_sequence_mixer:
+                x = self.sequence_mixer(x, conditioning=condition)
+            else:
+                x = self.sequence_mixer(x)
             x = self.dropout(x)
             x = x + residual
 
@@ -162,6 +169,10 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         self.condition_proj = torch.nn.Sequential(torch.nn.SiLU(), torch.nn.Linear(hidden_dim, hidden_dim * 6))
         torch.nn.init.zeros_(self.condition_proj[1].weight)
         torch.nn.init.zeros_(self.condition_proj[1].bias)
+        # Apply weight decay to the projection weight to regularise the conditioning path.
+        # Bias is 1-D so must be explicitly exempted to avoid _build_param_groups warnings.
+        self.condition_proj[1].weight._weight_decay = 1e-4
+        self.condition_proj[1].bias._no_weight_decay = True
 
     def forward(self, x: torch.Tensor, condition: Union[torch.Tensor | None]) -> torch.Tensor:
         """Apply AdaLN-Zero residual mixing conditioned on the provided tensor."""
@@ -193,7 +204,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         )  # (B, *spatial_dims, hidden_dim)
         seq_out = self.sequence_mixer(seq_mod, conditioning=cond)  # (B, *spatial_dims, hidden_dim)
         seq_out = self.dropout(seq_out)  # (B, *spatial_dims, hidden_dim)
-        seq_out = seq_out * expand(gate_seq, seq_out)  # (B, *spatial_dims, hidden_dim)
+        seq_out = seq_out * expand(torch.tanh(gate_seq), seq_out)  # (B, *spatial_dims, hidden_dim)
         x = x + seq_out  # (B, *spatial_dims, hidden_dim)
 
         # Apply the same AdaLN-Zero recipe to the MLP branch.
@@ -203,7 +214,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         )  # (B, *spatial_dims, hidden_dim)
         mlp_out = self.mlp(mlp_mod)  # (B, *spatial_dims, hidden_dim)
         mlp_out = self.dropout(mlp_out)  # (B, *spatial_dims, hidden_dim)
-        mlp_out = mlp_out * expand(gate_mlp, mlp_out)  # (B, *spatial_dims, hidden_dim)
+        mlp_out = mlp_out * expand(torch.tanh(gate_mlp), mlp_out)  # (B, *spatial_dims, hidden_dim)
         x = x + mlp_out  # (B, *spatial_dims, hidden_dim)
 
         return x

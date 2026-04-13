@@ -1,5 +1,9 @@
 # ARC-AGI Benchmark Progress Tracker
 
+> **Agent instructions**
+>
+> - **Always use `fft_backend="subq_ops"`** in `CKConvND` for all Hyena-based ARC configs. This gives a free ~1.4–1.5x throughput improvement over `torch.fft` (see profiling results below). Do **not** set `compile_compatible_fftconv=True` when using subq_ops — it is only needed for the torch.fft path. Reference configs: `cfg_hyena_rearc_subq_ops.py`, `cfg_hyena_rearc_film_subq_ops.py`.
+
 This document tracks the progress of implementing the ARC-AGI benchmark replication based on the VARC paper (*"ARC is a Vision Problem!"*) and our subsequent comparison using a subquadratic Hyena-ResNet.
 
 ______________________________________________________________________
@@ -116,14 +120,37 @@ ______________________________________________________________________
 
 #### Our codebase (ARCViT + Hyena)
 
-| Model  | Params | Global BS   | GPUs       | Status                      | Best `val/exact_match` | Notes / WandB                                                                                                                                                             |
-| :----- | :----- | :---------- | :--------- | :-------------------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ❌ Overfit (SLURM 153461)   | 2.4% (epoch 1)         | Config: `cfg_vit.py` · [WandB 97tf96wk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/97tf96wk) · Bug: 50k iters = ~600 epochs                                 |
-| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ✅ Done (SLURM 153525)      | 0.81% val / 0.72% test | Config: `cfg_vit.py` · [WandB r1zfe0wv](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r1zfe0wv) · 844 steps (~18 effective epochs); train loss ~0.8            |
-| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ❌ Cancelled (SLURM 153598) | *N/A*                  | Fixed val config; cancelled to fix max_size bug (was 64 instead of 32)                                                                                                    |
-| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | ❌ Cancelled (SLURM 153747) | 31.2% (epoch 49)       | Config: `cfg_vit_rearc.py` · [WandB q4uuikbj](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/q4uuikbj) · Cancelled at wall-time; max_size=64 (wrong, was a bug) |
-| ARCViT | ~3.7M  | 256 (128×2) | 2x geodude | 🔄 Running (SLURM 153872)   | *Pending*              | Config: `cfg_vit_rearc.py` · max_size=32 (fixed) · RE-ARC data · val on training task test queries                                                                        |
-| Hyena  | ~18M   | 256 (128×2) | 2x geodude | 🔄 Running (SLURM 153871)   | *Pending*              | Config: `cfg_hyena_rearc.py` · max_size=32 · compile=True, compile_compatible_fftconv=True, mode=max-autotune-no-cudagraphs                                               |
+| Component                      | ARCViT (dim=512) |                  Hyena (dim=384) |
+| ------------------------------ | ---------------: | -------------------------------: |
+| `color_embed` (12 × dim)       |             6.1K |                             4.6K |
+| `task_embed` (400 × dim)       |           204.8K |                           153.6K |
+| `positional_embed` (256 × dim) |           131.1K | — (SIREN uses continuous coords) |
+| Patch / Patchify               |            1.05M |                             590K |
+| Encoder / Residual blocks      |           15.78M |                           18.27M |
+| Head / Unpatchify              |            24.6K |                            18.4K |
+| **Total**                      |       **17.20M** |                       **19.04M** |
+
+Note: Models are within ~11% total capacity. The embedding-block gap (342K vs 158K) is driven by (a) different `EMBED_DIM` (512 vs 384) and (b) Hyena's lack of a learned positional embedding — it isn't a bug, it's an architectural asymmetry.
+
+| Model                | Params | Global BS         | GPUs       | Status                      | Best `val/exact_match` | Notes / WandB                                                                                                                                                                                                                                                                                     |
+| :------------------- | :----- | :---------------- | :--------- | :-------------------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ❌ Overfit (SLURM 153461)   | 2.4% (epoch 1)         | Config: `cfg_vit.py` · [WandB 97tf96wk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/97tf96wk) · Bug: 50k iters = ~600 epochs                                                                                                                                                         |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ✅ Done (SLURM 153525)      | 0.81% val / 0.72% test | Config: `cfg_vit.py` · [WandB r1zfe0wv](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/r1zfe0wv) · 844 steps (~18 effective epochs); train loss ~0.8                                                                                                                                    |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ❌ Cancelled (SLURM 153598) | *N/A*                  | Fixed val config; cancelled to fix max_size bug (was 64 instead of 32)                                                                                                                                                                                                                            |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ❌ Cancelled (SLURM 153747) | 31.2% (epoch 49)       | Config: `cfg_vit_rearc.py` · [WandB q4uuikbj](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/q4uuikbj) · Cancelled at wall-time; max_size=64 (wrong, was a bug)                                                                                                                         |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ❌ OOM (SLURM 153872)       | **73.4%** (epoch ~190) | Config: `cfg_vit_rearc.py` · [WandB rzdmi235](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/rzdmi235) · max_size=32 · RE-ARC · OOM'd at epoch ~215 · best ckpt `epoch=190-step=307892.ckpt`                                                                                            |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ❌ Cancelled (SLURM 154328) | 63.2% (epoch ~108)     | Config: `cfg_vit_rearc.py` · [WandB rzdmi235](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/rzdmi235) · Restart of 153872; cancelled at epoch ~108 — regression vs prior session                                                                                                       |
+| Hyena                | 19.04M | 256 (128×2)       | 2x geodude | ❌ Cancelled (SLURM 154329) | 54.7% (epoch ~138)     | Config: `cfg_hyena_rearc.py` · [WandB orhmff04](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/orhmff04) · fresh restart of 153871; cancelled after ~138 epochs                                                                                                                         |
+| Hyena                | 19.04M | 256 (128×2)       | 2x geodude | ❌ Failed (SLURM 154555)    | **66.4%** (epoch ~500) | Config: `cfg_hyena_rearc_subq_ops.py` · [WandB orhmff04](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/orhmff04) · Continuation of 154329 · failed 2026-04-12 08:26 (exit -6/-15, likely OOM) · best ckpt `epoch=356-step=575484.ckpt`                                                 |
+| Hyena FiLM           | 19.04M | 256 (128×2)       | 2x geodude | ❌ Timeout (SLURM 154232)   | **59.1%** (epoch ~193) | Config: `cfg_hyena_rearc_film_subq_ops.py` · [WandB qbfg8qty](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/qbfg8qty) · max_size=32 · FiLM conditioning · hit wall-time 2026-04-11 · best ckpt `epoch=191-step=309504.ckpt`                                                            |
+| Hyena FiLM           | 19.04M | 256 (256×1)       | 1x a6000   | ❌ Cancelled (SLURM 154787) | *n/a*                  | Underperforming vs broadcast & AdaLN; cancelled to free GPU                                                                                                                                                                                                                                       |
+| Hyena AdaLN          | 19.04M | 256 (128×2)       | 2x geodude | ❌ Timeout (SLURM 154569)   | **73.0%** (epoch ~431) | Config: `conditioning_ablation/cfg_hyena_rearc_adaln_subq_ops.py` · [WandB k70b39dq](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/k70b39dq) · DiT-style AdaLN-Zero conditioning · hit wall-time 2026-04-12 · best ckpt `epoch=431-step=696384.ckpt` · near-parity with ARCViT (73.4%) |
+| Hyena AdaLN          | 19.04M | 256 (128×2)       | 2x geodude | ❌ Failed (SLURM 154948)    | *n/a*                  | Config: `conditioning_ablation/cfg_hyena_rearc_adaln_subq_ops.py` · Continuation of 154569 · failed immediately: optimizer param group mismatch (checkpoint from before tanh/WD changes in `residual_block.py`)                                                                                   |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | ❌ Failed (SLURM 154953)    | *n/a*                  | Config: `cfg_vit_rearc.py` · Checkpoint key mismatch: `color_embed`/`task_token_embed` renamed to `embedding.color_embed`/`embedding.task_embed` after ARCColorTaskEmbedding refactor · keys remapped in-place, backups saved as `*.bak`                                                          |
+| ARCViT               | 17.20M | 256 (128×2)       | 2x geodude | 🔄 Running (SLURM 154955)   | *resuming*             | Config: `cfg_vit_rearc.py` · [WandB rzdmi235](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/rzdmi235) · Continuation of 153872 · resumes from `epoch=190-step=307892.ckpt` (73.4%) · checkpoint keys patched; ViT not yet converged, running to find peak                              |
+| Hyena AdaLN (stable) | 24.35M | 256 (128×2)       | 2x geodude | 🔄 Running (SLURM 154949)   | *new run*              | Config: `conditioning_ablation/cfg_hyena_rearc_adaln_stable_subq_ops.py` · Stabilised: tanh gate + condition_proj WD=1e-4 + cond_dropout=10% · fresh start · checking if stabilisation improves late-training divergence                                                                          |
+| Hyena (grid=double)  | 13.70M | 256 (256×1)       | 1x a6000   | 🔄 Running (SLURM 154950)   | *new run*              | Config: `cfg_hyena_rearc_subq_ops_grid_double.py` · grid_type='double': full-resolution 31×31 SIREN kernel vs 15×15 in baseline · ablation: does longer-range kernel improve ARC?                                                                                                                 |
+| Hyena (patch=1)      | 13.25M | 256 (64×1×accum4) | 1x a6000   | 🔄 Running (SLURM 154951)   | *new run*              | Config: `cfg_hyena_rearc_subq_ops_patch1.py` · pixel-space: seq_len=1024 vs 256 · ablation: does operating at pixel resolution outweigh the longer sequence?                                                                                                                                      |
 
 #### VARC reference codebase
 
@@ -131,11 +158,55 @@ ______________________________________________________________________
 | :----- | :----- | :-------- | :--------- | :-------------------------- | :--------------- | :--------------------------------------------------------------------------------------------------------------------------- |
 | ARCViT | 17.4M  | 64 (32×2) | 2x geodude | ❌ Cancelled (SLURM 153674) | 50.5% (epoch 31) | [WandB 3z3qtr79](https://wandb.ai/dafidofff/nvsubquadratic/runs/3z3qtr79) · Hit wall-time; strong trajectory, ~41h remaining |
 
-### 2. TTT Final Evaluation (ARC-1)
+### 2. Training Speed Profiling (A5000, 2026-04-10)
 
-| Model         | Offline Ckpt | TTT Epochs | Ensembles        | ARC-1 Accuracy | Notes                              |
-| :------------ | :----------- | :--------- | :--------------- | :------------- | :--------------------------------- |
-| VARC Paper    | N/A          | 100        | None             | 52-56%         | Original paper result (Single Run) |
-| VARC Paper    | N/A          | 100        | 10 + color perm. | 60.4%          | Original paper result (Ensemble)   |
-| ARCViT (Ours) | *Pending*    | 100        | None             | *Pending*      | SLURM 153872 in progress           |
-| Hyena (Ours)  | *Pending*    | 100        | None             | *Pending*      | SLURM 153871 in progress           |
+Profiled on NVIDIA RTX A5000 (`ivi-cn024`), batch size 128, 50 measurement steps.
+Scripts: `benchmarks/arc/profile_training_bottleneck.py`, `benchmarks/arc/submit_profile_arc_geodude.sh`.
+Results JSON: `benchmarks/arc/profile_2026-04-10.jsonl`.
+
+#### Per-step timing breakdown (compiled mode)
+
+| Component           |         ARCViT | Hyena (torch.fft) | Hyena (subq_ops) | Hyena FiLM (torch.fft) | Hyena FiLM (subq_ops) |
+| ------------------- | -------------: | ----------------: | ---------------: | ---------------------: | --------------------: |
+| Data fetch + to_gpu |          0.4ms |             0.4ms |            0.9ms |                  0.4ms |                 0.4ms |
+| Forward + loss      |         37.4ms |            75.2ms |           52.9ms |                 98.8ms |                80.8ms |
+| Backward            |        117.8ms |           156.0ms |          102.7ms |                194.9ms |               129.7ms |
+| Grad clip           |          1.3ms |             2.1ms |            1.9ms |                  2.2ms |                 2.3ms |
+| Optimizer step      |          2.6ms |             2.8ms |            2.8ms |                  3.1ms |                 3.3ms |
+| **Full step**       |    **159.7ms** |       **236.7ms** |      **161.6ms** |            **299.7ms** |           **216.8ms** |
+| **Throughput**      | **802 samp/s** |    **541 samp/s** |   **792 samp/s** |         **427 samp/s** |        **590 samp/s** |
+
+#### Eager vs compiled comparison
+
+|                     |    ARCViT | Hyena (torch.fft) | Hyena (subq_ops) | Hyena FiLM (torch.fft) | Hyena FiLM (subq_ops) |
+| ------------------- | --------: | ----------------: | ---------------: | ---------------------: | --------------------: |
+| Eager               |     250ms |             392ms |            333ms |                  447ms |                 378ms |
+| Compiled            |     160ms |             237ms |            162ms |                  300ms |                 217ms |
+| **Compile speedup** | **1.57x** |         **1.65x** |        **2.06x** |              **1.49x** |             **1.74x** |
+| **vs ViT compiled** |         — |            −0.68x |          ≈parity |                 −0.53x |                −0.74x |
+
+#### Key findings
+
+1. **Massively compute-bound across all models.** Data loading is ~0.4ms vs 160–447ms of compute. No benefit from tuning workers, prefetch factor, or data pipeline.
+1. **`torch.compile` is effective.** ViT: 1.57x, Hyena: 1.65x, Hyena FiLM: 1.49x. The backward pass benefits most.
+1. **`subquadratic_ops_torch` (`fft_backend="subq_ops"`) is a major win.** It closes Hyena's gap to ViT completely (162ms vs 160ms) and significantly narrows it for FiLM (217ms vs 160ms). The combined eager→compiled + torch.fft→subq_ops gain is **2.42x** for plain Hyena.
+1. **FiLM adds ~27% overhead over plain Hyena** (300ms vs 237ms compiled torch.fft). The extra cost is split evenly across forward (+32%) and backward (+25%) from the per-block FiLM generator MLPs across 12 residual blocks. With subq_ops this gap narrows: 217ms vs 162ms (+34%).
+1. **subq_ops speedup is slightly smaller for FiLM (1.38x) than plain Hyena (1.47x)**, since the FiLM MLP compute runs in standard torch ops that don't benefit from the custom FFT kernel.
+
+#### Recommended action
+
+Always use `fft_backend="subq_ops"` in `CKConvND` for all Hyena-based ARC configs. Reference configs: `cfg_hyena_rearc_subq_ops.py`, `cfg_hyena_rearc_film_subq_ops.py`. The `compile_compatible_fftconv` flag is not needed with this backend.
+
+______________________________________________________________________
+
+### 3. TTT Final Evaluation (ARC-1)
+
+| Model                     | Offline Ckpt               | TTT Epochs | Ensembles        | ARC-1 Accuracy | Notes                                                                                          |
+| :------------------------ | :------------------------- | :--------- | :--------------- | :------------- | :--------------------------------------------------------------------------------------------- |
+| VARC Paper                | N/A                        | 100        | None             | 52-56%         | Original paper result (Single Run)                                                             |
+| VARC Paper                | N/A                        | 100        | 10 + color perm. | 60.4%          | Original paper result (Ensemble)                                                               |
+| ARCViT (Ours)             | epoch=190-step=307892.ckpt | 100        | None             | *Pending*      | SLURM 153872 OOM'd · offline best 73.4% · not currently running                                |
+| Hyena (Ours)              | epoch=356-step=575484.ckpt | 100        | None             | *Pending*      | SLURM 154555 running · offline best 66.4% (ep ~432) · still improving                          |
+| Hyena FiLM (Ours)         | epoch=191-step=309504.ckpt | 100        | None             | *Pending*      | SLURM 154786 running (continuation of 154232) · offline best 59.1% (ep ~193) · still improving |
+| Hyena AdaLN (Ours)        | TBD                        | 100        | None             | *Pending*      | 154948 failed (optimizer mismatch); fresh stable run at 154949                                 |
+| Hyena AdaLN stable (Ours) | TBD (154949 running)       | 100        | None             | *Pending*      | Fresh start with tanh gate + WD + cond dropout · SLURM 154949 running                          |

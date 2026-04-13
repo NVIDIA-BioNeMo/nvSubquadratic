@@ -286,8 +286,11 @@ class ARCViT(nn.Module):
         grid_size = max_size // patch_size
         self.seq_length = grid_size * grid_size
 
-        self.color_embed = nn.Embedding(num_colors, embed_dim)
-        self.task_token_embed = nn.Embedding(num_tasks, embed_dim * self.num_task_tokens)
+        from nvsubquadratic.networks.arc_embedding import ARCColorTaskEmbedding
+
+        self.embedding = ARCColorTaskEmbedding(
+            num_colors=num_colors, num_tasks=num_tasks, hidden_dim=embed_dim, num_task_tokens=num_task_tokens
+        )
         self.patch_embed = PatchEmbed(
             img_size=max_size, patch_size=patch_size, in_chans=embed_dim, embed_dim=embed_dim, bias=True
         )
@@ -311,8 +314,6 @@ class ARCViT(nn.Module):
 
     def _reset_parameters(self) -> None:
         nn.init.trunc_normal_(self.positional_embed, std=0.02)
-        nn.init.trunc_normal_(self.task_token_embed.weight, std=0.02)
-        nn.init.trunc_normal_(self.color_embed.weight, std=0.02)
         nn.init.zeros_(self.head.bias)
 
     def forward(self, input_and_condition: Dict[str, Any]) -> Dict[str, Any]:
@@ -331,7 +332,7 @@ class ARCViT(nn.Module):
         # Embed colors. Clamp so that padding sentinels (IGNORE_INDEX=10, PAD_INDEX=11)
         # don't cause out-of-bounds embedding lookups when num_colors=10. Their
         # embeddings are irrelevant because attention masks them out.
-        x = self.color_embed(pixel_values.long().clamp(0, self.num_colors - 1))  # [B, H, W, embed_dim]
+        x, task_tokens = self.embedding(pixel_values, task_ids)
         # x is currently channels-last; PatchEmbed expects [B, C, H, W]
         x = x.permute(0, 3, 1, 2)
 
@@ -339,7 +340,6 @@ class ARCViT(nn.Module):
         tokens = self.patch_embed(x)
         tokens = tokens + self.positional_embed[:, : tokens.size(1), :]
 
-        task_tokens = self.task_token_embed(task_ids.long())
         task_tokens = task_tokens.reshape(batch_size, self.num_task_tokens, -1)
 
         hidden_states = torch.cat([task_tokens, tokens], dim=1)
