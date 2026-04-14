@@ -254,6 +254,121 @@ class ARCTransformerEncoder(nn.Module):
         return self.norm(x)
 
 
+class ARCTransformerEncoderLayerAdaLN(nn.Module):
+    """Pre-norm transformer encoder layer with DiT-style AdaLN-Zero conditioning.
+
+    Applies per-layer shift/scale/gate to both the MHSA and MLP sublayers, conditioned
+    on an external vector (task embedding).  The projection is zero-initialised so that
+    training starts as a plain unconditional ViT and conditioning gradually switches on.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        mlp_dim: int,
+        dropout: float,
+        max_seq_len: int,
+        no_rope: int = 0,
+    ) -> None:
+        """Initialize AdaLN encoder layer."""
+        super().__init__()
+        self.self_attn = MultiHeadSelfAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            max_seq_len=max_seq_len,
+            dropout=dropout,
+            no_rope=no_rope,
+        )
+        self.dropout1 = nn.Dropout(dropout)
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.linear1 = nn.Linear(embed_dim, mlp_dim)
+        self.activation = nn.GELU()
+        self.dropout2 = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(mlp_dim, embed_dim)
+        self.dropout3 = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(embed_dim)
+
+        # Zero-init: at step 0 all shifts/scales/gates are 0, so tanh(gate)=0 → no conditioning signal.
+        self.condition_proj = nn.Sequential(nn.SiLU(), nn.Linear(embed_dim, embed_dim * 6))
+        nn.init.zeros_(self.condition_proj[1].weight)
+        nn.init.zeros_(self.condition_proj[1].bias)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        condition: torch.Tensor,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Apply pre-norm AdaLN-Zero MHSA and MLP sublayers conditioned on *condition*."""
+        # condition: [B, embed_dim]
+        cond = self.condition_proj(condition)  # [B, 6*embed_dim]
+        shift_attn, scale_attn, gate_attn, shift_mlp, scale_mlp, gate_mlp = cond.chunk(6, dim=-1)
+        # Unsqueeze to broadcast over sequence dimension: [B, 1, embed_dim]
+
+        residual = x
+        x_norm = self.norm1(x)
+        x_mod = x_norm * (1.0 + scale_attn.unsqueeze(1)) + shift_attn.unsqueeze(1)
+        x_attn = self.self_attn(x_mod, key_padding_mask=key_padding_mask)
+        x_attn = self.dropout1(x_attn) * torch.tanh(gate_attn).unsqueeze(1)
+        x = residual + x_attn
+
+        residual = x
+        x_norm = self.norm2(x)
+        x_mod = x_norm * (1.0 + scale_mlp.unsqueeze(1)) + shift_mlp.unsqueeze(1)
+        x_ff = self.linear1(x_mod)
+        x_ff = self.activation(x_ff)
+        x_ff = self.dropout2(x_ff)
+        x_ff = self.linear2(x_ff)
+        x_ff = self.dropout3(x_ff) * torch.tanh(gate_mlp).unsqueeze(1)
+        x = residual + x_ff
+
+        return x
+
+
+class ARCTransformerEncoderAdaLN(nn.Module):
+    """Stack of pre-norm AdaLN-Zero transformer layers with final LayerNorm."""
+
+    def __init__(
+        self,
+        *,
+        depth: int,
+        embed_dim: int,
+        num_heads: int,
+        mlp_dim: int,
+        dropout: float,
+        max_seq_len: int,
+        no_rope: int = 0,
+    ) -> None:
+        """Initialize encoder with *depth* AdaLN layers and a final norm."""
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [
+                ARCTransformerEncoderLayerAdaLN(
+                    embed_dim,
+                    num_heads,
+                    mlp_dim,
+                    dropout,
+                    max_seq_len=max_seq_len,
+                    no_rope=no_rope,
+                )
+                for _ in range(depth)
+            ]
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        condition: torch.Tensor,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Pass *x* through all AdaLN layers (with *condition*) and the final norm."""
+        for layer in self.layers:
+            x = layer(x, condition, key_padding_mask=key_padding_mask)
+        return self.norm(x)
+
+
 class ARCViT(nn.Module):
     """Vision Transformer for ARC-AGI with per-task learnable Task Tokens.
 
@@ -273,15 +388,39 @@ class ARCViT(nn.Module):
         dropout: float = 0.1,
         num_task_tokens: int = 1,
         patch_size: int = 2,
+        conditioning_mode: str = "concat",
     ) -> None:
-        """Initialize ARCViT with embeddings, transformer encoder, and prediction head."""
+        """Initialize ARCViT with embeddings, transformer encoder, and prediction head.
+
+        Args:
+            num_tasks: Number of distinct ARC tasks (for task embedding).
+            max_size: Maximum canvas size (H and W) for positional embedding and head reshaping.
+            num_colors: Number of color classes (including padding/ignore tokens).
+            embed_dim: Dimension of token embeddings and transformer hidden states.
+            depth: Number of transformer encoder layers.
+            num_heads: Number of attention heads in MHSA.
+            mlp_dim: Hidden dimension of the MLP in each transformer layer.
+            dropout: Dropout probability for MHSA and MLP.
+            num_task_tokens: Number of learnable task tokens to use for conditioning.
+            patch_size: Size of patches for the PatchEmbed layer.
+            conditioning_mode: ``"concat"`` prepends the task token(s) to the patch sequence
+                (original VARC behaviour); ``"adaln"`` extracts the task embedding and feeds it
+                as a per-layer AdaLN-Zero condition without prepending to the sequence.
+                When ``"adaln"`` is chosen the ``num_task_tokens`` argument is still used for
+                the task embedding table size but the tokens are **not** added to the sequence.
+
+        """
         super().__init__()
+
+        if conditioning_mode not in ("concat", "adaln"):
+            raise ValueError(f"conditioning_mode must be 'concat' or 'adaln', got {conditioning_mode!r}")
 
         self.max_size = max_size
         self.num_colors = num_colors
         self.embed_dim = embed_dim
         self.patch_size = patch_size
         self.num_task_tokens = num_task_tokens
+        self.conditioning_mode = conditioning_mode
 
         grid_size = max_size // patch_size
         self.seq_length = grid_size * grid_size
@@ -297,15 +436,27 @@ class ARCViT(nn.Module):
 
         self.positional_embed = nn.Parameter(torch.zeros(1, self.seq_length, embed_dim))
 
-        self.encoder = ARCTransformerEncoder(
-            depth=depth,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            mlp_dim=mlp_dim,
-            dropout=dropout,
-            max_seq_len=grid_size,  # Pass grid dimension for RoPE
-            no_rope=num_task_tokens,
-        )
+        if conditioning_mode == "adaln":
+            # Task token is not prepended; RoPE covers all patch positions (no_rope=0).
+            self.encoder = ARCTransformerEncoderAdaLN(
+                depth=depth,
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                mlp_dim=mlp_dim,
+                dropout=dropout,
+                max_seq_len=grid_size,
+                no_rope=0,
+            )
+        else:
+            self.encoder = ARCTransformerEncoder(
+                depth=depth,
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                mlp_dim=mlp_dim,
+                dropout=dropout,
+                max_seq_len=grid_size,  # Pass grid dimension for RoPE
+                no_rope=num_task_tokens,
+            )
 
         self.dropout = nn.Dropout(dropout)
 
@@ -317,7 +468,7 @@ class ARCViT(nn.Module):
         nn.init.zeros_(self.head.bias)
 
     def forward(self, input_and_condition: Dict[str, Any]) -> Dict[str, Any]:
-        """Forward pass: embed pixels, prepend task token, encode, and decode to logits."""
+        """Forward pass: embed pixels, encode, and decode to logits."""
         pixel_values = input_and_condition["input"]
         condition = input_and_condition["condition"]
         task_ids = condition["task_id"]
@@ -340,37 +491,48 @@ class ARCViT(nn.Module):
         tokens = self.patch_embed(x)
         tokens = tokens + self.positional_embed[:, : tokens.size(1), :]
 
-        task_tokens = task_tokens.reshape(batch_size, self.num_task_tokens, -1)
-
-        hidden_states = torch.cat([task_tokens, tokens], dim=1)
-        hidden_states = self.dropout(hidden_states)
-
+        # Build key-padding mask from the spatial attention_mask (downsampled to patch grid)
         key_padding_mask = None
         if attention_mask is not None:
-            # attention_mask is [B, H, W]. Downsample roughly by max-pooling patch_size
             h, w = attention_mask.shape[1], attention_mask.shape[2]
             mask_reshaped = attention_mask.reshape(
                 batch_size, h // self.patch_size, self.patch_size, w // self.patch_size, self.patch_size
             )
             mask_patched = torch.max(torch.max(mask_reshaped, dim=2)[0], dim=3)[0]  # [B, h//p, w//p]
             flat_mask = mask_patched.view(batch_size, -1)
-
-            # 1 implies ignore padding in standard PyTorch, but check usage above.
-            pad_mask = ~flat_mask.bool()
-            pad_mask = torch.cat(
-                [torch.zeros(batch_size, self.num_task_tokens, device=device, dtype=torch.bool), pad_mask],
-                dim=1,
-            )
+            pad_mask = ~flat_mask.bool()  # True = ignore this position
             key_padding_mask = pad_mask
 
-        encoded = self.encoder(hidden_states, key_padding_mask=key_padding_mask)
-        pixel_states = encoded[:, self.num_task_tokens :, :]  # [B, num_patches, embed_dim]
+        if self.conditioning_mode == "adaln":
+            # Task embedding is used as a per-layer conditioning vector; not prepended to sequence.
+            task_cond = task_tokens.reshape(batch_size, -1)  # [B, embed_dim * num_task_tokens]
+            # For num_task_tokens > 1, average the tokens into a single conditioning vector.
+            if self.num_task_tokens > 1:
+                task_cond = task_cond.reshape(batch_size, self.num_task_tokens, self.embed_dim).mean(dim=1)
+
+            hidden_states = self.dropout(tokens)
+            encoded = self.encoder(hidden_states, task_cond, key_padding_mask=key_padding_mask)
+            pixel_states = encoded  # all tokens are patch tokens [B, num_patches, embed_dim]
+        else:
+            # Concat mode: prepend task token(s) to the patch sequence.
+            task_tokens = task_tokens.reshape(batch_size, self.num_task_tokens, -1)
+            hidden_states = torch.cat([task_tokens, tokens], dim=1)
+            hidden_states = self.dropout(hidden_states)
+
+            if key_padding_mask is not None:
+                # Prepend False (always attend) for the task token positions.
+                key_padding_mask = torch.cat(
+                    [torch.zeros(batch_size, self.num_task_tokens, device=device, dtype=torch.bool), key_padding_mask],
+                    dim=1,
+                )
+
+            encoded = self.encoder(hidden_states, key_padding_mask=key_padding_mask)
+            pixel_states = encoded[:, self.num_task_tokens :, :]  # [B, num_patches, embed_dim]
 
         logits_patched = self.head(pixel_states)  # [B, num_patches, num_colors * p * p]
 
         grid_dim = self.max_size // self.patch_size
         # Unflatten to [B, num_colors, H, W]
-        # logits_patched is [B, grid_dim * grid_dim, num_colors * patch_size * patch_size]
         logits = logits_patched.reshape(-1, grid_dim, grid_dim, self.patch_size, self.patch_size, self.num_colors)
         logits = logits.permute((0, 1, 3, 2, 4, 5))  # [B, grid_dim, patch_size, grid_dim, patch_size, num_colors]
         logits = logits.reshape(batch_size, self.max_size, self.max_size, self.num_colors)
