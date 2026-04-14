@@ -76,11 +76,9 @@ def construct_trainer(
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
 
-    # Derive checkpoint directory based on run name.
-    if experiment_dir is not None:
-        checkpoint_dir = experiment_dir / "checkpoints"
-    else:
-        checkpoint_dir = Path("runs") / run_name / "checkpoints"
+    # Derive run root and checkpoint directory based on run name.
+    run_root_dir = experiment_dir if experiment_dir is not None else Path("runs") / run_name
+    checkpoint_dir = run_root_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     print(f"[checkpoint] Saving checkpoints to: {checkpoint_dir.resolve()}")
 
@@ -169,6 +167,7 @@ def construct_trainer(
 
     # create trainer
     trainer = pl.Trainer(
+        default_root_dir=str(run_root_dir.resolve()),
         max_steps=cfg.train.iterations,
         logger=wandb_logger,
         gradient_clip_val=cfg.train.grad_clip,

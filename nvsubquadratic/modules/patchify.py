@@ -6,7 +6,8 @@ Usage test:
     PYTHONPATH=. python nvsubquadratic/modules/patchify.py
 """
 
-from typing import Tuple
+import math
+from typing import Literal, Tuple
 
 import torch
 from einops import rearrange
@@ -116,6 +117,7 @@ class Unpatchify(torch.nn.Module):
         patch_size: int,
         stride: int | None = None,
         bias: bool = True,
+        weight_init: Literal["default", "zeros", "fan_in"] = "default",
     ):
         """Initialize the Unpatchify layer.
 
@@ -127,6 +129,14 @@ class Unpatchify(torch.nn.Module):
             stride: The stride for the deconv. Defaults to patch_size (inverse of non-overlapping).
             bias: Whether the underlying deconv has a learnable bias. Default True
                 for backward compatibility; set False for bias-free architectures.
+            weight_init: Weight initialisation strategy for the deconv kernel.
+                - ``"default"``: PyTorch default kaiming_uniform (fan based on out_channels —
+                  incorrect for large in_features, can cause output variance blow-up).
+                - ``"zeros"``: Zero-initialise weights and bias (DiT-style; output is exactly
+                  zero at init, safe residual-stream entry).
+                - ``"fan_in"``: Kaiming-uniform using the true fan-in
+                  (``in_features * patch_size ** data_dim``), which correctly scales the output
+                  variance to O(1) regardless of embedding dimension.
         """
         super().__init__()
         if data_dim not in _CONV_TRANSPOSE_CLASSES:
@@ -148,6 +158,20 @@ class Unpatchify(torch.nn.Module):
             padding=0,
             bias=bias,
         )
+
+        if weight_init == "zeros":
+            torch.nn.init.zeros_(self.deconv.weight)
+            if self.deconv.bias is not None:
+                torch.nn.init.zeros_(self.deconv.bias)
+        elif weight_init == "fan_in":
+            # True fan-in is in_features * kernel_size^data_dim; PyTorch's default
+            # mistakenly uses out_features * kernel_size^data_dim for ConvTranspose.
+            true_fan_in = in_features * (patch_size**data_dim)
+            std = math.sqrt(2.0 / true_fan_in)
+            torch.nn.init.normal_(self.deconv.weight, mean=0.0, std=std)
+            if self.deconv.bias is not None:
+                torch.nn.init.zeros_(self.deconv.bias)
+        # "default": leave PyTorch's kaiming_uniform as-is
 
     def forward(self, x: torch.Tensor, output_spatial_shape: Tuple[int, ...] | None = None) -> torch.Tensor:
         """Forward pass of the Unpatchify layer.
