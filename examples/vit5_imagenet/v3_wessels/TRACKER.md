@@ -21,7 +21,7 @@ ______________________________________________________________________
 
 ## Results
 
-> Last updated: 2026-03-25. See W&B for live curves.
+> Last updated: 2026-04-13. See W&B for live curves.
 
 | Config | Conv | RoPE | FiLM | GRN | Head | W&B | Best val/acc_ema | Status |
 |--------|------|------|------|-----|------|-----|------------------|--------|
@@ -30,15 +30,19 @@ ______________________________________________________________________
 | `…grouped_hyena_cls_row_gated_film_ema` | Grouped (6g) | No | 32h/64d | No | CLS | [qmvsolpk](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/qmvsolpk) | **0.815** (ep800) | Finished |
 | `…hyena_cls_row_reghead_film_ema` | Depthwise | No | 32h/64d | No | Reg14 | [oml9thv5](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/oml9thv5) | **0.8131** (ep800) | Finished |
 | `…hyena_cls_row_reghead_film_ema` | Depthwise | No | 32h/64d | No | Reg14 | [21cjexko](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/21cjexko) | **0.809** (ep519) | Stopped |
-| `…hyena_gap_gated_film_ema` | Depthwise | No | 32h/64d | No | GAP | [tiwoypi8](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/tiwoypi8) | **0.808** (ep527) | Cancelled |
-| `…hyena_cls_row_gated_film_grn_ema_gaussian` | Depthwise | No | 32h/64d | Yes | CLS | [wcyddd5s](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/wcyddd5s) | 0.758 (ep203) | Running (21105380) |
-| `…multihead_hyena_cls_row_gated_film_ema` | MH-LR (6h, r=8) | No | 32h/64d | No | CLS | [ebhmpzc9](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ebhmpzc9) | 0.736 (ep173) | Running (21074646) |
+| `…hyena_gap_gated_film_ema` | Depthwise | No | 32h/64d | No | Patch-GAP | [tiwoypi8](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/tiwoypi8) | **0.808** (ep527) | Cancelled |
+| `…hyena_cls_row_gated_film_grn_ema_gaussian` | Depthwise | No | 32h/64d | Yes | CLS | [wcyddd5s](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/wcyddd5s) | 0.758 (ep203) | Check W&B (job 21105380, ~3 wks since last update) |
+| `…multihead_hyena_cls_row_gated_film_ema` | MH-LR (6h, r=8) | No | 32h/64d | No | CLS | [ebhmpzc9](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ebhmpzc9) | 0.736 (ep173) | Check W&B (job 21074646, ~3 wks since last update) |
 | `…hyena_cls_row_reghead_film_ema` | Depthwise | No | 32h/64d | No | Reg14 | [awstn87e](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/awstn87e) | 0.575 (ep87) | Stopped |
 | `…hyena_cls_row_gated_film_rope_grn_ema` | Depthwise | Yes | 32h/64d | Yes | CLS | [swr33zw4](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/swr33zw4) | 0.276 (ep63) | Cancelled |
 | `…hyena_cls_row_gated_film_rope_ema` | Depthwise | Yes | 32h/64d | No | CLS | [o2ojne5x](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/o2ojne5x) | 0.194 (ep47) | Cancelled |
 | `…multihead_hyena_cls_row_gated_film_ema` | MH (6h, d=64) | No | 32h/64d | No | CLS | [ladnbcd9](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/ladnbcd9) | 0.040 (ep26) | Stopped |
 | `…distributed_reg_crossattn_film_ema` | Depthwise | No | 32h/64d | No | DistReg14+XAttn | [vcmnt9ey](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/vcmnt9ey) | — | Failed |
 | `…distributed_reg_localpool_film_ema` | Depthwise | No | 32h/64d | No | DistReg14+Pool | [406qsc1o](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/406qsc1o) | — | Failed |
+| `…hyena_cls_row_reghead_ema` | Depthwise | No | No | No | Reg14 | — | — | Config ready, not launched |
+| `…hyena_gap_reg_gated_film_ema` | Depthwise | No | 32h/64d | No | Reg-GAP | — | — | Config ready, not launched |
+| `…multihead_…_reghead_ema` | MH (6h, d=64) | No | No | No | Reg14 | — | — | Config ready, not launched |
+| `…multihead_…_reghead_film_ema` | MH (6h, d=64) | No | 32h/64d | No | Reg14 | — | — | Config ready, not launched |
 | `…apex_gated_ema` | Depthwise | No | No | No | CLS | — | — | Not started |
 | `…multihead_…_gated_ema` | MH (6h, d=64) | No | No | No | CLS | — | — | Not started |
 | `…gated_film_rope_wider_ema` | Depthwise | Yes | 64h/128d/4L | No | CLS | — | — | Not started |
@@ -46,9 +50,6 @@ ______________________________________________________________________
 | `…multihead_…_gated_rope_ema` | MH (6h, d=64) | Yes | No | No | CLS | — | — | Not started |
 | `…multihead_…_gated_film_rope_ema` | MH (6h, d=64) | Yes | 32h/64d | No | CLS | — | — | Not started |
 | `…multihead_…_gated_film_rope_grn_ema` | MH (6h, d=64) | Yes | 32h/64d | Yes | CLS | — | — | Not started |
-| `…hyena_cls_row_reghead_ema` | Depthwise | No | No | No | Reg14 | — | — | Not started |
-| `…multihead_…_reghead_ema` | MH (6h, d=64) | No | No | No | Reg14 | — | — | Not started |
-| `…multihead_…_reghead_film_ema` | MH (6h, d=64) | No | 32h/64d | No | Reg14 | — | — | Not started |
 
 ______________________________________________________________________
 
@@ -127,10 +128,12 @@ ______________________________________________________________________
 - **RoPE is architecturally mismatched with elementwise gating.** In attention, RoPE works because rotations cancel in the dot product `QKᵀ`. In Hyena's `Q ⊙ SiLU(K)` gate, the operation is elementwise — rotations don't simplify and add structured noise. Both RoPE runs were cancelled after val/acc_ema collapsed.
 - **GAP head + FiLM** peaked at ~0.808 (ep527) before degrading; cancelled.
 - **Multi-head full-rank (ladnbcd9) failed to converge** — val/acc_ema=0.040 at ep26, stopped. Full 6h×64d dense kernels appear too expensive / numerically unstable without low-rank factorization.
-- **Multi-head low-rank (rank=8) is training well** (ebhmpzc9) — val/acc_ema=0.736 at ep173, currently running. Low-rank factorization resolved the convergence issue; tracking to finish ~80%+ if trend continues.
-- **FiLM + GRN + Gaussian mask** (wcyddd5s) at ep203, val/acc_ema=0.758, running. Learnable Gaussian decay envelope on the SIREN kernel; tracking slightly behind base FiLM+GRN at the same epoch.
+- **Multi-head low-rank (rank=8)** (ebhmpzc9) was at val/acc_ema=0.736 at ep173 as of Mar 25, trending positively. Job 21074646 has been running for ~3 weeks — check W&B for final accuracy.
+- **FiLM + GRN + Gaussian mask** (wcyddd5s) was at val/acc_ema=0.758 at ep203 as of Mar 25, tracking slightly behind base FiLM+GRN. Job 21105380 has been running for ~3 weeks — check W&B for final accuracy.
 - **Finetuning results**: FiLM-only finetune (81.94%) slightly outperforms FiLM+GRN (81.89%), both improving ~0.2% over pretrain. Register head finetune reaches 81.68% (+0.37% over pretrain).
 - **Distributed registers (Mamba-R) failed to launch** — both cross-attention and local pooling variants crashed across multiple resubmits (exit code 1 / SIGTERM). Needs debugging before retry.
+- **Four new configs created (not yet launched)**: `hyena_cls_row_reghead_ema` (depthwise, no FiLM, Reg14), `hyena_gap_reg_gated_film_ema` (depthwise, FiLM, register-GAP head — different from the failed patch-GAP), `multihead_hyena_cls_row_reghead_ema` (MH, no FiLM, Reg14), `multihead_hyena_cls_row_reghead_film_ema` (MH + FiLM, Reg14).
+- **v5_patch experiment** set up (Mar 25, for Farhad): patch-size ablation (1/2/4/8/16) comparing Hyena (FiLM + GRN) vs attention on 8×H100. Hyena is expected to scale sub-quadratically; attention becomes infeasible at patch sizes 1–2. See `examples/vit5_imagenet/v5_patch/README.md`.
 
 ### TODOs
 
@@ -141,12 +144,11 @@ ______________________________________________________________________
 - [x] Grouped conv (6 groups) + FiLM — finished at 81.5% (qmvsolpk), ~0.2% behind depthwise
 - [x] Multi-head low-rank (rank=8) — launched as 20893133, resumed as 21074646
 - [x] FiLM + GRN + Gaussian mask — launched as 21105380
-- [ ] Monitor MH low-rank run (21074646, ebhmpzc9) — at ep173/0.736, trending well
-- [ ] Monitor Gaussian mask run (21105380, wcyddd5s) — at ep203/0.758, tracking behind base FiLM+GRN
+- [ ] **Check W&B for MH low-rank (ebhmpzc9) and Gaussian mask (wcyddd5s) final accuracy** — both jobs have been running ~3 weeks since last tracker update; update results table once confirmed
+- [ ] **Launch the four ready-to-go configs**: `hyena_cls_row_reghead_ema`, `hyena_gap_reg_gated_film_ema`, `multihead_hyena_cls_row_reghead_ema`, `multihead_hyena_cls_row_reghead_film_ema`
+- [ ] **Coordinate v5_patch launch with Farhad** — configs are ready in `examples/vit5_imagenet/v5_patch/`, needs 8×H100 node
 - [ ] Debug distributed register crashes (both cross-attn and local pool) and resubmit
-- [ ] Launch baseline runs (depthwise and multi-head without FiLM)
-- [ ] After initial results (~100-200 epochs), compare learning curves against baselines on W&B
-- [ ] If wider SIREN helps: try even wider (128h) or deeper (5-6 layers) variants
+- [ ] Launch baseline runs (depthwise and multi-head without FiLM) for ablation completeness
 - [ ] **GRN placement revisit**: In ConvNeXt V2, GRN is *inside* the MLP (after expansion + activation, before projection) and *replaces* LayerScale. Our current config adds GRN after the mixer output while keeping LayerScale. If GRN shows promise, test: (a) moving GRN inside MLP, (b) dropping LayerScale, or (c) both.
 - [ ] **Register recycling — MAP variant**: If register head shows promise, try Multi-head Attention Pooling (MAP) over registers. MAP uses a learnable query that cross-attends to all 14 register outputs (used in CoCa, DINOv2).
 
@@ -158,4 +160,4 @@ sbatch --job-name=<NAME> scripts/submit.sh examples/vit5_imagenet/v3_wessels/<CO
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-25
+**Last Updated**: 2026-04-13
