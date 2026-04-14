@@ -26,28 +26,29 @@ def test_self_attention_shapes(data_dim, num_heads, use_rope, device):
         if data_dim == 3 and head_dim % 6 != 0:
             pytest.skip(f"3D RoPE requires head_dim divisible by 6, got {head_dim}")
 
+    batch_size = 2
+
+    if data_dim == 1:
+        seq_len = 64
+        input_shape = (batch_size, seq_len, hidden_dim)
+        rope_spatial_dims = (seq_len,) if use_rope else None
+    elif data_dim == 2:
+        height, width = 16, 16
+        input_shape = (batch_size, height, width, hidden_dim)
+        rope_spatial_dims = (height, width) if use_rope else None
+    elif data_dim == 3:
+        depth, height, width = 8, 8, 8
+        input_shape = (batch_size, depth, height, width, hidden_dim)
+        rope_spatial_dims = (depth, height, width) if use_rope else None
+
     attn = SelfAttention(
         hidden_dim=hidden_dim,
         num_heads=num_heads,
         apply_qk_norm=True,
         use_rope=use_rope,
         attn_dropout=0.0,
+        rope_spatial_dims=rope_spatial_dims,
     ).to(device)
-
-    batch_size = 2
-
-    if data_dim == 1:
-        # 1D: [batch, seq_len, hidden_dim]
-        seq_len = 64
-        input_shape = (batch_size, seq_len, hidden_dim)
-    elif data_dim == 2:
-        # 2D: [batch, height, width, hidden_dim]
-        height, width = 16, 16
-        input_shape = (batch_size, height, width, hidden_dim)
-    elif data_dim == 3:
-        # 3D: [batch, depth, height, width, hidden_dim]
-        depth, height, width = 8, 8, 8
-        input_shape = (batch_size, depth, height, width, hidden_dim)
 
     query = torch.randn(*input_shape, device=device)
     key = torch.randn(*input_shape, device=device)
@@ -67,6 +68,17 @@ def test_self_attention_backward(data_dim, dtype_fixture, device):
 
     hidden_dim = 288 if data_dim == 3 else 128  # 288 / 8 = 36 head_dim (divisible by 6 for 3D RoPE)
     num_heads = 8
+    batch_size = 2
+
+    if data_dim == 1:
+        input_shape = (batch_size, 64, hidden_dim)
+        rope_spatial_dims = (64,)
+    elif data_dim == 2:
+        input_shape = (batch_size, 16, 16, hidden_dim)
+        rope_spatial_dims = (16, 16)
+    elif data_dim == 3:
+        input_shape = (batch_size, 8, 8, 8, hidden_dim)
+        rope_spatial_dims = (8, 8, 8)
 
     attn = SelfAttention(
         hidden_dim=hidden_dim,
@@ -74,16 +86,8 @@ def test_self_attention_backward(data_dim, dtype_fixture, device):
         apply_qk_norm=True,
         use_rope=True,
         attn_dropout=0.0,
+        rope_spatial_dims=rope_spatial_dims,
     ).to(device=device, dtype=dtype_fixture)
-
-    batch_size = 2
-
-    if data_dim == 1:
-        input_shape = (batch_size, 64, hidden_dim)
-    elif data_dim == 2:
-        input_shape = (batch_size, 16, 16, hidden_dim)
-    elif data_dim == 3:
-        input_shape = (batch_size, 8, 8, 8, hidden_dim)
 
     query = torch.randn(*input_shape, device=device, dtype=dtype_fixture, requires_grad=True)
     key = torch.randn(*input_shape, device=device, dtype=dtype_fixture, requires_grad=True)
@@ -154,10 +158,11 @@ def test_qk_normalization_affects_output(device):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_rope_cache_reuse(device):
-    """Test that RoPE caches are properly reused."""
+def test_rope_precomputed_buffers(device):
+    """Test that RoPE cos/sin are precomputed as registered buffers (compile-safe)."""
     hidden_dim = 128
     num_heads = 8
+    seq_len = 32
 
     attn = SelfAttention(
         hidden_dim=hidden_dim,
@@ -165,32 +170,25 @@ def test_rope_cache_reuse(device):
         apply_qk_norm=True,
         use_rope=True,
         attn_dropout=0.0,
+        rope_spatial_dims=(seq_len,),
     ).to(device)
 
-    batch_size = 2
-    seq_len = 32
+    # Buffers should exist as registered buffers (not in state_dict since persistent=False)
+    assert hasattr(attn, "rope_cos")
+    assert hasattr(attn, "rope_sin")
+    assert attn.rope_cos.shape == (seq_len, hidden_dim // num_heads)
+    assert attn.rope_sin.shape == (seq_len, hidden_dim // num_heads)
 
+    # Buffers should follow device transfers
+    assert attn.rope_cos.device == torch.device(device)
+
+    # Forward should work without any dict caches
+    batch_size = 2
     query = torch.randn(batch_size, seq_len, hidden_dim, device=device)
     key = torch.randn(batch_size, seq_len, hidden_dim, device=device)
     value = torch.randn(batch_size, seq_len, hidden_dim, device=device)
-
-    # First forward pass - cache should be created
-    _ = attn(query, key, value, cp_group=None)
-
-    # Check cache was created
-    assert len(attn._rope1d_cache) > 0
-
-    # Second forward pass with same shape - should reuse cache
-    query2 = torch.randn(batch_size, seq_len, hidden_dim, device=device)
-    key2 = torch.randn(batch_size, seq_len, hidden_dim, device=device)
-    value2 = torch.randn(batch_size, seq_len, hidden_dim, device=device)
-
-    cache_size_before = len(attn._rope1d_cache)
-    _ = attn(query2, key2, value2, cp_group=None)
-    cache_size_after = len(attn._rope1d_cache)
-
-    # Cache size should not increase
-    assert cache_size_after == cache_size_before
+    output = attn(query, key, value, cp_group=None)
+    assert output.shape == (batch_size, seq_len, hidden_dim)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -199,6 +197,17 @@ def test_attention_output_varies_with_input(data_dim, device):
     """Test that attention output changes when input changes."""
     hidden_dim = 288 if data_dim == 3 else 128
     num_heads = 8
+    batch_size = 2
+
+    if data_dim == 1:
+        input_shape = (batch_size, 32, hidden_dim)
+        rope_spatial_dims = (32,)
+    elif data_dim == 2:
+        input_shape = (batch_size, 8, 8, hidden_dim)
+        rope_spatial_dims = (8, 8)
+    elif data_dim == 3:
+        input_shape = (batch_size, 4, 4, 4, hidden_dim)
+        rope_spatial_dims = (4, 4, 4)
 
     attn = SelfAttention(
         hidden_dim=hidden_dim,
@@ -206,16 +215,8 @@ def test_attention_output_varies_with_input(data_dim, device):
         apply_qk_norm=True,
         use_rope=True,
         attn_dropout=0.0,
+        rope_spatial_dims=rope_spatial_dims,
     ).to(device)
-
-    batch_size = 2
-
-    if data_dim == 1:
-        input_shape = (batch_size, 32, hidden_dim)
-    elif data_dim == 2:
-        input_shape = (batch_size, 8, 8, hidden_dim)
-    elif data_dim == 3:
-        input_shape = (batch_size, 4, 4, 4, hidden_dim)
 
     # Create two different inputs
     query1 = torch.randn(*input_shape, device=device)
@@ -300,44 +301,32 @@ def test_hidden_dim_divisibility():
         )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.parametrize("data_dim", [1, 2, 3])
-def test_rope_requirements(data_dim, device):
-    """Test RoPE dimensionality requirements are enforced."""
+def test_rope_requirements(data_dim):
+    """Test RoPE dimensionality requirements are enforced at init time."""
     num_heads = 8
 
     # Choose head_dim that violates RoPE requirements
     if data_dim == 1:
         hidden_dim = 8 * 3  # head_dim = 3 (not divisible by 2)
+        rope_spatial_dims = (32,)
     elif data_dim == 2:
         hidden_dim = 8 * 6  # head_dim = 6 (not divisible by 4)
+        rope_spatial_dims = (8, 8)
     elif data_dim == 3:
         hidden_dim = 8 * 8  # head_dim = 8 (not divisible by 6)
+        rope_spatial_dims = (4, 4, 4)
 
-    attn = SelfAttention(
-        hidden_dim=hidden_dim,
-        num_heads=num_heads,
-        apply_qk_norm=True,
-        use_rope=True,
-        attn_dropout=0.0,
-    ).to(device)
-
-    batch_size = 2
-
-    if data_dim == 1:
-        input_shape = (batch_size, 32, hidden_dim)
-    elif data_dim == 2:
-        input_shape = (batch_size, 8, 8, hidden_dim)
-    elif data_dim == 3:
-        input_shape = (batch_size, 4, 4, 4, hidden_dim)
-
-    query = torch.randn(*input_shape, device=device)
-    key = torch.randn(*input_shape, device=device)
-    value = torch.randn(*input_shape, device=device)
-
-    # Should raise assertion error about divisibility
+    # Should raise assertion error about divisibility at init time
     with pytest.raises(AssertionError):
-        attn(query, key, value, cp_group=None)
+        SelfAttention(
+            hidden_dim=hidden_dim,
+            num_heads=num_heads,
+            apply_qk_norm=True,
+            use_rope=True,
+            attn_dropout=0.0,
+            rope_spatial_dims=rope_spatial_dims,
+        )
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

@@ -80,6 +80,10 @@ def get_config() -> ExperimentConfig:
                     is_causal=False,
                     attn_dropout=0.0,
                     rope_base=10000.0,
+                    rope_spatial_dims=(
+                        "${eval:'256 // ${net.in_proj_cfg.patch_size}'}",
+                        "${eval:'256 // ${net.in_proj_cfg.patch_size}'}",
+                    ),
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
