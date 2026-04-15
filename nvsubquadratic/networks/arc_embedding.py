@@ -30,5 +30,6 @@ class ARCColorTaskEmbedding(nn.Module):
             task_tok: [B, hidden_dim * num_task_tokens] float tensor of task embeddings.
         """
         x = self.color_embed(pixel_values.long().clamp(0, self.num_colors - 1))
-        task_tok = self.task_embed(task_ids.long())
+        # Unseen validation/test tasks might have IDs >= num_tasks; clamp to prevent out-of-bounds.
+        task_tok = self.task_embed(task_ids.long().clamp(0, self.task_embed.num_embeddings - 1))
         return x, task_tok
