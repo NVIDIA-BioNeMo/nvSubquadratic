@@ -23,7 +23,23 @@ from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class ResidualBlock(torch.nn.Module):
-    """Residual block for ND signals, composed of a sequence mixer and an MLP."""
+    """Residual block for ND signals, composed of a sequence mixer and an MLP.
+
+    Supports two FiLM conditioning modes (mutually exclusive):
+
+    1. **Self-conditioning** (``use_self_conditioning=True``): the normalized
+       block input is global-average-pooled over spatial dims to produce a
+       ``[B, C]`` vector.
+
+    2. **Register-based conditioning** (``register_pooling_cfg`` provided,
+       following the ViT-5 pattern): register tokens occupying the first row
+       of the first spatial dimension are extracted from the normalized input
+       and pooled via ``RegisterPooling`` into a ``[B, C]`` vector.
+
+    In both cases the resulting vector is forwarded as ``conditioning=...`` to
+    the sequence mixer, whose kernel (e.g. ``SIRENKernelND`` with ``film_cfg``)
+    uses it for FiLM modulation, making the convolution kernel input-dependent.
+    """
 
     def __init__(
         self,
@@ -34,6 +50,9 @@ class ResidualBlock(torch.nn.Module):
         mlp_cfg: LazyConfig,
         mlp_norm_cfg: LazyConfig,
         dropout_cfg: LazyConfig,
+        use_self_conditioning: bool = False,
+        register_pooling_cfg: LazyConfig | None = None,
+        num_registers: int = 0,
     ):
         """Initialize the ResidualBlock.
 
@@ -45,6 +64,15 @@ class ResidualBlock(torch.nn.Module):
             mlp_cfg: LazyConfig for the MLP layer.
             mlp_norm_cfg: LazyConfig for the MLP norm.
             dropout_cfg: LazyConfig for the dropout layer.
+            use_self_conditioning: If True, global-average-pool the normalized
+                block input and pass it as ``conditioning`` to the sequence
+                mixer.  The mixer's kernel must have a ``film_cfg`` to use it.
+            register_pooling_cfg: Optional LazyConfig for ``RegisterPooling``.
+                When provided (together with ``num_registers > 0``), register
+                tokens are extracted from the first row of the normalized input
+                and pooled into a conditioning vector (ViT-5 pattern).
+            num_registers: Number of register tokens in the first row.
+                Only used when ``register_pooling_cfg`` is provided.
         """
         if sequence_mixer_cfg.__target__ == torch.nn.Identity:
             assert sequence_mixer_norm_cfg.__target__ == torch.nn.Identity, (
@@ -85,6 +113,15 @@ class ResidualBlock(torch.nn.Module):
         # Instantiate dropout
         self.dropout = instantiate(dropout_cfg)
 
+        self.use_self_conditioning = use_self_conditioning
+
+        # Optional register-based FiLM conditioning (ViT-5 pattern)
+        self.num_registers = num_registers
+        if register_pooling_cfg is not None and num_registers > 0:
+            self.register_pooling = instantiate(register_pooling_cfg)
+        else:
+            self.register_pooling = None
+
     def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
         """Forward pass of the residual block.
 
@@ -99,7 +136,20 @@ class ResidualBlock(torch.nn.Module):
         if not isinstance(self.sequence_mixer, torch.nn.Identity):
             residual = x
             x = self.input_norm(x)
-            x = self.sequence_mixer(x)
+
+            mixer_kwargs = {}
+            if self.register_pooling is not None:
+                # ViT-5 pattern: extract registers from the first row of the
+                # normalized input.  For ND data [B, S1, S2, ..., C] registers
+                # occupy x[:, 0, :num_registers, C] (first row, first R cols).
+                reg_row = x[:, 0, : self.num_registers, :]  # [B, R, C]
+                mixer_kwargs["conditioning"] = self.register_pooling(reg_row)  # [B, C]
+            elif self.use_self_conditioning:
+                # Global average pool over spatial dims: [B, *spatial, C] → [B, C]
+                spatial_dims = tuple(range(1, x.ndim - 1))
+                mixer_kwargs["conditioning"] = x.mean(dim=spatial_dims)
+
+            x = self.sequence_mixer(x, **mixer_kwargs)
             x = self.dropout(x)
             x = x + residual
 

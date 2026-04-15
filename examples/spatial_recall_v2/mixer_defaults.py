@@ -78,6 +78,9 @@ def get_hyena_mixer_cfg(
     L_cache: str | int = "${dataset.canvas_size}",
     is_causal: bool = False,
     fft_backend: str = "subq_ops",
+    gate_nonlinear_cfg: LazyConfig | None = None,
+    gate_nonlinear_2_cfg: LazyConfig | None = None,
+    film_cfg: LazyConfig | None = None,
 ) -> LazyConfig:
     """Get modernised Hyena mixer config (v2).
 
@@ -97,10 +100,19 @@ def get_hyena_mixer_cfg(
         L_cache: Kernel cache size. Default ``"${dataset.canvas_size}"``.
         is_causal: Causal convolutions (for 1D autoregressive tasks).
         fft_backend: ``"subq_ops"`` (2D-only CUDA kernel) or ``"torch_fft"``.
+        gate_nonlinear_cfg: First gate activation. Default SiLU.
+        gate_nonlinear_2_cfg: Second gate activation. Default Sigmoid.
+        film_cfg: Optional LazyConfig for ``KernelFiLMGenerator`` to enable
+            input-dependent FiLM conditioning of the SIREN kernel.  Requires
+            ``use_self_conditioning=True`` on the ``ResidualBlock``.
 
     Returns:
         LazyConfig for QKVSequenceMixer wrapping the Hyena mixer.
     """
+    if gate_nonlinear_cfg is None:
+        gate_nonlinear_cfg = LazyConfig(torch.nn.SiLU)()
+    if gate_nonlinear_2_cfg is None:
+        gate_nonlinear_2_cfg = LazyConfig(torch.nn.Sigmoid)()
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim="${net.hidden_dim}",
         mixer_cfg=LazyConfig(Hyena)(
@@ -117,6 +129,7 @@ def get_hyena_mixer_cfg(
                     L_cache=L_cache,
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+                    film_cfg=film_cfg,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type="double",
@@ -126,8 +139,8 @@ def get_hyena_mixer_cfg(
             ),
             short_conv_cfg=short_conv_cfg,
             # v2: SiLU + Sigmoid gating (was Identity in v1)
-            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
-            gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
+            gate_nonlinear_cfg=gate_nonlinear_cfg,
+            gate_nonlinear_2_cfg=gate_nonlinear_2_cfg,
             # v2: channel-first RMSNorm — Hyena works in [B, C, *spatial] so
             # channel-first norms avoid movedim transposes and are compile-friendly.
             pixelhyena_norm_cfg=LazyConfig(RMSNormChannelFirst)(dim="${net.hidden_dim}", eps=1e-6, use_quack=False),
