@@ -34,8 +34,9 @@ class ViT5ResidualBlock(nn.Module):
         num_registers: Number of register tokens (needed for extraction). Only used
             when register_pooling_cfg is provided.
         register_start_idx: Start index of register tokens in the sequence.
-            Default 1 for [CLS, regs, patches] layout; set to 0 for GAP models
-            without CLS where registers are prepended directly.
+            With the standard layout [patches, CLS, registers, ...], this is
+            ``num_patches + 1`` (CLS readout) or ``num_patches`` (GAP readout).
+            Typically auto-computed by the network and injected at construction.
         grn_cfg: Optional LazyConfig for GlobalResponseNorm (ConvNeXt V2).
             When provided, GRN is applied after the sequence mixer output
             to promote inter-channel feature competition.
@@ -155,7 +156,7 @@ class ViT5ResidualBlock(nn.Module):
         """Forward pass.
 
         Args:
-            x: [B, T, C] where T = num_tokens (cls + patches + registers).
+            x: [B, T, C] where T = num_tokens (patches + cls + registers [+ padding]).
             condition: Unused, kept for API compatibility with ResidualBlock.
 
         Returns:
