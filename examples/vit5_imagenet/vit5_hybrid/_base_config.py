@@ -136,7 +136,7 @@ def _make_hyena_block_cfg() -> LazyConfig:
                 data_dim=2,
                 hidden_dim="${net.hidden_dim}",
                 kernel_cfg=LazyConfig(SIRENKernelND)(
-                    data_dim=2,
+                    data_dim="${net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                     out_dim="${net.hidden_dim}",
                     mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
                     num_layers=KERNEL_NUM_LAYERS,
@@ -147,7 +147,7 @@ def _make_hyena_block_cfg() -> LazyConfig:
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                 ),
                 mask_cfg=LazyConfig(GaussianModulationND)(
-                    data_dim=2,
+                    data_dim="${net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                     num_channels="${net.hidden_dim}",
                     min_attenuation_at_step=0.1,
                     max_attenuation_at_limit=0.95,
