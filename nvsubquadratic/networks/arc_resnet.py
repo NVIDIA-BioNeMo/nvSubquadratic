@@ -27,7 +27,7 @@ class ARCResNet(nn.Module):
         num_colors: int,
         hidden_dim: int,
         resnet_cfg: LazyConfig,
-        task_injection: Literal["broadcast", "film"] = "broadcast",
+        task_injection: Literal["broadcast", "film", "per_layer_broadcast"] = "broadcast",
         cond_dropout_prob: float = 0.0,
     ) -> None:
         """Initialise colour/task embeddings and instantiate the ResidualNetwork."""
@@ -52,6 +52,13 @@ class ARCResNet(nn.Module):
             x = x + task_tok[:, None, None, :]  # broadcast over H, W
             out = self.resnet({"input": x, "condition": None})
         elif self.task_injection == "film":
+            if self.training and self.cond_dropout_prob > 0.0:
+                mask = torch.rand(task_tok.shape[0], 1, device=task_tok.device) >= self.cond_dropout_prob
+                task_tok = task_tok * mask
+            out = self.resnet({"input": x, "condition": task_tok})
+        elif self.task_injection == "per_layer_broadcast":
+            # Route task_tok as condition so each AdditiveCondResidualBlock re-broadcasts it.
+            # No one-shot add here: the first block is the first place the task signal enters x.
             if self.training and self.cond_dropout_prob > 0.0:
                 mask = torch.rand(task_tok.shape[0], 1, device=task_tok.device) >= self.cond_dropout_prob
                 task_tok = task_tok * mask
