@@ -90,17 +90,18 @@ echo "$(date): Job ${SLURM_JOB_ID} started (W&B run ID: ${RUN_ID})" >> "${RESULT
 # ============================================================================
 # Container mounts
 # ============================================================================
+REPO_DIR="/lustre/fsw/healthcareeng_research/oviessmann/nvsubquadratic"
+WORK_DIR="/workspaces/nvSubquadratic-private"
+CONFIG_PATH="${WORK_DIR}/${CONFIG_FILE}"
+
 MOUNTS="${DATA_DIR}:${CONTAINER_DATA}"
 MOUNTS="${MOUNTS},${RESULTS_PATH}:${CONTAINER_RESULTS}"
+MOUNTS="${MOUNTS},${REPO_DIR}:${WORK_DIR}"
 MOUNTS="${MOUNTS},$HOME/.cache:/root/.cache"
 
 if [ -f "$HOME/.netrc" ]; then
     MOUNTS="${MOUNTS},$HOME/.netrc:/root/.netrc"
 fi
-
-# Code is baked into the container
-WORK_DIR="/workspaces/nvSubquadratic-private"
-CONFIG_PATH="${WORK_DIR}/${CONFIG_FILE}"
 
 echo "================================================"
 echo "Experiment:    ${EXPERIMENT_NAME}"

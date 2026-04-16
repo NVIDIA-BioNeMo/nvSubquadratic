@@ -42,7 +42,7 @@ PATCH_SIZE = 16
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
-FFT_PADDING = "zeros"  # non-periodic boundary conditions (WALL/OPEN)
+FFT_PADDING = "zero"  # non-periodic boundary conditions (WALL/OPEN)
 OMEGA_0 = 30.0
 
 
