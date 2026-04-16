@@ -18,3 +18,4 @@ detect-secrets>=1.5.0
 jupyterlab>=4.0.0
 clean-fid>=0.1.35
 the-well>=1.0.0
+matplotlib

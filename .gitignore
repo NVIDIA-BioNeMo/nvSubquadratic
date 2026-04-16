@@ -245,6 +245,10 @@ $RECYCLE.BIN/
 # Apptainer images
 *.sif
 
+# Enroot container images and packages
+*.sqsh
+enroot*.deb
+
 # Development and testing
 .pytest_cache/
 .coverage
