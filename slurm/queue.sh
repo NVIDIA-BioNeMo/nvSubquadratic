@@ -42,7 +42,7 @@ done
 
 submit_job() {
     local dep_flag="${1:-}"
-    sbatch ${dep_flag} "${SBATCH_EXTRA_ARGS[@]+"${SBATCH_EXTRA_ARGS[@]}"}" "${SCRIPT_NAME}" "${CONFIG}" \
+    sbatch ${dep_flag} "${SCRIPT_NAME}" "${CONFIG}" "${SBATCH_EXTRA_ARGS[@]+"${SBATCH_EXTRA_ARGS[@]}"}" \
         | awk '{print $4}'
 }
 
