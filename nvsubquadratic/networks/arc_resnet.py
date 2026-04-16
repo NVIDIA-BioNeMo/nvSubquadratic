@@ -27,7 +27,7 @@ class ARCResNet(nn.Module):
         num_colors: int,
         hidden_dim: int,
         resnet_cfg: LazyConfig,
-        task_injection: Literal["broadcast", "film", "per_layer_broadcast"] = "broadcast",
+        task_injection: Literal["broadcast", "film", "per_layer_broadcast", "seq_concat"] = "broadcast",
         cond_dropout_prob: float = 0.0,
     ) -> None:
         """Initialise colour/task embeddings and instantiate the ResidualNetwork."""
@@ -63,6 +63,25 @@ class ARCResNet(nn.Module):
                 mask = torch.rand(task_tok.shape[0], 1, device=task_tok.device) >= self.cond_dropout_prob
                 task_tok = task_tok * mask
             out = self.resnet({"input": x, "condition": task_tok})
+        elif self.task_injection == "seq_concat":
+            # ViT5-style: prepend task token as an extra spatial row after patchify so
+            # the Hyena convolutions can "see" the task signal through local short-conv
+            # receptive field.  We call the inner resnet sub-components manually to
+            # intercept between in_proj (Patchify) and the residual blocks.
+            x = self.resnet.dropout_in(x)
+            x = self.resnet.in_proj(x)  # [B, Hp, Wp, D]  (e.g. 16×16 for patch_size=2)
+            B, Hp, Wp, D = x.shape
+            # Prepend task_tok as the first "row": [B, D] → [B, 1, Wp, D]
+            task_row = task_tok[:, None, None, :].expand(B, 1, Wp, D)
+            x = torch.cat([task_row, x], dim=1)  # [B, Hp+1, Wp, D]
+            # Blocks receive condition=None — task signal lives in the prepended row.
+            for block in self.resnet.blocks:
+                x = block(x, None)
+            x = x[:, 1:, :, :]  # strip task row → [B, Hp, Wp, D]
+            x = self.resnet.out_norm(x)
+            x = self.resnet.out_proj(x)  # [B, H, W, num_colors]
+            logits = x.permute(0, 3, 1, 2)  # [B, num_colors, H, W]
+            return {"logits": logits}
         else:
             raise ValueError(f"Unknown task_injection: {self.task_injection}")
 
