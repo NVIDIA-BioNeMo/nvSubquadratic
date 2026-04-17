@@ -27,13 +27,14 @@ result.  The residual stream normalization, gating, and MLP branches remain unco
 
 **Current performance (as of 2026-04-15):**
 
-| Config               |     Val exact match | Notes                                                                                  |
-| -------------------- | ------------------: | -------------------------------------------------------------------------------------- |
-| ARCViT (reference)   |  **83.6%** (ep 439) | Task token in sequence, full attention · SLURM 154955, still running · still improving |
-| Hyena broadcast      | **66.4%** (ep ~500) | SLURM 154555 · completed (OOM at ep ~500) · best ckpt ep=356                           |
-| Hyena FiLM (SIREN)   | **59.1%** (ep ~193) | SLURM 154232 · hit wall-time · best ckpt ep=191 · underperforms broadcast              |
-| Hyena AdaLN          | **73.0%** (ep ~431) | SLURM 154569 · hit wall-time · **clear win** over broadcast (+6.6 pp)                  |
-| Hyena AdaLN (stable) |  **70.4%** (ep 338) | SLURM 154949 · running · tanh gate + cond WD=1e-4 · still improving                    |
+| Config               |     Val exact match | Notes                                                                                                      |
+| -------------------- | ------------------: | ---------------------------------------------------------------------------------------------------------- |
+| ARCViT (reference)   |  **83.6%** (ep 439) | Task token in sequence, full attention · SLURM 154955, still running · still improving                     |
+| Hyena broadcast      | **66.4%** (ep ~500) | SLURM 154555 · completed (OOM at ep ~500) · best ckpt ep=356                                               |
+| Hyena FiLM (SIREN)   | **59.1%** (ep ~193) | SLURM 154232 · hit wall-time · best ckpt ep=191 · underperforms broadcast                                  |
+| Hyena AdaLN          | **73.0%** (ep ~431) | SLURM 154569 · hit wall-time · **clear win** over broadcast (+6.6 pp)                                      |
+| Hyena AdaLN (stable) |  **70.4%** (ep 338) | SLURM 154949 · running · tanh gate + cond WD=1e-4 · still improving                                        |
+| Hyena seq_concat     |  **64.8%** (ep 323) | SLURM 155568 · running · task_tok as spatial row 0 (17×16) · plateau ~64-65%; underperforms AdaLN by ~8 pp |
 
 FiLM on the SIREN kernel is currently underperforming plain broadcast.  This rules it out
 as a reliable improvement and makes a clean slate necessary before stacking conditioners.
@@ -143,17 +144,17 @@ ______________________________________________________________________
 
 ## Experiment Plan
 
-| Priority | Option                     | Config                                                           | Status                    | Notes                                                                                                                                                                                   |
-| :------: | -------------------------- | ---------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    ✅    | **Broadcast (baseline)**   | `cfg_hyena_rearc_subq_ops.py`                                    | ✅ Done (66.4%, ep ~500)  | Reference point                                                                                                                                                                         |
-|    ✅    | **FiLM on SIREN**          | `cfg_hyena_rearc_film_subq_ops.py`                               | ✅ Done (59.1%, ep ~193)  | Underperforms broadcast — ruled out as primary conditioning                                                                                                                             |
-|    ✅    | **AdaLN-Zero**             | `conditioning_ablation/cfg_hyena_rearc_adaln_subq_ops.py`        | ✅ Done (73.0%, ep ~431)  | **Clear winner** — +6.6 pp over broadcast; near-parity with ARCViT (73.4%)                                                                                                              |
-|    ✅    | **AdaLN-Zero (stable)**    | `conditioning_ablation/cfg_hyena_rearc_adaln_stable_subq_ops.py` | 🔄 Running (SLURM 154949) | Stabilised variant (tanh gate, WD=1e-4); 70.4% at ep 338, still improving                                                                                                               |
-|    ❌    | **Multi-layer broadcast**  | configs deleted                                                    | ❌ Done (9.84%, ep ~14097) | SLURM 21931841/21931842 · ungated and gated both failed catastrophically · task_tok accumulated 12× in residual stream, dominating features · no code bug, design is flawed · **code reverted; see commit `535e814` to restore `AdditiveCondResidualBlock` + configs** |
-|    1     | **ARCViT AdaLN**           | `conditioning_ablation/cfg_vit_rearc_adaln.py`                   | ⬜ Not started            | **Expected to stagger**: removes task token from sequence, replaces with side-channel AdaLN · ViT's strength is in-sequence participation · validates that AdaLN gain is Hyena-specific |
-|    2     | **Task token in sequence** | `cfg_hyena_rearc_seqtoken.py` (to create)                        | ⬜ Not started            | ViT5-style concat: prepend task token as extra spatial row in 2D feature map (Option D) · requires ARCResNet.forward() changes                                                          |
-|    3     | **AdaLN-Zero + FiLM**      | `cfg_hyena_rearc_adaln_film.py` (to create)                      | ⬜ Not started            | Stack AdaLN (residual-stream) + FiLM (filter-shape) · condition: AdaLN validated ✓                                                                                                      |
-|    4     | **Cross-attention**        | `cfg_hyena_rearc_crossattn.py` (to create)                       | ⬜ Not started            | Last resort if simpler options plateau                                                                                                                                                  |
+| Priority | Option                     | Config                                                           | Status                     | Notes                                                                                                                                                                                                                                                                  |
+| :------: | -------------------------- | ---------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    ✅    | **Broadcast (baseline)**   | `cfg_hyena_rearc_subq_ops.py`                                    | ✅ Done (66.4%, ep ~500)   | Reference point                                                                                                                                                                                                                                                        |
+|    ✅    | **FiLM on SIREN**          | `cfg_hyena_rearc_film_subq_ops.py`                               | ✅ Done (59.1%, ep ~193)   | Underperforms broadcast — ruled out as primary conditioning                                                                                                                                                                                                            |
+|    ✅    | **AdaLN-Zero**             | `conditioning_ablation/cfg_hyena_rearc_adaln_subq_ops.py`        | ✅ Done (73.0%, ep ~431)   | **Clear winner** — +6.6 pp over broadcast; near-parity with ARCViT (73.4%)                                                                                                                                                                                             |
+|    ✅    | **AdaLN-Zero (stable)**    | `conditioning_ablation/cfg_hyena_rearc_adaln_stable_subq_ops.py` | 🔄 Running (SLURM 154949)  | Stabilised variant (tanh gate, WD=1e-4); 70.4% at ep 338, still improving                                                                                                                                                                                              |
+|    ❌    | **Multi-layer broadcast**  | configs deleted                                                  | ❌ Done (9.84%, ep ~14097) | SLURM 21931841/21931842 · ungated and gated both failed catastrophically · task_tok accumulated 12× in residual stream, dominating features · no code bug, design is flawed · **code reverted; see commit `535e814` to restore `AdditiveCondResidualBlock` + configs** |
+|    1     | **ARCViT AdaLN**           | `conditioning_ablation/cfg_vit_rearc_adaln.py`                   | ⬜ Not started             | **Expected to stagger**: removes task token from sequence, replaces with side-channel AdaLN · ViT's strength is in-sequence participation · validates that AdaLN gain is Hyena-specific                                                                                |
+|    2     | **Task token in sequence** | `cfg_hyena_rearc_seqtoken_subq_ops.py`                           | 🔄 Running (SLURM 155568)  | ViT5-style concat: prepend task token as extra spatial row in 2D feature map (Option D) · best 64.8% (ep 323), currently ep ~337, val=64.4% · **underperforming vs AdaLN (73.0%)** — plateau visible; candidate for cancellation                                       |
+|    3     | **AdaLN-Zero + FiLM**      | `cfg_hyena_rearc_adaln_film.py` (to create)                      | ⬜ Not started             | Stack AdaLN (residual-stream) + FiLM (filter-shape) · condition: AdaLN validated ✓                                                                                                                                                                                     |
+|    4     | **Cross-attention**        | `cfg_hyena_rearc_crossattn.py` (to create)                       | ⬜ Not started             | Last resort if simpler options plateau                                                                                                                                                                                                                                 |
 
 ______________________________________________________________________
 
@@ -167,7 +168,10 @@ ______________________________________________________________________
   at zero parameter cost? If yes → further conditioning experiments may have diminishing returns.
 - **ViT AdaLN stagger expected:** removing ViT's task token from the sequence and replacing with AdaLN
   side-channel is expected to hurt. Run to confirm, not to improve.
-- **Task-in-sequence (Option D)** is the highest-fidelity next experiment for Hyena after multi-layer broadcast.
+- **Task-in-sequence (Option D) underperforms AdaLN** — seq_concat peaks at 64.8% (ep 323) vs AdaLN 73.0%.
+  The 3×3 short-conv receptive field is too limited for the task token row to propagate useful information
+  deeply into the spatial features. Not recommended as primary conditioning. Candidate for cancellation.
+- **Single-grid circular padding** is the best grid+padding combo observed so far (66.1% > single-grid zero ~66.4% broadcast baseline at same epoch range; double-grid zero 68.4%). Keep running.
 
 ______________________________________________________________________
 

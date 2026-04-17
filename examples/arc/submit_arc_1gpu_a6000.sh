@@ -5,7 +5,7 @@
 #SBATCH --job-name=arc_vit
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
-#SBATCH --time=2-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --mem=48G
 #SBATCH --output=logs/arc_%A.out
 
