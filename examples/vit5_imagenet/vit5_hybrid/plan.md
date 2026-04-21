@@ -90,9 +90,71 @@ sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_attention.
     net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
 ```
 
+## First Window Results (Patch 16 & 8)
+
+Completed first 4h window for all 8 experiments. Steady-state throughput:
+
+| Experiment | Patch | Epochs in 4h | it/s | imgs/s |
+|---|---|---|---|---|
+| full_attention | 8 | 85 | 16.45 | 1,053 |
+| full_attention | 16 | 285 | 13.86 | 3,548 |
+| hybrid_ha | 8 | 55 | 11.08 | 709 |
+| hybrid_ha | 16 | 173 | 8.63 | 2,209 |
+| hybrid_hhha | 8 | 48 | 10.13 | 648 |
+| hybrid_hhha | 16 | 150 | 7.64 | 1,956 |
+| full_hyena | 8 | 45 | 9.35 | 599 |
+| full_hyena | 16 | 134 | 6.99 | 1,789 |
+
+Note: it/s not directly comparable across patch sizes (batch/GPU differs: 256 for p16, 64 for p8).
+
+---
+
+## Phase 2: Patch 4, 2, 1 (4-node / 32 GPU)
+
+Created `slurm/submit_hybrid_4node.sh` — identical to `submit_hybrid.sh` but with `--nodes=4`.
+
+Batch config (4 nodes = 32 GPUs, effective batch = 2048):
+
+| Patch | batch/GPU | accum_steps | tokens/img |
+|---|---|---|---|
+| 4 | 16 | 4 | 3,141 |
+| 2 | 4 | 16 | 12,549 |
+| 1 | 1 | 64 | 50,181 |
+
+### Launch Commands (single test jobs)
+
+```bash
+# Patch 4
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+
+# Patch 2
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+
+# Patch 1
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+```
+
+### Account Assignment
+
+- Patch 16/8 chain jobs (second wave): `healthcareeng_bionemo`
+- Patch 4/2/1 test jobs: `healthcareeng_research`
+
+---
+
 ## Verification Checklist
 
-1. Submit a single patch-8 job, verify no OOM and correct batch config
-2. Submit a single patch-16 job, check slurm output for successful training start
-3. Check W&B for the run appearing under `vit5_hybrid` job group
-4. If both pass, launch the full set of 8 chained experiments
+1. ~~Submit a single patch-8 job, verify no OOM and correct batch config~~ DONE
+2. ~~Submit a single patch-16 job, check slurm output for successful training start~~ DONE
+3. ~~Check W&B for the run appearing under `vit5_hybrid` job group~~ DONE
+4. ~~If both pass, launch the full set of 8 chained experiments~~ DONE
+5. Monitor patch 4/2/1 test jobs for OOM (especially patch 1 with 50K tokens)
+6. If patch 4/2/1 pass, chain full 800-epoch runs
