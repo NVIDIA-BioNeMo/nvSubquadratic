@@ -17,6 +17,7 @@ LAYER_PATTERN = "H" * NUM_BLOCKS
 
 
 def get_config() -> ExperimentConfig:
+    """Return the full-Hyena (12 H) hybrid config."""
     config = get_base_config()
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"

@@ -17,6 +17,7 @@ LAYER_PATTERN = "A" * NUM_BLOCKS
 
 
 def get_config() -> ExperimentConfig:
+    """Return the full-attention (12 A) hybrid config."""
     config = get_base_config()
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
