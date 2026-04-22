@@ -150,11 +150,93 @@ sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyen
 
 ---
 
+## Final Results — Patch 8 & 16 (800 epochs)
+
+All 7 priority experiments completed. Full_hyena p16 stopped at 799 but is treated as final (val_acc_ema stable).
+
+| Experiment | Patch 16 | Patch 8 |
+|---|---|---|
+| full_attention | 0.817 | **0.835** |
+| hybrid_ha | **0.819** | 0.829 |
+| hybrid_hhha | 0.815 | 0.826 |
+| full_hyena | 0.813 (ep 799) | 0.825 |
+
+**Key takeaways:**
+- Hybrid architectures match/beat pure attention at p16 (hybrid_ha = 0.819 vs full_attn = 0.817).
+- Patch 8 gives ~2% absolute accuracy boost across all variants.
+- Within p16, all 4 variants within 0.6%. Within p8, all 4 within 1.0%.
+- Throughput crossover: Hyena > Attention between patch 4 and patch 2 (~3K–12K tokens).
+
+---
+
+## Phase 3: KERNEL_OMEGA_0 Ablation (Patch 8, 4 nodes)
+
+Ablation study launched 2026-04-21 to test whether a higher SIREN-kernel base frequency improves Hyena-containing configs at patch 8.
+
+**Base value**: `KERNEL_OMEGA_0 = 10.0` (set in `_base_config.py:69`)
+**Ablation value**: `KERNEL_OMEGA_0 = 20.0` (patch-8)
+
+### Approach: CLI override (zero code changes)
+
+Override path (verified via smoke test):
+```
+net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.kernel_cfg.omega_0=20.0
+```
+Existing configs (`full_hyena.py`, `hybrid_hhha.py`, `hybrid_ha.py`) are unmodified. Different CLI overrides produce different run-hashes, so results land in separate `run_<hash>/` dirs — no collision with original omega=10 runs.
+
+### Configuration
+
+- **Scope**: Only Hyena-containing configs (`full_hyena`, `hybrid_hhha`, `hybrid_ha`). `full_attention` has no H block and is skipped.
+- **Hardware**: 4 nodes × 8 GPUs = 32 GPUs.
+- **Batch config**: `dataset.batch_size=64 train.accumulate_grad_steps=1` → effective batch = 32 × 64 × 1 = **2048** (matches original).
+- **Iters/epoch**: ~626 (vs 2502 for 1-node runs). Each iter does 4× more work, net wall-clock per epoch similar or faster.
+- **Expected epochs/window**: ~150–200 epochs per 4h window → **~5 chain jobs to reach 800**.
+
+### Launch Commands
+
+```bash
+OMEGA_OVR='net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.kernel_cfg.omega_0=20.0'
+
+# full_hyena p8 omega=20.0
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 7 \
+    examples/vit5_imagenet/vit5_hybrid/full_hyena.py \
+    net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1 $OMEGA_OVR
+
+# hybrid_hhha p8 omega=20.0
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 7 \
+    examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py \
+    net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1 $OMEGA_OVR
+
+# hybrid_ha p8 omega=20.0
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 7 \
+    examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py \
+    net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1 $OMEGA_OVR
+```
+
+### Baseline for comparison
+
+| Config (p8, omega=10) | val/acc_ema | Patch-8 omega=20.0 |
+|---|---|---|
+| full_hyena | 0.825 | TBD |
+| hybrid_hhha | 0.826 | TBD |
+| hybrid_ha | 0.829 | TBD |
+
+---
+
+## Notes on Pending / Future Ablations
+
+- **Patch 4 original (omega=10.0) runs**: in progress from Phase 2.
+- **Patch 2 / Patch 1**: only throughput-benchmark runs so far (patch 1 preempted on backfill partition due to very long epochs).
+
+---
+
 ## Verification Checklist
 
 1. ~~Submit a single patch-8 job, verify no OOM and correct batch config~~ DONE
 2. ~~Submit a single patch-16 job, check slurm output for successful training start~~ DONE
 3. ~~Check W&B for the run appearing under `vit5_hybrid` job group~~ DONE
 4. ~~If both pass, launch the full set of 8 chained experiments~~ DONE
-5. Monitor patch 4/2/1 test jobs for OOM (especially patch 1 with 50K tokens)
-6. If patch 4/2/1 pass, chain full 800-epoch runs
+5. ~~Monitor patch 4/2/1 test jobs for OOM~~ DONE (patch 1 preempted, not retried)
+6. ~~Chain full 800-epoch p8/p16 runs~~ DONE (7/8 complete; full_hyena p16 at ep 799)
+7. ~~Verify omega_0 CLI override resolves correctly~~ DONE (smoke test 2026-04-21)
+8. Run omega=20.0 ablation for hyena-containing p8 configs and compare to omega=10 baselines

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --account=healthcareeng_bionemo
+#SBATCH --account=healthcareeng_research
 #SBATCH --nodes=4
 #SBATCH --partition=batch,backfill
 #SBATCH --ntasks-per-node=8
@@ -7,7 +7,7 @@
 #SBATCH --mem=0
 #SBATCH --mail-type=FAIL
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_bionemo-nvsubq.v5hybrid4n
+#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybrid4n
 
 # Usage (from repo root):
 #   sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
