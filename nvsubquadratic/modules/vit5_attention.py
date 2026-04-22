@@ -4,7 +4,7 @@ Key differences from the base Attention module:
 - QK-Norm uses RMSNorm (learnable, per-head) instead of L2 normalization.
 - RoPE is applied only to patch tokens (not cls token).
 - Register tokens get their own high-frequency RoPE.
-- Operates on flattened sequences [B, T, C] where T = 1 (cls) + N (patches) + R (registers).
+- Operates on flattened sequences [B, T, C] where T = N (patches) + 1 (cls) + R (registers).
 
 Optimizations vs naive implementation:
 - RoPE cos/sin are precomputed as registered buffers (CUDA-graph safe, no graph breaks).
@@ -104,7 +104,8 @@ def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
 class ViT5Attention(nn.Module):
     """ViT-5 multi-head self-attention with RMSNorm QK-Norm and register-aware RoPE.
 
-    Expects input as [B, T, C] where T = 1 (cls) + num_patches + num_registers.
+    Expects input as [B, T, C] where T = num_patches + (1 if has_cls) + num_registers.
+    Token layout: [patches, (CLS), registers] -- no padding (stripped by the network).
     The module includes its own QKV and output projections (unlike the base Attention
     which is wrapped in QKVSequenceMixer).
 
@@ -124,6 +125,8 @@ class ViT5Attention(nn.Module):
         scale: Attention scaling factor. When None, defaults to ``head_dim ** -0.5``.
         init_fn_qkv_proj: Optional callable ``fn(tensor) -> None`` applied to the
             QKV projection weights. When None, weights keep PyTorch's default init.
+        has_cls: Whether the sequence contains a CLS token (between patches and
+            registers in the token layout). Defaults to True.
         init_fn_out_proj: Optional callable ``fn(tensor) -> None`` applied to the
             output projection weights. When None, weights keep PyTorch's default init.
     """
@@ -135,6 +138,7 @@ class ViT5Attention(nn.Module):
         num_patches_h: int,
         num_patches_w: int,
         num_registers: int = 4,
+        has_cls: bool = True,
         qk_norm: Optional[LazyConfig] = None,
         rope_base: float = 10000.0,
         reg_rope_base: float = 100.0,
@@ -190,9 +194,12 @@ class ViT5Attention(nn.Module):
         #   - are NOT serialised into checkpoints (persistent=False), since they
         #     are deterministically reconstructed from __init__ args.
         #
+        # Token layout: [patches, (CLS), registers]
         # Layout per token position: [Y_frequencies | X_frequencies]
-        # CLS token gets cos=1, sin=0 (identity — no positional bias).
+        # CLS token (when present) gets cos=1, sin=0 (identity — no positional bias).
         # Register tokens get their own high-frequency RoPE (theta=100).
+        self.has_cls = has_cls
+
         patch_cos, patch_sin = _build_2d_rope_flat(
             num_patches_h,
             num_patches_w,
@@ -200,10 +207,12 @@ class ViT5Attention(nn.Module):
             rope_base,
         )
 
-        parts_cos = [torch.ones(1, self.head_dim)]  # cls: cos=1 (no rotation)
-        parts_sin = [torch.zeros(1, self.head_dim)]  # cls: sin=0 (no rotation)
-        parts_cos.append(patch_cos)
-        parts_sin.append(patch_sin)
+        parts_cos = [patch_cos]
+        parts_sin = [patch_sin]
+
+        if has_cls:
+            parts_cos.append(torch.ones(1, self.head_dim))  # CLS: cos=1 (no rotation)
+            parts_sin.append(torch.zeros(1, self.head_dim))  # CLS: sin=0 (no rotation)
 
         if num_registers > 0:
             reg_cos, reg_sin = _build_2d_rope_flat(
@@ -215,7 +224,7 @@ class ViT5Attention(nn.Module):
             parts_cos.append(reg_cos)
             parts_sin.append(reg_sin)
 
-        # [T, head_dim] where T = 1 + H*W + R
+        # [T, head_dim] where T = H*W + (1 if has_cls) + R
         self.register_buffer("rope_cos", torch.cat(parts_cos, dim=0), persistent=False)
         self.register_buffer("rope_sin", torch.cat(parts_sin, dim=0), persistent=False)
 
@@ -278,7 +287,8 @@ class ViT5Attention(nn.Module):
         """Forward pass.
 
         Args:
-            x: [B, T, C] where T = 1 (cls) + num_patches + num_registers.
+            x: [B, T, C] where T = num_patches + (1 if has_cls) + num_registers.
+                Token layout: [patches, (CLS), registers].
 
         Returns:
             [B, T, C]

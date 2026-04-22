@@ -138,10 +138,15 @@ class Hyena(torch.nn.Module):
         for param in self.output_norm.parameters():
             param._no_weight_decay = True
 
-        # QK Normalization (separate instances for Q and K to support stateful norms like RMSNorm)
+        # QK Normalization (separate instances for Q and K to support stateful norms like RMSNorm).
+        # K-norm is only useful when gating is linear (Identity); a nonlinear gate
+        # (e.g. SiLU) already bounds K's magnitude, so we use Identity for k_norm.
         if qk_norm_cfg is not None:
             self.q_norm = instantiate(qk_norm_cfg)
-            self.k_norm = instantiate(qk_norm_cfg)
+            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+                self.k_norm = instantiate(qk_norm_cfg)
+            else:
+                self.k_norm = torch.nn.Identity()
         else:
             self.q_norm = None
             self.k_norm = None
@@ -158,8 +163,9 @@ class Hyena(torch.nn.Module):
     def extra_repr(self) -> str:
         """Return extra representation string for the module."""
         is_causal = getattr(self.global_conv, "is_causal", None)
-        qk_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
-        parts = [f"qk_norm={qk_norm_str}", f"use_rope={self.use_rope}"]
+        q_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
+        k_norm_str = self.k_norm.__class__.__name__ if self.k_norm is not None else "None"
+        parts = [f"q_norm={q_norm_str}", f"k_norm={k_norm_str}", f"use_rope={self.use_rope}"]
         if self.gate_nonlinear is not self.gate_nonlinear_2:
             g1 = self.gate_nonlinear.__class__.__name__
             g2 = self.gate_nonlinear_2.__class__.__name__
@@ -318,10 +324,10 @@ class Hyena(torch.nn.Module):
         if self.use_rope:
             flops += 4 * C * S
 
-        # 3. QK-Norm
+        # 3. QK-Norm (k_norm is Identity when gate is non-linear, so no extra FLOPs)
         if self.q_norm is not None:
             flops += 3 * C * S  # Q norm
-            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+            if not isinstance(self.k_norm, torch.nn.Identity):
                 flops += 3 * C * S  # K norm (only for linear gating)
 
         # 4. First gate: Q * σ(K)
@@ -453,11 +459,11 @@ class Hyena(torch.nn.Module):
         # QK normalization (after RoPE).
         # Tensors are BHL: [B, C, *spatial]. Move C to last dim for norms that
         # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
-        # K is only normalized when gate_nonlinear is Identity (linear gating),
-        # because a nonlinear σ(K) already bounds the magnitude.
+        # k_norm is Identity when gate_nonlinear is non-linear (set in __init__);
+        # skip the movedim round-trip in that case to avoid overhead.
         if self.q_norm is not None:
             query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
-            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+            if not isinstance(self.k_norm, torch.nn.Identity):
                 key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
 
         # First gate: z = Q ⊙ σ(K)

@@ -3,9 +3,20 @@
 Implements the full ViT-5 architecture for ImageNet classification:
 - Patch embedding via Conv2d (Patchify)
 - Learnable absolute positional embeddings (APE) on patch tokens
-- Prepended CLS token, appended register tokens
+- Token layout: [patches, CLS, registers, padding]
 - N x ViT5ResidualBlock (pre-norm, attention, LayerScale, DropPath, MLP)
 - Final norm on CLS token -> linear head
+
+Token ordering convention:
+  [patches (H*W), CLS (1), registers (R), padding (P)]
+where padding has length ``(-num_non_pad) % grid_w`` to make the total
+sequence length divisible by ``grid_w`` for 2D spatial mixers (Hyena).
+Attention blocks receive the sequence with padding stripped; Hyena blocks
+receive the full padded sequence.
+
+Supports **hybrid** architectures with interleaved block types via
+``layer_pattern`` + ``layer_types`` (e.g. ``"HA" * 6`` for alternating
+Hyena/Attention).
 
 Reference: Wang et al., "ViT-5: Vision Transformers for The Mid-2020s", 2026.
 """
@@ -19,8 +30,46 @@ from einops import rearrange
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
+def _compute_drop_path_rates(max_rate: float, num_blocks: int, schedule: str) -> list[float]:
+    """Compute per-layer drop path rates according to the given schedule.
+
+    Args:
+        max_rate: Maximum stochastic depth drop probability.
+        num_blocks: Total number of blocks.
+        schedule: ``"constant"`` (same rate for all layers) or ``"linear"``
+            (ramp from 0 to ``max_rate`` across depth).
+
+    Returns:
+        List of per-layer drop path rates (length ``num_blocks``).
+    """
+    if schedule == "constant":
+        return [max_rate] * num_blocks
+    elif schedule == "linear":
+        if num_blocks <= 1:
+            return [max_rate]
+        return [max_rate * i / (num_blocks - 1) for i in range(num_blocks)]
+    else:
+        raise ValueError(f"Unknown drop_path_schedule: {schedule!r}. Expected 'constant' or 'linear'.")
+
+
 class ViT5ClassificationNet(nn.Module):
     """ViT-5 classification network.
+
+    Token layout: ``[patches (H*W), CLS (1), registers (R), padding (P)]``.
+
+    Padding makes ``T % grid_w == 0`` for 2D spatial mixers (Hyena).
+    Attention blocks receive the sequence with padding stripped; Hyena blocks
+    receive the full padded sequence.
+
+    Supports two block-stacking modes (mutually exclusive):
+
+    1. **Homogeneous** (default): a single ``block_cfg`` is replicated
+       ``num_blocks`` times.
+
+    2. **Hybrid / interleaved**: ``layer_pattern`` + ``layer_types`` define
+       per-layer block types.  For example, ``layer_pattern="HA" * 6`` with
+       ``layer_types={"H": hyena_cfg, "A": attn_cfg}`` creates 12 blocks
+       alternating between Hyena and Attention.
 
     Args:
         in_channels: Number of input channels (3 for RGB).
@@ -30,30 +79,35 @@ class ViT5ClassificationNet(nn.Module):
         patch_size: Patch size for patchification.
         image_size: Input image size (assumes square).
         num_registers: Number of learnable register tokens.
-        block_cfg: LazyConfig for ViT5ResidualBlock.
+        block_cfg: LazyConfig for ViT5ResidualBlock (homogeneous mode).
+            Mutually exclusive with ``layer_pattern``/``layer_types``.
         norm_cfg: LazyConfig for the normalization layer (RMSNorm).
-            When ``readout="register_concat"``, this norm is applied to the
-            concatenated compressed register vector (dim = ``num_registers * neck_dim``),
-            so the caller must pass ``dim=num_registers * neck_dim`` in the config.
         dropout_rate: Dropout rate applied before the classification head.
         readout: Classification readout strategy.
-            ``"cls"``: prepend a learnable CLS token and read it out.
+            ``"cls"``: append a learnable CLS token after patches and read it out.
             ``"gap"``: global average pooling over patch tokens.
             ``"register_concat"``: gather register tokens after all blocks,
             compress each via a shared neck linear, concatenate, and project.
         neck_compression_ratio: Compression ratio for ``register_concat`` readout.
-            Each register is projected from ``hidden_dim`` to
-            ``hidden_dim // neck_compression_ratio``.  The classification head
-            input dimension becomes
-            ``num_registers * (hidden_dim // neck_compression_ratio)``.
             Required when ``readout="register_concat"``.
-        prepend_registers: If True, register tokens are placed before patch tokens.
-            With CLS: [CLS, regs, patches]. Without CLS: [regs, zero_pad, patches]
-            where zero_pad fills the register row to grid width (image_size // patch_size)
-            for clean 2D reshape in spatial mixers like Hyena.
         reg_init: Initialization strategy for register tokens.
-            "trunc_normal" (default) uses truncated normal with std=0.02.
-            "zeros" initializes registers to zero.
+            ``"trunc_normal"`` (default) or ``"zeros"``.
+        layer_pattern: Pattern string defining per-layer block types (hybrid
+            mode).  Each character maps to a key in ``layer_types``.
+            Length must equal ``num_blocks``.  Example: ``"HA" * 6``.
+        layer_types: Dict mapping pattern characters to block LazyConfigs.
+            Required when ``layer_pattern`` is set.
+        padding_types: Set of ``layer_pattern`` characters whose blocks need
+            the full padded sequence (e.g. Hyena).  Blocks whose character is
+            NOT in this set receive the sequence with padding stripped.
+            Only relevant when ``layer_pattern`` is used *and* ``pad_size > 0``.
+            Default: ``{"H"}``.
+        max_drop_path_rate: Maximum stochastic depth drop probability.
+            Per-layer rates are computed according to ``drop_path_schedule``
+            and injected into each block config at construction time.
+        drop_path_schedule: How drop path rates are distributed across depth.
+            ``"constant"``: every layer gets ``max_drop_path_rate``.
+            ``"linear"``: ramp from 0 to ``max_drop_path_rate`` across depth.
     """
 
     def __init__(
@@ -65,13 +119,17 @@ class ViT5ClassificationNet(nn.Module):
         patch_size: int,
         image_size: int,
         num_registers: int,
-        block_cfg: LazyConfig,
         norm_cfg: LazyConfig,
         readout: Literal["cls", "gap", "register_concat"],
+        block_cfg: LazyConfig | None = None,
         dropout_rate: float = 0.0,
         neck_compression_ratio: int | None = None,
-        prepend_registers: bool = False,
         reg_init: Literal["trunc_normal", "zeros"] = "trunc_normal",
+        layer_pattern: str | None = None,
+        layer_types: dict[str, LazyConfig] | None = None,
+        padding_types: set[str] | None = None,
+        max_drop_path_rate: float = 0.0,
+        drop_path_schedule: Literal["constant", "linear"] = "constant",
     ):
         """Initialize ViT-5 classification network."""
         super().__init__()
@@ -81,7 +139,7 @@ class ViT5ClassificationNet(nn.Module):
         self.num_registers = num_registers
         self.patch_size = patch_size
         self.image_size = image_size
-        self.prepend_registers = prepend_registers
+        self.layer_pattern = layer_pattern
 
         self.readout = readout
         self.use_cls_token = readout == "cls"
@@ -99,6 +157,7 @@ class ViT5ClassificationNet(nn.Module):
         num_patches_h = image_size // patch_size
         num_patches_w = image_size // patch_size
         self.num_patches = num_patches_h * num_patches_w
+        self._grid_w = num_patches_w
 
         # Patch embedding (non-overlapping Conv2d, no bias — pos_embed absorbs the offset)
         self.patch_embed = nn.Conv2d(
@@ -117,7 +176,7 @@ class ViT5ClassificationNet(nn.Module):
         else:
             self.cls_token = None
 
-        # Absolute positional embeddings for patch tokens only (not cls, not registers)
+        # Absolute positional embeddings for patch tokens only (not CLS, not registers)
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_dim))
         self.pos_embed._no_weight_decay = True
 
@@ -127,29 +186,54 @@ class ViT5ClassificationNet(nn.Module):
         else:
             self.reg_token = None
 
-        # Zero-padding buffer: fills the register row to grid width so the
-        # token sequence reshapes cleanly into a 2-D grid for spatial mixers.
-        # CLS-row layout:  [CLS, regs, pad, patches]  →  pad = W-1-M
-        # GAP layout:      [regs, pad, patches]        →  pad = W-M
-        assert num_registers <= num_patches_w, (
-            f"num_registers ({num_registers}) > grid width ({num_patches_w}); "
-            "registers must fit in a single row for 2D reshape"
-        )
-        self._register_row_width = num_patches_w
-        if num_registers > 0 and prepend_registers:
-            if self.use_cls_token:
-                pad_size = num_patches_w - 1 - num_registers  # CLS occupies 1 slot
-            else:
-                pad_size = num_patches_w - num_registers
-            if pad_size > 0:
-                self.register_buffer("reg_zero_pad", torch.zeros(1, pad_size, hidden_dim), persistent=False)
-            else:
-                self.reg_zero_pad = None
-        else:
-            self.reg_zero_pad = None
+        # Token layout: [patches (H*W), CLS (1?), registers (R), padding (P)]
+        # Padding makes T divisible by grid_w for 2D spatial mixers.
+        num_non_pad = self.num_patches + (1 if self.use_cls_token else 0) + num_registers
+        pad_size = (-num_non_pad) % num_patches_w
+        self._pad_size = pad_size
+        self._num_non_pad = num_non_pad
 
-        # Transformer blocks
-        self.blocks = nn.ModuleList([instantiate(block_cfg) for _ in range(num_blocks)])
+        if pad_size > 0:
+            self.register_buffer("_zero_pad", torch.zeros(1, pad_size, hidden_dim), persistent=False)
+        else:
+            self._zero_pad = None
+
+        # Per-block padding flag: True = block needs the full padded sequence
+        if padding_types is None:
+            padding_types = {"H"}
+        if layer_pattern is not None:
+            self._block_needs_padding = [ch in padding_types for ch in layer_pattern]
+        else:
+            self._block_needs_padding = [False] * num_blocks
+
+        # Build per-layer block configs: either from layer_pattern or by
+        # replicating a single block_cfg.  Both paths produce the same
+        # list[LazyConfig] of length num_blocks fed to a single loop.
+        if layer_pattern is not None:
+            assert layer_types is not None, "layer_types is required when layer_pattern is set"
+            assert len(layer_pattern) == num_blocks, (
+                f"layer_pattern length ({len(layer_pattern)}) != num_blocks ({num_blocks})"
+            )
+            assert block_cfg is None, "block_cfg and layer_pattern are mutually exclusive"
+            for ch in layer_pattern:
+                assert ch in layer_types, f"Unknown layer type '{ch}' in layer_pattern; available: {set(layer_types)}"
+            block_cfgs = [layer_types[ch] for ch in layer_pattern]
+        else:
+            assert block_cfg is not None, "Either block_cfg or (layer_pattern + layer_types) must be provided"
+            block_cfgs = [block_cfg] * num_blocks
+
+        # Auto-compute register_start_idx for the new layout:
+        # [patches, CLS, registers, ...] -> registers start after patches + CLS
+        register_start_idx = self.num_patches + (1 if self.use_cls_token else 0)
+
+        drop_path_rates = _compute_drop_path_rates(max_drop_path_rate, num_blocks, drop_path_schedule)
+
+        self.blocks = nn.ModuleList(
+            [
+                instantiate(cfg, drop_path_rate=drop_path_rates[i], register_start_idx=register_start_idx)
+                for i, cfg in enumerate(block_cfgs)
+            ]
+        )
 
         # Register-concat readout: shared neck compression
         if self.readout == "register_concat":
@@ -197,25 +281,14 @@ class ViT5ClassificationNet(nn.Module):
         """Count FLOPs for a full ViT-5 classification forward pass (one sample).
 
         Pipeline:
-          1. Patch embedding (Conv2d(in_channels, D, kernel_size=P, stride=P)):
-               2 * in_channels * D * P² * num_patches
-             Each of the ``num_patches`` output positions has a receptive field
-             of P x P x in_channels → P² * in_channels MACs = 2 * P² * in_ch * D FLOPs.
-          2. Positional embedding addition:  num_patches * D  (elementwise add).
-          3. Transformer blocks:  sum of ``block.flop_count(T, inference)``
-             where T is the total token count (see below).
-          4. Output norm (RMSNorm on 1 CLS token or GAP result):
-               ``self.out_norm.flop_count(1)``
-             For GAP models, the averaging itself costs num_patches * D adds.
-          5. Classification head (Linear(D, num_classes)):
-               2 * D * num_classes
+          1. Patch embedding (Conv2d):  2 * in_ch * D * P^2 * num_patches
+          2. Positional embedding add:  num_patches * D
+          3. Transformer blocks:        sum of block.flop_count(T)
+          4. Output norm:               self.out_norm.flop_count(1)
+          5. Classification head:       2 * head_dim * num_classes
 
-        Token count T:
-          - With CLS + prepend_registers: 1 + num_registers + num_patches
-          - With CLS + append_registers: 1 + num_patches + num_registers
-          - Without CLS + prepend_registers: register_row_width + num_patches
-          - Without CLS/registers: num_patches
-          The ordering doesn't affect FLOP count — only T matters.
+        Token count T = num_non_pad + pad_size.  Attention blocks see
+        T_attn = num_non_pad (padding stripped).
 
         Args:
             inference: Passed through to each block for kernel caching decisions.
@@ -230,32 +303,21 @@ class ViT5ClassificationNet(nn.Module):
 
         flops = 0
 
-        # 1. Patch embedding: Conv2d(in_ch, D, P, stride=P) on (image_size, image_size)
+        # 1. Patch embedding
         flops += 2 * in_channels * D * P * P * num_patches
 
         # 2. Positional embedding addition
         flops += num_patches * D
 
-        # 3. Total token count
-        T = num_patches
-        if self.use_cls_token:
-            T += 1
-        if self.num_registers > 0:
-            if self.prepend_registers:
-                if self.use_cls_token:
-                    T += self._register_row_width - 1  # regs + padding (CLS already counted)
-                else:
-                    T += self._register_row_width  # regs + padding (no CLS)
-            else:
-                T += self.num_registers
+        # 3. Transformer blocks (attention blocks see fewer tokens)
+        T_full = self._num_non_pad + self._pad_size
+        T_no_pad = self._num_non_pad
+        for i, block in enumerate(self.blocks):
+            T_block = T_full if self._block_needs_padding[i] else T_no_pad
+            flops += block.flop_count(T_block, inference=inference)
 
-        # 4. Transformer blocks
-        for block in self.blocks:
-            flops += block.flop_count(T, inference=inference)
-
-        # 5. Output norm + readout
+        # 4. Output norm + readout
         if self.readout == "register_concat":
-            # Neck linear: R * (2 * D * neck_dim)
             flops += self.num_registers * 2 * D * self.neck_dim
             head_dim = self.num_registers * self.neck_dim
             flops += self.out_norm.flop_count(1)
@@ -267,13 +329,17 @@ class ViT5ClassificationNet(nn.Module):
             head_dim = D
             flops += self.out_norm.flop_count(1)
 
-        # 6. Classification head
+        # 5. Classification head
         flops += 2 * head_dim * self.num_classes
 
         return flops
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Forward pass.
+
+        Token layout: ``[patches (H*W), CLS (1?), registers (R), padding (P)]``.
+        Attention blocks see ``[patches, CLS, registers]`` (padding stripped).
+        Hyena blocks see the full padded sequence.
 
         Args:
             input_and_condition: Dict with keys "input" (images [B, H, W, C]) and "condition" (unused).
@@ -288,64 +354,41 @@ class ViT5ClassificationNet(nn.Module):
         x = self.patch_embed(x)  # [B, hidden_dim, H', W']
         x = rearrange(x, "b c h w -> b (h w) c")  # [B, num_patches, hidden_dim]
 
-        # Add absolute positional embeddings
+        # Add absolute positional embeddings (patches only)
         x = x + self.pos_embed
 
         B = x.shape[0]
 
-        # Prepend CLS token (when enabled)
+        # Build token sequence: [patches, CLS?, registers?, padding?]
+        parts = [x]
         if self.cls_token is not None:
-            cls_tokens = self.cls_token.expand(B, -1, -1)
-            x = torch.cat([cls_tokens, x], dim=1)  # [B, 1 + num_patches, C]
-
-        # Insert register tokens
+            parts.append(self.cls_token.expand(B, -1, -1))
         if self.reg_token is not None:
-            reg_tokens = self.reg_token.expand(B, -1, -1)
-            if self.prepend_registers and self.cls_token is not None:
-                # [CLS, regs, (pad), patches] — enables direct 2D reshape for spatial mixers
-                if self.reg_zero_pad is not None:
-                    pad = self.reg_zero_pad.expand(B, -1, -1)
-                    x = torch.cat([x[:, :1, :], reg_tokens, pad, x[:, 1:, :]], dim=1)
-                else:
-                    x = torch.cat([x[:, :1, :], reg_tokens, x[:, 1:, :]], dim=1)
-            elif self.prepend_registers:
-                # [regs, zero_pad, patches] — GAP model without CLS
-                if self.reg_zero_pad is not None:
-                    pad = self.reg_zero_pad.expand(B, -1, -1)
-                    x = torch.cat([reg_tokens, pad, x], dim=1)
-                else:
-                    x = torch.cat([reg_tokens, x], dim=1)
-            else:
-                x = torch.cat([x, reg_tokens], dim=1)
+            parts.append(self.reg_token.expand(B, -1, -1))
+        if self._zero_pad is not None:
+            parts.append(self._zero_pad.expand(B, -1, -1))
+        if len(parts) > 1:
+            x = torch.cat(parts, dim=1)
 
         # Apply transformer blocks
-        for block in self.blocks:
-            x = block(x)
-
-        if self.readout == "register_concat":
-            # Gather register tokens, compress via neck, concatenate
-            if self.prepend_registers and self.cls_token is not None:
-                reg_start = 1  # [CLS, regs, (pad), patches]
-            elif self.prepend_registers:
-                reg_start = 0  # [regs, zero_pad, patches]
+        pad_size = self._pad_size
+        for i, block in enumerate(self.blocks):
+            if pad_size > 0 and not self._block_needs_padding[i]:
+                x_no_pad = x[:, :-pad_size]
+                x_no_pad = block(x_no_pad)
+                x = torch.cat([x_no_pad, x[:, -pad_size:]], dim=1)
             else:
-                reg_start = x.shape[1] - self.num_registers  # [..., regs]
+                x = block(x)
+
+        # Readout (indices based on [patches, CLS, registers, padding] layout)
+        if self.readout == "register_concat":
+            reg_start = self.num_patches + (1 if self.use_cls_token else 0)
             regs = x[:, reg_start : reg_start + self.num_registers, :]
             out = self.register_neck(regs).flatten(start_dim=1)  # [B, R * neck_dim]
         elif self.use_cls_token:
-            out = x[:, 0]
+            out = x[:, self.num_patches]  # CLS is right after patches
         else:
-            # Global average pool over patch tokens, excluding register tokens
-            if self.prepend_registers and self.num_registers > 0 and self.cls_token is not None:
-                # [CLS, regs, (pad), patches] — skip entire first row
-                out = x[:, self._register_row_width :].mean(dim=1)
-            elif self.prepend_registers and self.num_registers > 0:
-                # [regs, zero_pad, patches] — skip entire register row
-                out = x[:, self._register_row_width :].mean(dim=1)
-            elif self.num_registers > 0:
-                out = x[:, : -self.num_registers].mean(dim=1)
-            else:
-                out = x.mean(dim=1)
+            out = x[:, : self.num_patches].mean(dim=1)  # GAP over patches only
 
         out = self.out_norm(out)
         out = self.dropout(out)
