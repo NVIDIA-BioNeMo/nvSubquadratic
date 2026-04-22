@@ -8,7 +8,7 @@ Tests verify:
 5. ViT5ResidualBlock: residual connection, LayerScale, DropPath
 6. ViT5ClassificationNet: end-to-end forward pass, parameter count, token assembly
 7. Cross-validation against the reference ViT-5 repo
-8. GAP readout & token layout (readout / prepend_registers)
+8. GAP / CLS readout & token layout
 
 Run:
     PYTHONPATH=. python -m pytest tests/modules/test_vit5_components.py -v -o addopts=""
@@ -664,14 +664,15 @@ class TestCrossValidation:
         assert attn.reg_rope_base == 100.0
 
 
-# ─── 8. GAP readout & token layout (readout / prepend_registers) ─────────────
+# ─── 8. GAP / CLS readout & token layout ──────────────────────────────────────
 
 
 class TestGAPReadoutAndTokenLayout:
-    """Tests for global average pooling readout and register token placement.
+    """Tests for GAP / CLS readouts and register token placement.
 
-    Covers the bug where ``readout="gap"`` with ``prepend_registers=True``
-    produced incorrect token slicing, and verifies all register layout combos.
+    Token layout is fixed at ``[patches, CLS?, registers, padding?]``. These
+    tests cover readout correctness and zero-padding math for the CLS+registers
+    row.
 
     Uses ``nn.Identity`` as the sequence mixer because ``ViT5Attention`` has
     precomputed RoPE buffers sized for CLS-included sequences.  These tests
@@ -682,7 +683,6 @@ class TestGAPReadoutAndTokenLayout:
         self,
         device: torch.device,
         readout: str = "cls",
-        prepend_registers: bool = False,
         num_registers: int = 4,
         hidden_dim: int = 384,
         num_blocks: int = 1,
@@ -698,7 +698,6 @@ class TestGAPReadoutAndTokenLayout:
             num_registers=num_registers,
             dropout_rate=0.0,
             readout=readout,
-            prepend_registers=prepend_registers,
             norm_cfg=LazyConfig(RMSNorm)(dim=hidden_dim, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
                 sequence_mixer_cfg=LazyConfig(nn.Identity)(),
@@ -728,26 +727,15 @@ class TestGAPReadoutAndTokenLayout:
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
-    def test_gap_appended_registers(self, device: torch.device) -> None:
-        """GAP with appended registers (default layout) excludes register tokens."""
-        net = self._make_net(device, readout="gap", prepend_registers=False, num_registers=4)
+    def test_gap_with_registers(self, device: torch.device) -> None:
+        """GAP with registers (appended by the fixed layout) excludes them from pooling."""
+        net = self._make_net(device, readout="gap", num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
-    def test_gap_no_cls_prepend_registers_flag(self, device: torch.device) -> None:
-        """Regression: ``readout="gap"`` + ``prepend_registers=True``.
-
-        Registers are always appended when CLS token is absent (the prepend
-        guard requires ``cls_token``), so the readout must slice from the end.
-        """
-        net = self._make_net(device, readout="gap", prepend_registers=True, num_registers=4)
-        net.eval()
-        out = self._forward(net, device)
-        assert out["logits"].shape == (2, 1000)
-
-    def test_gap_excludes_registers_appended(self, device: torch.device) -> None:
-        """Verify GAP actually excludes register tokens when they are appended.
+    def test_gap_excludes_registers(self, device: torch.device) -> None:
+        """Verify GAP actually excludes register tokens in the fixed ``[patches, regs]`` layout.
 
         Manually builds the ``[patches, regs]`` sequence and asserts its length
         is 200, then checks the full forward pass produces valid logits.
@@ -759,50 +747,41 @@ class TestGAPReadoutAndTokenLayout:
         inp = {"input": x, "condition": None}
 
         with torch.no_grad():
-            # Manually trace to check register exclusion
-            xr = x.permute(0, 3, 1, 2)  # [B, C, H, W]
+            xr = x.permute(0, 3, 1, 2)
             patches = net.patch_embed(xr)
-            patches = patches.flatten(2).transpose(1, 2)  # [B, 196, C]
+            patches = patches.flatten(2).transpose(1, 2)
             patches = patches + net.pos_embed
 
             reg_tokens = net.reg_token.expand(2, -1, -1)
-            seq = torch.cat([patches, reg_tokens], dim=1)  # [B, 200, C]
+            seq = torch.cat([patches, reg_tokens], dim=1)
 
-            # GAP should use only first 196 tokens
             assert seq.shape[1] == 200
             out = net(inp)
             assert out["logits"].shape == (2, 1000)
 
-    def test_cls_prepend_registers_layout(self, device: torch.device) -> None:
-        """With CLS + ``prepend_registers``, layout is ``[CLS, regs, (pad), patches]``."""
-        net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=4)
-        net.eval()
-        out = self._forward(net, device)
-        assert out["logits"].shape == (2, 1000)
+    def test_cls_fewer_registers_zero_padded(self, device: torch.device) -> None:
+        """CLS + registers row creates zero-padding when not divisible by grid width.
 
-    def test_cls_prepend_fewer_registers_zero_padded(self, device: torch.device) -> None:
-        """CLS-row with fewer registers than grid width creates zero-padding.
-
-        With patch_size=16 and image_size=224, num_patches_w=14.
-        CLS-row needs 1 + regs + pad = num_patches_w, so pad = 14 - 1 - 2 = 11.
-        Total T = 14 (first row) + 196 (patches) = 210, divisible by grid_w=14.
+        Layout: ``[patches (196), CLS (1), regs (2), pad (11)]`` — 210 tokens,
+        divisible by grid_w=14.
         """
-        net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=2)
+        net = self._make_net(device, readout="cls", num_registers=2)
         net.eval()
-        # Verify zero-pad buffer exists with correct size
-        assert net.reg_zero_pad is not None
-        assert net.reg_zero_pad.shape == (1, 11, 384)  # pad = 14 - 1 - 2 = 11
+        assert net._zero_pad is not None
+        assert net._zero_pad.shape == (1, 11, 384)
+        assert net._pad_size == 11
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
 
-    def test_cls_prepend_full_row_no_padding(self, device: torch.device) -> None:
-        """CLS-row with num_registers = num_patches_w - 1 creates no padding."""
-        net = self._make_net(device, readout="cls", prepend_registers=True, num_registers=13)
-        assert net.reg_zero_pad is None
+    def test_cls_full_row_no_padding(self, device: torch.device) -> None:
+        """CLS + 13 registers divides evenly by grid_w=14, so no zero-padding is added."""
+        net = self._make_net(device, readout="cls", num_registers=13)
+        assert net._zero_pad is None
+        assert net._pad_size == 0
 
-    def test_cls_append_registers_layout(self, device: torch.device) -> None:
-        """With CLS + appended registers, layout is ``[CLS, patches, regs]``."""
-        net = self._make_net(device, readout="cls", prepend_registers=False, num_registers=4)
+    def test_cls_readout_layout(self, device: torch.device) -> None:
+        """CLS readout works on the fixed ``[patches, CLS, regs, pad?]`` layout."""
+        net = self._make_net(device, readout="cls", num_registers=4)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
@@ -838,7 +817,6 @@ class TestRegisterConcatReadout:
         neck_compression_ratio: int = 4,
         hidden_dim: int = 384,
         num_blocks: int = 1,
-        prepend_registers: bool = True,
     ) -> ViT5ClassificationNet:
         """Build a ViT-5 net with ``register_concat`` readout using Identity mixer."""
         neck_dim = hidden_dim // neck_compression_ratio
@@ -854,7 +832,6 @@ class TestRegisterConcatReadout:
             dropout_rate=0.0,
             readout="register_concat",
             neck_compression_ratio=neck_compression_ratio,
-            prepend_registers=prepend_registers,
             norm_cfg=LazyConfig(RMSNorm)(dim=out_norm_dim, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
                 sequence_mixer_cfg=LazyConfig(nn.Identity)(),
@@ -932,7 +909,6 @@ class TestRegisterConcatReadout:
             num_registers=4,
             dropout_rate=0.0,
             readout="gap",
-            prepend_registers=True,
             norm_cfg=LazyConfig(RMSNorm)(dim=384, eps=1e-6),
             block_cfg=LazyConfig(ViT5ResidualBlock)(
                 sequence_mixer_cfg=LazyConfig(nn.Identity)(),
@@ -952,16 +928,9 @@ class TestRegisterConcatReadout:
         # Different head dims so logits differ structurally
         assert net_rc.out_proj.in_features != net_gap.out_proj.in_features
 
-    def test_prepend_registers_layout(self, device: torch.device) -> None:
-        """Works correctly with prepended registers ``[regs, pad, patches]``."""
-        net = self._make_net(device, prepend_registers=True)
-        net.eval()
-        out = self._forward(net, device)
-        assert out["logits"].shape == (2, 1000)
-
-    def test_append_registers_layout(self, device: torch.device) -> None:
-        """Works correctly with appended registers ``[patches, regs]``."""
-        net = self._make_net(device, prepend_registers=False)
+    def test_registers_layout(self, device: torch.device) -> None:
+        """Works correctly on the fixed ``[patches, registers, pad?]`` layout."""
+        net = self._make_net(device)
         net.eval()
         out = self._forward(net, device)
         assert out["logits"].shape == (2, 1000)
