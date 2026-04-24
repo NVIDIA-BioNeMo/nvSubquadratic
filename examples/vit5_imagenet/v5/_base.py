@@ -146,7 +146,7 @@ def get_base_config(
             num_repeats=num_repeats,
         ),
         device_id=0,
-        local_staging_dir=f"/scratch/{os.environ.get('USER', 'unknown')}/imagenet_dataset",
+        local_staging_dir=None,
     )
 
     # ─── Lightning wrapper ───────────────────────────────────────────

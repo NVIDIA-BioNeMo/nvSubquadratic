@@ -48,6 +48,12 @@ from nvsubquadratic.lazy_config import instantiate  # noqa: E402
 
 torch._dynamo.config.cache_size_limit = 32
 
+try:
+    import warp as wp
+    wp.init()
+except Exception:
+    pass
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments for the experiment.

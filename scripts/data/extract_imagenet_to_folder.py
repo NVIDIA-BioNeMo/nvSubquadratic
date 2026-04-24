@@ -30,7 +30,7 @@ import numpy as np
 
 HF_DATASET = "ILSVRC/imagenet-1k"
 HF_CACHE = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
-OUTPUT_DIR = "/shared/data/image_datasets/imagenet_folder"
+OUTPUT_DIR = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
 NUM_VERIFY_SAMPLES = 200
 
 
