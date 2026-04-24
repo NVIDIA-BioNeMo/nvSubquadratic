@@ -136,7 +136,7 @@ def build_vit5_hyena(patch_size: int) -> torch.nn.Module:
                     hidden_omega_0=VIT5_HIDDEN_W0, film_cfg=film_cfg,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double", fft_padding="zero",
+                grid_type="double", fft_padding="zero", fft_backend="subq_ops",
             ),
             short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                 in_channels=3 * VIT5_HIDDEN, out_channels=3 * VIT5_HIDDEN,
@@ -289,7 +289,7 @@ def build_resnet_hyena(patch_size: int) -> torch.nn.Module:
                     omega_0=10.0, L_cache=grid, use_bias=True, hidden_omega_0=1.0,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double", fft_padding="zero",
+                grid_type="double", fft_padding="zero", fft_backend="subq_ops",
             ),
             short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                 in_channels=3 * RESNET_HIDDEN, out_channels=3 * RESNET_HIDDEN,
