@@ -140,7 +140,10 @@ def get_config(
         rand_augment: RandAugment config string.
         random_erasing_prob: Random erasing probability (0.0 = disabled).
         num_repeats: Repeated augmentation factor (1 = disabled, 3 = DeiT default).
-        layer_decay: If set, apply layer-wise LR decay (LLRD).
+        layer_decay: Removed. Layer-wise LR decay (LLRD) is no longer
+            supported; passing a non-``None`` value raises ``RuntimeError``.
+            The kwarg is kept only so legacy configs fail loudly with a
+            clear message instead of silently being ignored.
         ema_decay: EMA decay rate.
         train_do: If False, skip training (validation only).
         num_registers: Number of learnable register tokens. 0 = no FiLM.
@@ -152,6 +155,15 @@ def get_config(
         reg_init: Register token initialization: "trunc_normal" or "zeros".
         optimizer_type: "adamw" for torch.optim.AdamW, "lamb" for apex FusedLAMB.
     """
+    if layer_decay is not None:
+        raise RuntimeError(
+            "Layer-wise learning rate decay (LLRD) has been removed from "
+            "BaseLightningWrapper / construct_optimizer. This config "
+            f"requested layer_decay={layer_decay!r}, which is no longer "
+            "supported. Drop the layer_decay argument (or use a non-LLRD "
+            "config) to proceed."
+        )
+
     has_film = num_registers > 0 and num_film_layers is not None
 
     config = ExperimentConfig()
@@ -160,8 +172,6 @@ def get_config(
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
     config.compile_compatible_fftconv = True
-    config.layer_decay = layer_decay
-    config.num_blocks = NUM_BLOCKS
 
     # ─── Dataset ─────────────────────────────────────────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
