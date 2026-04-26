@@ -27,6 +27,9 @@ Key differences from v5:
 All configs are patch-size agnostic. Override `net.patch_size=P` to change
 resolution (default 16).
 
+Kernel-specific omega-zero and block-diagonal SIREN ablations are tracked
+separately in [`OMEGA0_BLOCKDIAG_TRACKER.md`](OMEGA0_BLOCKDIAG_TRACKER.md).
+
 ______________________________________________________________________
 
 ## Patch 16
