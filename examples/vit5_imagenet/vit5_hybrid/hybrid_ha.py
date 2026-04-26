@@ -18,6 +18,7 @@ LAYER_PATTERN = "HA" * (NUM_BLOCKS // 2)
 
 
 def get_config() -> ExperimentConfig:
+    """Return the alternating HA hybrid config."""
     config = get_base_config()
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"

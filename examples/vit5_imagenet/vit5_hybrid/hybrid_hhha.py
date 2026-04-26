@@ -18,6 +18,7 @@ LAYER_PATTERN = "HHHA" * (NUM_BLOCKS // 4)
 
 
 def get_config() -> ExperimentConfig:
+    """Return the 3:1 Hyena/Attention (HHHA) hybrid config."""
     config = get_base_config()
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"

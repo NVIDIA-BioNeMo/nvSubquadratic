@@ -53,7 +53,7 @@ DATASET_NAME="$1"
 shift
 
 # Default base path from env var or fallback
-BASE_PATH="${WELL_DATA_PATH:-./data/the_well}"
+BASE_PATH="${WELL_DATA_PATH:-./data/well_data}"
 SPLIT=""
 
 # Parse optional arguments

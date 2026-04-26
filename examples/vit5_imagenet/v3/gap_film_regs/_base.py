@@ -268,12 +268,12 @@ def get_config(
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
     )
 
-    # Block config: add register pooling when FiLM is enabled
+    # Block config: add register pooling when FiLM is enabled.
+    # register_start_idx is auto-computed by ViT5ClassificationNet from the token layout.
     block_kwargs = {}
     if has_film:
         block_kwargs["register_pooling_cfg"] = LazyConfig(RegisterPooling)(num_registers=num_registers)
         block_kwargs["num_registers"] = num_registers
-        block_kwargs["register_start_idx"] = 0  # GAP model: no CLS, registers at position 0
 
     config.net = LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
@@ -285,7 +285,6 @@ def get_config(
         num_registers=num_registers if has_film else 0,
         dropout_rate=0.0,
         readout="gap",
-        prepend_registers=True if has_film else False,
         norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
         block_cfg=LazyConfig(ViT5ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(ViT5HyenaAdapter)(

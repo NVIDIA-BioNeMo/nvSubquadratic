@@ -1,27 +1,27 @@
 #!/bin/bash
 #SBATCH --account=healthcareeng_research
-#SBATCH --nodes=1
+#SBATCH --nodes=4
 #SBATCH --partition=batch,backfill
 #SBATCH --ntasks-per-node=8
 #SBATCH --time=04:00:00
 #SBATCH --mem=0
 #SBATCH --mail-type=FAIL
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybrid
+#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybrid4n
 
 # Usage (from repo root):
-#   sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py
-#   sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
-#       net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
+#   sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
+#       net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
 #
-# Via queue.sh for chaining (recommended for 800-epoch runs):
-#   bash slurm/queue.sh slurm/submit_hybrid.sh 12 \
-#       examples/vit5_imagenet/vit5_hybrid/full_attention.py
+# Patch size / batch / accum guide (4 nodes = 32 GPUs, effective batch = 2048):
+#   patch 4:  batch_size=16  accumulate_grad_steps=4
+#   patch 2:  batch_size=4   accumulate_grad_steps=16
+#   patch 1:  batch_size=1   accumulate_grad_steps=64
 
 set -x
 
 if [ -z "${1:-}" ]; then
-    echo "Usage: sbatch slurm/submit_hybrid.sh <config.py> [overrides...]"
+    echo "Usage: sbatch slurm/submit_hybrid_4node.sh <config.py> [overrides...]"
     exit 1
 fi
 
