@@ -6,7 +6,7 @@
 #SBATCH --partition=low
 #SBATCH --gpu-bind=closest
 #SBATCH --container-image=/shared/images/nvsubquadratic_cuda129.sqsh
-#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch"
+#SBATCH --container-mounts="/home/dwromero:/home/dwromero,/shared:/shared,/scratch:/scratch,/dev/shm:/dev/shm"
 #SBATCH --container-workdir=/home/dwromero/projects/nvSubquadratic-private
 #SBATCH --output=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.out
 #SBATCH --error=/home/dwromero/projects/nvSubquadratic-private/logs/%x_%j.err

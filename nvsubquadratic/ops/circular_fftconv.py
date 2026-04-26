@@ -50,6 +50,8 @@ from collections import OrderedDict
 import torch
 from einops import rearrange
 
+import nvsubquadratic.ops.fftconv as _fftconv_module
+
 
 class _PhaseRampCache1D:
     """Tiny LRU cache for 1D frequency-domain phase ramps used to replace spatial rolls.
@@ -374,7 +376,10 @@ def circular_fftconv1d_fp32_bhl(
         phase = _phase_ramp_cache_1d.get(L, shift, x_fp32.device, x_fp32.dtype)  # [Lf]
         fft_k = fft_k * phase  # broadcast over (B|1, H)
 
-    fft_x.mul_(fft_k)
+    if _fftconv_module.COMPILE_COMPATIBLE:
+        fft_x = _fftconv_module._complex_mul_real(fft_x, fft_k)
+    else:
+        fft_x.mul_(fft_k)
 
     y = torch.fft.irfft(fft_x, n=L, dim=2)
     if not use_phase_shift and shift != 0:
@@ -452,7 +457,10 @@ def circular_fftconv2d_fp32_bhl(
         phase = _phase_ramp_cache_2d.get(X_in, Y_in, shift_x, shift_y, x_fp32.device, x_fp32.dtype)
         fft_k = fft_k * phase  # broadcast over (B|1, H)
 
-    fft_x.mul_(fft_k)
+    if _fftconv_module.COMPILE_COMPATIBLE:
+        fft_x = _fftconv_module._complex_mul_real(fft_x, fft_k)
+    else:
+        fft_x.mul_(fft_k)
 
     y = torch.fft.irfft2(fft_x, s=(X_in, Y_in), dim=(2, 3))
     if not use_phase_shift and (shift_x != 0 or shift_y != 0):
@@ -550,7 +558,10 @@ def circular_fftconv3d_fp32_bhl(
         phase = _phase_ramp_cache_3d.get(X, Y, Z, shift_x, shift_y, shift_z, x_fp32.device, x_fp32.dtype)  # [X,Y,Zf]
         fft_k = fft_k * phase  # broadcast over (B|1, H)
 
-    fft_x.mul_(fft_k)
+    if _fftconv_module.COMPILE_COMPATIBLE:
+        fft_x = _fftconv_module._complex_mul_real(fft_x, fft_k)
+    else:
+        fft_x.mul_(fft_k)
 
     y = torch.fft.irfftn(fft_x, s=(X, Y, Z), dim=(2, 3, 4))
     if not use_phase_shift and (shift_x != 0 or shift_y != 0 or shift_z != 0):

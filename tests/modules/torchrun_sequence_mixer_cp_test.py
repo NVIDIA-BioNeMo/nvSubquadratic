@@ -126,6 +126,16 @@ def self_attention_mixer_config(data_dim: int = 1) -> LazyConfig:
         LazyConfig: A lazy configuration object for QKVSequenceMixer that can be
             instantiated later.
     """
+    # Spatial dims must match the input shapes used in test_sequence_mixer_cp_equivalency
+    if data_dim == 1:
+        rope_spatial_dims = (1024,)
+    elif data_dim == 2:
+        rope_spatial_dims = (32, 32)
+    elif data_dim == 3:
+        rope_spatial_dims = (8, 16, 16)
+    else:
+        raise ValueError(f"Unsupported data dimension: {data_dim}")
+
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=288,  # 288 / 8 = 36 head_dim (divisible by 6 for 3D RoPE)
         mixer_cfg=LazyConfig(SelfAttention)(
@@ -135,6 +145,7 @@ def self_attention_mixer_config(data_dim: int = 1) -> LazyConfig:
             use_rope=True,
             rope_base=10000.0,
             attn_dropout=0.0,
+            rope_spatial_dims=rope_spatial_dims,
         ),
     )
 
