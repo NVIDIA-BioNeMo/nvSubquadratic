@@ -285,6 +285,7 @@ logs/
 *.temp
 temp/
 tmp/
+_tmp/
 
 # Secrets and sensitive files
 *.key
