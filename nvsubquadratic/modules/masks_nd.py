@@ -189,6 +189,7 @@ class GaussianModulationND(torch.nn.Module):
 
         self.min_std = float(min_std)
         self.max_std = float(max_std)
+        self._min_step = float(min_step)
 
         # Create weight parameter
         init_std_per_channel = torch.logspace(math.log10(init_std_low), math.log10(init_std_high), num_channels)
@@ -239,11 +240,25 @@ class GaussianModulationND(torch.nn.Module):
         std = std.clamp(min=self.min_std, max=self.max_std)
         return std
 
+    @staticmethod
+    def _mask_value(std: float, position: float) -> float:
+        """1D Gaussian mask value: exp(-0.5 * (position / std)^2)."""
+        return math.exp(-0.5 * (position / std) ** 2)
+
     def extra_repr(self):
         """Additional printing for the GaussianModulationND class."""
+        std = self._compute_std().detach()  # [data_dim, num_channels]
+        narrowest = std.min().item()
+        widest = std.max().item()
+        step = self._min_step
         return (
-            f"data_dim={self.data_dim}, num_channels={self.num_channels}, min_std={self.min_std}, "
-            f"max_std={self.max_std}, parametrization='{self.parametrization}'"
+            f"data_dim={self.data_dim}, num_channels={self.num_channels}, "
+            f"parametrization='{self.parametrization}'\n"
+            f"  narrowest ch: mask@step={self._mask_value(narrowest, step):.4f}, "
+            f"mask@boundary={self._mask_value(narrowest, 1.0):.4f} (std={narrowest:.4f})\n"
+            f"  widest ch:    mask@step={self._mask_value(widest, step):.4f}, "
+            f"mask@boundary={self._mask_value(widest, 1.0):.4f} (std={widest:.4f})\n"
+            f"  std bounds: [{self.min_std:.4f}, {self.max_std:.4f}]"
         )
 
     def forward(self, grid: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
