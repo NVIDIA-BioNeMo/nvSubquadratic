@@ -52,6 +52,7 @@ class KANKernelND(torch.nn.Module):
         L_cache: int,
         order: int = 3,
         grid_range: list[float] | None = None,
+        base_activation: type[torch.nn.Module] = torch.nn.SiLU,
     ):
         if num_layers < 2:
             raise ValueError(f"num_layers must be >= 2, got {num_layers}")
@@ -93,6 +94,7 @@ class KANKernelND(torch.nn.Module):
                     grid_range=grid_range,
                     has_mlp=True,
                     enable_standalone_scale_spline=True,
+                    base_activation=base_activation,
                 )
             )
             in_d = mlp_hidden_dim
