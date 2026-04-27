@@ -1,0 +1,39 @@
+{
+  "base_L": 16,
+  "base_omega_0": 5.0,
+  "hidden_omega_0": 1.0,
+  "energy_threshold": 0.95,
+  "base_occupancy": 0.5904365904365905,
+  "data_dim": 2,
+  "seed": 42,
+  "results": [
+    {
+      "L_cache": 32,
+      "scale_factor": 2,
+      "control_occupancy": 0.2876574307304786,
+      "best_multiplier": 2.5351758793969847,
+      "best_omega_0": 12.675879396984923,
+      "best_occupancy": 0.5863979848866498,
+      "target_occupancy": 0.5904365904365905
+    },
+    {
+      "L_cache": 64,
+      "scale_factor": 4,
+      "control_occupancy": 0.14221946683199008,
+      "best_multiplier": 4.909547738693467,
+      "best_omega_0": 24.547738693467338,
+      "best_occupancy": 0.5882207067575945,
+      "target_occupancy": 0.5904365904365905
+    },
+    {
+      "L_cache": 128,
+      "scale_factor": 8,
+      "control_occupancy": 0.07071017746747454,
+      "best_multiplier": 8.0,
+      "best_omega_0": 40.0,
+      "best_occupancy": 0.4846061575369852,
+      "target_occupancy": 0.5904365904365905
+    }
+  ],
+  "fitted_alpha": 0.8289570807186457
+}
