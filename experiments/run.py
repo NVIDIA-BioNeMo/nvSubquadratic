@@ -23,11 +23,11 @@ PIL.Image.init()
 import pytorch_lightning as pl  # noqa: E402
 import torch  # noqa: E402
 import torch.multiprocessing  # noqa: E402
-import wandb  # noqa: E402
 from pytorch_lightning.loggers import WandbLogger  # noqa: E402
 from rich import print as rprint  # noqa: E402
 from rich.tree import Tree  # noqa: E402
 
+import wandb  # noqa: E402
 from experiments.trainer import construct_trainer  # noqa: E402
 from experiments.utils.checkpointing import (  # noqa: E402
     download_checkpoint,
