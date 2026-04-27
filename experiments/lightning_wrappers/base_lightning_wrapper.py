@@ -6,10 +6,10 @@ import warnings
 
 import pytorch_lightning as pl
 import torch
+import wandb
 from omegaconf import OmegaConf
 from pytorch_lightning.utilities import grad_norm
 
-import wandb
 from experiments.default_cfg import (
     PLACEHOLDER,
     ExperimentConfig,
