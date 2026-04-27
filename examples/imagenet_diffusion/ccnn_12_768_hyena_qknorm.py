@@ -153,8 +153,6 @@ def get_config() -> DiffusionExperimentConfig:
                         num_channels="${net.hidden_dim}",
                     ),
                     qk_norm_cfg=LazyConfig(L2Norm)(),
-                    use_rope=False,
-                    rope_base=10_000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),

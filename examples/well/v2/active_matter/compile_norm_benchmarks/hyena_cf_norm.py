@@ -124,7 +124,6 @@ def get_config() -> ExperimentConfig:
                         use_quack=False,
                     ),
                     qk_norm_cfg=LazyConfig(L2Norm)(dim=1),
-                    use_rope=False,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
