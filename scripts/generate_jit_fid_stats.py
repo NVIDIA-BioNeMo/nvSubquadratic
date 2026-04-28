@@ -12,9 +12,10 @@ from torch_fidelity.utils import create_feature_extractor, extract_featuresdict_
 
 def _default_cache_dir() -> str:
     return (
-        os.environ.get("IMAGENET_CACHE")
+        os.environ.get("IMAGENET_PATH")
+        or os.environ.get("IMAGENET_CACHE")
         or os.environ.get("IMAGENET_CACHE_DIR")
-        or "/home/dknigge/project_dir/huggingface/imagenet"
+        or str(Path.cwd() / "imagenet")
     )
 
 
