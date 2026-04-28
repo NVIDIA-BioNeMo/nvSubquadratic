@@ -130,7 +130,7 @@ def _inference_fn(wrapper, resolution: int, dtype: torch.dtype):
     def _run():
         wrapper.eval()
         with torch.no_grad(), _autocast_context(device, dtype):
-            condition = wrapper._condition_from_timesteps(timesteps, labels=labels)
+            condition, _class_emb = wrapper._condition_from_timesteps(timesteps, labels=labels)
             wrapper.network({"input": images, "condition": condition})
 
     return _run
