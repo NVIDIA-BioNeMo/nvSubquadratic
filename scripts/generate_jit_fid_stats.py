@@ -4,10 +4,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
 from torch.utils.data import Dataset, Subset
 from torch_fidelity.metric_fid import fid_featuresdict_to_statistics
 from torch_fidelity.utils import create_feature_extractor, extract_featuresdict_from_input_id_cached
+
+from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
 
 
 def _default_cache_dir() -> str:
