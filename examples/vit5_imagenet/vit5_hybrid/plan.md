@@ -11,26 +11,36 @@ after 30–60 min. The hang reproduces across `max-autotune-no-cudagraphs`,
 1 h delays but does not prevent it (see `plan.old.md` for the full failure
 log).
 
-This plan starts a **fresh** TRACKER sweep with `compile=False` to remove
-torch.compile from the variable space. The TRACKER tables for Patch 16, 8, 4
+This plan starts a **fresh** TRACKER sweep. The TRACKER tables for Patch 16, 8, 4
 are currently empty — this sweep will populate them.
+
+We will check different compile options. 
+
 
 ## Recipe (common to all runs)
 
 - v5 recipe: 800 epochs, LAMB lr=4e-3, wd=0.05, cosine, 3-Augment, Mixup/CutMix,
   EMA 0.99996.
-- Effective batch size = **2048**.
-- `compile=False` (overrides `config.compile=True` in the leaf `.py` files;
-  `compile_mode` is then ignored at runtime — see `experiments/run.py:164-169`).
+- Effective batch size at least = **2048**.
+- overrides `config.compile=True` in the leaf `.py` files and `compile_mode` — see `experiments/run.py:164-169`).
 - Hardware: **1 node × 8 H100 GPUs**, `slurm/submit_hybrid.sh`.
 - 4 h walltime per job, chained restarts via `slurm/queue.sh`.
 - Account: `healthcareeng_research` (script default — do not auto-switch).
 
+1 Node 8 Devices
 | Patch | tokens/img | per-GPU batch | accum | num GPUs | effective |
 | ----- | ---------- | ------------- | ----- | -------- | --------- |
 | 16    | 196        | 256           | 1     | 8        | 2048      |
 | 8     | 784        | 256           | 1     | 8        | 2048      |
 | 4     | 3 136      | 128           | 2     | 8        | 2048      |
+
+4 Nodes 8 Devices
+| Patch | tokens/img | per-GPU batch | accum | num GPUs | effective |
+| ----- | ---------- | ------------- | ----- | -------- | --------- |
+| 16    | 196        | 256           | 1     | 32       | 2048 x 4  |
+| 8     | 784        | 256           | 1     | 32       | 2048 x 4  |
+| 4     | 3 136      | 128           | 1     | 32       | 2048 x 2  |
+
 
 ## Configs (4 base configs in `examples/vit5_imagenet/vit5_hybrid/`)
 
@@ -49,37 +59,45 @@ the 4-config × 3-patch grid only.
 From repo root `/lustre/fsw/healthcareeng_bionemo/amoradzadeh/hyena/vit5_multinode/`.
 
 `slurm/submit_hybrid.sh:45` already injects
-`compile_mode=max-autotune-no-cudagraphs` as a CLI override; the value is
-ignored at runtime when `compile=False`. We pass `compile=False` as an extra
-positional arg via `queue.sh`, which appends it to `CONFIG_OVERRIDES` (later
-overrides win).
+`slurm/submit_hybrid_4node.sh` already injects
 
 ### Patch 16 (4 chains × 12 windows)
 
 ```bash
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile=False net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile=False net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile=False net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile=False net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile_mode=default net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile_mode=default net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile_mode=default net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile_mode=default net.patch_size=16 dataset.batch_size=256 train.accumulate_grad_steps=1
 ```
+
 
 ### Patch 8 (4 chains × 16 windows)
 
 ```bash
-bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile=False net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
-bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile=False net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
-bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile=False net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
-bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile=False net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile_mode=default net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile_mode=default net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile_mode=default net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid.sh 16 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile_mode=default net.patch_size=8 dataset.batch_size=256 train.accumulate_grad_steps=1
 ```
+
 
 ### Patch 4 (4 chains × 24 windows)
 
 ```bash
-bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile=False net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
-bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile=False net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
-bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile=False net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
-bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile=False net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
+bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
+bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
+bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
+bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=2
 ```
+
+
+```bash
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 24 examples/vit5_imagenet/vit5_hybrid/full_attention.py compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 24 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py      compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 24 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py    compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=1
+bash slurm/queue.sh slurm/submit_hybrid_4node.sh 24 examples/vit5_imagenet/vit5_hybrid/full_hyena.py     compile_mode=default net.patch_size=4 dataset.batch_size=128 train.accumulate_grad_steps=1
+```
+
 
 ## Risks
 
@@ -101,7 +119,7 @@ bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid
    `dataset.batch_size=64 train.accumulate_grad_steps=4` (effective 2048).
 
 4. **Fresh run dirs.** `RUN_NAME_HASH = md5(CONFIG_FILE + CONFIG_OVERRIDES +
-   EXPERIMENT_NAME)[:8]` includes the new `compile=False` token, so each run
+   EXPERIMENT_NAME)[:8]` includes the new `compile_mode=default` token, so each run
    creates its own `runs/<config>/run_<hash>/` dir — no collision with prior
    compile=True chains; nothing is overwritten.
 
@@ -115,7 +133,7 @@ bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid
 - [ ] Smoke: submit one **patch-16** job for `hybrid_hhha.py` (lowest-risk
       shape); confirm it reaches step 100 without OOM or NCCL hang.
 - [ ] Smoke: submit one **patch-8** job per config (highest OOM risk:
-      `compile=False`+`batch=256`+`784 tokens`); confirm step 100 without OOM.
+      `compile_mode=default`+`batch=256`+`784 tokens`); confirm step 100 without OOM.
 - [ ] Smoke: submit one **patch-4** job; confirm `accum=2` keeps memory under
       80 GB at step 100.
 - [ ] After the first 4 h window of each chain (TIMEOUT or COMPLETED via
@@ -128,8 +146,6 @@ bash slurm/queue.sh slurm/submit_hybrid.sh 24 examples/vit5_imagenet/vit5_hybrid
 ## Files
 
 - `examples/vit5_imagenet/vit5_hybrid/plan.md` — this file (new).
-- `examples/vit5_imagenet/vit5_hybrid/plan.old.md` — previous plan, archived for
-  reference (compile=True history, omega ablation, NCCL-desync postmortems).
+
 - `examples/vit5_imagenet/vit5_hybrid/TRACKER.md` — result tables, populated as
   runs complete.
-- No code changes required; `compile=False` is a runtime CLI override.
