@@ -9,6 +9,7 @@ import sys
 
 import torch
 
+
 MEMORY_BUDGET_GB = 80.0
 BATCH_SIZES = [2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64]
 
@@ -31,9 +32,9 @@ def _resolve_patch_interpolations(net_cfg):
 
 
 def profile_model(model, name, device, dtype, compile_mode="default"):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Model: {name}  |  params: {sum(p.numel() for p in model.parameters()):,}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     model = model.to(device=device)
     model = torch.compile(model, mode=compile_mode)
@@ -82,7 +83,7 @@ def profile_model(model, name, device, dtype, compile_mode="default"):
                 break
         except torch.cuda.OutOfMemoryError:
             print(f"  bs={bs:>3d}  OOM", flush=True)
-            del x
+            del x, c  # noqa: F821
             torch.cuda.empty_cache()
             gc.collect()
             break
