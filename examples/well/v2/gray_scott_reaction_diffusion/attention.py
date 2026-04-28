@@ -1,7 +1,7 @@
-"""Attention config for MHD_64 (v2).
+"""Attention config for gray_scott_reaction_diffusion (v2).
 
 Uses a ResidualNetwork with multi-head self-attention (QKV + RoPE) as the
-sequence mixer.  With patch_size=8 the effective sequence resolution is 8×8×8.
+sequence mixer.  With patch_size=16 the effective sequence resolution is 16×16.
 
 Patch-size CLI override
 -----------------------
@@ -11,7 +11,7 @@ are derived via OmegaConf interpolators.
 
 import torch
 
-from examples.well.v2.MHD_64._base import (
+from examples.well.v2.active_matter._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,
@@ -30,27 +30,18 @@ from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, smal
 
 
 # ─── Model hyperparameters ────────────────────────────────────────────────────
-# NUM_HIDDEN_CHANNELS / NUM_BLOCKS / NUM_HEADS match the v2 baseline shared by
-# `acoustic_scattering_maze` and `active_matter`.  PATCH_SIZE is kept at 8 (vs 16
-# in the 2D configs) because MHD_64 is 3D 64³: patch_size=16 would give only
-# 4×4×4 = 64 tokens, too coarse for a 3D PDE.
 NUM_HIDDEN_CHANNELS = 384
 NUM_BLOCKS = 12
-# NUM_HEADS=8 (vs 6 in the 2D siblings): 3D RoPE requires head_dim % 6 == 0.
-# 384/6=64 (64%6=4) fails the assert; 384/8=48 (48%6=0) passes.
-NUM_HEADS = 8
-PATCH_SIZE = 8
+NUM_HEADS = 6
+PATCH_SIZE = 16
 
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 
 
 def get_config() -> ExperimentConfig:
-    """Build Attention experiment config for MHD_64."""
-    # NOTE: Override _base.py defaults (LR=5e-3, WD=1e-4 — tuned for CNextU-net,
-    # paper Table 6) with v1 attention/Hyena defaults (LR=1e-3, WD=1e-5).
-    # The 5e-3 LR has only been validated for CNextU-net on MHD_64.
-    config = get_base_config(learning_rate=1e-3, weight_decay=1e-5)
+    """Build Attention experiment config for active_matter."""
+    config = get_base_config()
 
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
