@@ -145,19 +145,17 @@ class VisionRotaryEmbeddingFast(nn.Module):
             cos_pad = torch.ones(num_cls_token, D, dtype=cos_img.dtype, device=cos_img.device)
             sin_pad = torch.zeros(num_cls_token, D, dtype=sin_img.dtype, device=sin_img.device)
 
-            self.freqs_cos = torch.cat([cos_pad, cos_img], dim=0).contiguous()  # [N_cls+N_img, D]
-            self.freqs_sin = torch.cat([sin_pad, sin_img], dim=0).contiguous()
+            freqs_cos = torch.cat([cos_pad, cos_img], dim=0).contiguous()  # [N_cls+N_img, D]
+            freqs_sin = torch.cat([sin_pad, sin_img], dim=0).contiguous()
         else:
-            self.freqs_cos = freqs.cos().view(-1, freqs.shape[-1]).contiguous()
-            self.freqs_sin = freqs.sin().view(-1, freqs.shape[-1]).contiguous()
+            freqs_cos = freqs.cos().view(-1, freqs.shape[-1]).contiguous()
+            freqs_sin = freqs.sin().view(-1, freqs.shape[-1]).contiguous()
+
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
     def forward(self, t):
         """Apply precomputed flattened rotary embedding values to ``t``."""
-        # Ensure devices match
-        if t.device != self.freqs_cos.device:
-            self.freqs_cos = self.freqs_cos.to(t.device)
-            self.freqs_sin = self.freqs_sin.to(t.device)
-
         return t * self.freqs_cos + rotate_half(t) * self.freqs_sin
 
 
