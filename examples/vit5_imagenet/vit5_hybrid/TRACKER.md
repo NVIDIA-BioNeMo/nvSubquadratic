@@ -67,3 +67,26 @@ Full Hyena is **14.3% cheaper** than Full Attention (38.72 vs 45.16 GFLOPs).
 | Hybrid HA (HA×6)      |           |             |          |              |
 | Hybrid HHHA (HHHA×3)  |           |             |          |              |
 | Full Hyena (H×12)     |           |             |          |              |
+
+
+## Patch 4
+
+
+3136 tokens/image. Replacing Attention with Hyena saves significant FLOPs:
+
+| Config                | Params (M) | GFLOPs (train) |
+| --------------------- | ---------- | -------------- |
+| Full Attention (A×12) | 22.01      |                |
+| Hybrid HA (HA×6)      | 22.18      |                |
+| Hybrid HHHA (HHHA×3)  | 22.26      |                |
+| Full Hyena (H×12)     | 22.34      |                |
+
+| Config                | WandB Run | val/acc_ema | test/acc | it/s (1 GPU) |
+| --------------------- | --------- | ----------- | -------- | ------------ |
+| Full Attention (A×12) |           |             |          |              |
+| Hybrid HA (HA×6)      |           |             |          |              |
+| Hybrid HHHA (HHHA×3)  |           |             |          |              |
+| Full Hyena (H×12)     |           |             |          |              |
+
+
+

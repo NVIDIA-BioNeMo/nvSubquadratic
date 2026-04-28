@@ -7,13 +7,14 @@
 #SBATCH --mem=0
 #SBATCH --mail-type=FAIL
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybrid4n
+#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybridkan4n
 
 # Usage (from repo root):
-#   sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
-#       net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+#   sbatch slurm/submit_hybrid_kan_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena_kan.py \
+#       net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1
 #
 # Patch size / batch / accum guide (4 nodes = 32 GPUs, effective batch = 2048):
+#   patch 8:  batch_size=64  accumulate_grad_steps=1
 #   patch 4:  batch_size=16  accumulate_grad_steps=4
 #   patch 2:  batch_size=4   accumulate_grad_steps=16
 #   patch 1:  batch_size=1   accumulate_grad_steps=64
@@ -21,7 +22,7 @@
 set -x
 
 if [ -z "${1:-}" ]; then
-    echo "Usage: sbatch slurm/submit_hybrid_4node.sh <config.py> [overrides...]"
+    echo "Usage: sbatch slurm/submit_hybrid_kan_4node.sh <config.py> [overrides...]"
     exit 1
 fi
 
@@ -48,8 +49,8 @@ for arg in "$@"; do
     CONFIG_OVERRIDES="${CONFIG_OVERRIDES} ${arg}"
 done
 
-# Container image
-IMAGE_NAME="${SQSH_IMAGE:-/lustre/fsw/healthcareeng_bionemo/amoradzadeh/hyena/enroot/nvsubquadratic-slurm-x86_64-04-17-2026.sqsh}"
+# Container image — built from 04-17 sqsh + pip-installed warpkan (via slurm/sanity_kan.sh on 2026-04-22)
+IMAGE_NAME="${SQSH_IMAGE:-/lustre/fsw/healthcareeng_bionemo/amoradzadeh/hyena/enroot/nvsubquadratic-slurm-x86_64-04-22-2026-warpkan.sqsh}"
 
 # Host paths
 WORKDIR="${PWD}"
@@ -101,7 +102,7 @@ if [ -f "$HOME/.netrc" ]; then
     MOUNTS="${MOUNTS},$HOME/.netrc:/root/.netrc"
 fi
 
-# Code is baked into the container
+# Code is baked into the container (nvSubquadratic and warpKAN)
 WORK_DIR="/workspaces/nvSubquadratic-private"
 CONFIG_PATH="${WORK_DIR}/${CONFIG_FILE}"
 
@@ -128,7 +129,7 @@ export HF_TOKEN="${HF_TOKEN:-}"
 export PYTHONPATH="."
 export DALI_NO_MMAP=1
 export TRITON_CACHE_DIR="/tmp/triton_${SLURM_JOB_ID}"
-export TORCHINDUCTOR_FX_GRAPH_CACHE=1
+export TORCHINDUCTOR_FX_GRAPH_CACHE=0
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True

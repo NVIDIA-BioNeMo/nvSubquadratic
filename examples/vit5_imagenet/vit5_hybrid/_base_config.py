@@ -123,29 +123,36 @@ def _make_attention_block_cfg() -> LazyConfig:
     )
 
 
-def _make_hyena_block_cfg() -> LazyConfig:
+def _make_hyena_block_cfg(kernel_cfg: LazyConfig | None = None) -> LazyConfig:
     """Build a ViT5ResidualBlock config with Hyena + GRN (no FiLM).
 
     All dimension and grid values use ``${eval:'...'}"`` interpolation so they
     stay in sync with the top-level network config.
+
+    Args:
+        kernel_cfg: Optional LazyConfig for the CKConvND kernel.  Defaults to
+            the standard SIRENKernelND when not provided.
     """
+    if kernel_cfg is None:
+        kernel_cfg = LazyConfig(SIRENKernelND)(
+            data_dim="${net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
+            out_dim="${net.hidden_dim}",
+            mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
+            num_layers=KERNEL_NUM_LAYERS,
+            embedding_dim=KERNEL_EMBEDDING_DIM,
+            omega_0=KERNEL_OMEGA_0,
+            L_cache=_GRID_H,
+            use_bias=True,
+            hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
+        )
+
     mixer_cfg = LazyConfig(QKVSequenceMixer)(
         hidden_dim="${net.hidden_dim}",
         mixer_cfg=LazyConfig(Hyena)(
             global_conv_cfg=LazyConfig(CKConvND)(
                 data_dim=2,
                 hidden_dim="${net.hidden_dim}",
-                kernel_cfg=LazyConfig(SIRENKernelND)(
-                    data_dim="${net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
-                    out_dim="${net.hidden_dim}",
-                    mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
-                    num_layers=KERNEL_NUM_LAYERS,
-                    embedding_dim=KERNEL_EMBEDDING_DIM,
-                    omega_0=KERNEL_OMEGA_0,
-                    L_cache=_GRID_H,
-                    use_bias=True,
-                    hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
-                ),
+                kernel_cfg=kernel_cfg,
                 mask_cfg=LazyConfig(GaussianModulationND)(
                     data_dim="${net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.data_dim}",
                     num_channels="${net.hidden_dim}",
@@ -209,6 +216,7 @@ def build_hybrid_net(
     patch_size: int = PATCH_SIZE,
     max_drop_path_rate: float = DROP_PATH_RATE,
     drop_path_schedule: str = "constant",
+    hyena_kernel_cfg: LazyConfig | None = None,
 ) -> LazyConfig:
     """Build ViT5ClassificationNet with interleaved Hyena/Attention blocks.
 
@@ -221,6 +229,8 @@ def build_hybrid_net(
             interpolation in the nested block configs.
         max_drop_path_rate: Maximum stochastic depth rate.
         drop_path_schedule: ``"constant"`` or ``"linear"`` ramp.
+        hyena_kernel_cfg: Optional LazyConfig for the Hyena CKConvND kernel.
+            Passed to ``_make_hyena_block_cfg``; defaults to SIRENKernelND.
 
     Returns:
         LazyConfig for ViT5ClassificationNet.
@@ -231,7 +241,7 @@ def build_hybrid_net(
     if "A" in layer_pattern:
         layer_types["A"] = _make_attention_block_cfg()
     if "H" in layer_pattern:
-        layer_types["H"] = _make_hyena_block_cfg()
+        layer_types["H"] = _make_hyena_block_cfg(kernel_cfg=hyena_kernel_cfg)
 
     return LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,
