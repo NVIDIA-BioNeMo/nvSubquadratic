@@ -211,7 +211,6 @@ def get_config(
     config.compile = True
     config.compile_mode = "max-autotune"
     config.compile_compatible_fftconv = True
-    config.num_blocks = NUM_BLOCKS
 
     # ─── Dataset (fused DALI + local NVMe staging) ───────────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(

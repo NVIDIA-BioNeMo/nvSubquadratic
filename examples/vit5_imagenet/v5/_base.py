@@ -113,7 +113,6 @@ def get_base_config(
     config = ExperimentConfig()
     config.debug = False
     config.seed = 42
-    config.num_blocks = NUM_BLOCKS
 
     # ─── Dataset (fused DALI + local NVMe staging) ───────────────────
     config.dataset = LazyConfig(DALIImageNetFusedDataModule)(

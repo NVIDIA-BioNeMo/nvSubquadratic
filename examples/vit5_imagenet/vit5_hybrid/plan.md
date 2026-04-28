@@ -92,6 +92,13 @@ sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_attention.
     net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
 ```
 
+## Verification Checklist
+
+1. Submit a single patch-8 job, verify no OOM and correct batch config
+1. Submit a single patch-16 job, check slurm output for successful training start
+1. Check W&B for the run appearing under `vit5_hybrid` job group
+1. If both pass, launch the full set of 8 chained experiments
+
 ## First Window Results (Patch 16 & 8)
 
 Completed first 4h window for all 8 experiments. Steady-state throughput:

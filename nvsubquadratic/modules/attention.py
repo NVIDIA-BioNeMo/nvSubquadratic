@@ -6,7 +6,6 @@
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from nvsubquadratic.parallel.utils import zigzag_gather_from_group_ranks, zigzag_split_across_group_ranks
 from nvsubquadratic.utils import qk_norm, rope
@@ -52,6 +51,9 @@ class Attention(torch.nn.Module):
         is_causal (bool): Whether the attention is causal. Defaults to False.
         attn_dropout (float): The dropout rate for the attention weights.
         rope_base (float): The base of the RoPE.
+        rope_spatial_dims (tuple[int, ...]): Required when ``use_rope=True``.
+            Spatial dimensions used to precompute the RoPE cos/sin tables.
+            Examples: ``(4096,)`` for 1D, ``(64, 64)`` for 2D, ``(8, 64, 64)`` for 3D.
     """
 
     def __init__(
@@ -63,6 +65,7 @@ class Attention(torch.nn.Module):
         is_causal: bool = False,
         attn_dropout: float = 0.0,
         rope_base: float = 10000.0,
+        rope_spatial_dims: tuple[int, ...] | None = None,
     ):
         """Initialize the SelfAttention module."""
         super().__init__()
@@ -77,111 +80,63 @@ class Attention(torch.nn.Module):
         self.is_causal = is_causal
         self.attn_dropout = attn_dropout
 
-        # RoPE caches (keyed by shape, dtype, device)
+        # ── Precomputed RoPE cos/sin buffers ──────────────────────────────
+        #
+        # Following the ViT5Attention pattern: cos/sin tables are built once
+        # at init and stored as non-persistent registered buffers so they:
+        #   - survive .to(device) / .half() without manual bookkeeping,
+        #   - are visible to CUDA-graph capture (no dynamic allocation in forward),
+        #   - cause no graph breaks with torch.compile (no dict lookups,
+        #     no torch.no_grad/inference_mode context managers in forward),
+        #   - are NOT serialised into checkpoints (persistent=False), since
+        #     they are deterministically reconstructed from __init__ args.
         if self.use_rope:
-            self._rope1d_cache = {}
-            self._rope2d_cache = {}
-            self._rope3d_cache = {}
+            assert rope_spatial_dims is not None, (
+                "rope_spatial_dims is required when use_rope=True. "
+                "Pass a tuple of spatial dimensions, e.g. (4096,) for 1D, "
+                "(64, 64) for 2D, (8, 64, 64) for 3D."
+            )
+            self._rope_ndim = len(rope_spatial_dims)
+
+            if self._rope_ndim == 1:
+                (seq_len,) = rope_spatial_dims
+                assert self.head_dim % 2 == 0, f"1D RoPE requires head_dim divisible by 2, got {self.head_dim}"
+                cos, sin = rope.construct_rope_1d_cache_blh(
+                    seq_len, self.head_dim, torch.device("cpu"), torch.float32, self.rope_base
+                )
+                self.register_buffer("rope_cos", cos, persistent=False)
+                self.register_buffer("rope_sin", sin, persistent=False)
+
+            elif self._rope_ndim == 2:
+                height, width = rope_spatial_dims
+                assert self.head_dim % 4 == 0, f"2D RoPE requires head_dim divisible by 4, got {self.head_dim}"
+                cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_blh(
+                    height, width, self.head_dim // 2, torch.device("cpu"), torch.float32, self.rope_base
+                )
+                self.register_buffer("rope_cos_y", cos_y, persistent=False)
+                self.register_buffer("rope_sin_y", sin_y, persistent=False)
+                self.register_buffer("rope_cos_x", cos_x, persistent=False)
+                self.register_buffer("rope_sin_x", sin_x, persistent=False)
+
+            elif self._rope_ndim == 3:
+                depth, height, width = rope_spatial_dims
+                assert self.head_dim % 6 == 0, f"3D RoPE requires head_dim divisible by 6, got {self.head_dim}"
+                cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_blh(
+                    depth, height, width, self.head_dim // 3, torch.device("cpu"), torch.float32, self.rope_base
+                )
+                self.register_buffer("rope_cos_z", cos_z, persistent=False)
+                self.register_buffer("rope_sin_z", sin_z, persistent=False)
+                self.register_buffer("rope_cos_y", cos_y, persistent=False)
+                self.register_buffer("rope_sin_y", sin_y, persistent=False)
+                self.register_buffer("rope_cos_x", cos_x, persistent=False)
+                self.register_buffer("rope_sin_x", sin_x, persistent=False)
+
+            else:
+                raise ValueError(f"rope_spatial_dims must be 1D, 2D, or 3D, got {self._rope_ndim}D")
 
     def extra_repr(self) -> str:
         """Extra repr for the Attention module."""
         return f"num_heads={self.num_heads}, apply_qk_norm={self.apply_qk_norm}, is_causal={self.is_causal}, attn_dropout={self.attn_dropout}, use_rope={self.use_rope}, rope_base={self.rope_base}"
-
-    def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
-        """Precompute and cache 1D RoPE cos/sin for input of length seq_len.
-
-        Args:
-            seq_len: Number of positions T.
-            dim: Per-axis channel dimension. Must be even because rotations operate on pairs.
-            device: Target device for the cached tensors.
-            dtype: Target dtype for the cached tensors.
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor]: ``(cos, sin)``
-            where shapes are:
-            - cos: [seq_len, dim]
-            - sin: [seq_len, dim]
-
-        Notes:
-            The cache key is ``(T, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
-        """
-        key = (int(seq_len), int(dim), str(device), str(dtype))
-        if key in self._rope1d_cache:
-            return self._rope1d_cache[key]
-        # If not in cache, compute and cache
-        with torch.inference_mode(False):
-            with torch.no_grad():
-                cos, sin = rope.construct_rope_1d_cache_blh(seq_len, dim, device, dtype, self.rope_base)
-                self._rope1d_cache[key] = (cos, sin)
-        return cos, sin
-
-    def _rope_cache_2d(
-        self, height: int, width: int, dim_half: int, device, dtype
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Precompute and cache 2D RoPE cos/sin for Y and X axes.
-
-        Args:
-            height: Number of rows H.
-            width: Number of columns W.
-            dim_half: Per-axis channel dimension. Must be even because rotations operate on pairs.
-            device: Target device for the cached tensors.
-            dtype: Target dtype for the cached tensors.
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_y, sin_y, cos_x, sin_x)``
-            where shapes are:
-            - cos_y, sin_y: [height, dim_half]
-            - cos_x, sin_x: [width, dim_half]
-
-        Notes:
-            The cache key is ``(H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
-        """
-        key = (int(height), int(width), int(dim_half), str(device), str(dtype))
-        if key in self._rope2d_cache:
-            return self._rope2d_cache[key]
-        # If not in cache, compute and cache
-        with torch.inference_mode(False):
-            with torch.no_grad():
-                cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_blh(
-                    height, width, dim_half, device, dtype, self.rope_base
-                )
-                self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
-        return cos_y, sin_y, cos_x, sin_x
-
-    def _rope_cache_3d(
-        self, depth: int, height: int, width: int, dim_third: int, device, dtype
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Precompute and cache 3D RoPE cos/sin for Z, Y, and X axes.
-
-        Args:
-            depth: Number of depth D.
-            height: Number of rows H.
-            width: Number of columns W.
-            dim_third: Per-axis channel dimension. Must be even because rotations operate on pairs.
-            device: Target device for the cached tensors.
-            dtype: Target dtype for the cached tensors.
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)``
-            where shapes are:
-            - cos_z, sin_z: [depth, dim_third]
-            - cos_y, sin_y: [height, dim_third]
-            - cos_x, sin_x: [width, dim_third]
-
-        Notes:
-            The cache key is ``(D, H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
-        """
-        key = (int(depth), int(height), int(width), int(dim_third), str(device), str(dtype))
-        if key in self._rope3d_cache:
-            return self._rope3d_cache[key]
-        # If not in cache, compute and cache
-        with torch.inference_mode(False):
-            with torch.no_grad():
-                cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_blh(
-                    depth, height, width, dim_third, device, dtype, self.rope_base
-                )
-                self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
-        return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
     def _flatten_spatial(self, x: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
         """Flattens the spatial dimensions of the input and returns the original spatial shape.
@@ -256,53 +211,28 @@ class Attention(torch.nn.Module):
         local_num_heads = self.num_heads  # TODO(@farhad): This looks to me like an error.
 
         # Optional RoPE positional encoding (before normalization)
+        # Cos/sin buffers were precomputed at init — no dynamic allocation,
+        # no dict lookups, no context managers; safe for torch.compile.
         if self.use_rope:
-            # Get the dimensionality of the input and apply RoPE based on the dimensionality
-            dimensionality_input = query.ndim - 2
-            if dimensionality_input == 1:
-                assert query.shape[-1] % 2 == 0, (
-                    f"With 1D RoPE, the number of channels must be divisible by 2. Got {query.shape[-1]}."
+            if self._rope_ndim == 1:
+                cache = (self.rope_cos, self.rope_sin)
+                query = rope.apply_rope_1d_blh(query, cache)
+                key = rope.apply_rope_1d_blh(key, cache)
+            elif self._rope_ndim == 2:
+                cache = (self.rope_cos_y, self.rope_sin_y, self.rope_cos_x, self.rope_sin_x)
+                query = rope.apply_rope_2d_blh(query, cache)
+                key = rope.apply_rope_2d_blh(key, cache)
+            elif self._rope_ndim == 3:
+                cache = (
+                    self.rope_cos_z,
+                    self.rope_sin_z,
+                    self.rope_cos_y,
+                    self.rope_sin_y,
+                    self.rope_cos_x,
+                    self.rope_sin_x,
                 )
-                assert key.shape[-1] % 2 == 0, (
-                    f"With 1D RoPE, the number of channels must be divisible by 2. Got {key.shape[-1]}."
-                )
-                # Gather or contsruct the RoPE 1D cache
-                _, seq_len, hidden_dim = query.shape
-                rope_1d_cache = self._rope_cache_1d(seq_len, hidden_dim, query.device, query.dtype)
-                # Apply RoPE to query and key
-                query = rope.apply_rope_1d_blh(query, rope_1d_cache)
-                key = rope.apply_rope_1d_blh(key, rope_1d_cache)
-
-            elif dimensionality_input == 2:
-                assert query.shape[-1] % 4 == 0, (
-                    f"With 2D RoPE, the number of channels must be divisible by 4. Got {query.shape[-1]}."
-                )
-                assert key.shape[-1] % 4 == 0, (
-                    f"With 2D RoPE, the number of channels must be divisible by 4. Got {key.shape[-1]}."
-                )
-                # Gather or contsruct the RoPE 2D cache
-                _, height, width, hidden_dim = query.shape
-                rope_2d_cache = self._rope_cache_2d(height, width, hidden_dim // 2, query.device, query.dtype)
-                # Apply RoPE to query and key
-                query = rope.apply_rope_2d_blh(query, rope_2d_cache)
-                key = rope.apply_rope_2d_blh(key, rope_2d_cache)
-
-            elif dimensionality_input == 3:
-                assert query.shape[-1] % 6 == 0, (
-                    f"With 3D RoPE, the number of channels must be divisible by 6. Got {query.shape[-1]}."
-                )
-                assert key.shape[-1] % 6 == 0, (
-                    f"With 3D RoPE, the number of channels must be divisible by 6. Got {key.shape[-1]}."
-                )
-                # Gather or contsruct the RoPE 3D cache
-                _, depth, height, width, hidden_dim = query.shape
-                rope_3d_cache = self._rope_cache_3d(depth, height, width, hidden_dim // 3, query.device, query.dtype)
-                # Apply RoPE to query and key
-                query = rope.apply_rope_3d_blh(query, rope_3d_cache)
-                key = rope.apply_rope_3d_blh(key, rope_3d_cache)
-
-            else:
-                raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
+                query = rope.apply_rope_3d_blh(query, cache)
+                key = rope.apply_rope_3d_blh(key, cache)
 
         # Optional QK normalization (after RoPE)
         if self.apply_qk_norm:
@@ -313,28 +243,26 @@ class Attention(torch.nn.Module):
         key, _ = self._flatten_spatial(key)
         value, _ = self._flatten_spatial(value)
 
-        # Scaled dot-product attention (uses FlashAttention kernels when available)
-        # SDPA applies 1/sqrt(d) scaling internally.
-        in_dtype = query.dtype
-        # Use bfloat16 to align with high-performance SDPA/FlashAttention kernels
-        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
-            out = F.scaled_dot_product_attention(
-                # Requires unpacking the number of heads from the batch dimension
-                rearrange(query.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
-                rearrange(key.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
-                rearrange(value.to(torch.bfloat16), "(b h) t d -> b h t d", h=local_num_heads),
-                dropout_p=self.attn_dropout if self.training else 0.0,
-                is_causal=self.is_causal,
-                # Scale is 1.0 if QK normalization is applied, otherwise self.scale
-                # When you L2-normalize Q and K, you are effectively doing cosine attention.
-                # PyTorch SDPA still applies the 1/sqrt(d) scaling to the logits. That makes the
-                # logits too small by a factor sqrt(d), flattening attention and harming learning.
-                scale=self.scale if not self.apply_qk_norm else 1.0,
-            )
-        # Convert back to original dtype [batch_size, local_num_heads, flatten(* spatial_dims), head_dim]
-        out = out.to(in_dtype)
+        # Reshape from [B*H, T, D] to [B, H, T, D] for SDPA
+        query = rearrange(query, "(b h) t d -> b h t d", h=local_num_heads)
+        key = rearrange(key, "(b h) t d -> b h t d", h=local_num_heads)
+        value = rearrange(value, "(b h) t d -> b h t d", h=local_num_heads)
 
-        # Merge local heads: [batch_size, local_num_heads, flatten(* spatial_dims), head_dim] -> [batch_size, flatten(* spatial_dims), (local_num_heads * head_dim)]
+        # Scaled dot-product attention — let PyTorch auto-select the best
+        # backend (CuDNN on H100, FlashAttention on A100, etc.).
+        # No manual dtype cast: autocast handles precision.
+        out = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            dropout_p=self.attn_dropout if self.training else 0.0,
+            is_causal=self.is_causal,
+            # When QK-norm is applied (cosine attention), disable the default
+            # 1/sqrt(d) scaling — it would flatten the normalised logits.
+            scale=self.scale if not self.apply_qk_norm else 1.0,
+        )
+
+        # Merge heads: [B, H, T, D] -> [B, T, H*D]
         out = rearrange(out, "b h t d -> b t (h d)", h=local_num_heads)
 
         # Unflatten back to spatial dims

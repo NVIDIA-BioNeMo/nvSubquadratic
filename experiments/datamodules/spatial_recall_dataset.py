@@ -824,10 +824,19 @@ class SpatialRecall1DDataModule(pl.LightningDataModule):
         canvas_size: Size of the canvas per dimension (canvas_length = canvas_size²).
         placement: Placement mode - "fixed" or "random".
         with_mask: Add mask channel indicating target location.
+        use_colored_frames: Use RGB canvas with colored boundary markers around items.
+            In 1D, "frames" are short colored markers (``frame_width`` elements) placed
+            immediately before and after each segment.
         num_items: Number of items to place (1 = target only, >1 = target + distractors).
         readout_value: Value to fill the readout region with (default 0.0). Use e.g. -1.0 to
             explicitly mark the readout region so the model knows where to output.
+        colored_label: If True and use_colored_frames=True, the label will be RGB with the
+            digit colored using the same color as its frame.
+        frame_width: Number of elements for each colored boundary marker (default 2).
     """
+
+    # Fixed RGB palette for colored frames (same as 2D)
+    PALETTE = SpatialRecallDataModule.PALETTE
 
     def __init__(
         self,
@@ -836,16 +845,27 @@ class SpatialRecall1DDataModule(pl.LightningDataModule):
         canvas_size: int,
         placement: Literal["fixed", "random"] = "fixed",
         with_mask: bool = False,
+        use_colored_frames: bool = False,
         num_items: int = 1,
         readout_value: float = 0.0,
+        colored_label: bool = False,
+        frame_width: int = 2,
     ) -> None:
         """Initialize the SpatialRecall1DDataModule."""
         super().__init__()
 
         assert placement in ("fixed", "random"), f"placement must be 'fixed' or 'random', got {placement}"
+        assert not (with_mask and use_colored_frames), "with_mask and use_colored_frames cannot both be True"
+        if colored_label:
+            assert use_colored_frames, "colored_label=True requires use_colored_frames=True"
         if num_items > 1:
             assert placement == "random", "num_items > 1 requires placement='random'"
-            assert with_mask, "num_items > 1 requires with_mask=True to identify target"
+            assert with_mask or use_colored_frames, (
+                "num_items > 1 requires with_mask=True or use_colored_frames=True to identify target"
+            )
+            assert num_items <= len(self.PALETTE), (
+                f"num_items must be <= {len(self.PALETTE)} (palette size). Got {num_items}"
+            )
 
         self._base_datamodule_cfg = base_datamodule_cfg
         self._base_datamodule: Optional[pl.LightningDataModule] = None
@@ -856,8 +876,16 @@ class SpatialRecall1DDataModule(pl.LightningDataModule):
         self.segment_length = target_size * target_size
         self.placement = placement
         self.with_mask = with_mask
+        self.use_colored_frames = use_colored_frames
         self.num_items = num_items
         self.readout_value = readout_value
+        self.colored_label = colored_label
+        self.frame_width = frame_width
+
+        # Total footprint of one item including frames
+        self.framed_segment_length = (
+            self.segment_length + 2 * frame_width if use_colored_frames else self.segment_length
+        )
 
         # Properties from base datamodule
         self._batch_size: Optional[int] = None
@@ -872,11 +900,14 @@ class SpatialRecall1DDataModule(pl.LightningDataModule):
         self._test_generator: Optional[torch.Generator] = None
 
         # Input/output channels
-        if with_mask:
+        if use_colored_frames:
+            self.input_channels = 3  # RGB
+        elif with_mask:
             self.input_channels = 2  # Grayscale + mask
         else:
             self.input_channels = 1  # Grayscale
-        self.output_channels = 1
+
+        self.output_channels = 3 if colored_label else 1
 
         # Datasets
         self.train_dataset: Optional[Dataset] = None
@@ -1040,10 +1071,140 @@ class SpatialRecall1DDataModule(pl.LightningDataModule):
 
         return torch.stack(xs, dim=0), torch.stack(ys, dim=0)
 
+    def _colored_frames_collate(self, batch: list) -> Tuple[Tensor, Tensor]:
+        """Collate function for colored frames mode in 1D.
+
+        Creates an RGB 1D canvas where each item is flanked by colored boundary
+        markers (``frame_width`` elements on each side).  The readout region at the
+        end of the canvas gets the same colour as the target item.
+
+        Layout of one framed segment (``framed_segment_length`` total)::
+
+            [frame_width color] [segment_length grayscale-as-RGB] [frame_width color]
+        """
+        xs, ys = zip(*batch)
+        xs = list(xs)
+        ys = list(ys)
+
+        batch_size = len(xs)
+        seg_len = self.segment_length
+        framed_len = self.framed_segment_length
+        fw = self.frame_width
+        L = self.canvas_length
+
+        # Readout occupies the last seg_len elements (same as simple-copy readout).
+        # Valid placement zone: 0 … L - seg_len - framed_len  (leaves room for
+        # readout *and* the framed segment not overlapping with readout)
+        max_start = L - seg_len - framed_len
+        valid_positions = torch.arange(0, max(max_start + 1, 1), dtype=torch.long)
+
+        palette = self.PALETTE.to(dtype=xs[0].dtype, device=xs[0].device)
+        g = self._generator
+
+        x_rgb_list = []
+        y_sel_list = []
+
+        for i in range(batch_size):
+            canvas_rgb = torch.zeros((3, L), dtype=xs[0].dtype, device=xs[0].device)
+
+            # Collect item indices (target first, then distractors)
+            max_distractors = max(0, self.num_items - 1)
+            all_indices = torch.arange(batch_size, dtype=torch.long)
+            other_indices = all_indices[all_indices != i]
+            if other_indices.numel() > 0 and max_distractors > 0:
+                perm_idx = torch.randperm(other_indices.numel(), generator=g)
+                distractor_indices = other_indices[perm_idx][:max_distractors]
+            else:
+                distractor_indices = torch.empty(0, dtype=torch.long)
+
+            indices_to_place = [i] + distractor_indices.tolist()
+            color_order = torch.randperm(len(palette), generator=g)[: len(indices_to_place)]
+
+            num_positions = valid_positions.shape[0]
+            perm_pos = torch.randperm(num_positions, generator=g)
+            pos_cursor = 0
+            occupied = []  # list of (start, end) inclusive of frames
+            placed_meta = []  # (pos, cidx, item_idx)
+
+            def overlaps_any(pos: int) -> bool:
+                p_end = pos + framed_len
+                for o_start, o_end in occupied:
+                    if not (p_end <= o_start or o_end <= pos):
+                        return True
+                return False
+
+            for k_idx, j in enumerate(indices_to_place):
+                placed = False
+                attempts = 0
+                while attempts < num_positions and pos_cursor < num_positions:
+                    pos = int(valid_positions[perm_pos[pos_cursor]].item())
+                    pos_cursor += 1
+                    attempts += 1
+                    if overlaps_any(pos):
+                        continue
+
+                    cidx = int(color_order[k_idx].item())
+                    color = palette[cidx]  # [3]
+
+                    # Left frame marker
+                    canvas_rgb[:, pos : pos + fw] = color.view(3, 1)
+                    # Grayscale digit broadcast to RGB
+                    seg_start = pos + fw
+                    canvas_rgb[:, seg_start : seg_start + seg_len] = ys[j][0].unsqueeze(0).expand(3, -1)
+                    # Right frame marker
+                    canvas_rgb[:, seg_start + seg_len : seg_start + seg_len + fw] = color.view(3, 1)
+
+                    occupied.append((pos, pos + framed_len))
+                    placed_meta.append((pos, cidx, j))
+                    placed = True
+                    break
+
+                if not placed:
+                    break
+
+            # Readout region: last seg_len elements, coloured with target's colour
+            target_meta = None
+            for pos, cidx, pj in placed_meta:
+                if pj == i:
+                    target_meta = (pos, cidx, pj)
+                    break
+
+            if target_meta is not None:
+                _, sel_cidx, _ = target_meta
+                color = palette[sel_cidx]
+                readout_start = L - seg_len
+
+                if self.readout_value != 0.0:
+                    canvas_rgb[:, readout_start + fw : L - fw] = self.readout_value
+
+                # Colour markers at readout boundaries
+                canvas_rgb[:, readout_start : readout_start + fw] = color.view(3, 1)
+                canvas_rgb[:, L - fw : L] = color.view(3, 1)
+
+                x_rgb_list.append(canvas_rgb)
+
+                if self.colored_label:
+                    # [1, seg_len] * [3, 1] -> [3, seg_len]
+                    label_rgb = ys[i] * color.view(3, 1)
+                    y_sel_list.append(label_rgb)
+                else:
+                    y_sel_list.append(ys[i])
+            else:
+                x_rgb_list.append(canvas_rgb)
+                if self.colored_label:
+                    y_sel_list.append(ys[i].repeat(3, 1))
+                else:
+                    y_sel_list.append(ys[i])
+
+        return torch.stack(x_rgb_list, dim=0), torch.stack(y_sel_list, dim=0)
+
     def _get_collate_fn(self):
         """Get the appropriate collate function based on configuration."""
         if self.num_items > 1:
-            return self._multi_item_collate
+            if self.use_colored_frames:
+                return self._colored_frames_collate
+            else:
+                return self._multi_item_collate
         return None
 
     def _build_loader(self, dataset: Dataset, shuffle: bool, drop_last: bool = False) -> DataLoader:
@@ -1808,9 +1969,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Validate arguments
-    if args.mode == "1d" and args.colored_frames:
-        print("Warning: --colored-frames is only supported in 2D and 3D modes. Ignoring.")
-        args.colored_frames = False
     if args.colored_label and not args.colored_frames:
         print("Warning: --colored-label requires --colored-frames. Enabling --colored-frames.")
         args.colored_frames = True
@@ -1878,8 +2036,10 @@ if __name__ == "__main__":
             canvas_size=args.canvas_size,  # DataModule computes canvas_length = canvas_size²
             placement=args.placement,
             with_mask=args.with_mask,
+            use_colored_frames=args.colored_frames,
             num_items=args.num_items,
             readout_value=args.readout_value,
+            colored_label=args.colored_label,
         )
 
     dm.prepare_data()
@@ -1891,9 +2051,8 @@ if __name__ == "__main__":
         print(f"EMNIST split: {args.emnist_split}")
     print(f"Placement: {args.placement}")
     print(f"With mask: {args.with_mask}")
-    if args.mode in ("2d", "3d"):
-        print(f"Colored frames: {args.colored_frames}")
-        print(f"Colored label: {args.colored_label}")
+    print(f"Colored frames: {args.colored_frames}")
+    print(f"Colored label: {args.colored_label}")
     if args.readout_value != 0:
         print(f"Readout value: {args.readout_value}")
     print(f"Num items: {args.num_items}")
@@ -2227,7 +2386,44 @@ if __name__ == "__main__":
     elif args.mode == "1d":
         # 1D mode: show canvas as 1D line plot and label as 2D image
         # Note: x shape is [B, C, L], y shape is [B, C, segment_length] (raw from dataloader)
-        if args.with_mask:
+        import numpy as np
+
+        if args.colored_frames:
+            # RGB 1D mode: x is [B, 3, L], y is [B, 3, seg_len] (or [B, 1, seg_len])
+            # Show R/G/B channels as separate lines + label as RGB 2D image
+            num_cols = 2
+            fig, axes = plt.subplots(B, num_cols, figsize=(12, 2.5 * B))
+            if B == 1:
+                axes = axes.reshape(1, -1)
+            for i in range(B):
+                # Canvas: plot each RGB channel
+                for ch, ch_color in enumerate(["red", "green", "blue"]):
+                    axes[i, 0].plot(x[i, ch, :].cpu().numpy(), linewidth=0.4, color=ch_color, alpha=0.8)
+                axes[i, 0].set_ylim(-0.1, 1.1)
+                # Shade readout region
+                seg_len = args.target_size * args.target_size
+                canvas_len = x.shape[2]
+                axes[i, 0].axvspan(canvas_len - seg_len, canvas_len, alpha=0.1, color="green", label="readout")
+                if i == 0:
+                    axes[i, 0].set_title("Canvas (1D RGB)")
+                    axes[i, 0].legend(loc="upper right", fontsize=6)
+                axes[i, 0].set_xlabel("Position")
+
+                # Label reshaped to 2D
+                if y.shape[1] == 3:
+                    # RGB label: [3, seg_len] -> [H, W, 3]
+                    label_rgb = y[i].cpu().numpy().reshape(3, args.target_size, args.target_size)
+                    label_rgb = np.transpose(label_rgb, (1, 2, 0))
+                    axes[i, 1].imshow(np.clip(label_rgb, 0, 1))
+                    if i == 0:
+                        axes[i, 1].set_title(f"Label RGB ({args.target_size}×{args.target_size})")
+                else:
+                    label_2d = y[i, 0, :].cpu().reshape(args.target_size, args.target_size)
+                    axes[i, 1].imshow(label_2d, cmap="gray")
+                    if i == 0:
+                        axes[i, 1].set_title(f"Label ({args.target_size}×{args.target_size})")
+                axes[i, 1].axis("off")
+        elif args.with_mask:
             num_cols = 3
             fig, axes = plt.subplots(B, num_cols, figsize=(12, 2 * B))
             if B == 1:

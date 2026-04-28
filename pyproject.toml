@@ -72,12 +72,14 @@ select = [
 "scripts/**/*.py" = ["D", "E402"]
 "benchmarks/*.py" = ["D", "E402"]
 "benchmarks/**/*.py" = ["D", "E402"]
+"reports/**/*.py" = ["D", "E402", "C408", "E731", "F841", "RUF059"]
 "examples/**/ft_ablation/*.py" = ["D"]
 "**/*.ipynb" = ["D"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
 known-first-party = ["nvsubquadratic"]
+known-third-party = ["wandb"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

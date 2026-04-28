@@ -38,6 +38,7 @@ import torch
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules._channels_first_utils import is_channels_first_norm
 from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv1d,
     DistributedDepthwiseConv2d,
@@ -457,21 +458,27 @@ class Hyena(torch.nn.Module):
                 raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
 
         # QK normalization (after RoPE).
-        # Tensors are BHL: [B, C, *spatial]. Move C to last dim for norms that
-        # expect channel-last (RMSNorm, LayerNorm, L2Norm with dim=-1).
-        # k_norm is Identity when gate_nonlinear is non-linear (set in __init__);
-        # skip the movedim round-trip in that case to avoid overhead.
+        # Tensors are BHL: [B, C, *spatial]. Channel-first norms can operate
+        # directly; channel-last norms need movedim(1, -1) / movedim(-1, 1).
+        # K is only normalized when gate_nonlinear is Identity (linear gating),
+        # because a nonlinear σ(K) already bounds the magnitude.
         if self.q_norm is not None:
-            query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
-            if not isinstance(self.k_norm, torch.nn.Identity):
-                key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
+            if is_channels_first_norm(self.q_norm):
+                query = self.q_norm(query)
+            else:
+                query = self.q_norm(query.movedim(1, -1)).movedim(-1, 1)
+            if isinstance(self.gate_nonlinear, torch.nn.Identity):
+                if is_channels_first_norm(self.k_norm):
+                    key = self.k_norm(key)
+                else:
+                    key = self.k_norm(key.movedim(1, -1)).movedim(-1, 1)
 
         # First gate: z = Q ⊙ σ(K)
         query = query * self.gate_nonlinear(key)
 
         # Apply PixelHyena normalization (use torch.nn.Identity for no normalization)
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
-            if isinstance(self.pixelhyena_norm, torch.nn.GroupNorm):
+            if is_channels_first_norm(self.pixelhyena_norm):
                 query = self.pixelhyena_norm(query)
             else:
                 shape = query.shape  # [B, C, *spatial]
@@ -495,7 +502,7 @@ class Hyena(torch.nn.Module):
 
         # Output normalization (after the second gate).
         if not isinstance(self.output_norm, torch.nn.Identity):
-            if isinstance(self.output_norm, torch.nn.GroupNorm):
+            if is_channels_first_norm(self.output_norm):
                 y = self.output_norm(y)
             else:
                 shape = y.shape  # [B, C, *spatial]

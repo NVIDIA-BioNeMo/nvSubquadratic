@@ -9,6 +9,7 @@ For test, please run:
 """
 
 import math
+from collections.abc import Sequence
 from typing import Callable
 
 import torch
@@ -633,6 +634,881 @@ class SIRENKernelND(torch.nn.Module):
         return kernel, grid
 
 
+# ---------------------------------------------------------------------------
+# Multi-ω₀ SIREN kernels
+# ---------------------------------------------------------------------------
+
+
+def _as_float_tensor(values: Sequence[float] | torch.Tensor, *, name: str) -> torch.Tensor:
+    """Normalize an ω₀ schedule into a 1D float tensor.
+
+    Accepts any sequence of floats (``list``, ``tuple``) or a 1D tensor.  Used
+    by the multi-ω₀ SIREN classes so that LazyConfig-built instantiations (which
+    naturally represent schedules as lists of floats) work out of the box.
+    """
+    if isinstance(values, torch.Tensor):
+        out = values.detach().to(dtype=torch.float64).flatten()
+    else:
+        out = torch.as_tensor(list(values), dtype=torch.float64)
+    if out.ndim != 1:
+        raise ValueError(f"{name} must be 1-D, got shape {tuple(out.shape)}")
+    if out.numel() == 0:
+        raise ValueError(f"{name} must be non-empty")
+    if (out <= 0).any():
+        raise ValueError(f"{name} entries must all be strictly positive, got {out.tolist()}")
+    return out
+
+
+def _build_omega_0_per_block(
+    *,
+    num_blocks: int,
+    omega_0_min: float,
+    omega_0_max: float,
+    schedule: str,
+) -> torch.Tensor:
+    """Build a per-block ω₀ vector from (min, max, num_blocks, schedule).
+
+    ``schedule`` is either ``"linear"`` (evenly spaced between min and max) or
+    ``"log"`` (log-spaced — evenly spaced in log-10).  Returned tensor has
+    ``dtype=torch.float64`` and length ``num_blocks``.
+    """
+    if num_blocks < 1:
+        raise ValueError(f"num_blocks must be >= 1, got {num_blocks}")
+    if omega_0_min <= 0 or omega_0_max <= 0:
+        raise ValueError(f"omega_0_min/omega_0_max must be positive, got ({omega_0_min}, {omega_0_max})")
+    if omega_0_max < omega_0_min:
+        raise ValueError(f"omega_0_max must be >= omega_0_min, got ({omega_0_min}, {omega_0_max})")
+    if schedule == "linear":
+        return torch.linspace(float(omega_0_min), float(omega_0_max), num_blocks, dtype=torch.float64)
+    if schedule == "log":
+        return torch.logspace(
+            math.log10(float(omega_0_min)), math.log10(float(omega_0_max)), num_blocks, dtype=torch.float64
+        )
+    raise ValueError(f"schedule must be 'linear' or 'log', got {schedule!r}")
+
+
+class MultiOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
+    """SIREN positional embedding with a per-row ω₀ in the first layer.
+
+    The standard ``SIRENPositionalEmbeddingND`` draws every row of the first
+    linear's weight from ``Uniform(-2π·ω₀/d, +2π·ω₀/d)`` using a single scalar
+    ω₀.  This variant takes a *vector* of ω₀ values (one per embedding-dim /
+    row) and re-draws each row independently with its own bound
+    ``2π·ω₀_k / d``.
+
+    This is the "per-row dense" multi-ω₀ init.  Every row is independent but
+    downstream MLP layers mix all rows as usual, so at init all output
+    channels see a weighted combination of every ω₀ in the schedule.  See
+    ``BlockDiagonalMultiOmegaSIRENKernelND`` for a variant that also
+    block-masks the MLP to keep rows disjoint at init.
+
+    Args:
+        data_dim: Number of spatial/temporal input dimensions.
+        embedding_dim: Dimensionality of the positional embedding.
+        L_cache: Cache extent (controls the initial grid cache size).
+        omega_0_per_row: Sequence of ``embedding_dim`` strictly-positive floats
+            (or a 1-D tensor) giving the ω₀ used for row *k* of the first
+            linear.
+        use_bias: Whether to include a bias term.
+    """
+
+    def __init__(
+        self,
+        data_dim: int,
+        embedding_dim: int,
+        L_cache: int,
+        omega_0_per_row: Sequence[float] | torch.Tensor,
+        use_bias: bool = True,
+    ):
+        """Initialize the per-row multi-ω₀ SIREN positional embedding; see the class docstring."""
+        omega = _as_float_tensor(omega_0_per_row, name="omega_0_per_row")
+        if omega.numel() != embedding_dim:
+            raise ValueError(f"omega_0_per_row length ({omega.numel()}) must equal embedding_dim ({embedding_dim})")
+
+        # Parent draws the first-layer weight with placeholder ω₀=1.0; we
+        # immediately overwrite every row with its own ω₀-bound uniform.
+        super().__init__(
+            data_dim=data_dim,
+            embedding_dim=embedding_dim,
+            L_cache=L_cache,
+            omega_0=1.0,
+            use_bias=use_bias,
+        )
+        with torch.no_grad():
+            d = float(self.linear.in_features)
+            for k in range(embedding_dim):
+                bound = 2.0 * math.pi * float(omega[k]) / d
+                self.linear.weight[k, :].uniform_(-bound, bound)
+            # Parent already zero-initialized bias; nothing more to do.
+
+        # Bookkeeping: record the schedule and set the scalar ``omega_0`` to
+        # the schedule's mean (for diagnostics and parity with the parent).
+        self.register_buffer(
+            "omega_0_per_row",
+            omega.to(dtype=torch.float32),
+            persistent=False,
+        )
+        self.omega_0 = float(omega.mean().item())
+
+
+class MultiOmegaSIRENKernelND(SIRENKernelND):
+    """SIRENKernelND with a per-row ω₀ in the first (positional-embedding) layer.
+
+    Identical to ``SIRENKernelND`` except that the positional embedding is a
+    :class:`MultiOmegaSIRENPositionalEmbeddingND` built from the supplied
+    ``omega_0_per_row`` schedule.  All hidden/output layers retain the usual
+    SIREN init with ``hidden_omega_0``.
+
+    The ``omega_0`` attribute reported on the module equals the mean of the
+    schedule, purely for diagnostic purposes.
+
+    Args:
+        out_dim: Number of output channels for the generated kernel.
+        data_dim: Number of spatial/temporal input dimensions.
+        mlp_hidden_dim: Hidden width of the SIREN MLP.
+        num_layers: Total number of SIREN layers (>= 2).
+        embedding_dim: Positional-embedding dimensionality.
+        omega_0_per_row: Sequence of ``embedding_dim`` strictly-positive floats
+            giving the per-row ω₀ in the first layer.
+        L_cache: Cache extent (controls the initial grid cache size).
+        use_bias: Whether to include biases in linear layers.
+        hidden_omega_0: Frequency scaling for hidden SIREN layers (unchanged
+            from the parent).
+        film_cfg, film_after_pos_embed: Same semantics as in the parent.
+    """
+
+    def __init__(
+        self,
+        out_dim: int,
+        data_dim: int,
+        mlp_hidden_dim: int,
+        num_layers: int,
+        embedding_dim: int,
+        omega_0_per_row: Sequence[float] | torch.Tensor,
+        L_cache: int,
+        use_bias: bool,
+        hidden_omega_0: float = 1.0,
+        film_cfg: LazyConfig | None = None,
+        film_after_pos_embed: bool = False,
+    ):
+        """Initialize the per-row multi-ω₀ SIREN kernel; see the class docstring for argument semantics."""
+        omega = _as_float_tensor(omega_0_per_row, name="omega_0_per_row")
+        if omega.numel() != embedding_dim:
+            raise ValueError(f"omega_0_per_row length ({omega.numel()}) must equal embedding_dim ({embedding_dim})")
+
+        # Build the parent with a placeholder scalar ω₀ — we swap out its
+        # positional embedding for the per-row variant immediately below.
+        # Using the mean as placeholder keeps the parent's scalar-ω₀ diagnostic
+        # close to the schedule's ``omega_0`` value even before we overwrite it.
+        super().__init__(
+            out_dim=out_dim,
+            data_dim=data_dim,
+            mlp_hidden_dim=mlp_hidden_dim,
+            num_layers=num_layers,
+            embedding_dim=embedding_dim,
+            omega_0=float(omega.mean().item()),
+            L_cache=L_cache,
+            use_bias=use_bias,
+            hidden_omega_0=hidden_omega_0,
+            film_cfg=film_cfg,
+            film_after_pos_embed=film_after_pos_embed,
+        )
+
+        # Replace the positional embedding with the per-row variant.  The
+        # original one was already constructed (consuming its RNG draws) and
+        # is now discarded; the new embedding performs an additional uniform
+        # draw per row, so the overall RNG trajectory differs from a scalar-ω₀
+        # SIREN with the same seed.  Hidden/output weights remain byte-identical
+        # to a scalar SIREN built with ``omega_0 = mean(omega_0_per_row)``.
+        self.positional_embedding = MultiOmegaSIRENPositionalEmbeddingND(
+            data_dim=data_dim,
+            embedding_dim=embedding_dim,
+            L_cache=L_cache,
+            omega_0_per_row=omega,
+            use_bias=use_bias,
+        )
+        self.register_buffer(
+            "omega_0_per_row",
+            omega.to(dtype=torch.float32),
+            persistent=False,
+        )
+        self.omega_0 = float(omega.mean().item())
+
+
+class BlockDiagonalMultiOmegaSIRENKernelND(MultiOmegaSIRENKernelND):
+    """Per-block ω₀ + (near-)block-diagonal MLP init for a SIREN kernel.
+
+    Extends :class:`MultiOmegaSIRENKernelND` in two ways:
+
+    1.  The first-layer ω₀ is piecewise-constant across ``num_blocks`` equal
+        groups of embedding rows, with ω₀ for block *k* drawn from a
+        ``linear`` or ``log`` schedule over ``[omega_0_min, omega_0_max]``.
+
+    2.  Every hidden linear and the output linear have their weights multiplied
+        by a block mask: weights on the block diagonal are preserved at 1.0,
+        off-diagonal entries are scaled by ``off_block_scale``.  At init this
+        reduces cross-correlation between output channels of different blocks,
+        so early in training each block behaves like a small independent SIREN
+        tuned to its own frequency band.  Training is free to fill in the
+        off-block weights via gradient flow (they start small but are
+        unconstrained).
+
+    With ``off_block_scale = 0.0`` the kernel is *mathematically equivalent at
+    init* to K parallel SIRENs (sharing seeds) packed into a single dense
+    SIREN.  With ``off_block_scale = 1.0`` the block structure is invisible
+    at init and we recover the parent :class:`MultiOmegaSIRENKernelND`.
+
+    ``embedding_dim``, ``mlp_hidden_dim``, and ``out_dim`` must all be
+    divisible by ``num_blocks``.
+
+    Production defaults (chosen from a spectral-coverage study on the N=29
+    grid used by the vit5_hybrid config):
+        ``num_blocks=8``, ``omega_0_min=1.0``, ``omega_0_max=12.0``,
+        ``schedule="linear"``, ``off_block_scale=0.1``.
+
+    When changing grid resolution by a factor ``m``, the schedule should be
+    scaled uniformly by ``m`` (``omega_0_min *= m``, ``omega_0_max *= m``) to
+    preserve the Nyquist-normalized spectral coverage.  This variant should
+    be paired with :class:`BlockAlignedGaussianModulationND` so that the
+    widest Gaussians land on the lowest-ω₀ block.
+
+    Args:
+        out_dim: Number of output channels for the generated kernel.
+        data_dim: Number of spatial/temporal input dimensions.
+        mlp_hidden_dim: Hidden width of the SIREN MLP.
+        num_layers: Total number of SIREN layers (>= 2).
+        embedding_dim: Positional-embedding dimensionality.
+        L_cache: Cache extent.
+        use_bias: Whether to include biases in linear layers.
+        num_blocks: Number of ω₀ blocks.  Must divide all of ``embedding_dim``,
+            ``mlp_hidden_dim``, and ``out_dim``.
+        omega_0_min, omega_0_max: Endpoints of the schedule (ignored if
+            ``omega_0_per_block`` is supplied).
+        schedule: ``"linear"`` or ``"log"``.
+        off_block_scale: Scale applied to off-block entries in hidden + output
+            linears at init.  ``0.0`` → strict block-diagonal; ``1.0`` →
+            equivalent to the parent.
+        omega_0_per_block: Optional explicit ω₀ schedule of length
+            ``num_blocks``.  When supplied, overrides
+            ``omega_0_min``/``omega_0_max``/``schedule``.
+        hidden_omega_0, film_cfg, film_after_pos_embed: Same as the parent.
+    """
+
+    def __init__(
+        self,
+        out_dim: int,
+        data_dim: int,
+        mlp_hidden_dim: int,
+        num_layers: int,
+        embedding_dim: int,
+        L_cache: int,
+        use_bias: bool,
+        num_blocks: int = 8,
+        omega_0_min: float = 1.0,
+        omega_0_max: float = 12.0,
+        schedule: str = "linear",
+        off_block_scale: float = 0.1,
+        omega_0_per_block: Sequence[float] | torch.Tensor | None = None,
+        hidden_omega_0: float = 1.0,
+        film_cfg: LazyConfig | None = None,
+        film_after_pos_embed: bool = False,
+    ):
+        """Initialize the block-diagonal SIREN kernel; see the class docstring for argument semantics."""
+        for name, dim in [("embedding_dim", embedding_dim), ("mlp_hidden_dim", mlp_hidden_dim), ("out_dim", out_dim)]:
+            if dim % num_blocks != 0:
+                raise ValueError(f"{name}={dim} must be divisible by num_blocks={num_blocks}")
+
+        # --- Build / validate the per-block ω₀ schedule.
+        if omega_0_per_block is None:
+            omega_per_block = _build_omega_0_per_block(
+                num_blocks=num_blocks,
+                omega_0_min=omega_0_min,
+                omega_0_max=omega_0_max,
+                schedule=schedule,
+            )
+        else:
+            omega_per_block = _as_float_tensor(omega_0_per_block, name="omega_0_per_block")
+            if omega_per_block.numel() != num_blocks:
+                raise ValueError(
+                    f"omega_0_per_block length ({omega_per_block.numel()}) must equal num_blocks ({num_blocks})"
+                )
+
+        # --- Expand per-block ω₀ into a per-row schedule (constant within each block).
+        rows_per_block = embedding_dim // num_blocks
+        omega_per_row = omega_per_block.repeat_interleave(rows_per_block)
+
+        super().__init__(
+            out_dim=out_dim,
+            data_dim=data_dim,
+            mlp_hidden_dim=mlp_hidden_dim,
+            num_layers=num_layers,
+            embedding_dim=embedding_dim,
+            omega_0_per_row=omega_per_row,
+            L_cache=L_cache,
+            use_bias=use_bias,
+            hidden_omega_0=hidden_omega_0,
+            film_cfg=film_cfg,
+            film_after_pos_embed=film_after_pos_embed,
+        )
+
+        # --- Apply the block mask to every hidden linear + the output linear.
+        with torch.no_grad():
+            for linear in self.hidden_linears:
+                mask = self._block_mask(
+                    linear.out_features,
+                    linear.in_features,
+                    num_blocks=num_blocks,
+                    off_block_scale=off_block_scale,
+                    device=linear.weight.device,
+                    dtype=linear.weight.dtype,
+                )
+                linear.weight.data.mul_(mask)
+            mask = self._block_mask(
+                self.out_linear.out_features,
+                self.out_linear.in_features,
+                num_blocks=num_blocks,
+                off_block_scale=off_block_scale,
+                device=self.out_linear.weight.device,
+                dtype=self.out_linear.weight.dtype,
+            )
+            self.out_linear.weight.data.mul_(mask)
+
+        self.num_blocks = int(num_blocks)
+        self.off_block_scale = float(off_block_scale)
+        self.register_buffer(
+            "omega_0_per_block",
+            omega_per_block.to(dtype=torch.float32),
+            persistent=False,
+        )
+
+    @staticmethod
+    def _block_mask(
+        out_dim: int,
+        in_dim: int,
+        *,
+        num_blocks: int,
+        off_block_scale: float,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        """Build a block-mask: 1.0 on the diagonal blocks, ``off_block_scale`` elsewhere.
+
+        The returned tensor has shape ``[out_dim, in_dim]``.  Block sizes are
+        ``out_dim // num_blocks`` rows by ``in_dim // num_blocks`` columns;
+        ``out_dim`` and ``in_dim`` must both be divisible by ``num_blocks``.
+        """
+        rows_per_block = out_dim // num_blocks
+        cols_per_block = in_dim // num_blocks
+        mask = torch.full((out_dim, in_dim), float(off_block_scale), device=device, dtype=dtype)
+        for k in range(num_blocks):
+            r0, r1 = k * rows_per_block, (k + 1) * rows_per_block
+            c0, c1 = k * cols_per_block, (k + 1) * cols_per_block
+            mask[r0:r1, c0:c1] = 1.0
+        return mask
+
+
+# ---------------------------------------------------------------------------
+# Learnable-ω₀ SIREN kernels
+#
+# These classes take the ``2π·ω₀`` factor *out* of the first-layer weight init
+# and apply it explicitly at every forward pass, with an extra learnable
+# per-row ``ω₀_scale`` multiplier capped at a configurable maximum.  At init
+# (``ω₀_scale = 1``) the produced kernel is identical to the matching
+# fixed-ω₀ class; during training the model can re-tune each row's effective
+# ω₀ within ``[ω₀ · scale_min, ω₀ · scale_max]``.
+#
+# Optimizer note: removing ``2π·ω₀`` from the first-layer init increases the
+# gradient norm of that weight by ``2π·ω₀`` (the factor that was previously
+# absorbed; see the SIREN paper).  When ``apply_lr_scale=True`` the
+# first-layer weight gets ``_lr_scale = 1/(2π·ω₀)`` so that AdamW's effective
+# per-step update size is the same as the standard SIREN init.
+# ---------------------------------------------------------------------------
+
+
+class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
+    """SIREN positional embedding with a learnable per-row ω₀ multiplier.
+
+    Forward computes (in float32, regardless of input dtype):
+
+        sin( 2π · ω₀ · ω₀_scale · (W·x + b) )
+
+    where:
+
+      * ``W`` is the first-layer weight, initialized to ``U(-1/d, +1/d)``
+        (the standard SIREN-1 init *without* the usual ``2π·ω₀`` bound
+        scaling).  ``2π·ω₀`` is instead applied at every iteration as a
+        single scalar buffer.
+      * ``ω₀_scale`` is a learnable per-row parameter of shape
+        ``[embedding_dim]``, initialized to ``omega_0_scale_init`` and
+        clamped in-place (forward pre-hook, ``"direct"`` parametrization)
+        to ``[omega_0_scale_min, omega_0_scale_max]``.  The default lower
+        bound is a small positive floor (``1e-2``) rather than ``0`` so
+        a row's effective ω₀ never collapses to zero — at zero the row's
+        sine becomes a constant ``sin(bias)`` and the gradient signal
+        through that row's ``ω₀_scale`` largely vanishes, making
+        recovery hard.  With the defaults (init=1, max=2) the per-row
+        effective ω₀ ranges from roughly ``0.01·ω₀`` to ``2·ω₀`` and the
+        total multiplier inside the sine reaches ``4π·ω₀``.
+
+    The float32 path covers the linear projection, the multiplier, and the
+    sine; the result is cast back to the original input dtype after the sine.
+    This matches the precision discipline already used for the grid cache in
+    the parent ``SIRENPositionalEmbeddingND``.
+
+    Args:
+        data_dim: Number of spatial/temporal input dimensions.
+        embedding_dim: Dimensionality of the positional embedding.
+        L_cache: Cache extent (controls the initial grid cache size).
+        omega_0: Constant scalar absorbed into the runtime ``2π·ω₀`` factor.
+        omega_0_scale_init: Initial value of the learnable per-row scale.
+            Either a single float (broadcast to ``embedding_dim``) or a 1-D
+            sequence/tensor of length ``embedding_dim``.  Defaults to 1.0,
+            so the effective per-row ω₀ at init equals ``omega_0``.
+        omega_0_scale_min: Lower clamp on ``ω₀_scale``. **Must be strictly
+            positive** — at ``0`` the row's first-layer sine collapses to
+            a constant and the gradient signal through its scale largely
+            vanishes, making recovery hard.  Default ``1e-2``.
+        omega_0_scale_max: Upper clamp on ``ω₀_scale``. Default 2.0, giving
+            a total multiplier inside the sine of up to ``4π·ω₀``.
+        use_bias: Whether to include a bias term.
+        apply_lr_scale: When True, attach ``_lr_scale = 1/(2π·omega_0)`` to
+            ``self.linear.weight`` so that ``_build_param_groups`` lowers
+            its learning rate to compensate for the absent ``2π·ω₀`` factor
+            in the init bound.  Default False (opt-in; off by default so
+            the optimizer behaviour matches the existing SIREN exactly,
+            and the new classes can be A/B-tested with and without LR
+            compensation).
+    """
+
+    def __init__(
+        self,
+        data_dim: int,
+        embedding_dim: int,
+        L_cache: int,
+        omega_0: float,
+        omega_0_scale_init: float | Sequence[float] | torch.Tensor = 1.0,
+        omega_0_scale_min: float = 1e-2,
+        omega_0_scale_max: float = 2.0,
+        use_bias: bool = True,
+        apply_lr_scale: bool = False,
+    ):
+        """Initialize the learnable-ω₀ SIREN positional embedding; see the class docstring."""
+        if omega_0 <= 0:
+            raise ValueError(f"omega_0 must be strictly positive, got {omega_0}")
+        if omega_0_scale_max <= 0:
+            raise ValueError(f"omega_0_scale_max must be strictly positive, got {omega_0_scale_max}")
+        if omega_0_scale_min <= 0:
+            # Strictly positive: at omega_0_scale = 0 the first-layer
+            # sine of that row collapses to sin(bias) (a constant), its
+            # contribution to the kernel output vanishes, and the
+            # optimizer receives no signal to push the scale back up.
+            # The default lower bound is 1e-2 for exactly this reason.
+            raise ValueError(
+                f"omega_0_scale_min must be strictly positive (a row's effective "
+                f"ω₀ must never reach 0, otherwise that row's first-layer sine "
+                f"becomes a constant and the gradient signal through its scale "
+                f"collapses); got omega_0_scale_min={omega_0_scale_min}."
+            )
+        if omega_0_scale_max < omega_0_scale_min:
+            raise ValueError(
+                f"omega_0_scale_max ({omega_0_scale_max}) must be >= omega_0_scale_min ({omega_0_scale_min})"
+            )
+
+        # Build the parent with the actual ``omega_0`` so ``self.omega_0``
+        # diagnostics stay correct, then immediately overwrite the first-layer
+        # weight with the *unscaled* SIREN-1 bound (no 2π·ω₀ factor).
+        super().__init__(
+            data_dim=data_dim,
+            embedding_dim=embedding_dim,
+            L_cache=L_cache,
+            omega_0=float(omega_0),
+            use_bias=use_bias,
+        )
+
+        with torch.no_grad():
+            d = float(self.linear.in_features)
+            # SIREN first-layer bound *without* the 2π·ω₀ factor: U(-1/d, +1/d).
+            self.linear.weight.uniform_(-1.0 / d, 1.0 / d)
+            # Bias was already zero-initialized by the parent.
+
+        # Resolve scale init into a [embedding_dim] tensor.
+        if isinstance(omega_0_scale_init, (int, float)):
+            scale_init = torch.full((embedding_dim,), float(omega_0_scale_init), dtype=torch.float32)
+        elif isinstance(omega_0_scale_init, torch.Tensor):
+            scale_init = omega_0_scale_init.detach().to(dtype=torch.float32).flatten()
+        else:
+            scale_init = torch.as_tensor(list(omega_0_scale_init), dtype=torch.float32)
+        if scale_init.ndim != 1 or scale_init.numel() != embedding_dim:
+            raise ValueError(
+                f"omega_0_scale_init must broadcast to shape ({embedding_dim},); "
+                f"got tensor of shape {tuple(scale_init.shape)}"
+            )
+        if (scale_init < omega_0_scale_min).any() or (scale_init > omega_0_scale_max).any():
+            raise ValueError(
+                f"omega_0_scale_init values must lie in [{omega_0_scale_min}, {omega_0_scale_max}]; "
+                f"got min={float(scale_init.min()):.4f}, max={float(scale_init.max()):.4f}"
+            )
+
+        self.omega_0_scale_min = float(omega_0_scale_min)
+        self.omega_0_scale_max = float(omega_0_scale_max)
+        # ``omega_0_const`` carries the constant 2π·ω₀ factor; storing it as
+        # a non-persistent buffer keeps it on the right device/dtype without
+        # adding another trainable parameter or hard-coding ``omega_0`` only
+        # as a Python float.
+        self.register_buffer(
+            "omega_0_const",
+            torch.tensor(2.0 * math.pi * float(omega_0), dtype=torch.float32),
+            persistent=False,
+        )
+        self.omega_0_scale = torch.nn.Parameter(scale_init.clone())
+        # Treat the per-row scale like the mask's ``std_param``: no weight
+        # decay, and a forward pre-hook that clamps it in-place without
+        # disrupting gradient flow inside the active range.
+        self.omega_0_scale._no_weight_decay = True
+        self._scale_clamp_hook = self.register_forward_pre_hook(self._clamp_omega_scale_pre_hook)
+
+        if apply_lr_scale:
+            # Compensate for the absent 2π·ω₀ factor in the first-layer
+            # init bound.  AdamW with this scale yields the same per-step
+            # update size as the standard SIREN init.
+            self.linear.weight._lr_scale = 1.0 / (2.0 * math.pi * float(omega_0))
+            if self.linear.bias is not None:
+                self.linear.bias._lr_scale = 1.0 / (2.0 * math.pi * float(omega_0))
+
+    def _clamp_omega_scale_pre_hook(self, module, inputs):
+        """Clamp ``omega_0_scale`` into ``[scale_min, scale_max]`` in-place before forward."""
+        with torch.no_grad():
+            self.omega_0_scale.data.clamp_(min=self.omega_0_scale_min, max=self.omega_0_scale_max)
+
+    def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the positional embedding with a fp32-internal learnable-ω₀ first layer.
+
+        Args:
+            seq_lens: Lengths of the input grid for which to compute the positional embeddings.
+
+        Returns:
+            tuple:
+                - torch.Tensor: The positional embedding ``sin(2π·ω₀·s·(W·x+b))``
+                  cast back to the original linear-weight dtype, of shape
+                  ``[1, *spatial_dims, embedding_dim]``.
+                - torch.Tensor: The grid coordinates, shape
+                  ``[1, *spatial_dims, data_dim]`` (fp32, as in the parent).
+        """
+        assert len(seq_lens) == self.data_dim, (
+            f"seq_lens must be of length {self.data_dim}. Current length: {len(seq_lens)}"
+        )
+
+        # Re-build the cached coordinate grid if the requested sequence is longer
+        # than the cache (mirrors the parent's behaviour exactly).
+        seq_len = max(seq_lens)
+        if self.L_cache < seq_len:
+            with torch.inference_mode(False):
+                with torch.no_grad():
+                    max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
+                    t = torch.linspace(
+                        -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
+                    )
+                    self.grid_cache = rearrange(
+                        torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
+                    )
+                    self.L_cache = seq_len
+
+        assert self.grid_cache.dtype == torch.float32, (
+            f"grid_cache must be float32 (got {self.grid_cache.dtype}) — see the parent class for the rationale."
+        )
+
+        # Slice the cached grid to the requested per-axis lengths.
+        offsets = [self.L_cache - sl for sl in seq_lens]
+        slices = [slice(off, off + (sl * 2) - 1) for off, sl in zip(offsets, seq_lens)]
+        grid = self.grid_cache[:, *slices]  # type: ignore
+
+        # ── float32 inner block: linear → multiplier → sin ────────────────
+        # We force fp32 for the matmul, the per-row multiplier, and the sine
+        # to keep the SIREN's high-frequency content well-resolved at the
+        # boundary (otherwise bf16 would quantize the phase ``2π·ω₀·s·...``
+        # too coarsely along the grid).  We then cast back to whatever dtype
+        # the first-layer weight was stored in (typically the surrounding
+        # autocast dtype, e.g. bf16 in mixed-precision training).
+        target_dtype = self.linear.weight.dtype
+        weight_fp32 = self.linear.weight.to(torch.float32)
+        bias_fp32 = self.linear.bias.to(torch.float32) if self.linear.bias is not None else None
+        pre = torch_F.linear(grid, weight_fp32, bias_fp32)  # [1, *spatial, embedding_dim], fp32
+
+        # Total multiplier inside the sine: ``2π·ω₀ · ω₀_scale``.
+        # Both factors are fp32; broadcasting ``[embedding_dim]`` over the
+        # leading spatial dims via the trailing axis is shape-safe for any N-D.
+        scale_fp32 = self.omega_0_scale.to(torch.float32)
+        pre = pre * (self.omega_0_const * scale_fp32)
+        out = pre.sin()
+        # ── end float32 inner block ───────────────────────────────────────
+
+        return out.to(target_dtype), grid
+
+    def extra_repr(self) -> str:
+        """Diagnostic string showing ω₀, the scale range, and the current scale stats."""
+        with torch.no_grad():
+            scale = self.omega_0_scale.detach().to(torch.float32)
+        scale_min, scale_max, scale_mean = (
+            float(scale.min()),
+            float(scale.max()),
+            float(scale.mean()),
+        )
+        return (
+            f"data_dim={self.data_dim}, embedding_dim={self.embedding_dim}, "
+            f"omega_0={self.omega_0:.4g}, "
+            f"omega_0_scale_init range=[{scale_min:.4g}, {scale_max:.4g}] mean={scale_mean:.4g}, "
+            f"clamp=[{self.omega_0_scale_min:.4g}, {self.omega_0_scale_max:.4g}]"
+        )
+
+
+class LearnableOmegaSIRENKernelND(SIRENKernelND):
+    """SIRENKernelND whose first-layer ω₀ is multiplied by a learnable per-row scale.
+
+    Identical to :class:`SIRENKernelND` except the positional embedding is a
+    :class:`LearnableOmegaSIRENPositionalEmbeddingND`.  The hidden and output
+    layers retain the usual SIREN init at ``hidden_omega_0``.
+
+    With ``omega_0_scale_init = 1.0`` (the default) the kernel produced at
+    init is **bit-for-bit identical** to a :class:`SIRENKernelND` built with
+    the same scalar ``omega_0`` and seed (modulo the float32-mid-cast in the
+    new positional embedding's forward, which is numerically more accurate
+    than the parent's path under autocast).  During training the model can
+    learn an effective per-row ω₀ in
+    ``[omega_0 · omega_0_scale_min, omega_0 · omega_0_scale_max]``.
+
+    Args:
+        out_dim, data_dim, mlp_hidden_dim, num_layers, embedding_dim, L_cache,
+        use_bias, hidden_omega_0, film_cfg, film_after_pos_embed:
+            Same as :class:`SIRENKernelND`.
+        omega_0: Constant scalar absorbed into the per-iteration ``2π·ω₀``
+            factor inside the first-layer sine.
+        omega_0_scale_init: Initial value of the learnable per-row scale —
+            either a single float (default ``1.0``) or a 1-D sequence/tensor
+            of length ``embedding_dim``.  See
+            :class:`LearnableOmegaSIRENPositionalEmbeddingND` for details.
+        omega_0_scale_min, omega_0_scale_max: Clamp bounds on the scale.
+        apply_lr_scale: Forwarded to the positional embedding.  Default False.
+    """
+
+    def __init__(
+        self,
+        out_dim: int,
+        data_dim: int,
+        mlp_hidden_dim: int,
+        num_layers: int,
+        embedding_dim: int,
+        omega_0: float,
+        L_cache: int,
+        use_bias: bool,
+        omega_0_scale_init: float | Sequence[float] | torch.Tensor = 1.0,
+        omega_0_scale_min: float = 1e-2,
+        omega_0_scale_max: float = 2.0,
+        hidden_omega_0: float = 1.0,
+        apply_lr_scale: bool = False,
+        film_cfg: LazyConfig | None = None,
+        film_after_pos_embed: bool = False,
+    ):
+        """Initialize the learnable-ω₀ SIREN kernel; see the class docstring for argument semantics."""
+        # Build the parent with the same ``omega_0`` so all internal
+        # bookkeeping (``self.omega_0``, ``self.hidden_omega_0``) lines up.
+        super().__init__(
+            out_dim=out_dim,
+            data_dim=data_dim,
+            mlp_hidden_dim=mlp_hidden_dim,
+            num_layers=num_layers,
+            embedding_dim=embedding_dim,
+            omega_0=float(omega_0),
+            L_cache=L_cache,
+            use_bias=use_bias,
+            hidden_omega_0=hidden_omega_0,
+            film_cfg=film_cfg,
+            film_after_pos_embed=film_after_pos_embed,
+        )
+
+        # Replace the parent's positional embedding with the learnable-ω₀
+        # variant.  RNG-wise we burn one extra ``Uniform(-1/d, 1/d)`` draw on
+        # top of the parent's ``Uniform(-2π·ω₀/d, +2π·ω₀/d)`` draw, so the
+        # full module's parameter trajectory differs from its parent at the
+        # same seed *only* in the first-layer weight; hidden + output linears
+        # are byte-identical to a fresh ``SIRENKernelND`` of the same seed.
+        self.positional_embedding = LearnableOmegaSIRENPositionalEmbeddingND(
+            data_dim=data_dim,
+            embedding_dim=embedding_dim,
+            L_cache=L_cache,
+            omega_0=float(omega_0),
+            omega_0_scale_init=omega_0_scale_init,
+            omega_0_scale_min=omega_0_scale_min,
+            omega_0_scale_max=omega_0_scale_max,
+            use_bias=use_bias,
+            apply_lr_scale=apply_lr_scale,
+        )
+
+
+class BlockDiagonalLearnableOmegaSIRENKernelND(LearnableOmegaSIRENKernelND):
+    """Block-diagonal learnable-ω₀ SIREN kernel.
+
+    Combines two ideas:
+
+    1.  **Block-diagonal MLP init** (from :class:`BlockDiagonalMultiOmegaSIRENKernelND`):
+        every hidden linear and the output linear have their weights multiplied
+        by a block mask — block-diagonal entries kept at 1.0, off-block
+        entries scaled by ``off_block_scale``.
+    2.  **Learnable per-row ω₀ schedule** (from :class:`LearnableOmegaSIRENKernelND`):
+        the first-layer scale is initialized to a per-block schedule.  We
+        absorb the *largest* block's ω₀ into the constant
+        ``2π · omega_0_max`` runtime factor and let the learnable scale
+        carry the *relative* schedule, initialized to
+        ``omega_0_per_block / omega_0_max`` so that the effective per-row ω₀
+        at init equals the original block-diagonal schedule.  The scale is
+        clamped to ``[omega_0_scale_min, omega_0_scale_max]`` (default
+        ``[1e-2, 2]``), giving every row room to up to double its effective
+        ω₀ during training without any row ever collapsing to zero
+        frequency.
+
+    With ``omega_0_scale_init`` left at its default and the schedule built
+    from ``(omega_0_min, omega_0_max, schedule)``, the kernel at init matches
+    :class:`BlockDiagonalMultiOmegaSIRENKernelND` (modulo the fp32-mid-cast
+    in the positional embedding's forward).
+
+    ``embedding_dim``, ``mlp_hidden_dim``, and ``out_dim`` must all be
+    divisible by ``num_blocks``.
+
+    When ``apply_lr_scale=True`` the first-layer weight gets
+    ``_lr_scale = 1/(2π · omega_0_max)`` — a single conservative scalar
+    chosen to match the highest-frequency block.  This is the SIREN-paper
+    LR compensation; the lowest-ω₀ block trains relatively slower under
+    this scheme but the gradient norm of every row is upper-bounded by
+    that of the most-aggressive row, which is the dimension that sets the
+    largest update step size in AdamW.
+
+    Args:
+        out_dim, data_dim, mlp_hidden_dim, num_layers, embedding_dim,
+        L_cache, use_bias, hidden_omega_0, film_cfg, film_after_pos_embed:
+            Same as :class:`SIRENKernelND`.
+        num_blocks: Number of ω₀ blocks; must divide ``embedding_dim``,
+            ``mlp_hidden_dim``, and ``out_dim``.
+        omega_0_min, omega_0_max: Endpoints of the schedule (also set the
+            constant runtime ``2π · omega_0_max`` factor — pulled out of the
+            weight init).  Ignored if ``omega_0_per_block`` is supplied
+            (schedule endpoints are then read from the supplied vector).
+        schedule: ``"linear"`` or ``"log"``.
+        off_block_scale: Off-diagonal scaling for the hidden + output linear
+            block masks.  ``0.0`` → strict block-diagonal; ``1.0`` →
+            equivalent to a dense :class:`LearnableOmegaSIRENKernelND`.
+        omega_0_per_block: Optional explicit ω₀ schedule of length
+            ``num_blocks``.  Overrides ``omega_0_min``/``omega_0_max``/
+            ``schedule`` when supplied.
+        omega_0_scale_min, omega_0_scale_max: Clamp bounds on the per-row
+            scale (default ``[1e-2, 2]``).  The strictly-positive floor
+            keeps every row's effective ω₀ above ``1e-2 · omega_0_max``
+            so no row's first-layer sine collapses to a constant.
+        apply_lr_scale: When True, attach ``_lr_scale = 1/(2π·omega_0_max)``
+            to the first-layer weight.  Default False.
+    """
+
+    def __init__(
+        self,
+        out_dim: int,
+        data_dim: int,
+        mlp_hidden_dim: int,
+        num_layers: int,
+        embedding_dim: int,
+        L_cache: int,
+        use_bias: bool,
+        num_blocks: int = 8,
+        omega_0_min: float = 1.0,
+        omega_0_max: float = 12.0,
+        schedule: str = "linear",
+        off_block_scale: float = 0.1,
+        omega_0_per_block: Sequence[float] | torch.Tensor | None = None,
+        omega_0_scale_min: float = 1e-2,
+        omega_0_scale_max: float = 2.0,
+        hidden_omega_0: float = 1.0,
+        apply_lr_scale: bool = False,
+        film_cfg: LazyConfig | None = None,
+        film_after_pos_embed: bool = False,
+    ):
+        """Initialize the block-diagonal learnable-ω₀ SIREN kernel; see the class docstring."""
+        for name, dim in [
+            ("embedding_dim", embedding_dim),
+            ("mlp_hidden_dim", mlp_hidden_dim),
+            ("out_dim", out_dim),
+        ]:
+            if dim % num_blocks != 0:
+                raise ValueError(f"{name}={dim} must be divisible by num_blocks={num_blocks}")
+
+        # ── Build / validate the per-block ω₀ schedule.
+        if omega_0_per_block is None:
+            omega_per_block = _build_omega_0_per_block(
+                num_blocks=num_blocks,
+                omega_0_min=omega_0_min,
+                omega_0_max=omega_0_max,
+                schedule=schedule,
+            )
+        else:
+            omega_per_block = _as_float_tensor(omega_0_per_block, name="omega_0_per_block")
+            if omega_per_block.numel() != num_blocks:
+                raise ValueError(
+                    f"omega_0_per_block length ({omega_per_block.numel()}) must equal num_blocks ({num_blocks})"
+                )
+
+        # The constant runtime factor pulls out the *largest* ω₀; the learnable
+        # scale carries the relative schedule (in [0, 1] at init).  This way
+        # every block's effective ω₀ at init equals the schedule entry, and
+        # ``omega_0_scale_max`` controls the global headroom for growth.
+        omega_0_const = float(omega_per_block.max().item())
+        rows_per_block = embedding_dim // num_blocks
+        scale_init = (omega_per_block.to(torch.float32) / omega_0_const).repeat_interleave(rows_per_block)
+
+        super().__init__(
+            out_dim=out_dim,
+            data_dim=data_dim,
+            mlp_hidden_dim=mlp_hidden_dim,
+            num_layers=num_layers,
+            embedding_dim=embedding_dim,
+            omega_0=omega_0_const,
+            L_cache=L_cache,
+            use_bias=use_bias,
+            omega_0_scale_init=scale_init,
+            omega_0_scale_min=omega_0_scale_min,
+            omega_0_scale_max=omega_0_scale_max,
+            hidden_omega_0=hidden_omega_0,
+            apply_lr_scale=apply_lr_scale,
+            film_cfg=film_cfg,
+            film_after_pos_embed=film_after_pos_embed,
+        )
+
+        # ── Apply the block mask to every hidden linear + the output linear.
+        with torch.no_grad():
+            for linear in self.hidden_linears:
+                mask = BlockDiagonalMultiOmegaSIRENKernelND._block_mask(
+                    linear.out_features,
+                    linear.in_features,
+                    num_blocks=num_blocks,
+                    off_block_scale=off_block_scale,
+                    device=linear.weight.device,
+                    dtype=linear.weight.dtype,
+                )
+                linear.weight.data.mul_(mask)
+            mask = BlockDiagonalMultiOmegaSIRENKernelND._block_mask(
+                self.out_linear.out_features,
+                self.out_linear.in_features,
+                num_blocks=num_blocks,
+                off_block_scale=off_block_scale,
+                device=self.out_linear.weight.device,
+                dtype=self.out_linear.weight.dtype,
+            )
+            self.out_linear.weight.data.mul_(mask)
+
+        self.num_blocks = int(num_blocks)
+        self.off_block_scale = float(off_block_scale)
+        self.register_buffer(
+            "omega_0_per_block",
+            omega_per_block.to(dtype=torch.float32),
+            persistent=False,
+        )
+
+
 if __name__ == "__main__":
     torch.set_default_device("cuda")
 
@@ -707,3 +1583,41 @@ if __name__ == "__main__":
     siren_kernel.sum().backward()
     grads_ok = all(p.grad is not None for p in siren.parameters() if p.requires_grad)
     print("SIREN grads present:", grads_ok)
+
+    # --- Multi-ω₀ SIREN sanity checks ---
+    # Block-diagonal variant with production defaults (K=8, linear [1,12], off=0.1)
+    bd = BlockDiagonalMultiOmegaSIRENKernelND(
+        out_dim=32,
+        data_dim=2,
+        mlp_hidden_dim=32,
+        num_layers=3,
+        embedding_dim=32,
+        L_cache=10,
+        use_bias=True,
+    )
+    k, g = bd(seq_lens=(10, 10))
+    print("BlockDiag SIREN kernel:", k.shape, "omega_0_per_block:", bd.omega_0_per_block.tolist())
+    k.sum().backward()
+    assert all(p.grad is not None for p in bd.parameters() if p.requires_grad)
+
+    # Strict block-diagonal (off=0.0): off-block entries of hidden + out linears are exactly 0.
+    bd_strict = BlockDiagonalMultiOmegaSIRENKernelND(
+        out_dim=32,
+        data_dim=2,
+        mlp_hidden_dim=32,
+        num_layers=3,
+        embedding_dim=32,
+        L_cache=10,
+        use_bias=True,
+        off_block_scale=0.0,
+    )
+    rows_per_block = 32 // bd_strict.num_blocks
+    for linear in bd_strict.hidden_linears:
+        w = linear.weight.data.cpu()
+        for i in range(bd_strict.num_blocks):
+            for j in range(bd_strict.num_blocks):
+                if i == j:
+                    continue
+                block = w[i * rows_per_block : (i + 1) * rows_per_block, j * rows_per_block : (j + 1) * rows_per_block]
+                assert block.abs().max().item() == 0.0, f"off-block ({i},{j}) nonzero with off_block_scale=0"
+    print("BlockDiag SIREN off=0.0 strictly block-diagonal: OK")

@@ -3,15 +3,23 @@
 Walks the model to find ``GaussianModulationND`` and ``ExponentialModulationND``
 modules, then logs a single wandb ``line_series`` chart per block showing
 the min and max of the effective parameter over training.
+
+History is persisted via :meth:`state_dict` / :meth:`load_state_dict` so
+charts survive checkpoint resumes.
 """
 
 from __future__ import annotations
 
 import re
 from collections import defaultdict
+from typing import Any
 
 import pytorch_lightning as pl
 import torch
+
+
+def _empty_history() -> dict[str, list[float]]:
+    return {"steps": [], "min": [], "max": []}
 
 
 class MaskMonitorCallback(pl.Callback):
@@ -26,8 +34,8 @@ class MaskMonitorCallback(pl.Callback):
         self.log_every_n_steps = log_every_n_steps
         # Populated in on_fit_start: block_id -> (module, kind)
         self._masks: dict[int, tuple[torch.nn.Module, str]] = {}
-        # Accumulated history per block for line_series charts
-        self._history: dict[int, dict[str, list[float]]] = defaultdict(lambda: {"steps": [], "min": [], "max": []})
+        # Accumulated history per block for line_series charts (persisted in checkpoints)
+        self._history: dict[int, dict[str, list[float]]] = defaultdict(_empty_history)
 
     # ------------------------------------------------------------------
     # Discovery
@@ -100,3 +108,23 @@ class MaskMonitorCallback(pl.Callback):
             )
         if charts:
             trainer.logger.experiment.log({**charts, "trainer/global_step": trainer.global_step})
+
+    # ------------------------------------------------------------------
+    # Checkpoint persistence (Lightning auto-routes via state_key)
+    # ------------------------------------------------------------------
+
+    @property
+    def state_key(self) -> str:  # noqa: D102
+        return "MaskMonitorCallback"
+
+    def state_dict(self) -> dict[str, Any]:  # noqa: D102
+        return {"history": {int(k): dict(v) for k, v in self._history.items()}}
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:  # noqa: D102
+        history = state_dict.get("history", {}) or {}
+        self._history = defaultdict(_empty_history)
+        for k, v in history.items():
+            entry = _empty_history()
+            for series_name in entry:
+                entry[series_name] = list(v.get(series_name, []))
+            self._history[int(k)] = entry

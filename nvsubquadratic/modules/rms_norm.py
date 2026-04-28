@@ -1,9 +1,12 @@
 """RMSNorm — Root Mean Square Layer Normalization.
 
-Uses QuACK's fused kernel on CUDA when available (Hopper/Blackwell: H100, B200, B300 only).
-On other GPUs (e.g. Ampere), when quack is not installed, or on CPU, uses a pure-PyTorch
-fallback. There is no quack-kernels build for Ampere; install quack only on H100/B200
-for acceleration.
+Uses QuACK's fused kernel on CUDA when available (Hopper/Blackwell: H100, B200, B300 only)
+and ``use_quack=True`` (the default).  On other GPUs (e.g. Ampere), when quack is not
+installed, on CPU, or when ``use_quack=False``, uses a pure-PyTorch fallback.
+
+Set ``use_quack=False`` when running under ``torch.compile`` to let the compiler
+fuse the norm with adjacent operations instead of treating the QuACK kernel as an
+opaque barrier.
 """
 
 import warnings
@@ -33,14 +36,34 @@ def _rmsnorm_pytorch(x: torch.Tensor, weight: torch.nn.Parameter, eps: float) ->
 
 
 class RMSNorm(nn.Module):
-    """Root Mean Square Layer Normalization."""
+    """Root Mean Square Layer Normalization.
 
-    def __init__(self, dim: int, eps: float = 1e-6):
-        """Set dimension and epsilon for normalization."""
+    Normalizes over the last dimension and scales by a learnable weight.
+    Accepts tensors of any shape ``[..., dim]``.
+
+    Two backends are available:
+
+    - **QuACK** (default): Fused CUDA kernel from the ``quack`` package.
+      Only runs on Hopper/Blackwell GPUs (SM 9.0+).  Opaque to
+      ``torch.compile`` — acts as a fusion barrier.
+    - **PyTorch**: Pure ``torch`` ops (``pow``, ``mean``, ``rsqrt``).  Fully
+      visible to ``torch.compile``, enabling fusion with adjacent operations.
+
+    Args:
+        dim: Size of the last dimension to normalize over.
+        eps: Small constant added to the variance for numerical stability.
+        use_quack: If ``True`` (default), use the QuACK fused kernel when
+            available.  Set to ``False`` to force the PyTorch path, which
+            lets ``torch.compile`` fuse the norm with surrounding ops.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-6, use_quack: bool = True):
+        """Initialize RMSNorm."""
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.weight._no_weight_decay = True
         self.eps = eps
+        self.use_quack = use_quack
 
     def flop_count(self, num_tokens: int) -> int:
         """Count FLOPs for RMS normalization over ``num_tokens`` token vectors.
@@ -65,7 +88,7 @@ class RMSNorm(nn.Module):
         """Normalize over last dimension and scale by weight."""
         # Only use quack on GPUs that support it (SM 9+). On Ampere (8.x), quack backward fails;
         # we must not call quack at all so autograd never invokes its backward.
-        if _quack_available and x.is_cuda and _cuda_supports_quack(x.device):
+        if self.use_quack and _quack_available and x.is_cuda and _cuda_supports_quack(x.device):
             try:
                 return _quack_rmsnorm(x, self.weight, eps=self.eps)
             except RuntimeError as e:
@@ -84,17 +107,25 @@ class RMSNorm(nn.Module):
 class PerHeadRMSNorm(nn.Module):
     """RMSNorm applied independently to each head.
 
-    Accepts [..., hidden_dim], reshapes to [..., num_heads, head_dim],
-    normalizes over head_dim, and flattens back. Each head has its own
-    learnable scale vector of size head_dim.
+    Accepts ``[..., hidden_dim]``, reshapes to ``[..., num_heads, head_dim]``,
+    normalizes over ``head_dim``, and flattens back.  Each head has its own
+    learnable scale vector of size ``head_dim``.
+
+    Args:
+        num_heads: Number of attention heads.
+        head_dim: Dimension of each head.
+        eps: Small constant added to the variance for numerical stability.
+        use_quack: If ``True`` (default), use the QuACK fused kernel when
+            available.  Set to ``False`` to force the PyTorch path, which
+            lets ``torch.compile`` fuse the norm with surrounding ops.
     """
 
-    def __init__(self, num_heads: int, head_dim: int, eps: float = 1e-6):
-        """Store head layout and create per-head RMSNorm."""
+    def __init__(self, num_heads: int, head_dim: int, eps: float = 1e-6, use_quack: bool = True):
+        """Initialize PerHeadRMSNorm."""
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = head_dim
-        self.norm = RMSNorm(dim=head_dim, eps=eps)
+        self.norm = RMSNorm(dim=head_dim, eps=eps, use_quack=use_quack)
 
     def flop_count(self, num_tokens: int) -> int:
         """Count FLOPs for per-head RMS normalization on ``num_tokens`` tokens.

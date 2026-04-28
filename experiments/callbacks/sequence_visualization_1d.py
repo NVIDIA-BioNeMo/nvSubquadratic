@@ -95,7 +95,7 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
 
         Args:
             ax: Matplotlib axes to plot on.
-            canvas: 1D numpy array of canvas values.
+            canvas: 1D numpy array of canvas values (single channel).
             segment_length: Length of the segment (for readout region).
             title: Title for the plot.
             color: Color for the line plot.
@@ -123,21 +123,66 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
         ax.set_xlabel("Position")
         ax.set_ylabel("Value")
 
+    def _plot_1d_canvas_rgb(
+        self,
+        ax: plt.Axes,
+        canvas_rgb: np.ndarray,
+        segment_length: int,
+        title: str = "Canvas (1D RGB)",
+        show_readout_shading: bool = True,
+    ) -> None:
+        """Plot a multi-channel 1D canvas with one line per RGB channel.
+
+        Args:
+            ax: Matplotlib axes to plot on.
+            canvas_rgb: Array of shape [L, 3] (R, G, B channels).
+            segment_length: Length of the segment (for readout region).
+            title: Title for the plot.
+            show_readout_shading: Whether to show the readout region shading.
+        """
+        for ch, ch_color in enumerate(["red", "green", "blue"]):
+            ch_data = self._maybe_denorm(torch.tensor(canvas_rgb[:, ch])).numpy()
+            ax.plot(ch_data, linewidth=0.4, color=ch_color, alpha=0.8)
+
+        y_min = min(-0.1, canvas_rgb.min() - 0.1)
+        y_max = max(1.1, canvas_rgb.max() + 0.1)
+        ax.set_ylim(y_min, y_max)
+
+        if self.readout_value != 0:
+            ax.axhline(y=self.readout_value, color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+
+        if show_readout_shading:
+            canvas_length = canvas_rgb.shape[0]
+            readout_start = canvas_length - segment_length
+            ax.axvspan(readout_start, canvas_length, alpha=0.1, color="green", label="readout")
+
+        ax.set_title(title)
+        ax.set_xlabel("Position")
+        ax.set_ylabel("Value")
+
     def _plot_2d_image(
         self,
         ax: plt.Axes,
         flat_data: torch.Tensor,
         title: str = "Image",
+        num_channels: int = 1,
     ) -> None:
-        """Plot flattened data as a 2D grayscale image.
+        """Plot flattened data as a 2D image (grayscale or RGB).
 
         Args:
             ax: Matplotlib axes to plot on.
-            flat_data: 1D tensor of flattened image data.
+            flat_data: Tensor of shape [segment_length] (grayscale) or
+                [segment_length, C] (multi-channel).
             title: Title for the plot.
+            num_channels: Number of output channels (1=grayscale, 3=RGB).
         """
-        data_2d = self._maybe_denorm(flat_data).reshape(self.target_size, self.target_size).numpy()
-        ax.imshow(data_2d, cmap="gray", vmin=0, vmax=1)
+        if num_channels == 1:
+            data_2d = self._maybe_denorm(flat_data).reshape(self.target_size, self.target_size).numpy()
+            ax.imshow(data_2d, cmap="gray", vmin=0, vmax=1)
+        else:
+            # [segment_length, C] -> [H, W, C]
+            data_2d = self._maybe_denorm(flat_data).reshape(self.target_size, self.target_size, num_channels).numpy()
+            ax.imshow(np.clip(data_2d, 0, 1))
         ax.set_title(title)
         ax.axis("off")
 
@@ -182,16 +227,19 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
         pl_module.eval()
         preds = pl_module({"input": x, "condition": condition})["logits"]
 
-        # x: [B, L, C], y: [B, segment_length, C], preds: [B, segment_length, C]
+        # x: [B, L, C_in], y: [B, segment_length, C_out], preds: [B, segment_length, C_out]
         n = min(self.num_samples, x.shape[0])
-        num_channels = x.shape[2]
+        num_in_channels = x.shape[2]
+        num_out_channels = y.shape[2]
         segment_length = self.target_size * self.target_size
+        is_rgb_input = num_in_channels == 3
+        is_rgb_output = num_out_channels == 3
 
         # Determine number of columns based on options
         # Base: prediction + label = 2 columns
         # With show_input: + canvas = 3 columns
         # With show_mask_separately and 2 channels: + mask = 4 columns
-        input_has_mask = num_channels == 2 and self.show_mask_separately
+        input_has_mask = num_in_channels == 2 and self.show_mask_separately
 
         num_cols = 2  # prediction, label
         if self.show_input:
@@ -208,15 +256,25 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
             col_idx = 0
 
             if self.show_input:
-                # Canvas: 1D line plot [L, C] -> [L] for channel 0
-                canvas = x[i, :, 0].cpu().numpy()  # [L]
-                self._plot_1d_canvas(
-                    axes[i, col_idx],
-                    canvas,
-                    segment_length,
-                    title="Canvas (1D)" if i == 0 else "",
-                    color="steelblue",
-                )
+                if is_rgb_input:
+                    # RGB canvas: plot all 3 channels
+                    canvas_rgb = x[i].cpu().numpy()  # [L, 3]
+                    self._plot_1d_canvas_rgb(
+                        axes[i, col_idx],
+                        canvas_rgb,
+                        segment_length,
+                        title="Canvas (1D RGB)" if i == 0 else "",
+                    )
+                else:
+                    # Grayscale canvas: 1D line plot [L, C] -> [L] for channel 0
+                    canvas = x[i, :, 0].cpu().numpy()  # [L]
+                    self._plot_1d_canvas(
+                        axes[i, col_idx],
+                        canvas,
+                        segment_length,
+                        title="Canvas (1D)" if i == 0 else "",
+                        color="steelblue",
+                    )
                 col_idx += 1
 
                 # Mask: separate line plot if 2-channel input
@@ -231,21 +289,29 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
                     ax_mask.set_ylabel("Value")
                     col_idx += 1
 
-            # Prediction: reshape [segment_length, C] -> [target_size, target_size]
-            pred_flat = preds[i, :, 0].cpu()  # [segment_length]
+            # Prediction: reshape to 2D image
+            if is_rgb_output:
+                pred_data = preds[i].cpu()  # [segment_length, 3]
+            else:
+                pred_data = preds[i, :, 0].cpu()  # [segment_length]
             self._plot_2d_image(
                 axes[i, col_idx],
-                pred_flat,
+                pred_data,
                 title="Prediction" if i == 0 else "",
+                num_channels=num_out_channels,
             )
             col_idx += 1
 
-            # Label: reshape [segment_length, C] -> [target_size, target_size]
-            label_flat = y[i, :, 0].cpu()  # [segment_length]
+            # Label: reshape to 2D image
+            if is_rgb_output:
+                label_data = y[i].cpu()  # [segment_length, 3]
+            else:
+                label_data = y[i, :, 0].cpu()  # [segment_length]
             self._plot_2d_image(
                 axes[i, col_idx],
-                label_flat,
+                label_data,
                 title="Label" if i == 0 else "",
+                num_channels=num_out_channels,
             )
 
         fig.tight_layout()
