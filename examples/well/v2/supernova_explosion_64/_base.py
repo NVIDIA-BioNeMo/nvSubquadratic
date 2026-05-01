@@ -45,7 +45,7 @@ SAMPLES_PER_EPOCH = 32_560
 TRAINING_ITERATIONS = 110_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 
-BATCH_SIZE = 2  # configs/data/supernova_explosion_64.yaml
+BATCH_SIZE = 16  # configs/data/supernova_explosion_64.yaml uses 2
 NUM_WORKERS = 12
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"

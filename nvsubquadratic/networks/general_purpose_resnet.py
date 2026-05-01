@@ -8,6 +8,7 @@ from typing import Sequence
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
@@ -54,6 +55,7 @@ class ResidualNetwork(nn.Module):
         dropout_in_cfg: LazyConfig,
         condition_in_proj_cfg: LazyConfig | None = None,
         target_size: int | Sequence[int] | None = None,
+        gradient_checkpointing: bool = False,
     ):
         """Initialize the ResidualNetwork."""
         super().__init__()
@@ -62,6 +64,7 @@ class ResidualNetwork(nn.Module):
         self.num_blocks = num_blocks
         self.hidden_dim = hidden_dim
         self.data_dim = data_dim
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Instantiate dropout_in
         self.dropout_in = instantiate(dropout_in_cfg)
@@ -161,7 +164,10 @@ class ResidualNetwork(nn.Module):
 
         # Apply residual blocks (with or without condition)
         for block in self.blocks:
-            x = block(x, condition)
+            if self.gradient_checkpointing and self.training and torch.is_grad_enabled():
+                x = checkpoint(block, x, condition, use_reentrant=False)
+            else:
+                x = block(x, condition)
 
         # Apply output norm
         x = self.out_norm(x)

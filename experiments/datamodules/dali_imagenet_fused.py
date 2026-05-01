@@ -516,9 +516,11 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
 
         if self.trainer is not None:
             local_rank = self.trainer.local_rank
+            global_rank = self.trainer.global_rank
             world_size = self.trainer.world_size
         else:
             local_rank = int(os.environ.get("LOCAL_RANK", self.device_id))
+            global_rank = int(os.environ.get("RANK", local_rank))
             world_size = int(os.environ.get("WORLD_SIZE", 1))
 
         if stage in ("fit", None):
@@ -527,7 +529,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 self._ra_source = _RepeatedAugSource(
                     file_root=train_root,
                     num_repeats=self._num_repeats,
-                    shard_id=local_rank,
+                    shard_id=global_rank,
                     num_shards=world_size,
                     seed=self.seed,
                 )
@@ -549,7 +551,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 use_three_augment=self._use_three_augment,
                 color_jitter=self._color_jitter,
                 rand_augment_config=self._rand_augment_config,
-                shard_id=local_rank,
+                shard_id=global_rank,
                 num_shards=world_size,
                 batch_size=self.batch_size,
                 num_threads=self.num_workers,
@@ -569,7 +571,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 eval_crop_ratio=self.eval_crop_ratio,
                 norm_mean=self._norm_mean_tuple,
                 norm_std=self._norm_std_tuple,
-                shard_id=local_rank,
+                shard_id=global_rank,
                 num_shards=world_size,
                 batch_size=self.batch_size,
                 num_threads=self.num_workers,

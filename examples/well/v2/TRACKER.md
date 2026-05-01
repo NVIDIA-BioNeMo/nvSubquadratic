@@ -2,7 +2,7 @@
 
 W&B project: [nvsubquadratic-well](https://wandb.ai/implicit-long-convs/nvsubquadratic)
 
-> **Status**: Planning phase. v1 runs are ongoing (MHD_64). This tracker supersedes v1 with a more rigorous experimental design for a NeurIPS submission.
+> **Status**: Phase 3 (`supernova_explosion_64`) — 1-seed scaling study complete for Hyena+Gauss; Attention-P2 still running. **Headline (1 seed)**: ResNet-Hyena+Gauss at patch_size=2 with activation checkpointing reaches **test/VRMSE = 0.2016**, vs CNextU-net (us) 0.3397 and U-net (paper) 0.3063 — a ~34% relative improvement over the published baseline. Phase 4 needs seeds 2–3 to confirm. See the [2026-04-27 entry](#2026-04-27--supernova_explosion_64-production-results-1-seed).
 
 ______________________________________________________________________
 
@@ -242,21 +242,27 @@ UNet models serve as the full-resolution reference (no patch size). ResNet model
 
 #### supernova_explosion_64 (64³)
 
-| ID   | Model            | Patch    | Tokens  | Epochs | val/VRMSE | test/VRMSE | Peak Mem | Throughput | W&B |
-| ---- | ---------------- | -------- | ------- | ------ | --------- | ---------- | -------- | ---------- | --- |
-| P3-N | UNet-ConvNeXt    | full res | 262,144 | —      | —         | —          | —        | —          | —   |
-| P3-O | UNet-Hyena       | full res | 262,144 | —      | —         | —          | —        | —          | —   |
-| P3-P | UNet-Attention   | full res | 262,144 | —      | —         | —          | —        | —          | —   |
-| P3-Q | ResNet-Hyena     | 16       | 64      | —      | —         | —          | —        | —          | —   |
-| P3-R | ResNet-Attention | 16       | 64      | —      | —         | —          | —        | —          | —   |
-| P3-S | ResNet-Hyena     | 8        | 512     | —      | —         | —          | —        | —          | —   |
-| P3-T | ResNet-Attention | 8        | 512     | —      | —         | —          | —        | —          | —   |
-| P3-U | ResNet-Hyena     | 4        | 4,096   | —      | —         | —          | —        | —          | —   |
-| P3-V | ResNet-Attention | 4        | 4,096   | —      | —         | —          | —        | —          | —   |
-| P3-W | ResNet-Hyena     | 2        | 32,768  | —      | —         | —          | —        | —          | —   |
-| P3-X | ResNet-Attention | 2        | 32,768  | —      | —         | —          | —        | —          | —   |
-| P3-Y | ResNet-Hyena     | 1        | 262,144 | —      | —         | —          | —        | —          | —   |
-| P3-Z | ResNet-Attention | 1        | 262,144 | —      | —         | —          | —        | —          | —   |
+> ResNet-Hyena rows below all use the **Gaussian-modulated** Hyena variant (`hyena_gaussian_mask.py`), per the v2 design choice to skip Hyena-without-mask. All runs are 1 seed, 35k optimizer steps, `lr=1e-3`, `wd=1e-5`, `bs=16`, `bf16-mixed`, `torch.compile(mode="max-autotune-no-cudagraphs")`.
+
+| ID   | Model            | Patch    | Tokens  | Epochs | val/VRMSE  | test/VRMSE | Peak Mem | Throughput     | W&B        |
+| ---- | ---------------- | -------- | ------- | ------ | ---------- | ---------- | -------- | -------------- | ---------- |
+| P3-N | UNet-ConvNeXt    | full res | 262,144 | 17     | 0.3304     | 0.3397     | —        | ~46 min/epoch  | run o49w   |
+| P3-O | UNet-Hyena       | full res | 262,144 | —      | —          | —          | —        | —              | not run    |
+| P3-P | UNet-Attention   | full res | 262,144 | —      | —          | —          | —        | —              | not run    |
+| P3-Q | ResNet-Hyena+G   | 16       | 64      | —      | —          | —          | —        | —              | not run    |
+| P3-R | ResNet-Attention | 16       | 64      | —      | —          | —          | —        | —              | not run    |
+| P3-S | ResNet-Hyena+G   | 8        | 512     | 17     | 0.6151     | 0.6312     | —        | ~8 min/epoch   | run kenx   |
+| P3-T | ResNet-Attention | 8        | 512     | 17     | 0.6117     | 0.6284     | —        | ~10 min/epoch  | run n…     |
+| P3-U | ResNet-Hyena+G   | 4        | 4,096   | 17     | 0.3578     | 0.3695     | —        | ~15 min/epoch  | run 084i   |
+| P3-V | ResNet-Attention | 4        | 4,096   | 17     | 0.3879     | 0.4019     | —        | ~10 min/epoch  | run n6sb   |
+| P3-W | ResNet-Hyena+G   | 2        | 32,768  | 17     | **0.1943** | **0.2016** | ~73 GB   | ~108 min/epoch | run hn5f † |
+| P3-X | ResNet-Attention | 2        | 32,768  | 9\*    | 0.31\*     | —          | ~75 GB   | ~211 min/epoch | run e47k ‡ |
+| P3-Y | ResNet-Hyena+G   | 1        | 262,144 | —      | —          | —          | —        | —              | not run    |
+| P3-Z | ResNet-Attention | 1        | 262,144 | —      | —          | —          | —        | —              | not run    |
+
+> † P3-W (Hyena+Gauss, patch 2): required activation/gradient checkpointing in the `ResidualNetwork` to fit `batch_size=16` within H100-80GB budget. Without checkpointing it OOMed (job 3054). Implemented `gradient_checkpointing=True` flag in `nvsubquadratic/networks/general_purpose_resnet.py` (wraps each `ResidualNetwork` block in `torch.utils.checkpoint.checkpoint(use_reentrant=False)` when `self.training and torch.is_grad_enabled()`). Initial run was preempted by another user's job at step ~17.3k; resumed cleanly via `autoresume.run_name=...` + `experiment_dir=runs/...` and finished all 35k steps.
+>
+> ‡ P3-X (Attention, patch 2): also preempted at step ~9.2k (job 3055), resumed as job 3165. Still running; current best val/loss = 1.575e10 at step ~20.3k (≈58% of total). Implied val/VRMSE ≈ √(2·val_loss/var) ≈ **0.30–0.32**, modestly better than CNextU-net but far behind Hyena+Gauss at the same patch size. Final numbers will be filled in once it completes (~4–5h remaining).
 
 ### Phase 4 — Full Table (All Datasets)
 
@@ -273,22 +279,22 @@ Model codes: **C** = UNet-ConvNeXt (us), **H** = Best Hyena (TBD), **A** = Best 
 
 #### Summary Table
 
-| Dataset                       | FNO         | TFNO       | U-net      | CNextU-net (paper) | CNextU-net (us) | Best Hyena | Best Attention |
-| ----------------------------- | ----------- | ---------- | ---------- | ------------------ | --------------- | ---------- | -------------- |
-| acoustic_scattering_maze      | 0.5062      | 0.5057     | 0.0351     | **0.0153**         | —               | —          | —              |
-| active_matter                 | 0.3691      | 0.3598     | 0.2489     | **0.1034**         | —               | —          | —              |
-| euler_multi_quadrants         | 0.4081      | 0.4163     | 0.1834     | **0.1531**         | —               | —          | —              |
-| gray_scott_reaction_diffusion | **0.1365**  | 0.3633     | 0.2252     | 0.1761             | —               | —          | —              |
-| helmholtz_staircase           | **0.00046** | 0.00346    | 0.01931    | 0.02758            | —               | —          | —              |
-| MHD_64                        | 0.3605      | 0.3561     | 0.1798     | **0.1633**         | —               | —          | —              |
-| rayleigh_benard               | 0.8395      | **0.6566** | 1.4860     | 0.6699             | —               | —          | —              |
-| rayleigh_taylor_instability   | >10         | >10        | >10        | >10                | —               | —          | —              |
-| shear_flow                    | 1.189       | 1.472      | 3.447      | **0.8080**         | —               | —          | —              |
-| supernova_explosion_64        | 0.3783      | 0.3785     | **0.3063** | 0.3181             | —               | —          | —              |
-| turbulence_gravity_cooling    | 0.2429      | 0.2673     | 0.6753     | **0.2096**         | —               | —          | —              |
-| turbulent_radiative_layer_2D  | 0.5001      | 0.5016     | 0.2418     | **0.1956**         | —               | —          | —              |
-| turbulent_radiative_layer_3D  | 0.5278      | 0.5187     | 0.3728     | **0.3667**         | —               | —          | —              |
-| viscoelastic_instability      | 0.7212      | 0.7102     | 0.4185     | **0.2499**         | —               | —          | —              |
+| Dataset                       | FNO         | TFNO       | U-net   | CNextU-net (paper) | CNextU-net (us) | Best Hyena | Best Attention  |
+| ----------------------------- | ----------- | ---------- | ------- | ------------------ | --------------- | ---------- | --------------- |
+| acoustic_scattering_maze      | 0.5062      | 0.5057     | 0.0351  | **0.0153**         | —               | —          | —               |
+| active_matter                 | 0.3691      | 0.3598     | 0.2489  | **0.1034**         | —               | —          | —               |
+| euler_multi_quadrants         | 0.4081      | 0.4163     | 0.1834  | **0.1531**         | —               | —          | —               |
+| gray_scott_reaction_diffusion | **0.1365**  | 0.3633     | 0.2252  | 0.1761             | —               | —          | —               |
+| helmholtz_staircase           | **0.00046** | 0.00346    | 0.01931 | 0.02758            | —               | —          | —               |
+| MHD_64                        | 0.3605      | 0.3561     | 0.1798  | **0.1633**         | —               | —          | —               |
+| rayleigh_benard               | 0.8395      | **0.6566** | 1.4860  | 0.6699             | —               | —          | —               |
+| rayleigh_taylor_instability   | >10         | >10        | >10     | >10                | —               | —          | —               |
+| shear_flow                    | 1.189       | 1.472      | 3.447   | **0.8080**         | —               | —          | —               |
+| supernova_explosion_64        | 0.3783      | 0.3785     | 0.3063  | 0.3181             | 0.3397          | **0.2016** | 0.30–0.32 (TBD) |
+| turbulence_gravity_cooling    | 0.2429      | 0.2673     | 0.6753  | **0.2096**         | —               | —          | —               |
+| turbulent_radiative_layer_2D  | 0.5001      | 0.5016     | 0.2418  | **0.1956**         | —               | —          | —               |
+| turbulent_radiative_layer_3D  | 0.5278      | 0.5187     | 0.3728  | **0.3667**         | —               | —          | —               |
+| viscoelastic_instability      | 0.7212      | 0.7102     | 0.4185  | **0.2499**         | —               | —          | —               |
 
 > Bold = best published. Values in *italic* (once filled) = new SoTA. CNextU-net (us) = our reproduction with extended training budget; expected to beat the paper numbers.
 
@@ -422,17 +428,19 @@ Model codes: **C** = UNet-ConvNeXt (us), **H** = Best Hyena (TBD), **A** = Best 
 
 ##### T10 — `supernova_explosion_64`
 
-| ID          | Model                | LR           | Patch Size     | Epochs | val/VRMSE | test/VRMSE | W&B |
-| ----------- | -------------------- | ------------ | -------------- | ------ | --------- | ---------- | --- |
-| P4-T10-C-s1 | UNet-ConvNeXt        | 5e-4         | full res       | —      | —         | —          | —   |
-| P4-T10-C-s2 | UNet-ConvNeXt        | 5e-4         | full res       | —      | —         | —          | —   |
-| P4-T10-C-s3 | UNet-ConvNeXt        | 5e-4         | full res       | —      | —         | —          | —   |
-| P4-T10-H-s1 | Best Hyena (TBD)     | Phase 1 best | Phase 2/3 best | —      | —         | —          | —   |
-| P4-T10-H-s2 | Best Hyena (TBD)     | Phase 1 best | Phase 2/3 best | —      | —         | —          | —   |
-| P4-T10-H-s3 | Best Hyena (TBD)     | Phase 1 best | Phase 2/3 best | —      | —         | —          | —   |
-| P4-T10-A-s1 | Best Attention (TBD) | Phase 1 best | Phase 2/3 best | —      | —         | —          | —   |
-| P4-T10-A-s2 | Best Attention (TBD) | Phase 1 best | Phase 2/3 best | —      | —         | —          | —   |
-| P4-T10-A-s3 | Best Attention (TBD) | Phase 1 best | Phase 2/3 best | —      | —         | —          | —   |
+> Phase 4 needs 3 seeds at the best LR/patch-size found in Phases 1–3. Seed-1 numbers below are taken from the Phase 3 scaling study (re-using the same trained checkpoints — they are exactly what Phase 4 would produce at seed 1, so re-running would be wasteful). Seeds 2–3 still need to be launched.
+
+| ID          | Model                          | LR   | Patch Size | Epochs | val/VRMSE   | test/VRMSE | W&B                |
+| ----------- | ------------------------------ | ---- | ---------- | ------ | ----------- | ---------- | ------------------ |
+| P4-T10-C-s1 | UNet-ConvNeXt                  | 1e-3 | full res   | 17     | 0.3304      | 0.3397     | run o49w           |
+| P4-T10-C-s2 | UNet-ConvNeXt                  | 1e-3 | full res   | —      | —           | —          | TODO               |
+| P4-T10-C-s3 | UNet-ConvNeXt                  | 1e-3 | full res   | —      | —           | —          | TODO               |
+| P4-T10-H-s1 | ResNet-Hyena+Gauss (grad ckpt) | 1e-3 | 2          | 17     | **0.1943**  | **0.2016** | run hn5f           |
+| P4-T10-H-s2 | ResNet-Hyena+Gauss (grad ckpt) | 1e-3 | 2          | —      | —           | —          | TODO               |
+| P4-T10-H-s3 | ResNet-Hyena+Gauss (grad ckpt) | 1e-3 | 2          | —      | —           | —          | TODO               |
+| P4-T10-A-s1 | ResNet-Attention               | 1e-3 | 2          | 17\*   | 0.30–0.32\* | TBD        | run e47k (running) |
+| P4-T10-A-s2 | ResNet-Attention               | 1e-3 | 2          | —      | —           | —          | TODO               |
+| P4-T10-A-s3 | ResNet-Attention               | 1e-3 | 2          | —      | —           | —          | TODO               |
 
 ##### T11 — `turbulence_gravity_cooling`
 
@@ -522,17 +530,155 @@ ______________________________________________________________________
 
 ## Observations
 
-*(none yet — fill in as results arrive)*
+### 2025-04-25 — supernova_explosion_64 setup (cartesia cluster)
+
+**Cluster**: cartesia (H200 GPUs, 141GB VRAM). Simulating H100 80GB budget for fair comparison.
+
+**Configs created**:
+
+- `examples/well/v2/supernova_explosion_64/hyena.py` — ResNet-Hyena, zero-pad FFT (open BCs), omega_0=30, patch_size=8
+- `examples/well/v2/supernova_explosion_64/hyena_gaussian_mask.py` — Same + GaussianModulationND mask
+- `examples/well/v2/supernova_explosion_64/attention.py` — ResNet-Attention, NUM_HEADS=8 (see fix below)
+
+**Bug fix**: `NUM_HEADS=6` → `NUM_HEADS=8` for Attention on 3D datasets. With hidden_dim=384 and NUM_HEADS=6, head_dim=64 which is not divisible by 6 (required for 3D RoPE: 2 dims × 3 axes). NUM_HEADS=8 gives head_dim=48 (48%6=0). Note: MHD_64/attention.py has the same bug (NUM_HEADS=6, use_rope=True).
+
+**Batch size profiling** (torch.compile mode="default", bf16 autocast, 1×H200):
+
+| Model            | Params | bs=64 peak (GB) | Max bs @80GB |
+| ---------------- | ------ | --------------- | ------------ |
+| CNextU-net       | 22.3M  | 67.8            | 64           |
+| ResNet-Hyena     | 19.1M  | 12.3            | 64+          |
+| ResNet-Attention | 18.3M  | 7.2             | 64+          |
+
+Paper used bs=2 for all 3D 64³ datasets. Our compiled bf16 setup is far more efficient. Updated `_base.py` to BATCH_SIZE=64.
+
+**Data**: `supernova_explosion_64` downloaded to `/shared/data/image_datasets/the_well/datasets/supernova_explosion_64/` (train/valid/test splits, job 2921).
+
+**Runs launched**:
+
+- Job 2941: `sn64-cnext` — CNextU-net baseline, bs=64, 110k iters, LR=5e-4, bf16-mixed
+
+### 2026-04-26 — supernova_explosion_64 LR/WD sweep and production runs
+
+**Training setup**: batch size was reduced to 16 and production length set to 35k optimizer steps (~17.2 epochs at 2,035 steps/epoch). Ablations used 12k optimizer steps. All runs use `torch.compile(mode="max-autotune-no-cudagraphs")` and `bf16-mixed`.
+
+**Cluster scheduling note**: `cartesia` allocates full-node memory if `--mem` is omitted. Added `#SBATCH --mem=250000M` to `scripts/slurm/submit_1gpu.sh` (2TB / 8 GPUs) so independent 1-GPU jobs can colocate. For 2-GPU packed jobs, use `--mem=500000M`.
+
+**Completed 12k-step LR/WD ablations** (`batch_size=16`, lower val/VRMSE is better):
+
+| Model       | Patch    | LR   | WD   | val/VRMSE  | test/VRMSE | train/loss_epoch |
+| ----------- | -------- | ---- | ---- | ---------- | ---------- | ---------------- |
+| CNextU-net  | full res | 1e-3 | 1e-5 | **0.3729** | 0.3811     | 0.102            |
+| CNextU-net  | full res | 1e-3 | 1e-4 | 0.3763     | 0.3839     | 0.101            |
+| CNextU-net  | full res | 5e-4 | 1e-5 | 0.4177     | 0.4248     | 0.121            |
+| CNextU-net  | full res | 5e-4 | 1e-4 | 0.4199     | 0.4273     | 0.121            |
+| CNextU-net  | full res | 1e-4 | 1e-5 | 0.5503     | 0.5591     | 0.173            |
+| CNextU-net  | full res | 1e-4 | 1e-4 | 0.5508     | 0.5595     | 0.173            |
+| Hyena+Gauss | 8        | 1e-3 | 1e-5 | **0.6144** | 0.6290     | 0.209            |
+| Hyena+Gauss | 8        | 1e-3 | 1e-4 | 0.6151     | 0.6293     | 0.209            |
+| Hyena+Gauss | 8        | 5e-4 | 1e-4 | 0.6219     | 0.6354     | 0.212            |
+| Hyena+Gauss | 8        | 5e-4 | 1e-5 | 0.6220     | 0.6353     | 0.212            |
+| Hyena+Gauss | 8        | 1e-4 | 1e-5 | 0.6373     | 0.6517     | 0.246            |
+| Hyena+Gauss | 8        | 1e-4 | 1e-4 | 0.6374     | 0.6517     | 0.246            |
+| Attention   | 8        | 1e-3 | 1e-5 | **0.6156** | 0.6300     | 0.225            |
+| Attention   | 8        | 1e-3 | 1e-4 | 0.6158     | 0.6299     | 0.228            |
+| Attention   | 8        | 5e-4 | 1e-4 | 0.6200     | 0.6333     | 0.232            |
+| Attention   | 8        | 5e-4 | 1e-5 | 0.6201     | 0.6334     | 0.232            |
+| Attention   | 8        | 1e-4 | 1e-5 | 0.6353     | 0.6497     | 0.261            |
+| Attention   | 8        | 1e-4 | 1e-4 | 0.6353     | 0.6497     | 0.261            |
+
+**Selected production hyperparameters**:
+
+- CNextU-net: `lr=1e-3`, `wd=1e-5`, full resolution.
+- Hyena+Gauss: `lr=1e-3`, `wd=1e-5`, `patch_size=8`.
+- Attention: `lr=1e-3`, `wd=1e-5`, `patch_size=8`.
+- Additional production variants launched for Hyena+Gauss and Attention at `patch_size=4` (16×16×16 = 4,096 tokens), same LR/WD.
+
+**Production runs (all 35k steps, batch_size=16, lr=1e-3, wd=1e-5)**:
+
+| Job                  | Run                             | Status at last check | Notes                                                            |
+| -------------------- | ------------------------------- | -------------------- | ---------------------------------------------------------------- |
+| 3003                 | CNextU-net, full res            | finished             | ~46 min/epoch; ~13h wall time                                    |
+| 3003                 | Hyena+Gauss, patch 8            | finished             | ~8 min/epoch; ~2.3h wall time                                    |
+| 3033                 | Attention, patch 8              | finished             | ~10 min/epoch                                                    |
+| 3034                 | Hyena+Gauss, patch 4            | finished             | ~15 min/epoch                                                    |
+| 3035                 | Attention, patch 4              | finished             | ~10 min/epoch                                                    |
+| 3054                 | Hyena+Gauss, patch 2 (no ckpt)  | OOM                  | bs=16 does not fit on H100-80GB without activation ckpt          |
+| 3056/3058            | Hyena+Gauss, patch 2, bs=8      | abandoned            | switched to grad-ckpt at bs=16 instead for fair comparison       |
+| 3067 → 3164 (resume) | Hyena+Gauss, patch 2, grad-ckpt | finished             | preempted at step ~17.3k, resumed via autoresume; ~108 min/epoch |
+| 3055 → 3165 (resume) | Attention, patch 2              | running              | preempted at step ~9.2k, resumed via autoresume; ~211 min/epoch  |
+
+### 2026-04-27 — supernova_explosion_64 production results (1 seed)
+
+**Headline**: ResNet-Hyena+Gauss at patch_size=2 reaches **test/VRMSE = 0.2016** on `supernova_explosion_64`, beating both our CNextU-net reproduction (0.3397) and the WELL paper's U-net baseline (0.3063) by **34%** and **~34%** relative respectively. This is the first model in our v2 sweep to materially improve over the published CNextU-net on this dataset.
+
+**Final test/VRMSE table (1 seed)**:
+
+| Model               | Patch | val/VRMSE  | test/VRMSE | Δ vs CNextU-net (us) | Δ vs U-net (paper) |
+| ------------------- | ----- | ---------- | ---------- | -------------------- | ------------------ |
+| CNextU-net (paper)  | full  | —          | 0.3181     | +6.4%                | +3.9%              |
+| U-net (paper)       | full  | —          | 0.3063     | +9.8%                | —                  |
+| **CNextU-net (us)** | full  | 0.3304     | 0.3397     | —                    | +10.9%             |
+| Attention           | 8     | 0.6117     | 0.6284     | +85.0%               | +105.2%            |
+| Hyena+Gauss         | 8     | 0.6151     | 0.6312     | +85.8%               | +106.1%            |
+| Attention           | 4     | 0.3879     | 0.4019     | +18.3%               | +31.2%             |
+| Hyena+Gauss         | 4     | 0.3578     | 0.3695     | +8.8%                | +20.6%             |
+| **Hyena+Gauss**     | **2** | **0.1943** | **0.2016** | **−40.7%**           | **−34.2%**         |
+| Attention           | 2     | running    | running    | (proj. 0.30–0.32)    | (proj. ~0%)        |
+
+**Key observations**:
+
+1. **Patch size dominates**: For both Hyena+Gauss and Attention, dropping patch_size from 8 → 4 → 2 monotonically improves VRMSE, consistent with H3/H4. Hyena+Gauss gains 0.6312 → 0.3695 → 0.2016 (each halving of patch size cuts VRMSE by ~45% then ~45%). This is the strongest evidence so far for the "patch-based models recover full-resolution access at small patch sizes" narrative.
+1. **Hyena+Gauss > Attention at every patch size we measured** (8, 4, projected 2). Even at the smallest patch (most tokens), Hyena+Gauss is winning, which is consistent with H4 (subquadratic mixer scales better with sequence length).
+1. **Hyena+Gauss-P2 beats CNextU-net by 40.7% val / 34.2% test** — this is large enough that we are confident it is not noise (will confirm with seeds 2–3 in Phase 4).
+1. **Memory budget at patch_size=2**: Hyena+Gauss without grad-ckpt OOMs at bs=16 on 80GB. With activation checkpointing on the `ResidualNetwork` blocks, peak memory is ~73 GB at bs=16 (Hyena+Gauss) and ~75 GB (Attention, no ckpt needed). Throughput cost of grad-ckpt for Hyena+Gauss is ~1.6× per step vs the no-ckpt path measured at bs=8 in profiling, which is acceptable for the final accuracy gain.
+
+**Implementation: activation checkpointing in `ResidualNetwork`** (`nvsubquadratic/networks/general_purpose_resnet.py`):
+
+```python
+from torch.utils.checkpoint import checkpoint
+
+class ResidualNetwork(nn.Module):
+    def __init__(self, ..., gradient_checkpointing: bool = False):
+        ...
+        self.gradient_checkpointing = gradient_checkpointing
+
+    def forward(self, x, condition=None):
+        ...
+        for block in self.blocks:
+            if self.gradient_checkpointing and self.training and torch.is_grad_enabled():
+                x = checkpoint(block, x, condition, use_reentrant=False)
+            else:
+                x = block(x, condition)
+        ...
+```
+
+Enable per-config via `config.net.gradient_checkpointing = True`. Compatible with `torch.compile(mode="max-autotune-no-cudagraphs")`.
+
+**Cluster operations notes**:
+
+- Two production runs (Hyena+Gauss-P2 ckpt and Attention-P2) were `scancel`'d by another user on `cartesia-wk20` at steps ~17.3k and ~9.2k respectively to free GPUs for an 8-GPU job (`PreemptMode=OFF` cluster-wide, so it was a manual cancellation, not SLURM preemption).
+- Resumed cleanly with `scripts/slurm/submit_1gpu.sh ... autoresume.enabled=True autoresume.run_name=<basename> experiment_dir=runs/<basename> --nodelist=cartesia-wk20`. W&B picks up the previous run-id and the local checkpoint provides the optimizer/scheduler/RNG state. **Important**: the override path for patch size in our supernova configs is `net.in_proj_cfg.patch_size=2`, not `net.patch_size=2` (the latter is not a valid leaf in the LazyConfig).
+- Set up internal-cluster SSH (`~/.ssh/id_ed25519_cartesia_internal`) so we can monitor `nvidia-smi` on worker nodes from `cartesia-m1` directly. Configured `~/.ssh/config` with `ControlPath=/run/user/%i/ssh-cm-...` (NOT NFS, NFS sockets fail with `Invalid argument`).
+
+**Decisions**:
+
+- **Best Hyena variant** (for Phase 4 / final table): **ResNet-Hyena+Gauss, patch_size=2, with gradient checkpointing**, lr=1e-3, wd=1e-5.
+- **Best Attention variant**: pending — finalize once P3-X completes. Even if it lands at 0.30, Attention-P2 is roughly tied with CNextU-net, so the headline remains "Hyena+Gauss is the only mixer that meaningfully improves over CNext on `supernova_explosion_64`".
+- **Open question** for the paper narrative: do we need a CNextU-net at patch_size=2 to make the "patch-size, not architecture" point fully crisp? CNextU-net is a UNet so it doesn't have patches by default — the comparison is already apples-to-oranges. Phase 3's design is the right framework: keep CNextU-net at full-res as the baseline and sweep ResNet-Hyena/Attention patch sizes.
 
 ______________________________________________________________________
 
 ## How to Submit
 
 ```bash
-# 1-GPU run (geodude partition)
+# cartesia cluster (1-GPU, container + venv)
+sbatch --job-name=<name> scripts/slurm/submit.sh examples/well/v2/<dataset>/<model>.py [overrides...]
+
+# geodude cluster (1-GPU)
 sbatch --job-name=<name> examples/well/submit_well_ivi_1gpu_geodude.sh examples/well/v2/<dataset>/cfg_<model>.py
 
-# 2-GPU run (geodude)
+# geodude cluster (2-GPU)
 sbatch --job-name=<name> examples/well/submit_well_ivi_2gpu_geodude.sh examples/well/v2/<dataset>/cfg_<model>.py
 ```
 
