@@ -1,20 +1,17 @@
-# Gray Scott Reaction Diffusion v2 Patch-Size Ablation
+# Euler Multi Quadrants v2
 
 ## Goal
 
 Compare **CNextU-net** (baseline), **Attention**, and **Hyena + Gaussian mask**
-on `gray_scott_reaction_diffusion` (128x128).  Attention and Hyena+G are
-ablated across patch sizes (2, 4, 8).
+on `euer_multi_quadrants` (512x512).
 
 All runs share the same training recipe (24 hours, AdamW, cosine schedule with 5% warmup, bf16-mixed, grad_clip=1.0).
-Default batch size is **64** on **1 GPU**. We ended up not using gradient
-accumulation for patch_size 2 because the training curve was stable  and we traded off for speed.
 
 ## Run order
 
 1. CNextU-net (baseline, no patch size)
-1. Attention  → p8 → p4 → p2
-1. Hyena+G    → p8 → p4 → p2
+1. Attention   p2
+1. Hyena+G    p2
 
 ## Results — CNextU-net (baseline)
 
