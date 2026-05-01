@@ -1,14 +1,22 @@
-"""Tests for _build_param_groups and _get_layer_index (LLRD + WD grouping)."""
+"""Tests for ``_build_param_groups`` and ``construct_optimizer``.
+
+Covers:
+- Weight-decay grouping (default / ``_no_weight_decay`` / ``_weight_decay``).
+- 1D-parameter weight-decay warnings.
+- Per-parameter ``_lr_scale`` overrides + their effect on
+  ``construct_optimizer``'s per-group ``lr``.
+"""
 
 import warnings
 
 import pytest
 import torch
 import torch.nn as nn
+from omegaconf import OmegaConf
 
 from experiments.lightning_wrappers.base_lightning_wrapper import (
     _build_param_groups,
-    _get_layer_index,
+    construct_optimizer,
 )
 
 
@@ -49,28 +57,6 @@ class _FakeWrapper(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
         self.network = _FakeViT(**kwargs)
-
-
-# ---------------------------------------------------------------------------
-# _get_layer_index
-# ---------------------------------------------------------------------------
-
-
-class TestGetLayerIndex:
-    def test_embedding_params(self):
-        for prefix in ("patch_embed", "cls_token", "pos_embed", "reg_token"):
-            assert _get_layer_index(f"network.{prefix}.weight", num_blocks=4) == 0
-
-    def test_block_params(self):
-        assert _get_layer_index("network.blocks.0.norm.weight", num_blocks=4) == 1
-        assert _get_layer_index("network.blocks.3.linear.bias", num_blocks=4) == 4
-
-    def test_head_params(self):
-        for prefix in ("out_norm", "out_proj"):
-            assert _get_layer_index(f"network.{prefix}.weight", num_blocks=4) == 5
-
-    def test_unknown_params_map_to_head(self):
-        assert _get_layer_index("network.some_new_module.weight", num_blocks=4) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -160,57 +146,86 @@ class TestBuildParamGroups1DWarning:
 
 
 # ---------------------------------------------------------------------------
-# _build_param_groups — LLRD
+# _build_param_groups — per-parameter _lr_scale
 # ---------------------------------------------------------------------------
 
 
-class TestBuildParamGroupsLLRD:
-    def test_raises_when_num_blocks_is_none(self):
-        model = _FakeWrapper(num_blocks=2)
-        with pytest.raises(ValueError, match="num_blocks must be set"):
-            _build_param_groups(model, default_weight_decay=0.05, layer_decay=0.75, num_blocks=None)
-
-    def test_no_error_when_both_none(self):
-        model = _FakeWrapper(num_blocks=2)
-        groups = _build_param_groups(model, default_weight_decay=0.05, layer_decay=None, num_blocks=None)
-        assert len(groups) > 0
+class TestBuildParamGroupsLrScale:
+    def test_no_lr_scale_by_default(self):
+        """Without any ``_lr_scale`` attribute, no group emits an ``lr_scale`` key."""
+        model = _FakeWrapper(num_blocks=4)
+        groups = _build_param_groups(model, default_weight_decay=0.05)
         assert all("lr_scale" not in g for g in groups)
 
-    def test_lr_scale_present_with_llrd(self):
-        model = _FakeWrapper(num_blocks=4)
-        groups = _build_param_groups(model, default_weight_decay=0.05, layer_decay=0.75, num_blocks=4)
-        assert all("lr_scale" in g for g in groups)
+    def test_unit_lr_scale_is_omitted(self):
+        """``_lr_scale = 1.0`` is treated as the default and not emitted."""
+        model = _FakeWrapper(num_blocks=2)
+        model.network.patch_embed.weight._lr_scale = 1.0
+        groups = _build_param_groups(model, default_weight_decay=0.05)
+        assert all("lr_scale" not in g for g in groups)
 
-    def test_head_gets_highest_lr_scale(self):
-        model = _FakeWrapper(num_blocks=4)
-        groups = _build_param_groups(model, default_weight_decay=0.05, layer_decay=0.75, num_blocks=4)
-        # Head layer index = num_blocks + 1 = 5; num_layers = 6
-        # lr_scale = 0.75^(6-1-5) = 0.75^0 = 1.0
-        lr_scales = [g["lr_scale"] for g in groups]
-        assert max(lr_scales) == pytest.approx(1.0)
+    def test_custom_lr_scale_creates_separate_group(self):
+        """A non-trivial ``_lr_scale`` produces its own group with ``lr_scale``."""
+        model = _FakeWrapper(num_blocks=2)
+        # Use a non-default weight-decay value to also avoid the 1D warning,
+        # since this parameter (Linear weight) is 2D.
+        model.network.patch_embed.weight._lr_scale = 0.25
+        groups = _build_param_groups(model, default_weight_decay=0.05)
 
-    def test_embedding_gets_lowest_lr_scale(self):
-        num_blocks = 4
-        decay = 0.75
-        model = _FakeWrapper(num_blocks=num_blocks)
-        groups = _build_param_groups(model, default_weight_decay=0.05, layer_decay=decay, num_blocks=num_blocks)
+        scaled = [g for g in groups if "lr_scale" in g]
+        assert len(scaled) == 1
+        assert scaled[0]["lr_scale"] == pytest.approx(0.25)
+        assert id(model.network.patch_embed.weight) in {id(p) for p in scaled[0]["params"]}
 
-        # Embedding layer index = 0; num_layers = 6
-        # lr_scale = 0.75^(6-1-0) = 0.75^5
-        expected_min = decay ** (num_blocks + 2 - 1)
-        lr_scales = [g["lr_scale"] for g in groups]
-        assert min(lr_scales) == pytest.approx(expected_min)
+    def test_lr_scale_groups_split_by_value(self):
+        """Different ``_lr_scale`` values land in different groups."""
+        model = _FakeWrapper(num_blocks=2)
+        model.network.patch_embed.weight._lr_scale = 0.25
+        model.network.out_proj.weight._lr_scale = 4.0
+        groups = _build_param_groups(model, default_weight_decay=0.05)
 
-    def test_lr_scales_monotonically_increase(self):
-        model = _FakeWrapper(num_blocks=4)
-        groups = _build_param_groups(model, default_weight_decay=0.0, layer_decay=0.75, num_blocks=4)
-        # With wd=0 for all params, groups differ only by lr_scale
-        lr_scales = sorted(g["lr_scale"] for g in groups)
-        for i in range(len(lr_scales) - 1):
-            assert lr_scales[i] <= lr_scales[i + 1]
+        scaled = sorted([g["lr_scale"] for g in groups if "lr_scale" in g])
+        assert scaled == pytest.approx([0.25, 4.0])
 
-    def test_no_lr_scale_without_llrd(self):
-        model = _FakeWrapper(num_blocks=4)
-        groups = _build_param_groups(model, default_weight_decay=0.05, layer_decay=None, num_blocks=4)
-        for g in groups:
-            assert "lr_scale" not in g
+    def test_negative_or_zero_lr_scale_raises(self):
+        model = _FakeWrapper(num_blocks=2)
+        model.network.patch_embed.weight._lr_scale = 0.0
+        with pytest.raises(ValueError, match="strictly positive"):
+            _build_param_groups(model, default_weight_decay=0.05)
+
+
+# ---------------------------------------------------------------------------
+# construct_optimizer — _lr_scale propagates to per-group lr
+# ---------------------------------------------------------------------------
+
+
+class TestConstructOptimizerLrScale:
+    def _adamw_cfg(self, lr: float, weight_decay: float):
+        return OmegaConf.create(
+            {
+                "__target__": "torch.optim.AdamW",
+                "lr": lr,
+                "weight_decay": weight_decay,
+            }
+        )
+
+    def test_lr_scale_applies_base_lr_multiplier(self):
+        model = _FakeWrapper(num_blocks=2)
+        model.network.patch_embed.weight._lr_scale = 0.25
+
+        base_lr = 1e-3
+        optim = construct_optimizer(model, self._adamw_cfg(lr=base_lr, weight_decay=0.05))
+
+        scaled_groups = [g for g in optim.param_groups if g["lr"] != base_lr]
+        assert len(scaled_groups) == 1
+        assert scaled_groups[0]["lr"] == pytest.approx(base_lr * 0.25)
+        assert id(model.network.patch_embed.weight) in {id(p) for p in scaled_groups[0]["params"]}
+
+    def test_no_lr_scale_inherits_base_lr(self):
+        model = _FakeWrapper(num_blocks=2)
+
+        base_lr = 1e-3
+        optim = construct_optimizer(model, self._adamw_cfg(lr=base_lr, weight_decay=0.05))
+
+        for g in optim.param_groups:
+            assert g["lr"] == pytest.approx(base_lr)

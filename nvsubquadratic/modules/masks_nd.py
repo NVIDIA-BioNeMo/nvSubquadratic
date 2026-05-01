@@ -291,6 +291,58 @@ class GaussianModulationND(torch.nn.Module):
         return x * gauss
 
 
+class BlockAlignedGaussianModulationND(GaussianModulationND):
+    """Gaussian modulation with channel-reversed std_param for block-structured SIRENs.
+
+    The parent :class:`GaussianModulationND` initializes ``std_param`` so that
+    channel 0 has the narrowest Gaussian (``min_std``) and the last channel has
+    the widest (``init_std_high``).  That ordering assumes the *narrow* mask
+    (short spatial support → broad spectral support) should be applied to
+    channels that carry high-frequency content.
+
+    Block-structured SIRENs such as
+    :class:`~nvsubquadratic.modules.kernels_nd.BlockDiagonalMultiOmegaSIRENKernelND`
+    with a ``linear`` or ``log`` schedule put the *lowest* ω₀ (low-frequency
+    content) on the first block, so the natural alignment is the opposite:
+    widest Gaussian on channel 0, narrowest on the last channel.
+
+    This subclass just reverses ``std_param`` along the channel axis after the
+    parent's initialization — no other behaviour changes (forward pass,
+    clamping, parametrization, grad flow are all inherited unchanged).
+
+    Args:
+        data_dim, num_channels, grid_size, min_attenuation_at_step,
+        max_attenuation_at_limit, init_extent, parametrization:
+            Passed straight through to :class:`GaussianModulationND`.
+    """
+
+    def __init__(
+        self,
+        data_dim: int,
+        num_channels: int,
+        grid_size: int,
+        min_attenuation_at_step: float = 0.1,
+        max_attenuation_at_limit: float = 0.95,
+        init_extent: float = 1.0,
+        parametrization: str = "direct",
+    ):
+        """Initialize the block-aligned Gaussian mask; see the class docstring for argument semantics."""
+        super().__init__(
+            data_dim=data_dim,
+            num_channels=num_channels,
+            grid_size=grid_size,
+            min_attenuation_at_step=min_attenuation_at_step,
+            max_attenuation_at_limit=max_attenuation_at_limit,
+            init_extent=init_extent,
+            parametrization=parametrization,
+        )
+        # Reverse channel axis so the widest Gaussian (last channel in the
+        # parent) ends up on channel 0, matching the lowest-ω₀ block of a
+        # block-structured SIREN kernel.
+        with torch.no_grad():
+            self.std_param.data.copy_(self.std_param.data.flip(dims=[-1]))
+
+
 if __name__ == "__main__":
     from pathlib import Path
 
@@ -348,5 +400,11 @@ if __name__ == "__main__":
     plt.tight_layout()
     # Save gaussian masks figure next to this script
     fig_gauss.savefig(script_dir / "gaussian_masks.png", dpi=150, bbox_inches="tight")
+
+    # --- BlockAlignedGaussianModulationND sanity check ---
+    aligned = BlockAlignedGaussianModulationND(data_dim, num_channels, grid_size=grid_size, parametrization="direct")
+    baseline = GaussianModulationND(data_dim, num_channels, grid_size=grid_size, parametrization="direct")
+    torch.testing.assert_close(aligned.std_param.data, baseline.std_param.data.flip(dims=[-1]))
+    print("BlockAlignedGaussianModulationND std ordering reversed vs baseline: OK")
 
     plt.show()

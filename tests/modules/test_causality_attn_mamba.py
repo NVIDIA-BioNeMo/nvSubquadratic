@@ -100,6 +100,7 @@ class TestAttentionCausality:
             use_rope=True,
             is_causal=True,
             attn_dropout=0.0,
+            rope_spatial_dims=(32,),
         )
 
     @pytest.fixture
@@ -114,6 +115,7 @@ class TestAttentionCausality:
             use_rope=True,
             is_causal=False,
             attn_dropout=0.0,
+            rope_spatial_dims=(32,),
         )
 
     def test_causal_attention_future_independence(self, attention_causal):
@@ -208,13 +210,13 @@ class TestAttentionCausality:
         torch.manual_seed(42)
 
         batch_size = 1
-        seq_len = 8
+        seq_len = 32
         hidden_dim = 64
 
         x = torch.randn(batch_size, seq_len, hidden_dim)
 
-        # Test each position: modifying position j should not affect positions < j
-        for j in range(1, seq_len):
+        # Test several positions: modifying position j should not affect positions < j
+        for j in [1, 4, 8, 16, 24, 31]:
             x_modified = x.clone()
             x_modified[:, j, :] = torch.randn(batch_size, hidden_dim)
 
@@ -235,6 +237,7 @@ class TestAttentionCausalityGradients:
         """Test that gradients don't flow from future to past in causal attention."""
         from nvsubquadratic.modules.attention import Attention
 
+        seq_len = 16
         attention = Attention(
             hidden_dim=64,
             num_heads=4,
@@ -242,12 +245,12 @@ class TestAttentionCausalityGradients:
             use_rope=True,
             is_causal=True,
             attn_dropout=0.0,
+            rope_spatial_dims=(seq_len,),
         )
         attention.train()
         torch.manual_seed(42)
 
         batch_size = 2
-        seq_len = 16
         hidden_dim = 64
 
         x = torch.randn(batch_size, seq_len, hidden_dim, requires_grad=True)
@@ -274,6 +277,7 @@ class TestAttentionCausalityGradients:
         """Test that gradients DO flow from future to past in non-causal attention."""
         from nvsubquadratic.modules.attention import Attention
 
+        seq_len = 16
         attention = Attention(
             hidden_dim=64,
             num_heads=4,
@@ -281,12 +285,12 @@ class TestAttentionCausalityGradients:
             use_rope=True,
             is_causal=False,
             attn_dropout=0.0,
+            rope_spatial_dims=(seq_len,),
         )
         attention.train()
         torch.manual_seed(42)
 
         batch_size = 2
-        seq_len = 16
         hidden_dim = 64
 
         x = torch.randn(batch_size, seq_len, hidden_dim, requires_grad=True)
@@ -580,6 +584,7 @@ class TestQKVSequenceMixerAttentionCausality:
                 use_rope=True,
                 is_causal=True,  # Causal!
                 attn_dropout=0.0,
+                rope_spatial_dims=(32,),
             ),
         )
         return instantiate(mixer_cfg)
@@ -601,6 +606,7 @@ class TestQKVSequenceMixerAttentionCausality:
                 use_rope=True,
                 is_causal=False,  # Non-causal
                 attn_dropout=0.0,
+                rope_spatial_dims=(32,),
             ),
         )
         return instantiate(mixer_cfg)
@@ -688,7 +694,7 @@ class TestQKVSequenceMixerAttentionCausality:
         torch.manual_seed(42)
 
         batch_size = 2
-        seq_len = 16
+        seq_len = 32
         hidden_dim = 64
 
         x = torch.randn(batch_size, seq_len, hidden_dim, requires_grad=True)

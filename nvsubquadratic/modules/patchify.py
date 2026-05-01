@@ -87,7 +87,8 @@ class Patchify(torch.nn.Module):
             The output tensor of shape [B, *spatial_dims // stride, out_features].
         """
         # Channels-last -> channels-first for ConvNd
-        x = rearrange(x, "b ... c -> b c ...")
+        # .contiguous() avoids a stride mismatch in torch.compile's convolution_backward
+        x = rearrange(x, "b ... c -> b c ...").contiguous()
 
         # Apply conv
         y = self.conv(x)
@@ -165,7 +166,8 @@ class Unpatchify(torch.nn.Module):
         )
 
         # Channels-last -> channels-first for ConvTransposeNd
-        x_bc = rearrange(x, "b ... c -> b c ...")
+        # .contiguous() avoids a stride mismatch in torch.compile's convolution_backward
+        x_bc = rearrange(x, "b ... c -> b c ...").contiguous()
 
         # Apply deconvolution (optionally with target output size)
         if output_spatial_shape is None:

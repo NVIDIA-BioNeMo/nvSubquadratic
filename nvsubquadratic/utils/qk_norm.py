@@ -31,6 +31,11 @@ class L2Norm(torch.nn.Module):
         self.dim = dim
         self.eps = eps
 
+    @property
+    def channels_first(self) -> bool:
+        """True when normalizing over dim=1 (channel-first layout)."""
+        return self.dim == 1
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """L2-normalize along the configured dimension."""
         return F.normalize(x, p=2.0, dim=self.dim, eps=self.eps)
