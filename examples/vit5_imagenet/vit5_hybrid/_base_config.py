@@ -40,6 +40,8 @@ from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from mamba_ssm import Mamba as MambaCoreLayer
+from nvsubquadratic.modules.mamba_nd import Mamba
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
@@ -200,6 +202,51 @@ def _make_hyena_block_cfg() -> LazyConfig:
     )
 
 
+def _make_mamba_block_cfg(
+    d_state: int = 16,
+    d_conv: int = 4,
+    expand: int = 2,
+    bidirectional: bool = True,
+) -> LazyConfig:
+    """Build a ViT5ResidualBlock config with a Mamba SSM sequence mixer.
+
+    The flat token sequence (CLS + patches + registers) is passed directly to
+    ``Mamba`` which flattens any leading spatial dims and delegates to the
+    mamba_ssm core.  No QKVSequenceMixer or ViT5HyenaAdapter wrapper needed.
+
+    Args:
+        d_state: SSM state dimension (default 16).
+        d_conv: Local convolution width (default 4).
+        expand: Inner-dimension expansion factor (default 2).
+        bidirectional: If True, a second reversed Mamba core is added and
+            summed with the forward pass — important for non-causal 2D inputs.
+    """
+    return LazyConfig(ViT5ResidualBlock)(
+        sequence_mixer_cfg=LazyConfig(Mamba)(
+            mamba_layer_cfg=LazyConfig(MambaCoreLayer)(
+                d_model="${net.hidden_dim}",
+                d_state=d_state,
+                d_conv=d_conv,
+                expand=expand,
+            ),
+            bidirectional=bidirectional,
+        ),
+        sequence_mixer_norm_cfg=LazyConfig(RMSNorm)(dim="${net.hidden_dim}", eps=1e-6),
+        mlp_cfg=LazyConfig(MLP)(
+            dim="${net.hidden_dim}",
+            activation="gelu",
+            expansion_factor=float(MLP_RATIO),
+            bias=False,
+            dropout_cfg=LazyConfig(torch.nn.Dropout)(p=0.0),
+            init_method_in=INIT_FN_FACTORY,
+            init_method_out=INIT_FN_FACTORY,
+        ),
+        mlp_norm_cfg=LazyConfig(RMSNorm)(dim="${net.hidden_dim}", eps=1e-6),
+        hidden_dim="${net.hidden_dim}",
+        layer_scale_init=LAYER_SCALE_INIT,
+    )
+
+
 # ─── Network builder ─────────────────────────────────────────────────────────
 
 
@@ -231,6 +278,8 @@ def build_hybrid_net(
         layer_types["A"] = _make_attention_block_cfg()
     if "H" in layer_pattern:
         layer_types["H"] = _make_hyena_block_cfg()
+    if "M" in layer_pattern:
+        layer_types["M"] = _make_mamba_block_cfg()
 
     return LazyConfig(ViT5ClassificationNet)(
         in_channels=INPUT_CHANNELS,

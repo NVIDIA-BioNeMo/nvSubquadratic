@@ -79,6 +79,7 @@ select = [
 [tool.ruff.lint.isort]
 lines-after-imports = 2
 known-first-party = ["nvsubquadratic"]
+known-third-party = ["wandb"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
