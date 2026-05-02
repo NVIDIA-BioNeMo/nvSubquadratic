@@ -9,6 +9,10 @@ CLS token, registers — is identical to ``full_hyena.py`` and ``full_attention.
 Mamba hyperparameters (mamba_ssm defaults):
   d_state=16, d_conv=4, expand=2, bidirectional=True
 
+hidden_dim is reduced from 384 → 320 to compensate for the extra parameters
+introduced by the bidirectional second Mamba core, targeting a ~27M param budget
+comparable to full_hyena.py.
+
 Override ``net.patch_size`` to change resolution (default 16).
 """
 
@@ -29,5 +33,6 @@ def get_config() -> ExperimentConfig:
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
     config.net = build_hybrid_net(layer_pattern=LAYER_PATTERN, patch_size=PATCH_SIZE)
+    config.net.hidden_dim = 320
     config.wandb.job_group = "vit5_hybrid"
     return config
