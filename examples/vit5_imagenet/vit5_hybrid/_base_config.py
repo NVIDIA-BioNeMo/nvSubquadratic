@@ -19,6 +19,7 @@ Typical usage::
 """
 
 import torch
+from mamba_ssm import Mamba as MambaCoreLayer
 
 from examples.vit5_imagenet.v5._base import (
     FINAL_IMAGE_SIZE,
@@ -36,12 +37,11 @@ from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.grn import GlobalResponseNorm
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.mamba_nd import Mamba
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
-from mamba_ssm import Mamba as MambaCoreLayer
-from nvsubquadratic.modules.mamba_nd import Mamba
 from nvsubquadratic.modules.vit5_attention import ViT5Attention
 from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
 from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
