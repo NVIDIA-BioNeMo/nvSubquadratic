@@ -1,9 +1,9 @@
-"""Hyena config for supernova_explosion_64 (v2).
+"""Hyena config for gray_scott_reaction_diffusion (v2).
 
 Uses a ResidualNetwork with Hyena (QKV + CKConv global conv) as the
-sequence mixer.  Zero FFT padding matches the dataset's open (non-periodic)
-boundary conditions.  With patch_size=8 the effective sequence
-resolution is 8×8×8.
+sequence mixer.  Circular FFT padding matches the dataset's periodic
+boundary conditions.  With patch_size=16 the effective sequence
+resolution is 16×16.
 
 Patch-size CLI override
 -----------------------
@@ -13,7 +13,7 @@ and kernel L_cache are derived via OmegaConf interpolators.
 
 import torch
 
-from examples.well.v2.supernova_explosion_64._base import (
+from examples.well.v2.euler_multi_quadrants_periodicBC._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,
@@ -37,20 +37,20 @@ from nvsubquadratic.utils.qk_norm import L2Norm
 # ─── Model hyperparameters ────────────────────────────────────────────────────
 NUM_HIDDEN_CHANNELS = 384
 NUM_BLOCKS = 12
-PATCH_SIZE = 8
+PATCH_SIZE = 16
 
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
-FFT_PADDING = "zero"  # open (non-periodic) boundary conditions
+FFT_PADDING = "circular"  # periodic boundary conditions
 OMEGA_0 = 30.0
 
-GRADIENT_CHECKPOINTING = False
+GRADIENT_CHECKPOINTING = True
 
 
 def get_config() -> ExperimentConfig:
-    """Build Hyena experiment config for supernova_explosion_64."""
-    config = get_base_config(learning_rate=1e-3, weight_decay=1e-5)
+    """Build Hyena experiment config for euler_multi_quadrants_periodicBC."""
+    config = get_base_config()
 
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
@@ -94,14 +94,14 @@ def get_config() -> ExperimentConfig:
                             num_layers=3,
                             embedding_dim=64,
                             omega_0=OMEGA_0,
-                            L_cache="${eval:'64 // ${net.in_proj_cfg.patch_size}'}",
+                            L_cache="${eval:'256 // ${net.in_proj_cfg.patch_size}'}",
                             use_bias=True,
                             hidden_omega_0=1.0,
                         ),
                         mask_cfg=LazyConfig(torch.nn.Identity)(),
                         grid_type=GRID_TYPE,
                     ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv3d)(
+                    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
                         in_channels=3 * NUM_HIDDEN_CHANNELS,
                         out_channels=3 * NUM_HIDDEN_CHANNELS,
                         kernel_size=3,

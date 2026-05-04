@@ -38,6 +38,8 @@ PATCH_SIZE = 8
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 
+GRADIENT_CHECKPOINTING = False
+
 
 def get_config() -> ExperimentConfig:
     """Build Attention experiment config for supernova_explosion_64."""
@@ -99,7 +101,7 @@ def get_config() -> ExperimentConfig:
             dropout_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_RATE),
         ),
         dropout_in_cfg=LazyConfig(torch.nn.Dropout)(p=DROPOUT_IN_RATE),
-        gradient_checkpointing=False,
+        gradient_checkpointing=GRADIENT_CHECKPOINTING,
     )
 
     return config

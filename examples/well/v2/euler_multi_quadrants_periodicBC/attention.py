@@ -1,19 +1,17 @@
-"""Hyena config for supernova_explosion_64 (v2).
+"""Attention config for     euler_multi_quadrants_periodicBC (v2).
 
-Uses a ResidualNetwork with Hyena (QKV + CKConv global conv) as the
-sequence mixer.  Zero FFT padding matches the dataset's open (non-periodic)
-boundary conditions.  With patch_size=8 the effective sequence
-resolution is 8×8×8.
+Uses a ResidualNetwork with multi-head self-attention (QKV + RoPE) as the
+sequence mixer.  With patch_size=8 the effective sequence resolution is 8×8×8.
 
 Patch-size CLI override
 -----------------------
-Only ``net.in_proj_cfg.patch_size=P`` is needed; stride, out_proj patch_size,
-and kernel L_cache are derived via OmegaConf interpolators.
+Only ``net.in_proj_cfg.patch_size=P`` is needed; stride and out_proj patch_size
+are derived via OmegaConf interpolators.
 """
 
 import torch
 
-from examples.well.v2.supernova_explosion_64._base import (
+from examples.well.v2.euler_multi_quadrants_periodicBC._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,
@@ -21,9 +19,7 @@ from examples.well.v2.supernova_explosion_64._base import (
 )
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
-from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.attention import Attention
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patchify import Patchify, Unpatchify
 from nvsubquadratic.modules.residual_block import ResidualBlock
@@ -31,25 +27,22 @@ from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
 from nvsubquadratic.utils.init import partial_wang_init_fn_with_num_layers, small_init
-from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # ─── Model hyperparameters ────────────────────────────────────────────────────
 NUM_HIDDEN_CHANNELS = 384
 NUM_BLOCKS = 12
+NUM_HEADS = 8  # head_dim=48; must be divisible by 6 for 3D RoPE
 PATCH_SIZE = 8
 
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
-GRID_TYPE = "single"
-FFT_PADDING = "zero"  # open (non-periodic) boundary conditions
-OMEGA_0 = 30.0
 
 GRADIENT_CHECKPOINTING = False
 
 
 def get_config() -> ExperimentConfig:
-    """Build Hyena experiment config for supernova_explosion_64."""
+    """Build Attention experiment config for euler_multi_quadrants_periodicBC."""
     config = get_base_config(learning_rate=1e-3, weight_decay=1e-5)
 
     config.compile = True
@@ -81,44 +74,14 @@ def get_config() -> ExperimentConfig:
         block_cfg=LazyConfig(ResidualBlock)(
             sequence_mixer_cfg=LazyConfig(QKVSequenceMixer)(
                 hidden_dim=NUM_HIDDEN_CHANNELS,
-                mixer_cfg=LazyConfig(Hyena)(
-                    global_conv_cfg=LazyConfig(CKConvND)(
-                        data_dim=DATA_DIM,
-                        hidden_dim=NUM_HIDDEN_CHANNELS,
-                        fft_padding=FFT_PADDING,
-                        use_fp16_fft=False,
-                        kernel_cfg=LazyConfig(SIRENKernelND)(
-                            data_dim=DATA_DIM,
-                            out_dim=NUM_HIDDEN_CHANNELS,
-                            mlp_hidden_dim=64,
-                            num_layers=3,
-                            embedding_dim=64,
-                            omega_0=OMEGA_0,
-                            L_cache="${eval:'64 // ${net.in_proj_cfg.patch_size}'}",
-                            use_bias=True,
-                            hidden_omega_0=1.0,
-                        ),
-                        mask_cfg=LazyConfig(torch.nn.Identity)(),
-                        grid_type=GRID_TYPE,
-                    ),
-                    short_conv_cfg=LazyConfig(torch.nn.Conv3d)(
-                        in_channels=3 * NUM_HIDDEN_CHANNELS,
-                        out_channels=3 * NUM_HIDDEN_CHANNELS,
-                        kernel_size=3,
-                        groups=3 * NUM_HIDDEN_CHANNELS,
-                        padding=1,
-                        bias=False,
-                    ),
-                    gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
-                    gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
-                    pixelhyena_norm_cfg=LazyConfig(RMSNorm)(
-                        dim=NUM_HIDDEN_CHANNELS,
-                    ),
-                    output_norm_cfg=LazyConfig(RMSNorm)(
-                        dim=NUM_HIDDEN_CHANNELS,
-                    ),
-                    qk_norm_cfg=LazyConfig(L2Norm)(),
-                    use_rope=False,
+                mixer_cfg=LazyConfig(Attention)(
+                    hidden_dim=NUM_HIDDEN_CHANNELS,
+                    num_heads=NUM_HEADS,
+                    apply_qk_norm=True,
+                    use_rope=True,
+                    is_causal=False,
+                    attn_dropout=0.0,
+                    rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),

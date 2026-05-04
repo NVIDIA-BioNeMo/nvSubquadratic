@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
 
+from experiments.callbacks.flop_counter import FlopCounterCallback
 from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
 from experiments.default_cfg import ExperimentConfig
@@ -122,6 +123,8 @@ def construct_trainer(
         checkpoint_callback,
         # Model summary callback
         pl_callbacks.ModelSummary(max_depth=-1),
+        # One-shot FLOP measurement (fwd + bwd) at fit start; logs flops/{fwd,bwd,step}
+        FlopCounterCallback(),
         # Learning rate monitor callback
         pl_callbacks.LearningRateMonitor(log_weight_decay=True),
         # Timer callback

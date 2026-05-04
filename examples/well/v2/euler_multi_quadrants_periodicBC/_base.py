@@ -44,7 +44,7 @@ SAMPLES_PER_EPOCH = 388_000
 TRAINING_ITERATIONS = 110_000
 WARMUP_ITERATIONS_PERCENTAGE = 0.05
 
-BATCH_SIZE = 24  # configs/data/euler_multi_quadrants_periodicBC.yaml
+BATCH_SIZE = 48  # configs/data/euler_multi_quadrants_periodicBC.yaml
 NUM_WORKERS = 12
 GRAD_CLIP = 1.0
 PRECISION = "bf16-mixed"
