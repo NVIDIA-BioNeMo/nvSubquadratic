@@ -416,7 +416,6 @@ class TestHyenaCausality:
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             qk_norm_cfg=LazyConfig(L2Norm)(),
-            use_rope=True,
             output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
         )
 
@@ -461,7 +460,6 @@ class TestHyenaCausality:
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             qk_norm_cfg=LazyConfig(L2Norm)(),
-            use_rope=True,
             output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
         )
 
@@ -625,7 +623,6 @@ class TestHyenaCausality:
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),  # No gate!
             pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No norm
             qk_norm_cfg=None,  # No QK norm
-            use_rope=False,  # No RoPE
             output_norm_cfg=LazyConfig(torch.nn.Identity)(),  # No output norm
         )
         hyena_simple.train()
@@ -707,7 +704,6 @@ class TestQKVSequenceMixerHyenaCausality:
                 gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
                 pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
                 qk_norm_cfg=LazyConfig(L2Norm)(),
-                use_rope=True,
                 output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             ),
         )
@@ -759,7 +755,6 @@ class TestQKVSequenceMixerHyenaCausality:
                 gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
                 pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
                 qk_norm_cfg=LazyConfig(L2Norm)(),
-                use_rope=True,
                 output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             ),
         )
@@ -938,7 +933,6 @@ def test_hyena_1d_is_causal_integration():
         gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
         pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim, eps=1e-5),
         qk_norm_cfg=LazyConfig(L2Norm)(),
-        use_rope=True,
         output_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim, eps=1e-5),
     )
     model.eval()

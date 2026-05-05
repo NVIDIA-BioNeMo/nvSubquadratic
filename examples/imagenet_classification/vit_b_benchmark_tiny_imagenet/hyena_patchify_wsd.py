@@ -162,8 +162,6 @@ def get_config() -> ExperimentConfig:
                     gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
                     pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
                     apply_qk_norm=True,
-                    use_rope=False,
-                    rope_base=10000.0,
                 ),
                 init_method_in=small_init,
                 init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),
