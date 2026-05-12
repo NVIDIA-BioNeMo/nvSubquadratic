@@ -280,10 +280,71 @@ class TestGaussianModulationND:
             GaussianModulationND(data_dim=2, num_channels=4)
 
     def test_invalid_init_extent_raises(self):
-        with pytest.raises(AssertionError, match="init_extent"):
+        with pytest.raises(ValueError, match="init_extent"):
             self._make_mask(init_extent=0.0)
-        with pytest.raises(AssertionError, match="init_extent"):
+        with pytest.raises(ValueError, match="init_extent"):
             self._make_mask(init_extent=1.5)
+
+    # -- per-axis init_extent -------------------------------------------
+
+    def test_per_axis_init_extent_shape(self):
+        """Passing a sequence of length data_dim is accepted and stored as tuple."""
+        mask = GaussianModulationND(
+            data_dim=3,
+            num_channels=8,
+            grid_size=31,
+            init_extent=(1.0, 0.5, 0.25),
+        )
+        assert mask.init_extent == (1.0, 0.5, 0.25)
+        assert mask.std_param.shape == (3, 8)
+
+    def test_per_axis_init_extent_sets_per_axis_init_std_high(self):
+        """Each axis ramps to its own init_std_high determined by its init_extent."""
+        extents = (1.0, 0.5, 0.25)
+        mask = GaussianModulationND(
+            data_dim=3,
+            num_channels=64,
+            grid_size=31,
+            init_extent=extents,
+        )
+        for axis, extent in enumerate(extents):
+            expected_high = _std_from_attenuation(0.1, extent, 1)
+            actual_high = mask.std_param.data[axis].max().item()
+            assert actual_high == pytest.approx(expected_high, rel=1e-3)
+
+    def test_per_axis_init_extent_narrower_axis_narrower_widest_channel(self):
+        """A smaller init_extent on one axis yields a narrower widest-channel
+        std on that axis compared to a wider-extent axis."""
+        mask = GaussianModulationND(
+            data_dim=2,
+            num_channels=64,
+            grid_size=31,
+            init_extent=(1.0, 0.25),
+        )
+        widest_axis0 = mask.std_param.data[0].max().item()
+        widest_axis1 = mask.std_param.data[1].max().item()
+        assert widest_axis1 < widest_axis0
+
+    def test_scalar_init_extent_matches_homogeneous_sequence(self):
+        """Scalar and equivalent sequence init produce identical parameters."""
+        scalar = GaussianModulationND(data_dim=3, num_channels=16, grid_size=31, init_extent=0.5)
+        seq = GaussianModulationND(data_dim=3, num_channels=16, grid_size=31, init_extent=(0.5, 0.5, 0.5))
+        torch.testing.assert_close(scalar.std_param.data, seq.std_param.data, atol=0, rtol=0)
+        assert scalar.init_extent == seq.init_extent == (0.5, 0.5, 0.5)
+
+    def test_per_axis_init_extent_wrong_length_raises(self):
+        with pytest.raises(ValueError, match="length data_dim=3"):
+            GaussianModulationND(data_dim=3, num_channels=8, grid_size=31, init_extent=(1.0, 0.5))
+
+    def test_per_axis_init_extent_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="init_extent"):
+            GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent=(1.0, 1.5))
+        with pytest.raises(ValueError, match="init_extent"):
+            GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent=(0.5, 0.0))
+
+    def test_per_axis_init_extent_wrong_type_raises(self):
+        with pytest.raises(TypeError, match="init_extent"):
+            GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent="not-a-float")  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

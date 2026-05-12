@@ -468,6 +468,18 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
 
         try:
             dst.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(f"[data-staging] Cannot access {dst}: {exc}") from exc
+
+        # Skip the free-space check when the dataset is already fully staged:
+        # no copy will happen, so the 160 GB headroom is unnecessary.
+        sentinel = dst / ".staging_complete"
+        if sentinel.is_file():
+            print(f"[data-staging] {dst} already staged (sentinel found), skipping copy.", flush=True)
+            self.imagefolder_dir = dst
+            return
+
+        try:
             free_bytes = shutil.disk_usage(dst).free
             min_bytes = 160 * (1024**3)
             if free_bytes < min_bytes:
@@ -477,12 +489,6 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 )
         except OSError as exc:
             raise RuntimeError(f"[data-staging] Cannot access {dst}: {exc}") from exc
-
-        sentinel = dst / ".staging_complete"
-        if sentinel.is_file():
-            print(f"[data-staging] {dst} already staged (sentinel found), skipping copy.", flush=True)
-            self.imagefolder_dir = dst
-            return
 
         print(f"[data-staging] Copying {src} -> {dst} (this may take 10-20 min) ...", flush=True)
         result = subprocess.run(

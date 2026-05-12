@@ -91,7 +91,6 @@ def get_config() -> ExperimentConfig:
             # Channel-first norms: tensor is already [B, C, H, W] → no transposes
             pixelhyena_norm_cfg=LazyConfig(RMSNormChannelFirst)(dim=HIDDEN_DIM, eps=1e-6, use_quack=False),
             qk_norm_cfg=LazyConfig(L2Norm)(dim=1),
-            use_rope=False,
             output_norm_cfg=LazyConfig(RMSNormChannelFirst)(dim=HIDDEN_DIM, eps=1e-6, use_quack=False),
             gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),
         ),

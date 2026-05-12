@@ -134,7 +134,6 @@ def get_hyena_mixer_cfg(
             output_norm_cfg=LazyConfig(RMSNormChannelFirst)(dim="${net.hidden_dim}", eps=1e-6, use_quack=False),
             # v2: L2 QK-norm on channel dim (dim=1 = channel-first)
             qk_norm_cfg=LazyConfig(L2Norm)(dim=1),
-            use_rope=False,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),

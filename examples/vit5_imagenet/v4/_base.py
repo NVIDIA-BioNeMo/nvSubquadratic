@@ -297,7 +297,6 @@ def get_config(
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             qk_norm_cfg=LazyConfig(L2Norm)(),
-            use_rope=False,
             output_norm_cfg=LazyConfig(RMSNorm)(dim=HIDDEN_DIM, eps=1e-6),
             **({"gate_nonlinear_2_cfg": LazyConfig(torch.nn.Sigmoid)()} if use_gated_hyena else {}),
         ),
