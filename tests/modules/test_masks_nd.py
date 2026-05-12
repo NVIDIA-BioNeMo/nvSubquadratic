@@ -162,24 +162,43 @@ class TestGaussianModulationND:
 
     # -- init_extent and the hardcoded 0.1 attenuation -----------------
 
-    def test_init_extent_attenuation_is_01(self):
-        """Widest initial channel has 0.1 (1D) mask value at init_extent position.
+    def test_init_extent_attenuation_is_01_when_unclamped(self):
+        """When the (extent · 0.4724) high end fits inside [min_std, max_std],
+        the widest initial channel has the expected 1D mask value of 0.1 at
+        position ``extent``.
 
-        This is the core property: init_std_high is computed from a hardcoded
-        attenuation of 0.1 at the init_extent position along a single axis.
-        Note: clamping to max_std only happens during forward (via hook), so
-        the raw parameter value equals _std_from_attenuation(0.1, extent, 1).
+        ``init_extent`` multiplicatively scales both ends of the per-axis
+        logspace ramp.  As long as the high end isn't clipped by the
+        ``max_std`` clamp, the relationship
+        ``init_std_high = _std_from_attenuation(0.1, extent, 1)`` holds.
         """
-        for extent in [0.25, 0.5, 0.75, 1.0]:
+        # _make_mask uses min_attn=0.1, max_attn=0.05, grid_size=31 →
+        # max_std ≈ 0.4087, init_std_high_unit ≈ 0.4724.  Pick extents
+        # small enough that ``extent · 0.4724 < max_std``.
+        max_std = _std_from_attenuation(0.05, 1.0, 1)
+        init_std_high_unit = _std_from_attenuation(0.1, 1.0, 1)
+        for extent in [0.25, 0.5, 0.75]:
+            assert extent * init_std_high_unit < max_std, "test setup: extent must keep high end unclamped"
             mask = self._make_mask(init_extent=extent, num_ch=256)
             init_std_high = mask.std_param.data.max().item()
             expected_std = _std_from_attenuation(0.1, extent, 1)
             assert init_std_high == pytest.approx(expected_std, rel=1e-3)
 
+    def test_init_extent_high_end_is_clamped_to_max_std(self):
+        """When ``extent · init_std_high_unit`` exceeds ``max_std``, the high
+        end of the ramp is clamped at ``max_std``."""
+        mask = self._make_mask(init_extent=1.0, num_ch=256)
+        # extent=1.0 with the test config has init_std_high_unit > max_std,
+        # so the high end must clip exactly at max_std.
+        init_std_high_unit = _std_from_attenuation(0.1, 1.0, 1)
+        assert init_std_high_unit > mask.max_std
+        init_std_high = mask.std_param.data.max().item()
+        assert init_std_high == pytest.approx(mask.max_std, rel=1e-6)
+
     def test_init_extent_mask_value_matches_1d(self):
-        """Evaluate the mask at (init_extent, 0) — the single-axis value should
-        be close to 0.1 (or smaller if clamped to max_std)."""
-        extent = 0.5
+        """Evaluate the mask at (init_extent, 0) — for an unclamped ``extent``
+        the single-axis value should be close to 0.1."""
+        extent = 0.5  # unclamped at default test config
         mask = self._make_mask(init_extent=extent, num_ch=64)
         grid = self._make_grid()
         x = torch.ones(1, GRID_SIZE_31, GRID_SIZE_31, 64)
@@ -191,16 +210,40 @@ class TestGaussianModulationND:
         widest_ch = 63  # last channel = widest
 
         mask_val = out[0, idx, center, widest_ch].item()
-        # The grid may not hit exactly `extent`, so we check within tolerance
-        # of the discretization error plus the 0.1 target.
         assert mask_val < 0.15, f"Expected near 0.1 at extent={extent}, got {mask_val}"
         assert mask_val > 0.01, f"Unexpectedly low: {mask_val}"
 
     def test_smaller_extent_gives_smaller_init_std_high(self):
-        """More local init_extent should give a smaller init_std_high."""
+        """More local init_extent should give a smaller init_std_high (low end too)."""
         mask_global = self._make_mask(init_extent=1.0)
         mask_local = self._make_mask(init_extent=0.25)
         assert mask_local.std_param.data.max().item() < mask_global.std_param.data.max().item()
+        # And the low end also moves: with multiplicative scaling, a smaller
+        # extent pushes the bottom of the ramp below the reference min_std.
+        assert mask_local.std_param.data.min().item() < mask_global.std_param.data.min().item() + 1e-12
+
+    def test_extent_above_one_lifts_low_end_of_ramp(self):
+        """``init_extent > 1`` must lift the **bottom** of the ramp above the
+        reference ``min_std`` — otherwise short anisotropic axes would still
+        have unusably-narrow channels at init.  This is the regression test
+        for the multiplicative semantic."""
+        mask_ref = self._make_mask(init_extent=1.0, num_ch=256)
+        mask_wide = self._make_mask(init_extent=4.0, num_ch=256)
+        ref_low = mask_ref.std_param.data.min().item()
+        wide_low = mask_wide.std_param.data.min().item()
+        # extent=4 should push the low end up by ~4x (modulo clamping).
+        # At default test config min_std ≈ 0.0314, max_std ≈ 0.4087, so
+        # 4*min_std ≈ 0.126 fits comfortably inside the band.
+        assert wide_low > ref_low * 3.5
+        assert wide_low <= mask_wide.max_std + 1e-6
+
+    def test_extent_saturates_entire_ramp_at_max_std(self):
+        """Sufficiently-large ``init_extent`` collapses the per-axis ramp to a
+        constant ``max_std`` (axis effectively unmasked at init)."""
+        mask = self._make_mask(init_extent=1e6, num_ch=64)
+        # Both ends saturate at max_std.
+        assert mask.std_param.data.min().item() == pytest.approx(mask.max_std, rel=1e-6)
+        assert mask.std_param.data.max().item() == pytest.approx(mask.max_std, rel=1e-6)
 
     # -- clamping -------------------------------------------------------
 
@@ -280,10 +323,17 @@ class TestGaussianModulationND:
             GaussianModulationND(data_dim=2, num_channels=4)
 
     def test_invalid_init_extent_raises(self):
+        # Must be strictly > 0 and finite. Values > 1 are now allowed
+        # (they multiplicatively scale the ramp — see the multiplicative
+        # semantic introduced for anisotropic kernel grids).
         with pytest.raises(ValueError, match="init_extent"):
             self._make_mask(init_extent=0.0)
         with pytest.raises(ValueError, match="init_extent"):
-            self._make_mask(init_extent=1.5)
+            self._make_mask(init_extent=-0.5)
+        with pytest.raises(ValueError, match="init_extent"):
+            self._make_mask(init_extent=float("inf"))
+        with pytest.raises(ValueError, match="init_extent"):
+            self._make_mask(init_extent=float("nan"))
 
     # -- per-axis init_extent -------------------------------------------
 
@@ -299,7 +349,13 @@ class TestGaussianModulationND:
         assert mask.std_param.shape == (3, 8)
 
     def test_per_axis_init_extent_sets_per_axis_init_std_high(self):
-        """Each axis ramps to its own init_std_high determined by its init_extent."""
+        """Each axis ramps to its own init_std_high determined by its init_extent.
+
+        Default ``GaussianModulationND`` uses ``max_attenuation_at_limit=0.95``
+        which gives ``max_std ≈ 3.121`` — much larger than
+        ``init_std_high_unit ≈ 0.4724`` — so the high ends here are NOT
+        clamped and equal ``_std_from_attenuation(0.1, extent, 1)`` exactly.
+        """
         extents = (1.0, 0.5, 0.25)
         mask = GaussianModulationND(
             data_dim=3,
@@ -309,8 +365,26 @@ class TestGaussianModulationND:
         )
         for axis, extent in enumerate(extents):
             expected_high = _std_from_attenuation(0.1, extent, 1)
+            assert expected_high < mask.max_std, "test setup: high end must fit inside the clamp band"
             actual_high = mask.std_param.data[axis].max().item()
             assert actual_high == pytest.approx(expected_high, rel=1e-3)
+
+    def test_per_axis_init_extent_above_one_lifts_per_axis_low(self):
+        """``init_extent[d] > 1`` lifts the *bottom* of axis-d's ramp above
+        ``min_std`` (multiplicative-semantic regression)."""
+        # Use the default mask config (min_attn=0.1, max_attn=0.95) so the
+        # clamp band is wide enough that 4× scaling fits comfortably.
+        mask = GaussianModulationND(
+            data_dim=3,
+            num_channels=64,
+            grid_size=127,  # matches an 8x64x64 anisotropic-grid config
+            init_extent=(4.0, 1.0, 1.0),
+        )
+        depth_low = mask.std_param.data[0].min().item()
+        hw_low = mask.std_param.data[1].min().item()
+        # H/W keep the reference low; depth is lifted by ~4x.
+        assert hw_low == pytest.approx(mask.min_std, rel=1e-3)
+        assert depth_low > 3.5 * mask.min_std
 
     def test_per_axis_init_extent_narrower_axis_narrower_widest_channel(self):
         """A smaller init_extent on one axis yields a narrower widest-channel
@@ -337,10 +411,14 @@ class TestGaussianModulationND:
             GaussianModulationND(data_dim=3, num_channels=8, grid_size=31, init_extent=(1.0, 0.5))
 
     def test_per_axis_init_extent_out_of_range_raises(self):
-        with pytest.raises(ValueError, match="init_extent"):
-            GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent=(1.0, 1.5))
+        # Sequence values must each be strictly > 0 and finite. Values > 1
+        # are explicitly allowed (multiplicative semantic) and tested above.
         with pytest.raises(ValueError, match="init_extent"):
             GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent=(0.5, 0.0))
+        with pytest.raises(ValueError, match="init_extent"):
+            GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent=(1.0, -2.0))
+        with pytest.raises(ValueError, match="init_extent"):
+            GaussianModulationND(data_dim=2, num_channels=8, grid_size=31, init_extent=(1.0, float("inf")))
 
     def test_per_axis_init_extent_wrong_type_raises(self):
         with pytest.raises(TypeError, match="init_extent"):
