@@ -45,36 +45,37 @@ from typing import Callable
 
 import torch
 
+
 # Ensure project root is on sys.path so nvsubquadratic.* is importable.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate  # noqa: E402
-from nvsubquadratic.modules.ckconv_nd import CKConvND  # noqa: E402
-from nvsubquadratic.modules.grn import GlobalResponseNorm  # noqa: E402
-from nvsubquadratic.modules.hyena_nd import Hyena  # noqa: E402
-from nvsubquadratic.modules.kernels_nd import (  # noqa: E402
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.grn import GlobalResponseNorm
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.kernels_nd import (
     BlockDiagonalLearnableOmegaSIRENKernelND,
     BlockDiagonalMultiOmegaSIRENKernelND,
     SIRENKernelND,
 )
-from nvsubquadratic.modules.masks_nd import (  # noqa: E402
+from nvsubquadratic.modules.masks_nd import (
     BlockAlignedGaussianModulationND,
     GaussianModulationND,
 )
-from nvsubquadratic.modules.mlp import MLP  # noqa: E402
-from nvsubquadratic.modules.rms_norm import RMSNorm  # noqa: E402
-from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer  # noqa: E402
-from nvsubquadratic.modules.vit5_attention import ViT5Attention  # noqa: E402
-from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter  # noqa: E402
-from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock  # noqa: E402
-from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet  # noqa: E402
-from nvsubquadratic.utils.init import (  # noqa: E402
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.rms_norm import RMSNorm
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.modules.vit5_attention import ViT5Attention
+from nvsubquadratic.modules.vit5_hyena_adapter import ViT5HyenaAdapter
+from nvsubquadratic.modules.vit5_residual_block import ViT5ResidualBlock
+from nvsubquadratic.networks.vit5_classification import ViT5ClassificationNet
+from nvsubquadratic.utils.init import (
     trunc_normal_init,
     trunc_normal_init_factory,
 )
-from nvsubquadratic.utils.qk_norm import L2Norm  # noqa: E402
+from nvsubquadratic.utils.qk_norm import L2Norm
 
 
 # ─── Mirrored constants ───────────────────────────────────────────────────────
@@ -573,7 +574,7 @@ def main() -> None:
                     fft_backend=args.fft_backend,
                 )
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"[error] {name} failed: {exc!r}", flush=True)
             results.append(
                 {

@@ -39,20 +39,21 @@ from typing import Callable
 
 import torch
 
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from nvsubquadratic.lazy_config import LazyConfig, instantiate  # noqa: E402
-from nvsubquadratic.modules.attention import Attention  # noqa: E402
-from nvsubquadratic.modules.ckconv_nd import CKConvND  # noqa: E402
-from nvsubquadratic.modules.hyena_nd import Hyena  # noqa: E402
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND  # noqa: E402
-from nvsubquadratic.modules.mlp import MLP  # noqa: E402
-from nvsubquadratic.modules.residual_block import ResidualBlock  # noqa: E402
-from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer  # noqa: E402
-from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork  # noqa: E402
-from nvsubquadratic.utils.init import (  # noqa: E402
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
+from nvsubquadratic.modules.attention import Attention
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.hyena_nd import Hyena
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
+from nvsubquadratic.networks.general_purpose_resnet import ResidualNetwork
+from nvsubquadratic.utils.init import (
     partial_wang_init_fn_with_num_layers,
     small_init,
 )
@@ -394,7 +395,7 @@ def main() -> None:
                     flush=True,
                 )
                 results[mixer][patch] = {"ms": ms, "mem_gb": mem}
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 print(f"   [error] {exc!r}", flush=True)
                 results[mixer][patch] = {"ms": float("nan"), "mem_gb": float("nan")}
 
