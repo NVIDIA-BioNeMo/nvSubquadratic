@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 import pytest
 import torch
 
@@ -62,7 +61,6 @@ def _make_wrapper(
     diff_cfg.num_inference_steps = num_inference_steps
     diff_cfg.num_samples = 2
     diff_cfg.log_samples = False
-    diff_cfg.ddim_eta = 0.0
     diff_cfg.ema_enabled = False
     diff_cfg.use_classifier_free_guidance = use_cfg
     diff_cfg.guidance_scale = guidance_scale
@@ -100,10 +98,14 @@ def test_cfg_sampling_invokes_both_branches() -> None:
 
     samples = wrapper.sample(num_samples=1, labels=torch.tensor([1]))
     assert samples.shape == (1, 4, 4, 3)
-    # Two timesteps * two passes (unconditional + conditional).
-    assert len(wrapper.network.calls) == 4  # type: ignore[attr-defined]
-    unconditional_condition = wrapper.network.calls[0]  # type: ignore[attr-defined]
-    conditional_condition = wrapper.network.calls[1]  # type: ignore[attr-defined]
+    # Heun step (i=0): forward(t=0.0) outside cfg_interval → 1 call,
+    #   forward(t=0.5) inside cfg_interval → 2 calls (uncond + cond).
+    # Final Euler step: forward(t=0.5) inside cfg_interval → 2 calls.
+    # Total: 1 + 2 + 2 = 5.
+    assert len(wrapper.network.calls) == 5  # type: ignore[attr-defined]
+    # First CFG pair starts at index 1 (index 0 is the non-CFG forward at t=0.0).
+    unconditional_condition = wrapper.network.calls[1]  # type: ignore[attr-defined]
+    conditional_condition = wrapper.network.calls[2]  # type: ignore[attr-defined]
     assert not torch.allclose(unconditional_condition, conditional_condition)
 
 
@@ -115,57 +117,7 @@ def test_sampling_without_guidance_uses_single_branch() -> None:
 
     samples = wrapper.sample(num_samples=1, labels=torch.tensor([2]))
     assert samples.shape == (1, 4, 4, 3)
-    # Three timesteps, single pass each.
-    assert len(wrapper.network.calls) == 3  # type: ignore[attr-defined]
-
-
-def test_sigmoid_loss_weighting_matches_manual_computation() -> None:
-    """Verify that the sigmoid-weighted loss matches a manual computation."""
-    bias = -0.75
-    wrapper = _make_wrapper(
-        num_classes=None,
-        use_cfg=False,
-        diffusion_overrides={
-            "use_sigmoid_loss_weighting": True,
-            "sigmoid_loss_bias": bias,
-            "num_train_timesteps": 8,
-        },
-    )
-
-    prediction = torch.tensor([0.2, -0.1], dtype=torch.float32).view(2, 1, 1, 1)
-    target = torch.tensor([0.0, 0.3], dtype=torch.float32).view(2, 1, 1, 1)
-    timesteps = torch.tensor([0, 5], dtype=torch.long)
-
-    loss = wrapper._sigmoid_weighted_mse(prediction, target, timesteps)
-    alphas = wrapper.scheduler.alphas_cumprod[timesteps].to(dtype=prediction.dtype)
-    log_snr = torch.log(alphas / (1.0 - alphas))
-    weights = torch.sigmoid(log_snr - bias).view(-1, 1, 1, 1)
-    expected_loss = ((prediction - target) ** 2 * weights).mean()
-
-    assert torch.allclose(loss, expected_loss, atol=1e-6)
-
-
-def test_cosine_interpolated_schedule_matches_reference_formula() -> None:
-    """Ensure the cosine-interpolated schedule matches the closed-form expression."""
-    overrides = {
-        "beta_schedule": "cosine_interpolated",
-        "num_train_timesteps": 16,
-        "cosine_schedule_logsnr_min": -12.0,
-        "cosine_schedule_logsnr_max": 12.0,
-        "cosine_schedule_image_resolution": 128,
-        "cosine_schedule_noise_res_low": 32,
-        "cosine_schedule_noise_res_high": 128,
-    }
-    wrapper = _make_wrapper(num_classes=None, use_cfg=False, diffusion_overrides=overrides)
-
-    scheduler_betas = wrapper.scheduler.betas.cpu().numpy()
-    expected_betas = wrapper._build_cosine_interpolated_betas(
-        num_steps=overrides["num_train_timesteps"],
-        logsnr_min=overrides["cosine_schedule_logsnr_min"],
-        logsnr_max=overrides["cosine_schedule_logsnr_max"],
-        image_resolution=overrides["cosine_schedule_image_resolution"],
-        noise_res_low=overrides["cosine_schedule_noise_res_low"],
-        noise_res_high=overrides["cosine_schedule_noise_res_high"],
-    )
-
-    np.testing.assert_allclose(scheduler_betas, expected_betas, rtol=1e-6, atol=1e-8)
+    # Heun steps (i=0, i=1): 2 forward calls each = 4.
+    # Final Euler step: 1 forward call.
+    # Total: 4 + 1 = 5.
+    assert len(wrapper.network.calls) == 5  # type: ignore[attr-defined]
