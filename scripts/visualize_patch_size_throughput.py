@@ -22,22 +22,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-matplotlib.rcParams['pdf.fonttype'] = 42
-matplotlib.rcParams['ps.fonttype'] = 42
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 
 
 # (patch, seq_len, attention, hyena, mamba) — ms / batch, lower is better
 DATA = [
     (1, 4096, 1.986, 1.550, 4.478),
     (2, 1024, 0.692, 1.502, 4.333),
-    (4,  256, 0.687, 1.552, 4.301),
-    (8,   64, 0.649, 1.372, 4.283),
+    (4, 256, 0.687, 1.552, 4.301),
+    (8, 64, 0.649, 1.372, 4.283),
 ]
 
 SERIES = {
     "Attention": {"idx": 2, "color": "#3B6FB6", "marker": "o"},
-    "Hyena":     {"idx": 3, "color": "#C0392B", "marker": "s"},
-    "Mamba2":    {"idx": 4, "color": "#7A8B3C", "marker": "D", "linestyle": "--"},
+    "Hyena": {"idx": 3, "color": "#C0392B", "marker": "s"},
+    "Mamba2": {"idx": 4, "color": "#7A8B3C", "marker": "D", "linestyle": "--"},
 }
 
 
@@ -48,20 +48,22 @@ def _format_seq(n: int) -> str:
 
 
 def make_plot(out_path: Path) -> None:
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.size": 11,
-        "axes.titlesize": 12,
-        "axes.titleweight": "bold",
-        "axes.labelsize": 11,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.linewidth": 0.8,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
-    })
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.size": 11,
+            "axes.titlesize": 12,
+            "axes.titleweight": "bold",
+            "axes.labelsize": 11,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "axes.linewidth": 0.8,
+            "xtick.major.width": 0.8,
+            "ytick.major.width": 0.8,
+        }
+    )
 
     fig, ax = plt.subplots(figsize=(2.6, 2.4), constrained_layout=True)
 
@@ -72,7 +74,8 @@ def make_plot(out_path: Path) -> None:
     for label, cfg in SERIES.items():
         y = np.array([row[cfg["idx"]] for row in DATA])[sort_idx]
         ax.plot(
-            x, y,
+            x,
+            y,
             color=cfg["color"],
             marker=cfg["marker"],
             linestyle=cfg.get("linestyle", "-"),

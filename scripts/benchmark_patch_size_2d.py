@@ -220,9 +220,7 @@ MIXERS: dict[str, tuple[int, Callable[[str], LazyConfig], bool]] = {
 def _input_shape_for(patch: int) -> tuple[int, int]:
     """Return (H, W) after patching by ``patch`` along every spatial axis."""
     if CANVAS_SIZE % patch != 0:
-        raise ValueError(
-            f"patch_size={patch} does not evenly divide canvas (H=W={CANVAS_SIZE})."
-        )
+        raise ValueError(f"patch_size={patch} does not evenly divide canvas (H=W={CANVAS_SIZE}).")
     return (CANVAS_SIZE // patch, CANVAS_SIZE // patch)
 
 
@@ -295,8 +293,7 @@ def main() -> None:
         nargs="+",
         type=int,
         default=[1, 2, 4, 8],
-        help="Patch sizes to sweep. Each axis is divided by the patch size, "
-        "so total seq_len scales as p^-2 in 2D.",
+        help="Patch sizes to sweep. Each axis is divided by the patch size, so total seq_len scales as p^-2 in 2D.",
     )
     parser.add_argument(
         "--mixers",
