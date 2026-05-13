@@ -107,8 +107,6 @@ def hyena_mixer_config(data_dim: int = 1) -> LazyConfig:
             gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
             qk_norm_cfg=LazyConfig(L2Norm)(),
-            use_rope=False,  # Disable RoPE to avoid in-place issues
-            rope_base=10000.0,
         ),
     )
 

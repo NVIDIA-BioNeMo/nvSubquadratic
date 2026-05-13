@@ -10,9 +10,44 @@ For testing:
 """
 
 import math
+from collections.abc import Sequence
 
 import torch
 from einops import rearrange
+
+
+def _normalize_init_extent(init_extent: float | Sequence[float] | None, data_dim: int) -> tuple[float, ...]:
+    """Broadcast ``init_extent`` to a per-axis tuple of strictly-positive floats.
+
+    Accepts a single float (broadcast to all axes) or a sequence of length
+    ``data_dim``.  ``None`` is treated as ``1.0`` on every axis.  Used by
+    :class:`GaussianModulationND` so each spatial axis can be initialized
+    with its own bandwidth scale.
+
+    Values must be ``> 0``.  Values ``> 1`` are allowed and useful on short
+    anisotropic axes: ``init_extent`` multiplicatively scales **both** ends
+    of the per-axis logspace ramp, so a large ``init_extent`` on a short
+    axis pushes even the narrowest channel up to a usable bandwidth on that
+    axis.  The clamp ``[min_std, max_std]`` enforces feasibility, so very
+    large values simply saturate the entire ramp at ``max_std`` (= "this
+    axis is essentially unmasked at init").
+    """
+    if init_extent is None:
+        init_extent = 1.0
+    if isinstance(init_extent, bool):
+        raise TypeError("init_extent must be a float or a sequence of floats, got bool")
+    if isinstance(init_extent, (int, float)):
+        extents: tuple[float, ...] = (float(init_extent),) * data_dim
+    elif isinstance(init_extent, Sequence) and not isinstance(init_extent, (str, bytes)):
+        extents = tuple(float(v) for v in init_extent)
+        if len(extents) != data_dim:
+            raise ValueError(f"init_extent sequence must have length data_dim={data_dim}, got length {len(extents)}")
+    else:
+        raise TypeError(f"init_extent must be a float or a sequence of floats, got {type(init_extent).__name__}")
+    for ext in extents:
+        if not ext > 0.0 or not math.isfinite(ext):
+            raise ValueError(f"init_extent values must be finite and > 0, got {ext}")
+    return extents
 
 
 class ExponentialModulationND(torch.nn.Module):
@@ -124,34 +159,60 @@ class GaussianModulationND(torch.nn.Module):
     **Initialization** — pass ``min_attenuation_at_step`` and
     ``max_attenuation_at_limit`` (plus ``grid_size``, auto-injected by
     CKConvND).  These define the **clamp bounds** — the narrowest any
-    channel can get (min_std) and the widest (max_std).  Optionally pass
-    ``init_extent`` to control how global the widest channel is at
-    initialization.
+    channel can get (``min_std``) and the widest (``max_std``).  Optionally
+    pass ``init_extent`` to control the initial bandwidth scale **per
+    axis**.
 
-    All attenuation values are **single-axis** (1D) measurements.  Since the
-    mask is a product of per-dimension Gaussians, the 2D corner value is
-    ``attenuation ** 2``, and the 3D corner is ``attenuation ** 3``, etc.
+    All attenuation values are **single-axis** (1D) measurements.  Since
+    the mask is a product of per-dimension Gaussians, the 2D corner value
+    is ``attenuation ** 2``, and the 3D corner is ``attenuation ** 3``,
+    etc.
 
     - ``min_attenuation_at_step`` — 1D mask value at the first grid step
       from center for the narrowest *possible* channel.  Sets ``min_std``
-      and ``init_std_low`` (narrowest channel starts at the clamp bound).
+      and the **reference** ``init_std_low`` (narrowest channel starts at
+      the clamp bound when ``init_extent = 1``).
     - ``max_attenuation_at_limit`` — 1D mask value at the grid boundary
       (position 1) for the widest *possible* channel.  Sets ``max_std``.
-    - ``init_extent`` — grid position at which the widest *initial* channel
-      reaches 0.1 (10% mask value) along a single axis.  Sets
-      ``init_std_high``.  At ``init_extent=1.0`` the widest channel's mask
-      is 0.1 at the boundary.  Smaller values (e.g. 0.5, 0.25) start more
-      local.  Defaults to ``1.0`` when omitted.
+    - ``init_extent`` — per-axis bandwidth scale that multiplicatively
+      scales **both** ends of the per-axis logspace ramp:
+      ``init_std_low[d]  = clamp(min_std            * extent[d], min_std, max_std)``
+      ``init_std_high[d] = clamp(init_std_high_unit * extent[d], min_std, max_std)``
+      where ``init_std_high_unit ≈ 0.4724`` is the std at which a 1D
+      Gaussian reaches ``0.1`` at position 1.  Pass a float (broadcast to
+      all axes) or a sequence of length ``data_dim``.  Values must be
+      strictly ``> 0``; defaults to ``1.0`` on every axis (recovers the
+      reference ramp ``[min_std, init_std_high_unit]``).
+
+      Examples on an anisotropic ``L_cache=(8, 64, 64)`` cube cache
+      (mask grid_size = 127):
+
+      * ``init_extent = 1.0`` — all axes use the reference ramp from
+        ``min_std ≈ 0.0075`` to ``init_std_high ≈ 0.4724``.  On the
+        depth axis the bottom of the ramp is unusably narrow (mask ≈ 0
+        across depth for early channels).
+      * ``init_extent = (1.0, 0.25, 0.25)`` — depth uses the reference
+        ramp; H/W are 4× narrower at both ends (extreme localization).
+      * ``init_extent = (max_std/min_std, 1.0, 1.0)`` (≈ ``(416, 1, 1)``
+        at defaults) — depth ramp saturates at ``max_std`` end-to-end;
+        every depth channel is initialised at the widest possible
+        Gaussian, i.e. depth axis is essentially unmasked at init.
+        Useful when ``L_cache_d`` is short and depth-axis frequency
+        content is naturally bounded by the small kernel grid.
+
+    Only **initialization** is per-axis — ``min_std`` and ``max_std``
+    (clamp bounds) remain scalar and shared across axes.
 
     Args:
         data_dim: Number of spatial/temporal dimensions.
         num_channels: Number of feature channels to modulate.
         min_attenuation_at_step: 1D mask value at first grid step (sets clamp
-            lower bound and init lower bound).
+            lower bound and the reference init lower bound).
         max_attenuation_at_limit: 1D mask value at grid boundary (sets clamp
             upper bound).
-        init_extent: Grid position where widest init channel reaches 0.1.
-            Default ``1.0`` (start at max_std).
+        init_extent: Scalar or per-axis sequence controlling the initial
+            bandwidth scale on each axis.  Strictly ``> 0``; default
+            ``1.0`` (reference ramp on every axis).
         grid_size: Kernel grid points per dimension.  Auto-injected by CKConvND.
         parametrization: ``'log'``, ``'softplus'``, or ``'direct'``.
     """
@@ -163,7 +224,7 @@ class GaussianModulationND(torch.nn.Module):
         grid_size: int,
         min_attenuation_at_step: float = 0.1,
         max_attenuation_at_limit: float = 0.95,
-        init_extent: float = 1.0,
+        init_extent: float | Sequence[float] = 1.0,
         parametrization: str = "direct",
     ):
         """Initialize the GaussianModulationND class."""
@@ -181,19 +242,38 @@ class GaussianModulationND(torch.nn.Module):
         min_step = 2.0 / (grid_size - 1)
         min_std = _std_from_attenuation(min_attenuation_at_step, min_step, 1)
         max_std = _std_from_attenuation(max_attenuation_at_limit, 1.0, 1)
-        init_std_low = min_std
-        _extent = init_extent if init_extent is not None else 1.0
-        assert 0.0 < _extent <= 1.0, f"init_extent must be in (0, 1], got {_extent}"
+
+        # ``init_extent`` is a per-axis multiplicative scale on the entire
+        # logspace ramp.  Reference ramp (extent=1) goes from ``min_std`` up
+        # to ``init_std_high_unit`` (= the std at which a 1D Gaussian hits
+        # 0.1 at position 1).  Scaling both ends lets a short anisotropic
+        # axis lift its narrowest channel out of the "mask ≈ 0 everywhere"
+        # regime that a shared low end would otherwise impose.
+        self.init_extent = _normalize_init_extent(init_extent, data_dim)
         _INIT_EXTENT_ATTENUATION = 0.1
-        init_std_high = _std_from_attenuation(_INIT_EXTENT_ATTENUATION, _extent, 1)
+        init_std_high_unit = _std_from_attenuation(_INIT_EXTENT_ATTENUATION, 1.0, 1)
+        # Per-axis (low, high) endpoints of the logspace ramp, clamped to
+        # the feasible band.  When extent[d] is large, both endpoints
+        # saturate at max_std and the ramp collapses to a constant
+        # max_std on that axis (axis effectively unmasked at init).
+        init_std_low_per_axis = [min(max(min_std * extent, min_std), max_std) for extent in self.init_extent]
+        init_std_high_per_axis = [
+            min(max(init_std_high_unit * extent, min_std), max_std) for extent in self.init_extent
+        ]
 
         self.min_std = float(min_std)
         self.max_std = float(max_std)
         self._min_step = float(min_step)
 
-        # Create weight parameter
-        init_std_per_channel = torch.logspace(math.log10(init_std_low), math.log10(init_std_high), num_channels)
-        init_std = torch.stack([init_std_per_channel] * data_dim, dim=0)  # [data_dim, num_channels]
+        # One logspace ramp per axis with its own (low, high) endpoints.
+        # Result shape [data_dim, num_channels].
+        init_std = torch.stack(
+            [
+                torch.logspace(math.log10(low), math.log10(high), num_channels)
+                for low, high in zip(init_std_low_per_axis, init_std_high_per_axis)
+            ],
+            dim=0,
+        )
         if parametrization == "log":
             param = init_std.log()
         elif parametrization == "softplus":
@@ -248,17 +328,24 @@ class GaussianModulationND(torch.nn.Module):
     def extra_repr(self):
         """Additional printing for the GaussianModulationND class."""
         std = self._compute_std().detach()  # [data_dim, num_channels]
-        narrowest = std.min().item()
-        widest = std.max().item()
         step = self._min_step
+        extent_str = ", ".join(f"{e:.3g}" for e in self.init_extent)
+        per_axis_lines = []
+        for axis in range(self.data_dim):
+            row = std[axis]
+            lo = row.min().item()
+            hi = row.max().item()
+            per_axis_lines.append(
+                f"  axis {axis}: extent={self.init_extent[axis]:.3g}, "
+                f"std∈[{lo:.4f}, {hi:.4f}], "
+                f"narrow ch mask@step={self._mask_value(lo, step):.4f}, "
+                f"wide ch mask@boundary={self._mask_value(hi, 1.0):.4f}"
+            )
         return (
             f"data_dim={self.data_dim}, num_channels={self.num_channels}, "
             f"parametrization='{self.parametrization}'\n"
-            f"  narrowest ch: mask@step={self._mask_value(narrowest, step):.4f}, "
-            f"mask@boundary={self._mask_value(narrowest, 1.0):.4f} (std={narrowest:.4f})\n"
-            f"  widest ch:    mask@step={self._mask_value(widest, step):.4f}, "
-            f"mask@boundary={self._mask_value(widest, 1.0):.4f} (std={widest:.4f})\n"
-            f"  std bounds: [{self.min_std:.4f}, {self.max_std:.4f}]"
+            f"  std clamp bounds: [{self.min_std:.4f}, {self.max_std:.4f}]\n"
+            f"  init_extent (per axis): ({extent_str})\n" + "\n".join(per_axis_lines)
         )
 
     def forward(self, grid: torch.Tensor, x: torch.Tensor) -> torch.Tensor:

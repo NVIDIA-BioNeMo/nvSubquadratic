@@ -122,8 +122,6 @@ def get_hyena_mixer_cfg(
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape="${net.hidden_dim}"),
             qk_norm_cfg=qk_norm_cfg,
-            use_rope=use_rope,
-            rope_base=rope_base,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers="${net.num_blocks}"),

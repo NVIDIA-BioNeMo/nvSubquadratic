@@ -1,0 +1,64 @@
+==========================================================================================
+  SIREN ω₀ Dimensional Scaling Rule Verification
+  config: hidden_dim=384, emb_dim=32, mlp_hidden=32, layers=3, L=15 (N=29), seeds=10
+==========================================================================================
+
+── Part 1: Bisection for ω₀* (median radial freq = 0.5 × Nyquist) ──
+
+  Searching ω₀* for data_dim=1 ...
+    ω₀*(1D) = 4.3070   →  median/Nyquist = 0.3500
+  Searching ω₀* for data_dim=2 ...
+    ω₀*(2D) = 5.8471   →  median/Nyquist = 0.3500
+  Searching ω₀* for data_dim=3 ...
+    ω₀*(3D) = 7.1381   →  median/Nyquist = 0.3500
+
+  Ratios vs 1D:
+    ω₀*(2D) / ω₀*(1D) = 1.3576   (predicted √2 = 1.4142,  error = 4.0%)
+    ω₀*(3D) / ω₀*(1D) = 1.6573   (predicted √3 = 1.7321,  error = 4.3%)
+
+── Part 2: Apply √d rule from ω₀*(1D) and measure coverage ──
+
+  Baseline ω₀*(1D) = 4.3070
+
+   dim    ω₀ (√d rule)    median/Nyquist   Δ from target
+  ────  ──────────────  ────────────────  ──────────────
+     1          4.3070            0.3500       +0.0000
+     2          6.0910            0.3654       +0.0154
+     3          7.4599            0.3700       +0.0200
+
+── Part 3: Control — same ω₀ across dimensions (no scaling) ──
+
+  Using ω₀ = ω₀*(1D) = 4.3070 for all d
+
+   dim        ω₀    median/Nyquist    expected (1/√d relative)
+  ────  ────────  ────────────────  ──────────────────────────
+     1    4.3070            0.3500                      0.3500
+     2    4.3070            0.2578                      0.2475
+     3    4.3070            0.2174                      0.2021
+
+── Part 4: ω₀ sweep per dimension (for plotting) ──
+
+  d=1: 16 points computed
+  d=2: 16 points computed
+  d=3: 16 points computed
+
+── Part 5: Per-channel distribution of median radial freq ──
+
+  condition               dim        ω₀        μ        σ       p5      p25      p50      p75      p95
+  ──────────────────────  ───  ────────  ───────  ───────  ───────  ───────  ───────  ───────  ───────
+  bisected ω₀*              1      4.31   0.3500   0.0497   0.1259   0.2646   0.3366   0.4045   0.5400
+  bisected ω₀*              2      5.85   0.3500   0.0297   0.2651   0.3265   0.3423   0.3859   0.4202
+  bisected ω₀*              3      7.14   0.3500   0.0161   0.3097   0.3325   0.3447   0.3703   0.4002
+
+  √d rule                   1      4.31   0.3500   0.0497   0.1259   0.2646   0.3366   0.4045   0.5400
+  √d rule                   2      6.09   0.3654   0.0342   0.2729   0.3334   0.3576   0.4042   0.4292
+  √d rule                   3      7.46   0.3700   0.0183   0.3234   0.3435   0.3636   0.3924   0.4295
+
+  no scaling                1      4.31   0.3500   0.0497   0.1259   0.2646   0.3366   0.4045   0.5400
+  no scaling                2      4.31   0.2578   0.0241   0.1885   0.2245   0.2668   0.2803   0.2994
+  no scaling                3      4.31   0.2174   0.0117   0.1872   0.2014   0.2141   0.2317   0.2510
+
+
+  Plot saved to reports/siren_omega0_dimensional_scaling/omega0_sqrt_d_scaling.png
+  Plot saved to reports/siren_omega0_dimensional_scaling/per_channel_distributions.png
+  Plot saved to reports/siren_omega0_dimensional_scaling/per_channel_boxplots.png
