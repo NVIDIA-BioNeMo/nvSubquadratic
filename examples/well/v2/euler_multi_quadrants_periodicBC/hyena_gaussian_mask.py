@@ -1,4 +1,4 @@
-"""Hyena config with Gaussian modulation mask for gray_scott_reaction_diffusion (v2).
+"""Hyena config with Gaussian modulation mask for euler_multi_quadrants_periodicBC (v2).
 
 Identical to ``cfg_hyena.py`` but replaces the ``nn.Identity`` mask with a
 ``GaussianModulationND`` mask on the CKConv global convolution kernel.
@@ -14,7 +14,7 @@ from nvsubquadratic.modules.masks_nd import GaussianModulationND
 
 
 def get_config() -> ExperimentConfig:
-    """Build Hyena + Gaussian mask config for active_matter."""
+    """Build Hyena + Gaussian mask config for euler_multi_quadrants_periodicBC."""
     config = _get_hyena_config()
 
     config.net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.mask_cfg = LazyConfig(GaussianModulationND)(

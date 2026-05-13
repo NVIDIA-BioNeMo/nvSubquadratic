@@ -11,7 +11,7 @@ are derived via OmegaConf interpolators.
 
 import torch
 
-from examples.well.v2.active_matter._base import (
+from examples.well.v2.gray_scott_reaction_diffusion._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,
@@ -80,6 +80,10 @@ def get_config() -> ExperimentConfig:
                     is_causal=False,
                     attn_dropout=0.0,
                     rope_base=10000.0,
+                    rope_spatial_dims=(
+                        "${eval:'128 // ${net.in_proj_cfg.patch_size}'}",
+                        "${eval:'128 // ${net.in_proj_cfg.patch_size}'}",
+                    ),
                 ),
                 init_method_in=small_init,
                 init_method_out=partial_wang_init_fn_with_num_layers(num_layers=NUM_BLOCKS),
