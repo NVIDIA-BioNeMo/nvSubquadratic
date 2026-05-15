@@ -170,7 +170,7 @@ class MambaBlock(nn.Module):
         Returns:
             out: [B, L, d_model]
         """
-        B, L, _ = x.shape
+        _B, L, _ = x.shape
 
         # Input projection → z (gate) and x_inner (SSM input)
         xz = self.in_proj(x)  # [B, L, 2 * d_inner]

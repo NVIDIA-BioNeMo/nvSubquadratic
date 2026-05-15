@@ -23,7 +23,7 @@ GRAD_ACCUM_STEPS = 1
 NUM_TRAINING_SAMPLES_REARC = 413_020
 
 
-def get_config():
+def get_config():  # noqa: D103
     training_iterations = math.ceil(NUM_EPOCHS * NUM_TRAINING_SAMPLES_REARC / (BATCH_SIZE * NUM_GPUS))
 
     config = ExperimentConfig()

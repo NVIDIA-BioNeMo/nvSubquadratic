@@ -63,7 +63,7 @@ class ARCResNet(nn.Module):
             # intercept between in_proj (Patchify) and the residual blocks.
             x = self.resnet.dropout_in(x)
             x = self.resnet.in_proj(x)  # [B, Hp, Wp, D]  (e.g. 16×16 for patch_size=2)
-            B, Hp, Wp, D = x.shape
+            B, _Hp, Wp, D = x.shape
             # Prepend task_tok as the first "row": [B, D] → [B, 1, Wp, D]
             task_row = task_tok[:, None, None, :].expand(B, 1, Wp, D)
             x = torch.cat([task_row, x], dim=1)  # [B, Hp+1, Wp, D]
