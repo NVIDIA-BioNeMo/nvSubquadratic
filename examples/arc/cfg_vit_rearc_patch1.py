@@ -14,7 +14,7 @@ EMBED_DIM = 512
 DEPTH = 10
 NUM_HEADS = 8
 MLP_DIM = 512
-PATCH_SIZE = 1 # Changed to 1
+PATCH_SIZE = 1  # Changed to 1
 MAX_SIZE = 32
 
 BATCH_SIZE = 128
@@ -48,7 +48,9 @@ def get_config():  # noqa: D103
 
     config.optimizer = LazyConfig(torch.optim.AdamW)(params=PLACEHOLDER, lr=LEARNING_RATE, weight_decay=0.0)
 
-    config.train = TrainConfig(batch_size="${dataset.batch_size}", iterations=training_iterations, grad_clip=1.0, accumulate_grad_steps=1)
+    config.train = TrainConfig(
+        batch_size="${dataset.batch_size}", iterations=training_iterations, grad_clip=1.0, accumulate_grad_steps=1
+    )
 
     config.scheduler = SchedulerConfig(
         name="cosine",
