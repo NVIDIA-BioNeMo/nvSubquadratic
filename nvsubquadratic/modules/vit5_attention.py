@@ -325,10 +325,13 @@ class ViT5Attention(nn.Module):
             if num_registers > 0:
                 if self.data_dim == 3:
                     reg_d = reg_h = reg_w = max(1, round(num_registers ** (1 / 3)))
+                    self.reg_rope_d = reg_d
                     reg_cos, reg_sin = _build_3d_rope_flat(reg_d, reg_h, reg_w, self.head_dim, reg_rope_base)
                 else:
                     reg_h = reg_w = max(1, int(num_registers**0.5))
                     reg_cos, reg_sin = _build_2d_rope_flat(reg_h, reg_w, self.head_dim, reg_rope_base)
+                self.reg_rope_h = reg_h
+                self.reg_rope_w = reg_w
                 parts_cos.append(reg_cos)
                 parts_sin.append(reg_sin)
 
