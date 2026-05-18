@@ -53,7 +53,7 @@ class VisionRotaryEmbeddingFast(nn.Module):
     ):
         """Initialize 2-D RoPE frequency buffers."""
         super().__init__()
-        if custom_freqs:
+        if custom_freqs is not None:
             freqs = custom_freqs
         elif freqs_for == "lang":
             freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
