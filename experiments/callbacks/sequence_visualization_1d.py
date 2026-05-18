@@ -223,9 +223,27 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Forward pass.  Lightning's precision plugin only wraps
+        # ``training_step``/``validation_step``/``test_step`` in autocast — it
+        # does NOT wrap callbacks like this one.  For bf16/fp16-mixed runs the
+        # model is trained under autocast, and the forward output can differ
+        # *significantly* (catastrophically, for SIRENs with large ω₀) between
+        # autocast-ON and autocast-OFF.  We therefore explicitly enter the
+        # precision plugin's forward context so the visualisation reflects what
+        # the model actually produces during validation/inference.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        forward_context = getattr(trainer.precision_plugin, "forward_context", None)
+        if callable(forward_context):
+            ctx = forward_context()
+        else:
+            ctx = torch.amp.autocast(
+                device_type="cuda" if x.is_cuda else "cpu", enabled=False
+            )
+        with ctx:
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        # bf16/fp16 outputs are not supported by ``torch.Tensor.numpy()`` —
+        # cast back to fp32 before any downstream matplotlib/numpy use.
+        preds = preds.float()
 
         # x: [B, L, C_in], y: [B, segment_length, C_out], preds: [B, segment_length, C_out]
         n = min(self.num_samples, x.shape[0])
