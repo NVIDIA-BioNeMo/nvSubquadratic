@@ -1,10 +1,11 @@
-"""ViT-5 Attention: Multi-head self-attention with RMSNorm QK-Norm and register-aware 2D RoPE.
+"""ViT-5 Attention: Multi-head self-attention with RMSNorm QK-Norm and register-aware 2D/3D RoPE.
 
 Key differences from the base Attention module:
 - QK-Norm uses RMSNorm (learnable, per-head) instead of L2 normalization.
 - RoPE is applied only to patch tokens (not cls token).
 - Register tokens get their own high-frequency RoPE.
-- Operates on flattened sequences [B, T, C] where T = N (patches) + 1 (cls) + R (registers).
+- Operates on flattened sequences [B, T, C] where T = 1 (cls) + N (patches) + R (registers).
+- Supports 2D RoPE (default) and 3D RoPE (pass num_patches_d).
 
 Optimizations vs naive implementation:
 - RoPE cos/sin are precomputed as registered buffers (CUDA-graph safe, no graph breaks).
@@ -76,6 +77,48 @@ def _build_2d_rope_flat(
     return flat.cos(), flat.sin()
 
 
+def _build_3d_rope_flat(
+    depth: int,
+    height: int,
+    width: int,
+    head_dim: int,
+    rope_base: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Precompute flattened 3D RoPE cos/sin for a (depth x height x width) grid.
+
+    Channel layout: [Z_third | Y_third | X_third], each of size head_dim/3.
+    Within each third, frequencies are ``repeat_interleave(2)`` to match the
+    split-half rotation in ``_rotate_half_3d``.
+
+    Requires head_dim % 6 == 0 so each third is even.
+
+    Returns:
+        (cos, sin) each of shape [depth * height * width, head_dim].
+    """
+    dim_third = head_dim // 3
+    theta = 1.0 / (rope_base ** (torch.arange(0, dim_third, 2).float() / dim_third))
+
+    pos_z = torch.arange(depth).float()
+    pos_y = torch.arange(height).float()
+    pos_x = torch.arange(width).float()
+
+    angles_z = (pos_z[:, None] * theta[None, :]).repeat_interleave(2, dim=-1)  # [D, dim_third]
+    angles_y = (pos_y[:, None] * theta[None, :]).repeat_interleave(2, dim=-1)  # [H, dim_third]
+    angles_x = (pos_x[:, None] * theta[None, :]).repeat_interleave(2, dim=-1)  # [W, dim_third]
+
+    angles_3d = torch.cat(
+        [
+            angles_z[:, None, None, :].expand(depth, height, width, dim_third),
+            angles_y[None, :, None, :].expand(depth, height, width, dim_third),
+            angles_x[None, None, :, :].expand(depth, height, width, dim_third),
+        ],
+        dim=-1,
+    )
+
+    flat = angles_3d.reshape(depth * height * width, head_dim)
+    return flat.cos(), flat.sin()
+
+
 def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
     """Split-half rotation applied independently to Y and X channel halves.
 
@@ -101,6 +144,25 @@ def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
     return torch.cat([-x_y2, x_y1, -x_x2, x_x1], dim=-1)
 
 
+def _rotate_half_3d(x: torch.Tensor) -> torch.Tensor:
+    """Split-third rotation applied independently to Z, Y, and X channel thirds.
+
+    Channel layout: [Z_third | Y_third | X_third], each of size D/3.
+    Within each third: split at D/6 and swap with negation ([-x2, x1]).
+    Numerically consistent with ``rotate_half_blh`` from ``nvsubquadratic.utils.rope``.
+    """
+    d = x.shape[-1]
+    d_third = d // 3
+    d_sixth = d // 6
+    x_z1 = x[..., :d_sixth]
+    x_z2 = x[..., d_sixth:d_third]
+    x_y1 = x[..., d_third : d_third + d_sixth]
+    x_y2 = x[..., d_third + d_sixth : 2 * d_third]
+    x_x1 = x[..., 2 * d_third : 2 * d_third + d_sixth]
+    x_x2 = x[..., 2 * d_third + d_sixth :]
+    return torch.cat([-x_z2, x_z1, -x_y2, x_y1, -x_x2, x_x1], dim=-1)
+
+
 class ViT5Attention(nn.Module):
     """ViT-5 multi-head self-attention with RMSNorm QK-Norm and register-aware RoPE.
 
@@ -109,15 +171,36 @@ class ViT5Attention(nn.Module):
     The module includes its own QKV and output projections (unlike the base Attention
     which is wrapped in QKVSequenceMixer).
 
+    Supports 2D RoPE (default) and 3D RoPE (set num_patches_d).
+    - 2D requires head_dim % 4 == 0.
+    - 3D requires head_dim % 6 == 0.
+
+    Token layout and RoPE buffer ordering depends on ``use_cls_token`` and
+    ``prepend_registers``, which must match the ViT5GeneralPurposeNet config:
+
+    - ``prepend_registers=False`` (default, ImageNet-style):
+        [CLS (opt)] + [patches] + [registers]
+        Patch tokens get spatial RoPE; CLS and registers get identity or high-freq RoPE.
+    - ``prepend_registers=True`` (3D PDE-style, with zero-pad):
+        [registers] + [zero_pad] + [patches]
+        Registers and zero-pad tokens get identity RoPE (cos=1, sin=0); patches get
+        spatial RoPE. Pass ``num_zero_pad`` to account for the alignment padding added
+        by ViT5GeneralPurposeNet (= spatial_slice_size - num_registers).
+
     Args:
         hidden_dim: Total hidden dimension.
         num_heads: Number of attention heads.
-        num_patches_h: Height of the patch grid (for 2D RoPE).
-        num_patches_w: Width of the patch grid (for 2D RoPE).
+        num_patches_h: Height of the patch grid.
+        num_patches_w: Width of the patch grid.
+        num_patches_d: Depth of the patch grid. When set, switches to 3D RoPE.
         num_registers: Number of register tokens.
+        use_cls_token: Whether a CLS token is prepended (only used when prepend_registers=False).
+        prepend_registers: Whether registers are prepended (True) or appended (False).
+        num_zero_pad: Number of zero-pad tokens inserted after registers (only when
+            prepend_registers=True). Must equal spatial_slice_size - num_registers.
         qk_norm: LazyConfig for the QK normalization layer, or None to disable.
         rope_base: Base frequency for patch RoPE.
-        reg_rope_base: Base frequency for register RoPE (high frequency = 100 in paper).
+        reg_rope_base: Base frequency for register RoPE (used when prepend_registers=False).
         attn_dropout: Attention dropout rate.
         proj_dropout: Output projection dropout rate.
         qkv_bias: Whether to use bias in QKV projection.
@@ -137,8 +220,11 @@ class ViT5Attention(nn.Module):
         num_heads: int,
         num_patches_h: int,
         num_patches_w: int,
+        num_patches_d: Optional[int] = None,
         num_registers: int = 4,
-        has_cls: bool = True,
+        use_cls_token: bool = True,
+        prepend_registers: bool = False,
+        num_zero_pad: int = 0,
         qk_norm: Optional[LazyConfig] = None,
         rope_base: float = 10000.0,
         reg_rope_base: float = 100.0,
@@ -158,8 +244,18 @@ class ViT5Attention(nn.Module):
         self.scale = scale if scale is not None else self.head_dim**-0.5
         self.num_patches_h = num_patches_h
         self.num_patches_w = num_patches_w
+        self.num_patches_d = num_patches_d
+        self.data_dim = 3 if num_patches_d is not None else 2
         self.num_registers = num_registers
+        self.use_cls_token = use_cls_token
+        self.prepend_registers = prepend_registers
+        self.num_zero_pad = num_zero_pad
         self.attn_dropout = attn_dropout
+
+        if self.data_dim == 3:
+            assert self.head_dim % 6 == 0, f"3D RoPE requires head_dim % 6 == 0, got head_dim={self.head_dim}."
+        else:
+            assert self.head_dim % 4 == 0, f"2D RoPE requires head_dim % 4 == 0, got head_dim={self.head_dim}."
 
         self.qkv = nn.Linear(hidden_dim, 3 * hidden_dim, bias=qkv_bias)
         self.proj = nn.Linear(hidden_dim, hidden_dim, bias=out_proj_bias)
@@ -183,8 +279,6 @@ class ViT5Attention(nn.Module):
 
         self.rope_base = rope_base
         self.reg_rope_base = reg_rope_base
-        self.reg_rope_h = int(num_registers**0.5)
-        self.reg_rope_w = int(num_registers**0.5)
 
         # ── Precomputed RoPE cos/sin buffers ──────────────────────────────
         #
@@ -194,37 +288,53 @@ class ViT5Attention(nn.Module):
         #   - are NOT serialised into checkpoints (persistent=False), since they
         #     are deterministically reconstructed from __init__ args.
         #
-        # Token layout: [patches, (CLS), registers]
-        # Layout per token position: [Y_frequencies | X_frequencies]
-        # CLS token (when present) gets cos=1, sin=0 (identity — no positional bias).
-        # Register tokens get their own high-frequency RoPE (theta=100).
-        self.has_cls = has_cls
+        # Buffer layout must match the actual token order produced by ViT5GeneralPurposeNet.
+        #
+        # prepend_registers=False (ImageNet-style): [CLS?] + [patches] + [registers]
+        #   - CLS gets identity (cos=1, sin=0).
+        #   - Patches get spatial RoPE.
+        #   - Registers get high-frequency RoPE (reg_rope_base).
+        #
+        # prepend_registers=True (3D PDE-style):   [registers] + [zero_pad] + [patches]
+        #   - Registers and zero-pad get identity (cos=1, sin=0) — non-spatial tokens.
+        #   - Patches get spatial RoPE.
+        #   - num_zero_pad must equal spatial_slice_size - num_registers.
 
-        patch_cos, patch_sin = _build_2d_rope_flat(
-            num_patches_h,
-            num_patches_w,
-            self.head_dim,
-            rope_base,
-        )
-
-        parts_cos = [patch_cos]
-        parts_sin = [patch_sin]
-
-        if has_cls:
-            parts_cos.append(torch.ones(1, self.head_dim))  # CLS: cos=1 (no rotation)
-            parts_sin.append(torch.zeros(1, self.head_dim))  # CLS: sin=0 (no rotation)
-
-        if num_registers > 0:
-            reg_cos, reg_sin = _build_2d_rope_flat(
-                self.reg_rope_h,
-                self.reg_rope_w,
-                self.head_dim,
-                reg_rope_base,
+        # Build patch RoPE
+        if self.data_dim == 3:
+            patch_cos, patch_sin = _build_3d_rope_flat(
+                num_patches_d, num_patches_h, num_patches_w, self.head_dim, rope_base
             )
-            parts_cos.append(reg_cos)
-            parts_sin.append(reg_sin)
+        else:
+            patch_cos, patch_sin = _build_2d_rope_flat(num_patches_h, num_patches_w, self.head_dim, rope_base)
 
-        # [T, head_dim] where T = H*W + (1 if has_cls) + R
+        if prepend_registers:
+            # Layout: [registers (identity)] + [zero_pad (identity)] + [patches (spatial)]
+            n_prefix = num_registers + num_zero_pad
+            parts_cos = [torch.ones(n_prefix, self.head_dim), patch_cos]
+            parts_sin = [torch.zeros(n_prefix, self.head_dim), patch_sin]
+        else:
+            # Layout: [CLS (identity, optional)] + [patches (spatial)] + [registers (high-freq)]
+            parts_cos = []
+            parts_sin = []
+            if use_cls_token:
+                parts_cos.append(torch.ones(1, self.head_dim))
+                parts_sin.append(torch.zeros(1, self.head_dim))
+            parts_cos.append(patch_cos)
+            parts_sin.append(patch_sin)
+            if num_registers > 0:
+                if self.data_dim == 3:
+                    reg_d = reg_h = reg_w = max(1, round(num_registers ** (1 / 3)))
+                    self.reg_rope_d = reg_d
+                    reg_cos, reg_sin = _build_3d_rope_flat(reg_d, reg_h, reg_w, self.head_dim, reg_rope_base)
+                else:
+                    reg_h = reg_w = max(1, int(num_registers**0.5))
+                    reg_cos, reg_sin = _build_2d_rope_flat(reg_h, reg_w, self.head_dim, reg_rope_base)
+                self.reg_rope_h = reg_h
+                self.reg_rope_w = reg_w
+                parts_cos.append(reg_cos)
+                parts_sin.append(reg_sin)
+
         self.register_buffer("rope_cos", torch.cat(parts_cos, dim=0), persistent=False)
         self.register_buffer("rope_sin", torch.cat(parts_sin, dim=0), persistent=False)
 
@@ -304,12 +414,11 @@ class ViT5Attention(nn.Module):
 
         # Apply RoPE: x' = x * cos + rotate(x) * sin
         # Buffers are [T, D]; unsqueeze to [1, T, 1, D] for broadcast over B and H.
-        # Uses _rotate_half_per_axis (split-half) for checkpoint compatibility —
-        # see its docstring for why the standard interleaved rotation doesn't work.
         cos = self.rope_cos[None, :, None, :]
         sin = self.rope_sin[None, :, None, :]
-        q = q * cos + _rotate_half_per_axis(q) * sin
-        k = k * cos + _rotate_half_per_axis(k) * sin
+        _rotate_half = _rotate_half_3d if self.data_dim == 3 else _rotate_half_per_axis
+        q = q * cos + _rotate_half(q) * sin
+        k = k * cos + _rotate_half(k) * sin
 
         # Transpose for SDPA: [B, num_heads, T, head_dim]
         q = q.transpose(1, 2)
@@ -331,9 +440,15 @@ class ViT5Attention(nn.Module):
         return out
 
     def extra_repr(self) -> str:  # noqa: D102
+        patches = (
+            f"{self.num_patches_d}x{self.num_patches_h}x{self.num_patches_w}"
+            if self.data_dim == 3
+            else f"{self.num_patches_h}x{self.num_patches_w}"
+        )
         return (
             f"hidden_dim={self.hidden_dim}, num_heads={self.num_heads}, "
             f"qk_norm={self.qk_norm}, num_registers={self.num_registers}, "
-            f"patches=({self.num_patches_h}x{self.num_patches_w}), "
-            f"rope_base={self.rope_base}, reg_rope_base={self.reg_rope_base}"
+            f"patches=({patches}), data_dim={self.data_dim}, "
+            f"prepend_registers={self.prepend_registers}, num_zero_pad={self.num_zero_pad}, "
+            f"rope_base={self.rope_base}"
         )
