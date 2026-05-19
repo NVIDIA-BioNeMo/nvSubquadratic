@@ -66,7 +66,9 @@ WORKDIR /workspaces/nvSubquadratic-private
 # ── Heavy build: Apex from source (cached until apex commit changes) ──────────
 # This layer is intentionally placed before COPY so code changes do not
 # trigger a rebuild. Apex does not depend on the project source.
-RUN pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
+ARG TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;9.0;10.0;12.0"
+ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}
+RUN MAX_JOBS=1 pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
     --config-settings "--build-option=--cpp_ext" \
     --config-settings "--build-option=--cuda_ext" \
     git+https://github.com/NVIDIA/apex.git
