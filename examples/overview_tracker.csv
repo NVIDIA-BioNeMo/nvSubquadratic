@@ -1,0 +1,21 @@
+Section,Status,Priority,Assignee,Task,Links / Configs / Notes
+The Well,Todo,P1,@Olivia,Replicate UNext on all sub-datasets using default learning rates from paper.,
+The Well,Todo,P1,@Olivia,Perform ablations for different patch sizes for the same epochs as the baselines.,default lr
+The Well,Todo,P2,@Olivia,Tune the learning rate and other parameters for the best-performing patch sizes.,
+The Well,Todo,P1,@david&david,Implement Hyena UNext and perform ablations on a few selected sub-datasets.,
+The Well,Todo,P2,@Olivia,Tune learning rate and other hyperparameters for Hyena UNext.,
+ImageNet (Classification),Todo,P1,@Alireza,Run the patch-experiment defined in examples/vit5_imagenet.,
+ImageNet (Classification),Todo,P2,@david&david,Investigate whether Hyena with masking/gap can match the performance of Attention.,
+ImageNet (Classification),Todo,P3,@Unassigned,Run best setups for different model-sizes,
+ADE21k (Segmentation),Todo,P0,@david&david,Define a tracker.md file containing all in-depth experiments.,
+ADE21k (Segmentation),Todo,P0,@Unassigned,Implement an efficient dataloader for ADE21k.,
+ADE21k (Segmentation),Todo,P0,@Unassigned,Implement the ViT5 baseline and reproduce the result from the paper.,https://arxiv.org/pdf/2602.08071
+ADE21k (Segmentation),Todo,P1,@Unassigned,Evaluate if the baseline can be beaten using (masked) Hyena.,
+ADE21k (Segmentation),Todo,P2,@Unassigned,Conduct a patch size analysis.,
+ADE21k (Segmentation),Todo,P2,@Unassigned,Evaluate if Hyena UNext can achieve (i) better performance and (ii) faster speed.,
+ImageNet (Diffusion),Todo,P0,@david&david,Define a tracker.md file containing all in-depth experiments.,
+ImageNet (Diffusion),Todo,P0,@Knigge?,Obtain baseline vs standard Hyena values (e.g. 8 DiT vs 40 Hyena FID).,
+ImageNet (Diffusion),Todo,P1,@Unassigned,Run the masking experiment for Hyena.,
+ImageNet (Diffusion),Todo,P2,@Unassigned,Perform hyperparameter ablations (lr omega0 weight decay drop path rate).,
+ImageNet (Diffusion),Todo,P2,@Unassigned,Conduct a patch size analysis.,
+ImageNet (Diffusion),Todo,P2,@Unassigned,Evaluate if Hyena UNext can achieve (i) better performance and (ii) faster speed.,
