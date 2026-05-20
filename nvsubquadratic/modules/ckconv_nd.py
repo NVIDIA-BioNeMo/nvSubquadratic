@@ -205,9 +205,13 @@ class CKConvND(torch.nn.Module):
             fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
                 uses the torch.fft-based implementations. ``'subq_ops'`` uses the
                 optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
-                backend currently only supports 2D, zero-padded, non-causal
-                convolutions and does not support fp16 FFT. It supports chunked
-                convolutions via channel-wise chunking.
+                backend currently supports:
+                  - 2D, zero-padded, non-causal convolutions
+                  - 1D causal convolutions (``data_dim=1`` + ``is_causal=True``)
+                It does not support fp16 FFT. It supports chunked convolutions via
+                channel-wise chunking.  Per-sample (FiLM) weights are supported on
+                the 2D path only; the 1D causal CUDA kernel does not accept batched
+                weights.
         """
         assert grid_type in ["double", "single"], f"Invalid grid type: {grid_type}. Must be 'double' or 'single'."
         assert fft_padding in ["zero", "circular"], (
@@ -244,11 +248,23 @@ class CKConvND(torch.nn.Module):
 
         # subq_ops backend constraints
         if fft_backend == "subq_ops":
-            assert data_dim == 2, f"fft_backend='subq_ops' only supports 2D convolutions. Got data_dim={data_dim}."
-            assert fft_padding == "zero", (
-                f"fft_backend='subq_ops' only supports zero-padded convolutions. Got fft_padding='{fft_padding}'."
-            )
-            assert not is_causal, "fft_backend='subq_ops' does not support causal convolutions (causal is 1D only)."
+            if data_dim == 1:
+                assert is_causal, (
+                    "fft_backend='subq_ops' on 1D requires is_causal=True "
+                    "(no non-causal 1D CUDA kernel is wired). Got is_causal=False."
+                )
+            elif data_dim == 2:
+                assert not is_causal, (
+                    "fft_backend='subq_ops' on 2D does not support causal convolutions (causal is 1D only)."
+                )
+                assert fft_padding == "zero", (
+                    "fft_backend='subq_ops' on 2D only supports zero-padded convolutions. "
+                    f"Got fft_padding='{fft_padding}'."
+                )
+            else:
+                raise AssertionError(
+                    f"fft_backend='subq_ops' only supports data_dim in (1, 2). Got data_dim={data_dim}."
+                )
             assert not use_fp16_fft, (
                 "fft_backend='subq_ops' does not support fp16 FFT — the CUDA kernel "
                 "manages its own precision internally. Use use_fp16_fft=False."
@@ -313,19 +329,35 @@ class CKConvND(torch.nn.Module):
 
         # Select FFT convolution functions based on backend
         if fft_backend == "subq_ops":
-            from nvsubquadratic.ops.fftconv_custom import (
-                fftconv2d_bhl,
-                fftconv2d_bhl_chunked,
-                fftconv2d_bhl_w_reshape,
-                fftconv2d_bhl_w_reshape_chunked,
-            )
+            if data_dim == 1:
+                # 1D causal path (gated by the constraint block above).
+                from nvsubquadratic.ops.fftconv_custom import (
+                    causal_fftconv1d_bhl,
+                    causal_fftconv1d_bhl_chunked,
+                    causal_fftconv1d_bhl_w_reshape,
+                    causal_fftconv1d_bhl_w_reshape_chunked,
+                )
 
-            if use_chunked_fftconv:
-                self.fftconv_fn = fftconv2d_bhl_w_reshape_chunked
-                self.fftconv_fn_bhl_input = fftconv2d_bhl_chunked
+                if use_chunked_fftconv:
+                    self.fftconv_fn = causal_fftconv1d_bhl_w_reshape_chunked
+                    self.fftconv_fn_bhl_input = causal_fftconv1d_bhl_chunked
+                else:
+                    self.fftconv_fn = causal_fftconv1d_bhl_w_reshape
+                    self.fftconv_fn_bhl_input = causal_fftconv1d_bhl
             else:
-                self.fftconv_fn = fftconv2d_bhl_w_reshape
-                self.fftconv_fn_bhl_input = fftconv2d_bhl
+                from nvsubquadratic.ops.fftconv_custom import (
+                    fftconv2d_bhl,
+                    fftconv2d_bhl_chunked,
+                    fftconv2d_bhl_w_reshape,
+                    fftconv2d_bhl_w_reshape_chunked,
+                )
+
+                if use_chunked_fftconv:
+                    self.fftconv_fn = fftconv2d_bhl_w_reshape_chunked
+                    self.fftconv_fn_bhl_input = fftconv2d_bhl_chunked
+                else:
+                    self.fftconv_fn = fftconv2d_bhl_w_reshape
+                    self.fftconv_fn_bhl_input = fftconv2d_bhl
         else:
             # torch_fft backend: use lookup tables
             # Causal mode overrides fft_padding for 1D
