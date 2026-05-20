@@ -2,18 +2,31 @@
 
 These defaults are grounded in the paper and the repo's reference configs (`examples/imagenet_classification/ccnn_7_512_hyena*.py`, `examples/vit5_imagenet/v5_patch/_base_config.py`, `examples/well/v2/*.py`, `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py`). Use them as the starting point for any retrofit; tune only if there's a specific reason.
 
+## Where each knob actually lives
+
+A common foot-gun is passing the wrong kwarg to the wrong constructor. The class boundaries:
+
+| Knob                                                                                                                                                                | Class that owns it                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `use_rope`, `rope_base`, `gate_nonlinear_cfg`, `gate_nonlinear_2_cfg`, `pixelhyena_norm_cfg`, `output_norm_cfg`, `qk_norm_cfg`, `short_conv_cfg`, `global_conv_cfg` | `Hyena`                                                   |
+| `data_dim`, `hidden_dim`, `mask_cfg`, `fft_padding`, `kernel_cfg`                                                                                                   | `CKConvND` (passed in as `Hyena.global_conv_cfg`)         |
+| `omega_0`, `hidden_omega_0`, `mlp_hidden_dim`, `num_layers`, `embedding_dim`, `L_cache`, `use_bias`, `out_dim`                                                      | `SIRENKernelND` (passed in as `CKConvND.kernel_cfg`)      |
+| `min_attenuation_at_step`, `max_attenuation_at_limit`, `init_extent`, `parametrization`, `num_channels`                                                             | `GaussianModulationND` (passed in as `CKConvND.mask_cfg`) |
+
+When the table below says "vision uses `use_rope=False`", that means the outer `Hyena(...)` constructor. When it says "vision uses `fft_padding=circular`", that means the inner `CKConvND(...)`.
+
 ## Common (all modalities)
 
-| Knob | Value | Why |
-|------|-------|-----|
-| `omega_0` (SIREN first-layer ω) | 10.0 for vision/PDE, 100.0 for genomics | Frequency band; higher for 1D where positional recall matters more |
-| `hidden_omega_0` | 1.0 | SIREN hidden-layer ω; preserves init scale |
-| `mlp_hidden_dim` (SIREN width) | 32 | Small MLP; SIREN is shallow but wide enough to express smooth kernels |
-| `num_layers` (SIREN depth) | 3 | Paper-standard depth |
-| `embedding_dim` (SIREN coordinate embedding) | 32 | First-layer positional embedding |
-| `use_bias` | True | |
-| First-layer init | `U(-1/sqrt(N), 1/sqrt(N))` | Preserves unit-variance pre-activations (§3.2.3) |
-| FiLM heads init | zero | Training starts from the unmodulated baseline (§3.2.3) |
+| Knob                                         | Value                                   | Why                                                                   |
+| -------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------- |
+| `omega_0` (SIREN first-layer ω)              | 10.0 for vision/PDE, 100.0 for genomics | Frequency band; higher for 1D where positional recall matters more    |
+| `hidden_omega_0`                             | 1.0                                     | SIREN hidden-layer ω; preserves init scale                            |
+| `mlp_hidden_dim` (SIREN width)               | 32                                      | Small MLP; SIREN is shallow but wide enough to express smooth kernels |
+| `num_layers` (SIREN depth)                   | 3                                       | Paper-standard depth                                                  |
+| `embedding_dim` (SIREN coordinate embedding) | 32                                      | First-layer positional embedding                                      |
+| `use_bias`                                   | True                                    |                                                                       |
+| First-layer init                             | `U(-1/sqrt(N), 1/sqrt(N))`              | Preserves unit-variance pre-activations (§3.2.3)                      |
+| FiLM heads init                              | zero                                    | Training starts from the unmodulated baseline (§3.2.3)                |
 
 ## Vision (2D, image classification or diffusion)
 
@@ -32,16 +45,23 @@ mask_cfg = LazyConfig(GaussianModulationND)(
 gate_nonlinear_cfg = LazyConfig(torch.nn.SiLU)()
 gate_nonlinear_2_cfg = LazyConfig(torch.nn.Sigmoid)()
 qk_norm_cfg = LazyConfig(L2Norm)()
-pixelhyena_norm_cfg = LazyConfig(torch.nn.GroupNorm)(num_groups=1, num_channels=hidden_dim)
+pixelhyena_norm_cfg = LazyConfig(torch.nn.GroupNorm)(
+    num_groups=1, num_channels=hidden_dim
+)
 short_conv = LazyConfig(torch.nn.Conv2d)(
-    in_channels=3 * hidden_dim, out_channels=3 * hidden_dim,
-    kernel_size=3, groups=3 * hidden_dim, padding=1, bias=False,
+    in_channels=3 * hidden_dim,
+    out_channels=3 * hidden_dim,
+    kernel_size=3,
+    groups=3 * hidden_dim,
+    padding=1,
+    bias=False,
 )
 ```
 
 For ViT-5-style backbones with registers, use `ViT5HyenaAdapter` and `RegisterPooling` (see `examples/vit5_imagenet/v5_patch/_base_config.py` lines 270–353).
 
 **Hybrid patterns (12 blocks):**
+
 - Best on ImageNet: `(HA)×6` (82.1 top-1)
 - Second-best: `(HHHA)×3` (82.0 top-1)
 - Pure: `H×12` (81.5 top-1, matches attention baseline)
@@ -54,19 +74,23 @@ use_rope = False
 fft_padding = "zero"
 mask_cfg = LazyConfig(GaussianModulationND)(data_dim=3, num_channels=hidden_dim, ...)
 short_conv = LazyConfig(torch.nn.Conv3d)(
-    in_channels=3 * hidden_dim, out_channels=3 * hidden_dim,
-    kernel_size=3, groups=3 * hidden_dim, padding=1, bias=False,
+    in_channels=3 * hidden_dim,
+    out_channels=3 * hidden_dim,
+    kernel_size=3,
+    groups=3 * hidden_dim,
+    padding=1,
+    bias=False,
 )
 ```
 
 **Stage patterns (4-stage encoder, paper §5.5 PanTS, mean Dice):**
 
-| Pattern | Stage 1 | Stage 2 | Stage 3 | Stage 4 | Mean Dice |
-|---------|---------|---------|---------|---------|-----------|
-| `AAAA` (Swin baseline) | Attn | Attn | Attn | Attn | 0.7496 |
-| `HHHH` (all-Hyena) | Hyena | Hyena | Hyena | Hyena | 0.7510 |
-| `HAHA` (striped) | Hyena | Attn | Hyena | Attn | 0.7535 |
-| `HHAA` (hierarchical, **best**) | Hyena | Hyena | Attn | Attn | **0.7559** |
+| Pattern                         | Stage 1 | Stage 2 | Stage 3 | Stage 4 | Mean Dice  |
+| ------------------------------- | ------- | ------- | ------- | ------- | ---------- |
+| `AAAA` (Swin baseline)          | Attn    | Attn    | Attn    | Attn    | 0.7496     |
+| `HHHH` (all-Hyena)              | Hyena   | Hyena   | Hyena   | Hyena   | 0.7510     |
+| `HAHA` (striped)                | Hyena   | Attn    | Hyena   | Attn    | 0.7535     |
+| `HHAA` (hierarchical, **best**) | Hyena   | Hyena   | Attn    | Attn    | **0.7559** |
 
 Recommend `HHAA` by default. Memory savings (~11%) are roughly invariant to placement.
 
@@ -74,11 +98,12 @@ Recommend `HHAA` by default. Memory savings (~11%) are roughly invariant to plac
 
 ```python
 data_dim = 1
-use_rope = True              # critical — without RoPE, positional recall collapses
+use_rope = True  # critical — without RoPE, positional recall collapses
 rope_base = 10000.0
-fft_padding = "causal"       # preserves autoregressive structure
+fft_padding = "causal"  # preserves autoregressive structure
 mask_cfg = LazyConfig(GaussianModulationND)(  # exponential decay with causal zeroing
-    data_dim=1, num_channels=hidden_dim,
+    data_dim=1,
+    num_channels=hidden_dim,
     min_attenuation_at_step=0.1,
     max_attenuation_at_limit=0.95,
     init_extent=1.0,
@@ -86,21 +111,25 @@ mask_cfg = LazyConfig(GaussianModulationND)(  # exponential decay with causal ze
 )
 gate_nonlinear_cfg = LazyConfig(torch.nn.Identity)()  # linear gating for AR
 short_conv = LazyConfig(torch.nn.Conv1d)(
-    in_channels=3 * hidden_dim, out_channels=3 * hidden_dim,
-    kernel_size=3, groups=3 * hidden_dim, padding=1, bias=False,
+    in_channels=3 * hidden_dim,
+    out_channels=3 * hidden_dim,
+    kernel_size=3,
+    groups=3 * hidden_dim,
+    padding=1,
+    bias=False,
 )
 ```
 
 **Mixing ratios (Evo2-1B, 8192-bp sequences, §5.2, perplexity lower is better):**
 
-| Config | Pattern (24 blocks) | Validation PPL |
-|--------|---------------------|----------------|
-| `T` (full transformer) | 24 attention | 2.9235 ± 0.0039 |
-| `H₀` (full Hyena) | 24 Hyena | 2.8282 ± 0.0279 |
-| `H₁` (1 MHA) | 23 H + 1 A | 2.8308 ± 0.0108 |
-| `H₂` (2 MHA, **best**) | 22 H + 2 A | **2.7729 ± 0.0006** |
-| `H₃` (3 MHA) | 21 H + 3 A | 2.8214 ± 0.0313 |
-| `H₄` (4 MHA) | 20 H + 4 A | 2.8312 ± 0.0088 |
+| Config                 | Pattern (24 blocks) | Validation PPL      |
+| ---------------------- | ------------------- | ------------------- |
+| `T` (full transformer) | 24 attention        | 2.9235 ± 0.0039     |
+| `H₀` (full Hyena)      | 24 Hyena            | 2.8282 ± 0.0279     |
+| `H₁` (1 MHA)           | 23 H + 1 A          | 2.8308 ± 0.0108     |
+| `H₂` (2 MHA, **best**) | 22 H + 2 A          | **2.7729 ± 0.0006** |
+| `H₃` (3 MHA)           | 21 H + 3 A          | 2.8214 ± 0.0313     |
+| `H₄` (4 MHA)           | 20 H + 4 A          | 2.8312 ± 0.0088     |
 
 Default for genomics retrofits: H₂-style pattern (sparse attention, ~1 A every 12 blocks for a 24-block model; for 12 blocks, place one A near the middle and one near the output).
 
@@ -126,11 +155,11 @@ For genomics, FiLM is optional — the Evo2 striped configs in the paper do not 
 
 ## Reference configs to copy from
 
-| Use case | File |
-|----------|------|
-| Smallest end-to-end Hyena example | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py` |
-| ImageNet ViT-5 with FiLM + registers | `examples/vit5_imagenet/v5_patch/_base_config.py` |
-| ImageNet hybrid (pattern-driven) | `examples/vit5_imagenet/vit5_hybrid/_base_config.py` |
-| Diffusion (HF diffusers retrofit) | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py` |
-| PDE (The Well) | `examples/well/v2/*.py` |
-| CCNN-style (non-ViT) classification | `examples/imagenet_classification/ccnn_7_512_hyena_circular.py` |
+| Use case                             | File                                                            |
+| ------------------------------------ | --------------------------------------------------------------- |
+| Smallest end-to-end Hyena example    | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py` |
+| ImageNet ViT-5 with FiLM + registers | `examples/vit5_imagenet/v5_patch/_base_config.py`               |
+| ImageNet hybrid (pattern-driven)     | `examples/vit5_imagenet/vit5_hybrid/_base_config.py`            |
+| Diffusion (HF diffusers retrofit)    | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py`       |
+| PDE (The Well)                       | `examples/well/v2/*.py`                                         |
+| CCNN-style (non-ViT) classification  | `examples/imagenet_classification/ccnn_7_512_hyena_circular.py` |
