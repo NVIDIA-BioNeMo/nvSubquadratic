@@ -69,6 +69,7 @@ autodoc_mock_imports = [
     "einops",
     "megatron",
     "megatron.core",
+    "omegaconf",
 ]
 
 add_module_names = False
