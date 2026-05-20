@@ -13,21 +13,13 @@ conda activate nvsubquadratic
 
 ## Pre-commit
 
-Run locally before pushing (hooks also run on `git push` if installed):
+Run locally before pushing:
 
 ```bash
 pre-commit install
-pre-commit install --hook-type pre-push
-# Optional: run pre-push checks without pushing
-pre-commit run --hook-stage pre-push --all-files
+pre-commit run --all-files
 ```
 
-**Required for CI:** Keep the following line in your PR description (the PR Description Check workflow looks for it):
+## Test plan
 
-> Pre-commit checks passed
-
-_(Replace with accurate wording after you run hooks; e.g. if something is intentionally skipped, coordinate with reviewers.)_
-
-## Testing
-
-<!-- How did you test this? -->
+<!-- How did you test this? Bulleted checklist preferred. -->
