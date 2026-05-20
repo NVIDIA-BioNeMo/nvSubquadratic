@@ -67,6 +67,8 @@ autodoc_mock_imports = [
     "dali",
     "nvidia.dali",
     "einops",
+    "megatron",
+    "megatron.core",
 ]
 
 add_module_names = False

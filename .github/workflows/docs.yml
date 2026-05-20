@@ -40,6 +40,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r docs/requirements.txt
 
+      - name: Install CPU torch (autodoc needs it at import time)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
       - name: Install package (for autodoc imports)
         run: pip install -e . --no-deps
 
