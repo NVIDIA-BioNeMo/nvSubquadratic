@@ -47,7 +47,7 @@ jobs:
         run: pip install -e . --no-deps
 
       - name: Build HTML
-        run: make -C docs html SPHINXBUILD="python -m sphinx"
+        run: make -C docs html SPHINXBUILD="python -m sphinx" SPHINXOPTS="-W --keep-going"
 
       - name: Deploy to gh-pages
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
