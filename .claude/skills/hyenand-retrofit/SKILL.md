@@ -82,6 +82,9 @@ global_conv_cfg = LazyConfig(CKConvND)(
     fft_padding=(
         "causal" if CAUSAL else "zero"
     ),  # "circular" is a valid bidirectional alt
+    fft_backend=(
+        "subq_ops" if (DATA_DIM == 2 and not CAUSAL) else "torch_fft"
+    ),  # see "FFT backend selection" below
 )
 
 ConvND = {1: nn.Conv1d, 2: nn.Conv2d, 3: nn.Conv3d}[DATA_DIM]
@@ -112,9 +115,18 @@ mixer = instantiate(
 **Knob ownership** (common foot-gun):
 
 - `Hyena(...)`: `use_rope`, `rope_base`, `gate_nonlinear_cfg`, `pixelhyena_norm_cfg`, `qk_norm_cfg`, `short_conv_cfg`, `global_conv_cfg`.
-- `CKConvND(...)` (passed as `global_conv_cfg`): `data_dim`, `hidden_dim`, `mask_cfg`, `fft_padding`, `kernel_cfg`. Also optional `grid_type` (`"single"`/`"double"`) and `use_chunked_fftconv` (memory optimization; requires `fft_padding="zero"`).
+- `CKConvND(...)` (passed as `global_conv_cfg`): `data_dim`, `hidden_dim`, `mask_cfg`, `fft_padding`, `kernel_cfg`, `fft_backend`. Also optional `grid_type` (`"single"`/`"double"`), `use_chunked_fftconv` (memory optimization; `zero`/`causal` padding only — circular has no chunked variant by design), and `use_fp16_fft` (memory; `circular` requires power-of-2 spatial dims; not allowed with `subq_ops`).
 - `SIRENKernelND(...)` (passed as `kernel_cfg`): `omega_0`, `hidden_omega_0`, `mlp_hidden_dim`, `num_layers`, `embedding_dim`, `L_cache`, `use_bias`, `out_dim`.
 - `GaussianModulationND(...)` (passed as `mask_cfg`): `data_dim`, `num_channels`, `min_attenuation_at_step`, `max_attenuation_at_limit`, `init_extent`, `parametrization`.
+
+## FFT backend selection
+
+`CKConvND` has two backends. The skeleton above picks one from the four axes; the rule:
+
+- **`fft_backend="subq_ops"`** — optimized CUDA kernel from the optional `subquadratic_ops_torch` package (`pip install subquadratic_ops_torch`). Faster on H100/A100 for the 2D vision case. Constraints (all asserted at construction): `data_dim == 2`, `fft_padding == "zero"`, non-causal, `use_fp16_fft == False`. The canonical 2D ImageNet configs (`vit5_hybrid`, `v5/hyena_gap_pretrain.py`) use this path.
+- **`fft_backend="torch_fft"`** (default) — pure `torch.fft`, supports the full matrix: `data_dim ∈ {1, 2, 3}`, `fft_padding ∈ {"zero", "circular", "causal"}` (causal is 1D-only), optional fp16 and chunked variants.
+
+The skeleton's `fft_backend="subq_ops" if (DATA_DIM == 2 and not CAUSAL) else "torch_fft"` picks the fast path when eligible and falls back otherwise. If the user has not installed `subquadratic_ops_torch`, the import fails at first forward — either swap to `"torch_fft"` or tell them to install it.
 
 ## Wire it in
 
@@ -178,6 +190,8 @@ These break the first forward pass or the first large-input forward pass.
 1. **Shape contract.** `nn.MultiheadAttention(batch_first=True)` returns `(out, attn_weights)` and accepts `need_weights=`/`attn_mask=`/`key_padding_mask=`. `Hyena.forward` returns a single tensor and rejects extra kwargs. The adapter above handles both; never assign `Hyena(...)` directly to an `nn.MultiheadAttention` slot.
 
 1. **Pretrained-weight loading.** Hyena blocks have an entirely different `state_dict` prefix than attention blocks. Loading an attention checkpoint into a Hyena variant produces a wall of missing/unexpected keys. Either filter to shared submodules (patch_embed, downsample, MLP, norms), or skip pretrained loading for Hyena variants.
+
+1. **`subq_ops` backend constraint set.** `fft_backend="subq_ops"` asserts loudly on any one of: `data_dim ≠ 2`, `fft_padding ≠ "zero"`, `is_causal=True`, `use_fp16_fft=True`. The canonical 2D vision case is fine; extending to 3D, circular padding, or causal LMs requires flipping to `fft_backend="torch_fft"`. Easy to miss when copy-pasting a 2D config as a 3D starting point.
 
 ## Smoke-test stub
 
