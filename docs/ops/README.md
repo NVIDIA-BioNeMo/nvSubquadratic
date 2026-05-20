@@ -10,17 +10,17 @@ ______________________________________________________________________
 
 A standard spatial convolution between an input `x` of length `N` and a kernel `k` of length `K`,
 
-```
-y[n] = Σ_m x[n − m] · k[m]
-```
+$$
+y\[n\] ;=; \\sum\_{m} x\[n - m\] ,\\cdot, k\[m\]
+$$
 
 costs `O(N · K)` per channel. When `K` is small (e.g. a 3×3 image kernel) that is fine. When `K` is **comparable to `N`** — the regime Hyena-style models live in, where each layer's effective receptive field can span the whole input — the spatial cost grows quadratically with sequence length.
 
 The **convolution theorem** lets us replace the spatial convolution with an element-wise product in the frequency domain:
 
-```
-y = F⁻¹( F(x) ⊙ F(k) )
-```
+$$
+y ;=; \\mathcal{F}^{-1}!\\bigl( \\mathcal{F}(x) ,\\odot, \\mathcal{F}(k) \\bigr)
+$$
 
 The two FFTs and the inverse each cost `O(N log N)`, the element-wise product is `O(N)`, and the total cost is **independent of kernel size**. That is what makes "global-kernel" convolutional sequence models subquadratic.
 
@@ -83,9 +83,9 @@ The kernel's leading dim is either `1` (shared kernel across the batch — the s
 
 Every operator accepts an optional `shortcut: [H]` tensor and computes
 
-```
-y ← y + shortcut ⊙ x
-```
+$$
+y ;\\leftarrow; y + \\mathrm{shortcut} ,\\odot, x
+$$
 
 i.e. a per-channel residual scale. This is *not* a generic skip connection — it fuses a specific algebraic shortcut that shows up repeatedly in Hyena-style gating, saving a separate kernel launch. Pass `None` if you don't need it.
 
@@ -143,3 +143,10 @@ ______________________________________________________________________
 - **[`nvsubquadratic/modules/kernels_nd.py`](../../nvsubquadratic/modules/kernels_nd.py)** — learned kernel parametrisations that produce the kernels these ops consume.
 - **[`nvsubquadratic/modules/hyena_nd.py`](../../nvsubquadratic/modules/hyena_nd.py)** — the Hyena operator, the main consumer of these ops.
 - **[`nvsubquadratic/modules/ckconv_nd.py`](../../nvsubquadratic/modules/ckconv_nd.py)** / **[`ckconv_multihead_nd.py`](../../nvsubquadratic/modules/ckconv_multihead_nd.py)** — CKConv variants that compose these primitives.
+
+```{toctree}
+:maxdepth: 1
+:caption: Further reading
+
+FP16_FFTCONV_DERIVATION
+```
