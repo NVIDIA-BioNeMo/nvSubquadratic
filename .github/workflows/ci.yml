@@ -66,6 +66,8 @@ jobs:
         with:
           context: .
           load: true
+          build-args: |
+            TORCH_CUDA_ARCH_LIST=9.0
           tags: |
             nvsubquadratic-ci:${{ github.sha }}
             nvsubquadratic-ci:latest

@@ -15,8 +15,8 @@ set -euo pipefail
 PLATFORM="${PLATFORM:-x86_64}"
 
 case "${PLATFORM}" in
-    x86_64) DOCKER_PLATFORM="linux/amd64"; TARGET_HW="H100 (x86-64)"; CUDA_ARCHS="9.0" ;;
-    arm64)  DOCKER_PLATFORM="linux/arm64"; TARGET_HW="GB200 (ARM64)"; CUDA_ARCHS="10.0;12.0" ;;
+    x86_64) DOCKER_PLATFORM="linux/amd64"; TARGET_HW="H100 (x86-64)"; CUDA_ARCHS="9.0"; MAX_JOBS="" ;;
+    arm64)  DOCKER_PLATFORM="linux/arm64"; TARGET_HW="GB200 (ARM64)"; CUDA_ARCHS="10.0;12.0"; MAX_JOBS="2" ;;
     *)      echo "Error: unknown PLATFORM=${PLATFORM}. Use x86_64 or arm64."; exit 1 ;;
 esac
 
@@ -33,6 +33,7 @@ echo "Output:   ${OUTPUT_SQSH}"
 docker buildx build \
     --platform "${DOCKER_PLATFORM}" \
     --build-arg TORCH_CUDA_ARCH_LIST="${CUDA_ARCHS}" \
+    --build-arg MAX_JOBS="${MAX_JOBS}" \
     -t "${DOCKER_TAG}" \
     -f "${REPO_ROOT}/Dockerfile" \
     --load \
