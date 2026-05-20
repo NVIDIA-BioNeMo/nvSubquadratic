@@ -362,3 +362,18 @@ class Test1DCausalForwardBackward:
 
         x = torch.randn(2, SEQ_LEN_1D, HIDDEN_DIM_1D, device="cuda", dtype=torch.float32)
         torch.testing.assert_close(model_chunk(x), model(x), atol=0, rtol=0)
+
+    def test_forward_bhl_input(self):
+        """is_bhl_input=True path (BHL layout) matches torch_fft reference."""
+        torch.manual_seed(42)
+        model_ref = _make_ckconv_1d("torch_fft").cuda()
+        model_subq = _make_ckconv_1d("subq_ops").cuda()
+        _sync_weights(model_ref, model_subq)
+
+        x = torch.randn(2, HIDDEN_DIM_1D, SEQ_LEN_1D, device="cuda", dtype=torch.float32)
+        torch.testing.assert_close(
+            model_subq(x, is_bhl_input=True),
+            model_ref(x, is_bhl_input=True),
+            atol=ATOL,
+            rtol=RTOL,
+        )

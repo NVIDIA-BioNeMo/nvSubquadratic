@@ -200,6 +200,22 @@ class TestDtype:
         assert torch.isfinite(y).all()
 
 
+class TestLongKernel:
+    """Long kernels — where the FFT kernel beats the direct conv (upstream docstring: K>=128)."""
+
+    @pytest.mark.parametrize("K", [128, 512, 2048])
+    def test_long_kernel_matches_reference(self, device, K):
+        torch.manual_seed(42)
+        B, H, L = 1, 32, max(K, 256)
+        x = torch.randn(B, H, L, device=device, dtype=torch.float32)
+        k = torch.randn(1, H, K, device=device, dtype=torch.float32)
+
+        y_ref = _ref_bhl(x, k)
+        y_custom = _custom_bhl(x, k)
+
+        torch.testing.assert_close(y_custom, y_ref, atol=ATOL_F32, rtol=RTOL_F32)
+
+
 class TestErrors:
     """Negative cases."""
 
