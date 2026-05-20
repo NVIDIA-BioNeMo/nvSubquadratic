@@ -1,29 +1,42 @@
 # TODO: Add license header here
 
 
-"""Drop-in wrappers around :mod:`subquadratic_ops_torch` CUDA FFT kernels.
+r"""Drop-in wrappers around the :mod:`subquadratic_ops_torch` custom CUDA FFT kernels.
 
-This module mirrors the API of :mod:`nvsubquadratic.ops.fftconv` for 2D
-operators while delegating the heavy lifting to the optimized CUDA kernel
-provided by :mod:`subquadratic_ops_torch`.
+The pure-PyTorch FFT path in :mod:`nvsubquadratic.ops.fftconv` is general
+and correct, but each forward pass dispatches a chain of separate cuFFT,
+element-wise multiply, and inverse-cuFFT kernels. The
+:mod:`subquadratic_ops_torch` package ships a hand-written CUDA kernel
+(``fft_conv2d``) that fuses these stages into a single launch, eliminating
+intermediate tensor traffic and shaving wall-clock time on large 2D shapes.
+
+This module exposes that kernel through the **same API** as the PyTorch
+operators in :mod:`nvsubquadratic.ops.fftconv`, so callers can switch
+backends (e.g. via a ``fft_backend`` config flag) without touching their
+model code.
 
 Functions provided
 ------------------
-- ``fftconv2d_bhl``  /  ``fftconv2d_bhl_chunked``   — BHL layout ``[B, H, X, Y]``
-- ``fftconv2d_bhl_w_reshape``  /  ``fftconv2d_bhl_w_reshape_chunked``   — accepts BLH ``[B, X, Y, H]``, reshapes internally
-- ``fftconv2d_blh``  /  ``fftconv2d_blh_chunked``   — aliases for the ``_w_reshape`` variants
+- ``fftconv2d_bhl`` / ``fftconv2d_bhl_chunked``: BHL layout ``[B, H, X, Y]``.
+- ``fftconv2d_bhl_w_reshape`` / ``fftconv2d_bhl_w_reshape_chunked``: accepts
+  BLH ``[B, X, Y, H]``, reshapes internally.
+- ``fftconv2d_blh`` / ``fftconv2d_blh_chunked``: aliases for the
+  ``_w_reshape`` variants (BLH naming convention).
 
-All functions accept any input dtype (bf16, fp16, fp32) and internally cast to
-fp32 for the CUDA kernel, returning the output in the original dtype. Shortcut
-semantics are identical to the torch.fft reference: ``y += shortcut * x``.
+All functions accept any input dtype (bf16, fp16, fp32) and internally cast
+to fp32 for the CUDA kernel, returning the output in the original dtype.
+Shortcut semantics are identical to the torch.fft reference:
+:math:`y \leftarrow y + \text{shortcut} \odot x`.
 
 The chunked variants process channels in groups of ``chunk_size`` to reduce
-peak GPU memory from the CUDA kernel's FFT intermediates.
+peak GPU memory from the CUDA kernel's FFT intermediates — useful for very
+wide hidden dims where the fused kernel's working set would otherwise
+exceed device memory.
 
 .. note::
    ``subquadratic_ops_torch`` is an **optional** dependency. Importing this
-   module always succeeds; a clear error is raised only when a function is
-   actually called without the package installed.
+   module always succeeds; a clear ``ImportError`` is raised only when a
+   function is actually called without the package installed.
 """
 
 from __future__ import annotations

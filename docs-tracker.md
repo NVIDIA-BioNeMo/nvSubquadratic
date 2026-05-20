@@ -25,15 +25,16 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/ops/` — FFT convolution primitives
 
-| File                       | Status | Notes                    |
-| -------------------------- | ------ | ------------------------ |
-| `fftconv.py`               | \[ \]  | Core ND FFT conv         |
-| `circular_fftconv.py`      | \[ \]  | Circular variant         |
-| `circular_fftconv_fp16.py` | \[ \]  | FP16 circular            |
-| `fftconv_fp16.py`          | \[ \]  | FP16 base                |
-| `fftconv_multihead.py`     | \[ \]  | Multi-head variant       |
-| `fftconv_chunked.py`       | \[ \]  | Memory-efficient chunked |
-| `fftconv_custom.py`        | \[ \]  | Custom kernel entry      |
+| File                       | Status | Notes                                                   |
+| -------------------------- | ------ | ------------------------------------------------------- |
+| `README.md`                | \[x\]  | Folder overview, decision tree, math primer (new file)  |
+| `fftconv.py`               | \[x\]  | Module + key per-fn docstrings rewritten with math      |
+| `circular_fftconv.py`      | \[x\]  | Already strong; left as-is                              |
+| `circular_fftconv_fp16.py` | \[x\]  | Already strong; relies on FP16_FFTCONV_DERIVATION.md    |
+| `fftconv_fp16.py`          | \[x\]  | Already adequate; left as-is                            |
+| `fftconv_multihead.py`     | \[x\]  | Module docstring expanded with multi-head/low-rank math |
+| `fftconv_chunked.py`       | \[x\]  | Already strong; left as-is                              |
+| `fftconv_custom.py`        | \[x\]  | Module docstring expanded with motivation               |
 
 ### `nvsubquadratic/modules/` — Building blocks
 
