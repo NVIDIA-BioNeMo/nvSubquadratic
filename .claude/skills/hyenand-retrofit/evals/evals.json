@@ -53,6 +53,50 @@
         {"text": "Output file does not modify the original tiny_vit_attention.py", "check": "original_unmodified"},
         {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
       ]
+    },
+    {
+      "id": 4,
+      "name": "foreign-3d-feature-map",
+      "prompt": "I have a small standalone 3D U-Net at .claude/skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py (path relative to repo root). It has a SpatialAttention3D bottleneck module that operates on [B, C, D, H, W] channel-first feature maps and internally uses F.scaled_dot_product_attention — there is no nn.MultiheadAttention slot to swap. Produce a sibling file that replaces the bottleneck with HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The bottleneck operates on 16x16x16 feature maps with 48 channels. Apply reasonable 3D bidirectional defaults.",
+      "expected_output": "A new file (e.g., tiny_unet3d_hyenand.py) in the same inputs/ directory that imports Hyena from nvsubquadratic with data_dim=3 and uses Conv3d for the short conv. The replacement must handle the channel-first [B, C, D, H, W] -> channel-last [B, D, H, W, C] layout (feature_map host, not tokens). Must NOT slice CLS / prefix tokens. Must contain a __main__ smoke-test block.",
+      "files": [".claude/skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py"],
+      "assertions": [
+        {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
+        {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
+        {"text": "Output file imports SIRENKernelND", "check": "grep_output:from nvsubquadratic.modules.kernels_nd import.*SIRENKernelND"},
+        {"text": "Output file uses data_dim=3", "check": "grep_output:data_dim\\s*=\\s*3"},
+        {"text": "Output file uses Conv3d for the short conv", "check": "grep_output:Conv3d"},
+        {"text": "Output file references original TinyUNet3D class", "check": "grep_output:TinyUNet3D"},
+        {"text": "Output file does NOT introduce a non-zero prefix-token count (no CLS in feature-map host)", "check": "grep_output_negative:num_prefix_tokens\\s*=\\s*[1-9]"},
+        {"text": "Output file handles channel-first <-> channel-last layout", "check": "grep_output:moveaxis|permute|rearrange"},
+        {"text": "Output file contains a __main__ smoke-test block", "check": "grep_output:if __name__"},
+        {"text": "Output file does not modify the original tiny_unet3d_attention.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "foreign-1d-causal-lm",
+      "prompt": "I have a tiny causal char-level LM at .claude/skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py (path relative to repo root). It uses causal nn.MultiheadAttention inside CausalBlock with an explicit attn_mask. Produce a sibling file that swaps the attention for HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The model processes sequences of length 256 with hidden_dim=128. Apply reasonable 1D causal defaults.",
+      "expected_output": "A new file (e.g., tiny_charlm_hyenand.py) in the same inputs/ directory that imports Hyena from nvsubquadratic with data_dim=1 and causal defaults: use_rope=True, fft_padding='causal', mask parametrization='exp_decay', omega_0=100. Uses Conv1d for the short conv. Wraps each block's .attn with an adapter that handles the tokens [B, T, C] layout without prefix tokens, returns (out, None) for the nn.MultiheadAttention contract, and swallows attn_mask/need_weights kwargs. Must contain a __main__ smoke-test block.",
+      "files": [".claude/skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py"],
+      "assertions": [
+        {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
+        {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
+        {"text": "Output file imports SIRENKernelND", "check": "grep_output:from nvsubquadratic.modules.kernels_nd import.*SIRENKernelND"},
+        {"text": "Output file uses data_dim=1", "check": "grep_output:data_dim\\s*=\\s*1"},
+        {"text": "Output file uses Conv1d for the short conv", "check": "grep_output:Conv1d"},
+        {"text": "Output file enables RoPE for causal LM", "check": "grep_output:use_rope\\s*=\\s*True"},
+        {"text": "Output file uses causal FFT padding", "check": "grep_output:fft_padding\\s*=\\s*['\\\"]causal['\\\"]"},
+        {"text": "Output file uses exp_decay mask parametrization", "check": "grep_output:parametrization\\s*=\\s*['\\\"]exp_decay['\\\"]"},
+        {"text": "Output file uses omega_0=100 (causal default)", "check": "grep_output:omega_0\\s*=\\s*100"},
+        {"text": "Output file references original TinyCharLM class", "check": "grep_output:TinyCharLM"},
+        {"text": "Adapter returns 2-tuple to match nn.MultiheadAttention contract", "check": "grep_output:return\\s+\\w+\\s*,\\s*None"},
+        {"text": "Adapter does NOT slice CLS / prefix tokens (causal LM has no CLS)", "check": "grep_output_negative:num_prefix_tokens\\s*=\\s*[1-9]"},
+        {"text": "Output file contains a __main__ smoke-test block", "check": "grep_output:if __name__"},
+        {"text": "Output file does not modify the original tiny_charlm_attention.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
     }
   ]
 }

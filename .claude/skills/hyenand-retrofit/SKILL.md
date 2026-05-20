@@ -1,267 +1,210 @@
 ---
 name: hyenand-retrofit
-description: Replace attention in a PyTorch model with HyenaND from the nvSubquadratic library, with paper-grounded default hyperparameters (SIREN ω₀, register count, per-axis Gaussian mask, FFT padding, hybrid layer pattern). Use this skill whenever the user wants to swap attention for a subquadratic operator, port a ViT / U-Net / diffusion / genomics LM to HyenaND, convert a `nn.MultiheadAttention` or `F.scaled_dot_product_attention` site to a Hyena mixer, build a striped Hyena LM, set up a HyenaND experiment config, or asks "how do I use nvSubquadratic with my model." Trigger even when the user does not explicitly name HyenaND — phrases like "make my ViT subquadratic," "subquadratic alternative to attention for my 3D U-Net," "Hyena layer for my transformer," "swap attention with FFT convolution," or "long-context model with O(L log L) scaling" should all activate this skill.
+description: Replace attention in a PyTorch model with HyenaND from the nvSubquadratic library. Covers 1D / 2D / 3D hosts (ViT, U-Net, diffusion, causal LM, hierarchical encoders). Trigger when the user wants a subquadratic alternative to attention, ports a model to HyenaND, swaps `nn.MultiheadAttention` or `F.scaled_dot_product_attention` for a Hyena mixer, builds a striped Hyena LM, or asks "how do I use nvSubquadratic with my model." Phrases like "make my ViT subquadratic," "Hyena layer for my U-Net," "swap attention with FFT convolution," "subquadratic alternative for my 3D segmentation network," or "long-context model with O(L log L) scaling" should all activate this skill.
 ---
 
 # hyenand-retrofit
 
-Replace attention in a user's model with HyenaND from the nvSubquadratic library. The output is a runnable sibling file alongside the user's original — the original is not modified.
-
-## When to use
-
-- User has an attention-based model (ViT, U-Net, DiT, causal LM, hierarchical encoder) and wants a subquadratic alternative
-- User explicitly mentions HyenaND, Hyena, nSubQ, nvSubquadratic, or "subquadratic attention"
-- User is inside the `nvSubquadratic-private` repo and wants to add a new attention/Hyena variant
-- User asks about scaling to long contexts (long genomes, high-resolution images, 3D volumes, PDE grids)
+Replace attention in a user's model with HyenaND from the nvSubquadratic library. The output is a runnable sibling file alongside the user's original — the original is not modified, with one exception: hierarchical hosts whose natural API is a conditional swap (`use_hyena=True` flag inside the host class) edit in place.
 
 If the user only wants conceptual explanation (no code), answer in chat. This skill is for producing a working file.
 
-## The two paths
+## Native path (user is already inside nvSubquadratic)
 
-Decide which one applies *before* writing anything:
+If the user's file imports nvSubquadratic builders (`build_attention_net`, `LazyConfig(ViT5Attention)`, etc.), the swap is mechanical:
 
-1. **Native path** — the user's file already uses `nvsubquadratic` (`LazyConfig`, `build_attention_net`, `ViT5Attention`, `ViT5ClassificationNet`). The repo has matched builders:
+- Pure Hyena: replace `build_attention_net` with `build_hyena_net`, drop `compile_compatible_fftconv = False` if present (Hyena needs the default `True`).
+- Hybrid: import `build_hybrid_net` from the matching `_base_config.py`, pass `layer_pattern=...`.
 
-   - `build_attention_net` + `build_hyena_net` live in `examples/vit5_imagenet/v5_patch/_base_config.py` (pure variants, fixed pattern).
-   - `build_hybrid_net` lives in a separate file: `examples/vit5_imagenet/vit5_hybrid/_base_config.py` (pattern-driven). Switching from a pure-attention v5_patch entry to a hybrid means changing both the import path and the entry directory, not just the function name.
+Native sibling files are bare config shims — no `__main__` block; the experiment runner exercises the LazyConfig graph.
 
-   With the right builder picked, the swap is mechanical: replace the builder call, flip `compile_compatible_fftconv`, optionally pick a layer pattern.
+The rest of this skill covers the **foreign path** — generic PyTorch hosts using `nn.MultiheadAttention`, `F.scaled_dot_product_attention`, timm, HF, etc.
 
-1. **Foreign path** — the user's file uses generic PyTorch (`nn.MultiheadAttention`, `F.scaled_dot_product_attention`, `timm`, `transformers`, `diffusers`). You must construct a full Hyena module from scratch and wire it in as a drop-in attention replacement.
+## Decide four things up front
 
-Look at the user's file. If you see `from nvsubquadratic` imports or `LazyConfig(ViT5Attention)`, take the native path. Otherwise foreign.
+These four axes are orthogonal. Fix them before writing.
 
-## Native path workflow
+1. **`data_dim ∈ {1, 2, 3}`** — number of spatial axes the mixer sees. Picks `Conv1d/2d/3d` for the short conv and sets `data_dim` on `CKConvND`, `SIRENKernelND`, and `GaussianModulationND`.
 
-The repo factors attention vs Hyena into builder functions. The user's entry file is almost always just a thin wrapper around one of:
+1. **`causal ∈ {True, False}`** — autoregressive 1D LMs are causal; vision, segmentation, PDE are bidirectional. Causal sets `fft_padding="causal"`, `use_rope=True`, mask `parametrization="exp_decay"`, `omega_0=100`. Bidirectional sets `fft_padding ∈ {"zero", "circular"}`, `use_rope=False`, `parametrization="direct"`, `omega_0=10`.
 
-- `build_attention_net(patch_size)` — pure attention
-- `build_hyena_net(patch_size)` — pure Hyena
-- `build_hybrid_net(layer_pattern="...", patch_size=...)` — mixed, where pattern is a string of `H`/`A` characters (one per block)
+1. **Host layout** — `tokens [B, N, C]` (most ViTs, causal LMs) or `feature_map [B, C, *spatial]` (CNNs, U-Nets, hierarchical encoders). Spatial dim count does *not* change this — a 1D, 2D, or 3D feature-map host all use `[B, C, *S] -> [B, *S, C]`.
 
-### Step 1: ask the user which target
+1. **Return contract** — `(out, None)` tuple if the call site is `h, _ = self.attn(...)` (matches `nn.MultiheadAttention`); bare tensor otherwise.
 
-Use AskUserQuestion if not already specified:
+## Pure or hybrid
 
-- **Pure Hyena** — strongest when geometry + global structure dominate (PDE fields, high-resolution vision, long genomes)
-- **Hybrid** — strongest when selectivity still matters (ImageNet classification, medical segmentation). Paper winners:
-  - 2D ImageNet ViT-Small: `(HA)×6` (best) or `(HHHA)×3`
-  - 3D medical SwinUNETR-style: `HHAA` (hierarchical — Hyena in early high-resolution stages, attention later)
-  - 1D genomics (1B striped LM, Evo2): one A per 4 blocks (`HHHA` repeat, H₂ mixing) was best in §5.2
+Separate decision: replace every attention site (pure) or leave some as attention (hybrid). Hybrids are common in vision and genomics LMs because attention's selectivity complements Hyena's global mixing. If unsure, ask via AskUserQuestion.
 
-### Step 2: write the sibling file
+- **Pure** — swap every site. Smallest change, cleanest comparison.
+- **Hybrid** — *which* sites stay attention is itself an ablation, not a settled choice. Pick any reasonable starting point (e.g., alternate, or hold attention in the deepest stages) and treat the pattern as a knob to sweep. For hierarchical encoders, prefer a per-stage `bool` list (`[True, True, False, False]`) over a `"HHAA"` string — it maps cleanly onto the encoder's stage construction loop.
 
-Copy the entry-file structure verbatim, then change:
+## The Hyena module
 
-- Import: replace `build_attention_net` with `build_hyena_net` (pure). For hybrid, import `build_hybrid_net` from `vit5_hybrid._base_config` (different module). Drop the unused builder.
-- Builder call inside `get_config()`: same swap.
-- For hybrid: add a `LAYER_PATTERN = "..." * (NUM_BLOCKS // len_repeat)` line at module scope, pass it as `layer_pattern=LAYER_PATTERN`.
-- Remove `config.compile_compatible_fftconv = False` if present (attention sets this False explicitly; the default is True, and HyenaND needs True).
-- Update the module docstring and any inline comments to reflect the new grid math (Hyena adds registers — see `hyena_patch16.py` for the canonical comment style).
-- Keep filename convention: `attention_patch16.py` → `hyena_patch16.py`, `full_attention.py` → `full_hyena.py` or `hybrid_hhha.py`.
-
-Native sibling files in this repo do **not** carry an inline `__main__` smoke block — the canonical `hyena_patch16.py` and `hybrid_hhha.py` are tiny config shims. Don't add one. If the user wants to validate the LazyConfig graph, point them at the existing `examples/vit5_imagenet/v5_patch/_smoke_test.py` pattern (separate file, not inline).
-
-## Foreign path workflow
-
-The user has, e.g., a `timm` ViT, a HF transformers model, or a hand-written PyTorch transformer. You need to construct a Hyena module yourself.
-
-### Step 1: identify the attention sites
-
-Look for any of:
-
-- `nn.MultiheadAttention`
-- `F.scaled_dot_product_attention`
-- `flash_attn.*` calls
-- Custom attention modules (look for `softmax(Q @ K.T / sqrt(d))` or `attn_drop`/`proj_drop` member names)
-- timm `Attention` class, HF `*Attention` classes
-
-### Step 2: build the Hyena replacement
-
-For each attention site, emit a Hyena module config. The minimum spec:
+Knobs below that don't depend on the four axes are the dim-agnostic default. Substitute `DATA_DIM`, `CAUSAL`, and `HIDDEN_DIM` from the four-axis decision.
 
 ```python
-from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
-from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.utils.qk_norm import L2Norm
-import torch
-```
-
-The full Hyena config has many knobs. Note that only `use_rope` and `gate_nonlinear` are direct `Hyena(...)` kwargs — the rest (`data_dim`, `mask_cfg`, `fft_padding`) belong to the `CKConvND` config that you pass in as `global_conv_cfg`. See `references/defaults.md` for the canonical table and parameter ownership. Short version:
-
-| Modality                                 | data_dim (CKConvND) | mask (CKConvND)                       | fft_padding (CKConvND) | use_rope (Hyena) | gate_nonlinear (Hyena) | ω₀ (SIREN kernel) |
-| ---------------------------------------- | ------------------- | ------------------------------------- | ---------------------- | ---------------- | ---------------------- | ----------------- |
-| Vision (image classification, diffusion) | 2                   | identity or per-axis Gaussian         | circular or zero       | False            | SiLU                   | 10                |
-| Medical 3D segmentation                  | 3                   | per-axis Gaussian                     | zero                   | False            | SiLU                   | 10                |
-| Genomics / causal LM                     | 1                   | exponential decay with causal zeroing | causal                 | True             | SiLU                   | 100               |
-| PDE fields                               | 2 or 3              | per-axis Gaussian                     | circular               | False            | SiLU                   | 10                |
-
-Read `references/defaults.md` for full parameter lists, init schemes, and the reasoning behind each choice.
-
-### Step 3: wire it in via an adapter (do not assign Hyena directly)
-
-`nn.MultiheadAttention` and `Hyena` have **three incompatible interfaces** that bite you on the first forward pass if you do `block.attn = Hyena(...)` naively:
-
-1. **Return shape.** `nn.MultiheadAttention(..., need_weights=False)` returns a `(out, weights)` tuple; callers commonly unpack `h, _ = self.attn(...)`. `Hyena.forward` returns a single tensor.
-1. **Kwargs.** `nn.MultiheadAttention` accepts `need_weights=`, `key_padding_mask=`, `attn_mask=`. `Hyena.forward(query, key, value, cp_group=None, **mixer_kwargs)` does not — extra kwargs flow into the global conv and may crash.
-1. **Input layout.** `nn.MultiheadAttention(batch_first=True)` takes `[B, N, C]` (flat token sequence). `Hyena.forward` requires `[B, *spatial, C]` channel-last and reshapes internally to `[B, C, H, W]` (or `[B, C, T]`, `[B, C, D, H, W]`). For ViT, this means undoing the patch flatten — and **handling the CLS token separately**, because `1 + grid_h*grid_w` is never a clean rectangular grid.
-
-You need an adapter wrapper. Skeleton (vision, 2D, with CLS):
-
-```python
-# my_model_hyenand.py — generated by hyenand-retrofit
-
 import torch
 import torch.nn as nn
-from nvsubquadratic.lazy_config import instantiate, LazyConfig
-from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.ckconv_nd import CKConvND
-from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from nvsubquadratic.modules.masks_nd import GaussianModulationND
-from nvsubquadratic.utils.qk_norm import L2Norm
 
-from my_model import MyViT  # user's original
+kernel_cfg = LazyConfig(SIRENKernelND)(
+    data_dim=DATA_DIM,
+    out_dim=HIDDEN_DIM,
+    mlp_hidden_dim=32,
+    num_layers=3,
+    embedding_dim=32,
+    omega_0=100.0 if CAUSAL else 10.0,
+    hidden_omega_0=1.0,
+    L_cache=MAX_SPATIAL,  # see foot-gun #3
+    use_bias=True,
+)
 
+mask_cfg = LazyConfig(GaussianModulationND)(
+    data_dim=DATA_DIM,
+    num_channels=HIDDEN_DIM,
+    min_attenuation_at_step=0.1,
+    max_attenuation_at_limit=0.95,
+    init_extent=1.0,
+    parametrization="exp_decay" if CAUSAL else "direct",
+)
 
-def build_hyena_mixer(hidden_dim: int, grid_h: int, grid_w: int) -> nn.Module:
-    """Instantiate a 2D HyenaND mixer for a `grid_h × grid_w` patch grid.
+global_conv_cfg = LazyConfig(CKConvND)(
+    data_dim=DATA_DIM,
+    hidden_dim=HIDDEN_DIM,
+    kernel_cfg=kernel_cfg,
+    mask_cfg=mask_cfg,
+    fft_padding=(
+        "causal" if CAUSAL else "zero"
+    ),  # "circular" is a valid bidirectional alt
+)
 
-    See references/defaults.md for the full per-modality knob list — this is
-    the minimum that passes a forward pass; tune mask/short_conv/qk_norm
-    against the canonical vision config in
-    examples/vit5_imagenet/v5_patch/_base_config.py.
-    """
-    cfg = LazyConfig(Hyena)(
-        global_conv_cfg=LazyConfig(CKConvND)(
-            data_dim=2,
-            hidden_dim=hidden_dim,
-            kernel_cfg=LazyConfig(SIRENKernelND)(
-                data_dim=2,
-                out_dim=hidden_dim,
-                mlp_hidden_dim=32,
-                num_layers=3,
-                embedding_dim=32,
-                omega_0=10.0,
-                L_cache=max(grid_h, grid_w),
-                use_bias=True,
-                hidden_omega_0=1.0,
-            ),
-            mask_cfg=LazyConfig(GaussianModulationND)(
-                data_dim=2,
-                num_channels=hidden_dim,
-                min_attenuation_at_step=0.1,
-                max_attenuation_at_limit=0.95,
-                init_extent=1.0,
-                parametrization="direct",
-            ),
-            fft_padding="circular",  # see defaults.md for "zero" alternative
-        ),
-        short_conv_cfg=LazyConfig(nn.Conv2d)(
-            in_channels=3 * hidden_dim,
-            out_channels=3 * hidden_dim,
-            kernel_size=3,
-            groups=3 * hidden_dim,
-            padding=1,
-            bias=False,
-        ),
+ConvND = {1: nn.Conv1d, 2: nn.Conv2d, 3: nn.Conv3d}[DATA_DIM]
+short_conv_cfg = LazyConfig(ConvND)(
+    in_channels=3 * HIDDEN_DIM,
+    out_channels=3 * HIDDEN_DIM,
+    kernel_size=3,
+    groups=3 * HIDDEN_DIM,
+    padding=1,
+    bias=False,
+)
+
+mixer = instantiate(
+    LazyConfig(Hyena)(
+        global_conv_cfg=global_conv_cfg,
+        short_conv_cfg=short_conv_cfg,
         gate_nonlinear_cfg=LazyConfig(nn.SiLU)(),
-        gate_nonlinear_2_cfg=LazyConfig(nn.Sigmoid)(),
         pixelhyena_norm_cfg=LazyConfig(nn.GroupNorm)(
-            num_groups=1, num_channels=hidden_dim
+            num_groups=1, num_channels=HIDDEN_DIM
         ),
         qk_norm_cfg=LazyConfig(L2Norm)(),
-        use_rope=False,
+        use_rope=CAUSAL,
+        rope_base=10000.0,
     )
-    return instantiate(cfg)
+)
+```
 
+**Knob ownership** (common foot-gun):
 
+- `Hyena(...)`: `use_rope`, `rope_base`, `gate_nonlinear_cfg`, `pixelhyena_norm_cfg`, `qk_norm_cfg`, `short_conv_cfg`, `global_conv_cfg`.
+- `CKConvND(...)` (passed as `global_conv_cfg`): `data_dim`, `hidden_dim`, `mask_cfg`, `fft_padding`, `kernel_cfg`. Also optional `grid_type` (`"single"`/`"double"`) and `use_chunked_fftconv` (memory optimization; requires `fft_padding="zero"`).
+- `SIRENKernelND(...)` (passed as `kernel_cfg`): `omega_0`, `hidden_omega_0`, `mlp_hidden_dim`, `num_layers`, `embedding_dim`, `L_cache`, `use_bias`, `out_dim`.
+- `GaussianModulationND(...)` (passed as `mask_cfg`): `data_dim`, `num_channels`, `min_attenuation_at_step`, `max_attenuation_at_limit`, `init_extent`, `parametrization`.
+
+## Wire it in
+
+`nn.MultiheadAttention` and `Hyena` have three incompatible interfaces — tuple return, kwargs, and input layout. Assigning `Hyena` directly into an attention slot fails. One adapter, parameterized by the four axes:
+
+```python
 class HyenaAttnAdapter(nn.Module):
-    """Drop-in replacement for ``nn.MultiheadAttention(dim, heads, batch_first=True)``.
-
-    Bridges the three interface gaps:
-      - reshapes ``[B, N, C]`` token sequence to ``[B, H, W, C]`` channel-last
-        before calling Hyena, then flattens back
-      - peels CLS off the front (and any other prefix tokens) so the
-        remaining ``H * W`` tokens form a clean spatial grid
-      - returns ``(out, None)`` so existing ``h, _ = self.attn(...)`` callers
-        keep working
-      - swallows ``need_weights``/``attn_mask`` kwargs that Hyena doesn't take
-    """
+    """Drop-in attention replacement. Parameters reflect the four-axis decision."""
 
     def __init__(
         self,
-        hyena_mixer: nn.Module,
-        grid_h: int,
-        grid_w: int,
-        num_prefix_tokens: int = 1,
+        mixer: nn.Module,
+        spatial_shape: tuple[int, ...],  # (T,), (H, W), or (D, H, W)
+        host_layout: str,  # "tokens" or "feature_map"
+        num_prefix_tokens: int = 0,  # CLS / registers; only meaningful for "tokens"
+        return_tuple: bool = True,  # (out, None) for nn.MHA contract
     ):
         super().__init__()
-        self.mixer = hyena_mixer
-        self.grid_h = grid_h
-        self.grid_w = grid_w
-        self.num_prefix_tokens = num_prefix_tokens  # e.g. 1 for CLS, 0 for none
+        self.mixer = mixer
+        self.spatial_shape = spatial_shape
+        self.host_layout = host_layout
+        self.num_prefix_tokens = num_prefix_tokens
+        self.return_tuple = return_tuple
 
-    def forward(self, query, key=None, value=None, **_kwargs):
-        # Self-attention: query == key == value. We ignore key/value.
-        x = query
-        prefix, patches = x[:, : self.num_prefix_tokens], x[:, self.num_prefix_tokens :]
-        B, N, C = patches.shape
-        assert (
-            N == self.grid_h * self.grid_w
-        ), f"HyenaAttnAdapter: expected {self.grid_h * self.grid_w} patch tokens, got {N}"
-        patches_2d = patches.view(B, self.grid_h, self.grid_w, C)  # [B, H, W, C]
-        out_2d = self.mixer(patches_2d, patches_2d, patches_2d)  # Q=K=V self-mix
-        out = out_2d.view(B, N, C)
-        out = torch.cat([prefix, out], dim=1)
-        return out, None  # (attn_out, attn_weights) shape contract
+    def forward(self, query, key=None, value=None, **_ignored_kwargs):
+        x = query  # self-attention: query == key == value
+        if self.host_layout == "tokens":
+            # [B, N, C] -> peel prefix -> [B, *spatial, C] -> mix -> flatten back -> re-attach prefix
+            prefix, patches = (
+                x[:, : self.num_prefix_tokens],
+                x[:, self.num_prefix_tokens :],
+            )
+            B, _, C = patches.shape
+            assert (
+                patches.shape[1] == torch.prod(torch.tensor(self.spatial_shape)).item()
+            ), f"expected {self.spatial_shape} flattened, got {patches.shape[1]} tokens"
+            patches_nd = patches.view(B, *self.spatial_shape, C)
+            out_nd = self.mixer(patches_nd, patches_nd, patches_nd)
+            out = out_nd.view(B, -1, C)
+            out = torch.cat([prefix, out], dim=1)
+        else:  # "feature_map": [B, C, *S] -> [B, *S, C] -> mix -> back
+            x_cl = x.moveaxis(1, -1).contiguous()
+            out_cl = self.mixer(x_cl, x_cl, x_cl)
+            out = out_cl.moveaxis(-1, 1).contiguous()
 
-
-class MyViTHyenaND(MyViT):
-    def __init__(
-        self, *args, grid_h: int, grid_w: int, num_prefix_tokens: int = 1, **kwargs
-    ):
-        super().__init__(*args, **kwargs)
-        for block in self.blocks:
-            mixer = build_hyena_mixer(self.embed_dim, grid_h, grid_w)
-            block.attn = HyenaAttnAdapter(mixer, grid_h, grid_w, num_prefix_tokens)
+        return (out, None) if self.return_tuple else out
 ```
 
-If the host model's attention call site does *not* unpack a tuple (e.g. `x = self.attn(h, h, h)` with no `_`), drop the `(out, None)` tuple and just return `out` from the adapter. If it has no CLS/register prefix, pass `num_prefix_tokens=0`.
+For hierarchical hosts where the natural API is a `use_hyena=True` flag inside the host class, edit in place — the sibling-file rule doesn't apply. Use an outer `nn.Linear(C, 3*C)` for QKV projection and an `nn.Linear(C, C)` for output projection if you want q/k/v streams to diverge (rather than self-mixing on a single tensor).
 
-### Step 4: smoke-test stub
+## Foot-guns
 
-Append a `__main__` block that constructs the model and runs one forward pass on synthetic input of the user's stated shape. This catches shape mismatches before the user invests in training. Keep this stub for the foreign path — the user has no pre-existing harness, unlike the native path where the LazyConfig graph is exercised by the experiment runner.
+These break the first forward pass or the first large-input forward pass.
+
+1. **INT32 unfold overflow in large 3D short conv.** `F.conv3d` uses `im2col` with INT32 indexing. For typical channel counts, spatial extent ≥ 160³ overflows. Symptom: `RuntimeError: Input tensor is too large`. Fix: use `DepthwiseFFTConv3d` from nvSubquadratic for the short conv (eliminates `im2col`). 1D and 2D rarely hit this.
+
+1. **RoPE divisibility.** With `use_rope=True`, the per-block hidden dim must be divisible by `2 * data_dim`: `% 2` for 1D, `% 4` for 2D, `% 6` for 3D. In hierarchical encoders, this must hold at every stage that uses Hyena (`embed_dim * 2^stage`). Validate at construction; fail loudly with a helpful message.
+
+1. **`L_cache` memory in higher dim.** The SIREN coordinate cache allocates an `L^D` volumetric buffer; memory scales roughly as `(2L − 1)^D × D × 4` bytes. For D=3: L=32 → ~3 MB, L=256 → ~1.6 GB, L=512 → ~12.8 GB. Set `L_cache` to the minimum spatial extent you need; the grid expands automatically beyond it.
+
+1. **Shape contract.** `nn.MultiheadAttention(batch_first=True)` returns `(out, attn_weights)` and accepts `need_weights=`/`attn_mask=`/`key_padding_mask=`. `Hyena.forward` returns a single tensor and rejects extra kwargs. The adapter above handles both; never assign `Hyena(...)` directly to an `nn.MultiheadAttention` slot.
+
+1. **Pretrained-weight loading.** Hyena blocks have an entirely different `state_dict` prefix than attention blocks. Loading an attention checkpoint into a Hyena variant produces a wall of missing/unexpected keys. Either filter to shared submodules (patch_embed, downsample, MLP, norms), or skip pretrained loading for Hyena variants.
+
+## Smoke-test stub
+
+Append a `__main__` block that constructs the model and runs one forward pass at the user's stated input shape. This catches axis-1 (`data_dim`) and axis-3 (host layout) mismatches before training.
 
 ## Filename and location convention
 
-- Sibling file, same directory as the user's original
-- Name: replace `attention` with `hyena` (or `hybrid_<pattern>` for hybrid), keep all other tokens
-- If the user's file has no `attention` token in the name, append `_hyenand` before the extension
-- Do not edit the user's original — keep the diff trivial
+- Sibling file, same directory as the user's original.
+- Replace `attention` with `hyena` (or `hybrid` if mixed); keep all other tokens. If the host has no `attention` token in the filename, append `_hyenand` before the extension.
+- Exception: conditional-swap hosts (`use_hyena=True` flag inside the host) edit in place.
 
 ## Verification
 
-After writing the file:
+After writing:
 
-1. Read it back and confirm the changes you intended actually landed
-1. Confirm the only difference from the user's file is the attention→Hyena swap plus any required toggles (`compile_compatible_fftconv`, layer pattern)
-1. Confirm imports are syntactically correct (the user can `python -c "from <file> import get_config"` to verify)
-1. **Foreign path only:** confirm the smoke-test stub is present *and* that the adapter wires CLS / prefix tokens and the tuple return correctly
+1. Re-read the file and confirm the four-axis choices are reflected (`data_dim`, `causal`-derived knobs, layout, return type).
+1. Confirm imports are syntactically correct.
+1. Run the smoke-test stub on synthetic input of the stated shape.
 
-## What not to do
+## Reference configs in this repo
 
-- Do not modify the user's original file
-- Do not invent new builders if the matched `build_*_net` pair already exists in `_base_config.py`
-- Do not skip the foreign-path smoke-test stub — silent shape mismatches at training start are the #1 retrofit failure. (For the native path, omit the stub — the canonical configs don't carry one and the experiment runner exercises the graph.)
-- Do not assign `Hyena(...)` directly to an `nn.MultiheadAttention` slot — always wrap with an adapter (see Foreign path Step 3) to bridge the tuple-return, kwargs, and shape mismatches
-- Do not pick a hybrid pattern at random; either ask, or take the paper default for the modality (HHHA×3 for 2D vision, HHAA for 3D hierarchical, HHHA repeat for 1D genomics)
-- Do not omit `use_rope=True` for 1D autoregressive — without RoPE, positional recall collapses
-- Do not omit the per-axis Gaussian mask for ND≥2 unless the user explicitly opts out — it was the difference between Hyena and bidirectional Mamba in the §5.1 color_cond probes
+Copy parameter values, not whole files:
 
-## References
-
-- `references/defaults.md` — full per-modality default tables, init schemes, and rationale
+| Use case                          | File                                                            |
+| --------------------------------- | --------------------------------------------------------------- |
+| Smallest end-to-end Hyena example | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py` |
+| ImageNet ViT-5 (FiLM + registers) | `examples/vit5_imagenet/v5_patch/_base_config.py`               |
+| ImageNet hybrid (pattern-driven)  | `examples/vit5_imagenet/vit5_hybrid/_base_config.py`            |
+| Diffusion (HF diffusers retrofit) | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py`       |
+| PDE fields (The Well)             | `examples/well/v2/*.py`                                         |
