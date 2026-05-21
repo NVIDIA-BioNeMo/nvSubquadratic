@@ -14,33 +14,39 @@ from nvsubquadratic.utils import qk_norm, rope
 class Attention(torch.nn.Module):
     """Multi-head attention (support for self and cross-attention) with optional QK normalization and Rotary Positional Embeddings (RoPE).
 
-    Input / Output
+    **Input / Output:**
+
     - Accepts sequences ``[B, T, C]`` or images ``[B, H, W, C]``.
     - Returns the same leading shape with channel dimension ``C``.
 
-    Dimensions
+    **Dimensions:**
+
     - ``C`` must be divisible by ``num_heads``; per-head dim is ``D = C / num_heads``.
 
-    RoPE support
+    **RoPE support:**
+
     - 1D (sequences): applied over length ``T``; requires ``D`` even.
     - 2D (images): applied over ``(H, W)`` by splitting per-head dim into two halves
       (Y-axis, X-axis); requires ``D`` divisible by 4.
     - 3D (videos or other 3D data): applied over ``(H, W, D)`` by splitting per-head dim into three halves
       (Z-axis, X-axis, Y-axis); requires ``D`` divisible by 8.
 
-    QK normalization
+    **QK normalization:**
+
     - When enabled, queries and keys are L2-normalized per head along the last dimension.
 
-    Implementation notes
-    - Uses PyTorch scaled_dot_product_attention and prefers FlashAttention kernels when available.
+    **Implementation notes:**
 
-    Context Parallelism Limitations
-    - **WARNING**: This implementation is for **illustration and compatibility only**.
+    - Uses PyTorch ``scaled_dot_product_attention`` and prefers FlashAttention kernels when available.
+
+    **Context-parallel limitations:**
+
+    - This implementation is for **illustration and compatibility only**.
     - It uses zigzag all-gather/split for CP, which causes significant memory issues at long context
       lengths because the attention layer does not implement internal ring attention.
-    - **For production use with long contexts**, use PyTorch's standard context-parallel attention
+    - For production use with long contexts, use PyTorch's standard context-parallel attention
       blocks (e.g., as in torchtitan: https://docs.pytorch.org/tutorials/unstable/context_parallel.html).
-    - Future work: Migrate to PyTorch's standard CP attention API, which may also eliminate
+    - Future work: migrate to PyTorch's standard CP attention API, which may also eliminate
       the requirement for zigzag-style communication patterns.
 
     Args:
@@ -182,13 +188,13 @@ class Attention(torch.nn.Module):
         """Apply multi-head self-attention with optional QK-norm and RoPE.
 
         Args:
-            query: [B, *spatial_dims, hidden_dim]
-            key: [B, *spatial_dims, hidden_dim]
-            value: [B, *spatial_dims, hidden_dim]
-            cp_group: torch.distributed.ProcessGroup - Context parallel process group.
+            query: ``[B, *spatial_dims, hidden_dim]``
+            key: ``[B, *spatial_dims, hidden_dim]``
+            value: ``[B, *spatial_dims, hidden_dim]``
+            cp_group: ``torch.distributed.ProcessGroup`` — context-parallel process group.
 
         Returns:
-            out: [B, *spatial_dims, hidden_dim] (same as input)
+            out: ``[B, *spatial_dims, hidden_dim]`` (same as input)
         """
         # CP communication for self-attention (Megatron-style):
         # CP only splits sequence/spatial dimension, not hidden_dim or heads
