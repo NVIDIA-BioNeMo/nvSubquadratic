@@ -11,8 +11,8 @@ condition** support to the FFT-based convolution operators
 (`nvsubquadratic/modules/ckconv_nd.py`, etc.).
 
 If you pick this up later, read the [survey & decisions](#1-context--decisions)
-section, then check [§5 Status](#5-status--checklist) for what still needs to
-be done.
+section, then check [§5 Tracked questions](#5-tracked-questions--revisit-items)
+for what still needs to be done.
 
 ______________________________________________________________________
 

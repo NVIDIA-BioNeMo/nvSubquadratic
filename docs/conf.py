@@ -110,6 +110,8 @@ myst_enable_extensions = [
     "colon_fence",
 ]
 
+myst_heading_anchors = 3
+
 doctest_global_setup = """
 from typing import Any
 import numpy as np
