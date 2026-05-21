@@ -94,8 +94,10 @@ from nvsubquadratic.ops.fftconv_fp16 import (
 )
 
 # Mixed boundary-condition FFT convolutions (per-axis periodic / non-periodic).
-# Used when ``fft_padding`` is given as a ``Sequence[bool]`` rather than a string;
-# the all-False / all-True corners dispatch internally to the legacy ops below.
+# Used when ``fft_padding`` is given as a comma-separated string (e.g.
+# ``"circular, zero"``) or a sequence of mode strings rather than a single
+# mode; the all-zero / all-circular corners dispatch internally to the legacy
+# ops below to preserve bit-identical behavior.
 from nvsubquadratic.ops.mixed_fftconv import (
     mixed_fftconv1d_fp32_bhl,
     mixed_fftconv1d_fp32_bhl_chunked,
@@ -195,34 +197,100 @@ MIXED_FFT_FUNCTIONS_CHUNKED = {
 }
 
 
-def _resolve_periodic(fft_padding: "str | Sequence[bool]", data_dim: int) -> tuple[bool, ...]:
+# Padding-mode strings accepted by ``fft_padding``. Map name → per-axis
+# periodic flag (``True`` ⇒ circular conv on that axis).
+_PADDING_MODE_TO_PERIODIC: dict[str, bool] = {"zero": False, "circular": True}
+
+
+def _parse_padding_mode(mode: str) -> bool:
+    """Map a single padding-mode string to its per-axis periodic flag."""
+    normalised = mode.strip().lower()
+    if normalised not in _PADDING_MODE_TO_PERIODIC:
+        valid = sorted(_PADDING_MODE_TO_PERIODIC)
+        raise ValueError(f"Invalid padding mode {mode!r}. Must be one of {valid}.")
+    return _PADDING_MODE_TO_PERIODIC[normalised]
+
+
+def _resolve_periodic(
+    fft_padding: "str | Sequence[str]",
+    data_dim: int,
+) -> tuple[bool, ...]:
     """Normalise ``fft_padding`` to a per-axis tuple of booleans.
 
-    - ``"zero"``     → ``(False, ..., False)`` (length ``data_dim``).
-    - ``"circular"`` → ``(True,  ..., True)``.
-    - Sequence of bools → kept as a tuple after a length check.
+    Accepted forms:
+
+    - **Single string** — applies to every axis (the legacy form):
+
+      - ``"zero"``     → ``(False, ..., False)`` (length ``data_dim``).
+      - ``"circular"`` → ``(True,  ..., True)``.
+
+    - **Comma-separated string** — one mode per axis, parsed in order
+      (preferred form for mixed boundary conditions because it is
+      self-documenting in YAML/CLI overrides):
+
+      - ``"circular, zero"``       → ``(True, False)``  for ``data_dim=2``.
+      - ``"circular, zero, zero"`` → ``(True, False, False)`` for ``data_dim=3``.
+      - Whitespace and case are normalised; ``"Circular,Zero"`` works.
+
+    - **Sequence of strings** — same semantics as comma-separated; for
+      callers who prefer Python lists/tuples to a single string:
+
+      - ``["circular", "zero"]`` → ``(True, False)``.
+      - ``("circular", "zero")`` → ``(True, False)``.
+
+    Boolean inputs are explicitly **rejected** with a helpful error
+    because ``(True, False)`` does not convey on its own which axis is
+    periodic (the API used to accept this form briefly during initial
+    development and was changed to strings for readability).
 
     Raises:
-        ValueError: if ``fft_padding`` is neither a recognised string nor a
-            sequence of bools of length ``data_dim``.
+        ValueError: on invalid mode strings, wrong number of axes, or
+            disallowed input types.
     """
+    if isinstance(fft_padding, bool):
+        raise ValueError(
+            "fft_padding=True/False is not a valid input. Use 'zero' (all axes "
+            "zero-padded), 'circular' (all axes periodic), or a per-axis form "
+            "such as 'circular, zero' or ['circular', 'zero']."
+        )
+
     if isinstance(fft_padding, str):
-        if fft_padding == "zero":
-            return (False,) * data_dim
-        if fft_padding == "circular":
-            return (True,) * data_dim
-        raise ValueError(f"Invalid fft_padding string {fft_padding!r}. Must be 'zero' or 'circular'.")
+        if "," in fft_padding:
+            parts = [p.strip() for p in fft_padding.split(",")]
+            if len(parts) != data_dim:
+                raise ValueError(
+                    f"Comma-separated fft_padding must list exactly data_dim={data_dim} "
+                    f"modes, got {len(parts)}: {fft_padding!r}."
+                )
+            return tuple(_parse_padding_mode(p) for p in parts)
+        return (_parse_padding_mode(fft_padding),) * data_dim
+
     if isinstance(fft_padding, Sequence) and not isinstance(fft_padding, (str, bytes)):
-        periodic = tuple(bool(p) for p in fft_padding)
-        if len(periodic) != data_dim:
+        items = list(fft_padding)
+        if any(isinstance(item, bool) for item in items):
             raise ValueError(
-                f"fft_padding sequence must have length data_dim={data_dim}, "
-                f"got length {len(periodic)}: {fft_padding!r}"
+                "fft_padding no longer accepts a sequence of booleans (e.g. "
+                "(True, False)) because the per-axis intent is not obvious "
+                "from the boolean values. Use string modes instead: "
+                "'circular, zero' or ['circular', 'zero'] for a 2D config "
+                "with periodic x and zero-padded y."
             )
-        return periodic
+        if not all(isinstance(item, str) for item in items):
+            raise ValueError(
+                f"fft_padding sequence must contain only padding-mode strings "
+                f"('zero' / 'circular'). Got: {fft_padding!r}."
+            )
+        if len(items) != data_dim:
+            raise ValueError(
+                f"fft_padding sequence must have length data_dim={data_dim}, got length {len(items)}: {fft_padding!r}."
+            )
+        return tuple(_parse_padding_mode(item) for item in items)
+
     raise ValueError(
-        f"fft_padding must be 'zero', 'circular', or a sequence of bools of "
-        f"length data_dim={data_dim}. Got {fft_padding!r} (type {type(fft_padding).__name__})."
+        f"fft_padding must be a padding-mode string ('zero' / 'circular') or a "
+        f"per-axis form (comma-separated string like 'circular, zero', or a "
+        f"sequence of mode strings). Got {fft_padding!r} "
+        f"(type {type(fft_padding).__name__})."
     )
 
 
@@ -275,7 +343,7 @@ class CKConvND(torch.nn.Module):
         kernel_cfg: LazyConfig,
         mask_cfg: LazyConfig,
         grid_type: "Literal['double', 'single'] | None",
-        fft_padding: "Literal['zero', 'circular'] | Sequence[bool]",
+        fft_padding: "Literal['zero', 'circular'] | str | Sequence[str]",
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
         use_fp16_fft: bool = False,
@@ -292,20 +360,27 @@ class CKConvND(torch.nn.Module):
                 ``"single"`` ⇒ kernel size == input size (paired with periodic
                 FFT convolution). ``"double"`` ⇒ kernel size == 2*input size
                 (paired with zero-padded FFT convolution).
-                **Must be ``None`` (or omitted)** when ``fft_padding`` is a per-axis
-                sequence — in that case the grid type is auto-derived per axis
-                (``"single"`` on periodic axes, ``"double"`` on non-periodic
-                axes). Required when ``fft_padding`` is a string.
-            fft_padding: Boundary behavior of the FFT convolution.
-                - ``"zero"``: zero-padding with cropping (conventional FFT conv).
-                - ``"circular"``: periodic (wrap-around) FFT convolution.
-                - **Sequence of bools** (length == ``data_dim``): per-axis
-                  selection where ``True`` ⇒ periodic on that axis, ``False`` ⇒
-                  zero-padded. Required for datasets with mixed periodic/non-
-                  periodic boundary conditions (e.g. Well's ``rayleigh_benard``,
-                  ``viscoelastic_instability``). When supplied as a tuple, the
-                  ``grid_type`` argument must be ``None``.
-                Must be ``"zero"`` (or an all-False tuple) when ``is_causal=True``.
+                **Must be ``None`` (or omitted)** when ``fft_padding`` is in
+                per-axis form — in that case the grid type is auto-derived per
+                axis (``"single"`` on periodic axes, ``"double"`` on non-periodic
+                axes). Required when ``fft_padding`` is a single mode string.
+            fft_padding: Boundary behavior of the FFT convolution. Accepts:
+
+                - ``"zero"``     — every axis zero-padded ("same" linear conv).
+                - ``"circular"`` — every axis periodic (wrap-around conv).
+                - ``"<mode>, <mode>, ..."`` — comma-separated per-axis modes
+                  (one per spatial axis), e.g. ``"circular, zero"`` for a 2D
+                  config that is periodic on x and zero-padded on y.
+                - Sequence of mode strings, e.g. ``("circular", "zero")`` or
+                  ``["circular", "zero"]`` — equivalent to the comma-separated
+                  form, convenient for Python (non-YAML) call sites.
+
+                Required for datasets with mixed periodic/non-periodic
+                boundary conditions (e.g. Well's ``rayleigh_benard``,
+                ``viscoelastic_instability``). When supplied as a per-axis
+                form, the ``grid_type`` argument must be ``None``.
+                Must be ``"zero"`` (or an all-zero per-axis form) when
+                ``is_causal=True``.
             is_causal: If True, use causal (left-only) convolution where output at position i
                 only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
             use_chunked_fftconv: If True, use memory-efficient chunked FFT convolutions.
@@ -319,8 +394,8 @@ class CKConvND(torch.nn.Module):
                 padding, sizes are auto-padded to power-of-2. For circular padding,
                 the input spatial dimensions must already be powers of 2 (a runtime
                 assertion will fire otherwise). Default is False.
-                Not supported with a per-axis ``fft_padding`` sequence in v1 (the
-                fp16 mixed op is a planned follow-up).
+                Not supported with a per-axis ``fft_padding`` in v1 (the fp16
+                mixed op is a planned follow-up — see ``docs/ops/MIXED_BC_PLAN.md``).
             fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
                 uses the torch.fft-based implementations. ``'subq_ops'`` uses the
                 optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
@@ -333,17 +408,22 @@ class CKConvND(torch.nn.Module):
         )
 
         # ---- Normalise fft_padding & grid_type --------------------------------
-        # Distinguish "tuple/sequence mode" (mixed BC, per-axis) from "string mode"
-        # (legacy "zero"/"circular"). Tuple mode forbids ``grid_type`` (auto-derived);
-        # string mode requires ``grid_type``.
+        # The per-axis / "tuple" mode is signalled by either a comma-separated
+        # string (e.g. "circular, zero") or a sequence of mode strings (e.g.
+        # ["circular", "zero"]). The legacy single-mode string form
+        # ("zero" / "circular") is the "string mode" path: it preserves the
+        # existing dispatch and requires the user to supply ``grid_type``.
         _periodic = _resolve_periodic(fft_padding, data_dim)
-        _is_tuple_mode = not isinstance(fft_padding, str)
+        _is_tuple_mode = isinstance(fft_padding, (list, tuple)) or (
+            isinstance(fft_padding, str) and "," in fft_padding
+        )
 
         if _is_tuple_mode:
             if grid_type is not None:
                 raise ValueError(
                     "grid_type must be None (or omitted) when fft_padding is a "
-                    "sequence of bools — the per-axis grid is auto-derived "
+                    "per-axis form (comma-separated string or sequence). The "
+                    "per-axis grid is auto-derived "
                     "('single' on periodic axes, 'double' on non-periodic axes). "
                     f"Got grid_type={grid_type!r}, fft_padding={fft_padding!r}."
                 )
@@ -385,7 +465,7 @@ class CKConvND(torch.nn.Module):
         # ---- fp16 + mixed-BC: not supported in v1 -----------------------------
         if use_fp16_fft and _is_tuple_mode:
             raise NotImplementedError(
-                "use_fp16_fft is not supported with a per-axis fft_padding sequence in v1. "
+                "use_fp16_fft is not supported with a per-axis fft_padding in v1. "
                 "Either drop the fp16 flag or use a uniform 'zero'/'circular' fft_padding. "
                 "See docs/ops/MIXED_BC_PLAN.md (§4.2) for the planned fp16 mixed op."
             )
@@ -403,7 +483,7 @@ class CKConvND(torch.nn.Module):
             assert data_dim == 2, f"fft_backend='subq_ops' only supports 2D convolutions. Got data_dim={data_dim}."
             if _is_tuple_mode:
                 raise ValueError(
-                    "fft_backend='subq_ops' does not support a per-axis fft_padding sequence. "
+                    "fft_backend='subq_ops' does not support a per-axis fft_padding. "
                     "The CUDA kernel implements zero-padded conv only. "
                     "Use fft_backend='torch_fft' for mixed boundary conditions."
                 )
@@ -425,13 +505,13 @@ class CKConvND(torch.nn.Module):
         self.use_fp16_fft = use_fp16_fft
         self.fft_backend = fft_backend
         # Per-axis BC: single source of truth used by forward() and flop_count().
-        # Always present (length == data_dim), even in legacy string mode.
+        # Always present (length == data_dim), even in legacy single-mode form.
         self._periodic_per_axis: tuple[bool, ...] = self_periodic_per_axis
-        # When the user supplies fft_padding as a sequence (rather than the
-        # legacy string), we dispatch through the unified mixed_fftconv* ops
-        # for every combination of per-axis BCs. The mixed op auto-routes to
-        # the legacy linear/circular ops internally for the uniform corners,
-        # preserving bit-identical results for those cases.
+        # When the user supplies fft_padding as a per-axis form (comma-separated
+        # string or sequence of mode strings), we dispatch through the unified
+        # mixed_fftconv* ops for every combination of per-axis BCs. The mixed op
+        # auto-routes to the legacy linear/circular ops internally for the
+        # uniform corners, preserving bit-identical results for those cases.
         self._is_tuple_mode: bool = _is_tuple_mode
 
         # When the SIREN kernel grid is "single" on an axis, ``grid_lens`` is
@@ -504,12 +584,13 @@ class CKConvND(torch.nn.Module):
                 self.fftconv_fn = fftconv2d_bhl_w_reshape
                 self.fftconv_fn_bhl_input = fftconv2d_bhl
         elif self._is_tuple_mode:
-            # Tuple ``fft_padding``: route through the unified mixed_fftconv*
+            # Per-axis ``fft_padding`` (comma-separated string or sequence
+            # of mode strings): route through the unified mixed_fftconv*
             # ops with ``periodic`` bound via _wrap_mixed_op so the rest of
             # CKConvND can keep calling the FFT function with the
             # (x, kernel, shortcut) signature used by every legacy op. The
-            # all-False / all-True corners are dispatched internally to the
-            # legacy linear / circular ops bit-identically (see
+            # all-zero / all-circular corners are dispatched internally to
+            # the legacy linear / circular ops bit-identically (see
             # _dispatch_legacy_if_uniform in mixed_fftconv.py).
             mixed_table = MIXED_FFT_FUNCTIONS_CHUNKED if use_chunked_fftconv else MIXED_FFT_FUNCTIONS
             try:
@@ -522,8 +603,9 @@ class CKConvND(torch.nn.Module):
             self.fftconv_fn = _wrap_mixed_op(fn_w_reshape, self._periodic_per_axis)
             self.fftconv_fn_bhl_input = _wrap_mixed_op(fn_bhl, self._periodic_per_axis)
         else:
-            # torch_fft backend, legacy string-mode (or uniformly all-True/all-False
-            # tuple that we route through the legacy ops for bit-for-bit compat).
+            # torch_fft backend, legacy single-mode string ("zero" / "circular";
+            # uniform per-axis forms are taken care of in the branch above by
+            # the mixed op's internal dispatch).
             # Causal mode overrides fft_padding for 1D.
             if is_causal:
                 effective_padding = "causal"

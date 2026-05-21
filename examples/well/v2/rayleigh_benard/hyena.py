@@ -5,10 +5,11 @@ Dataset boundary conditions (from ``_base.BOUNDARY_CONDITIONS``):
 - x axis: PERIODIC
 - y axis: WALL  (treated as zero-padded "linear" at the conv level)
 
-These map to ``fft_padding=(True, False)``: per-axis ``True`` ⇒ periodic
-on that axis, ``False`` ⇒ zero-padded. This is the first config that
-exercises the per-axis BC path added in `nvsubquadratic/ops/mixed_fftconv.py`
-and wired into ``CKConvND`` in `nvsubquadratic/modules/ckconv_nd.py`.
+These map to ``fft_padding="circular, zero"``: one padding mode per axis,
+parsed in order. This is the first config that exercises the per-axis BC
+path added in `nvsubquadratic/ops/mixed_fftconv.py` and wired into
+``CKConvND`` in `nvsubquadratic/modules/ckconv_nd.py`. The equivalent
+``fft_padding=["circular", "zero"]`` Python-sequence form is also accepted.
 
 Notes:
 -----
@@ -65,7 +66,7 @@ DROPOUT_RATE = 0.0
 # ── Boundary conditions ──────────────────────────────────────────────────────
 # rayleigh_benard: periodic on x, wall on y. Wall is treated as zero-padded
 # linear at the conv level (see this file's docstring).
-FFT_PADDING = (True, False)
+FFT_PADDING = "circular, zero"
 # ``grid_type=None`` ⇒ per-axis grid auto-derived from FFT_PADDING:
 # "single" on periodic axes, "double" on non-periodic axes.
 GRID_TYPE = None
@@ -113,7 +114,8 @@ def get_config() -> ExperimentConfig:
                     global_conv_cfg=LazyConfig(CKConvND)(
                         data_dim=DATA_DIM,
                         hidden_dim=NUM_HIDDEN_CHANNELS,
-                        # Mixed boundary conditions: per-axis tuple.
+                        # Mixed boundary conditions: comma-separated per-axis
+                        # padding modes (one per spatial axis, in order).
                         fft_padding=FFT_PADDING,
                         use_fp16_fft=False,
                         kernel_cfg=LazyConfig(SIRENKernelND)(
@@ -135,8 +137,8 @@ def get_config() -> ExperimentConfig:
                             hidden_omega_0=1.0,
                         ),
                         mask_cfg=LazyConfig(torch.nn.Identity)(),
-                        # grid_type must be None when fft_padding is a tuple
-                        # (per-axis grid is auto-derived).
+                        # grid_type must be None when fft_padding is a
+                        # per-axis form (per-axis grid is auto-derived).
                         grid_type=GRID_TYPE,
                     ),
                     short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
