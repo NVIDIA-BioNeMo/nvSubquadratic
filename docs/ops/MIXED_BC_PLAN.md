@@ -39,23 +39,28 @@ to say "periodic on x, zero-padded on y" for one and the same conv.
 
 ### Decisions (locked in)
 
-1. **API** — extend `fft_padding` to accept **per-axis mode strings**:
+1. **API** — extend `fft_padding` to accept either a **single mode
+   string** (applies to every axis) or a **list of mode strings** (one
+   per spatial axis):
 
    ```python
    fft_padding: str | Sequence[str] = "zero"
-   # "zero"                -> all axes zero-padded.
-   # "circular"            -> all axes periodic.
-   # "circular, zero"      -> 2D, x periodic + y zero-padded (preferred form).
-   # "circular, zero, zero"-> 3D, etc.
-   # ["circular", "zero"]  -> equivalent sequence-of-strings form.
+   # "zero"                              -> all axes zero-padded.
+   # "circular"                          -> all axes periodic.
+   # ["circular", "zero"]                -> 2D, x periodic + y zero-padded.
+   # ["zero", "circular", "zero"]        -> 3D, etc.
+   # ("circular", "zero")                -> tuple form is equivalent.
    ```
 
-   Whitespace and case are normalised on the comma form. Internally
-   everything normalises to a tuple `periodic: tuple[bool, ...]` of
-   length `data_dim`. Boolean inputs (`(True, False)`) are explicitly
-   rejected with an error that points at the new string form — the
-   intent was originally to use bools but readability of `(True, False)`
-   was poor on review.
+   Internally everything normalises to a tuple `periodic: tuple[bool, ...]`
+   of length `data_dim`. Three inputs are deliberately rejected with an
+   error that redirects to the canonical form:
+
+   - **Booleans** (`(True, False)`, `True`): the per-axis intent is not
+     obvious from the boolean values.
+   - **Comma-separated strings** (`"circular, zero"`): redundant with the
+     list form and gives two ways to say the same thing; we keep one
+     canonical per-axis form.
 
 1. **WALL vs OPEN** — both treated as **zero-padded linear** at the
    conv level. Physical distinctions are handled elsewhere (data
@@ -165,16 +170,17 @@ listed so we don't lose track.
 ### 4.1 Module wiring — `CKConvND` ✅ DONE (2026-05-20)
 
 - [x] `CKConvND` (`nvsubquadratic/modules/ckconv_nd.py`):
-  - Accepts `fft_padding: str | Sequence[str]` in three forms: single
-    mode (`"zero"`, `"circular"`), comma-separated per-axis modes
-    (`"circular, zero"`), or sequence-of-strings (`["circular", "zero"]`).
+  - Accepts `fft_padding: str | Sequence[str]` in two forms: a single
+    mode string (`"zero"` / `"circular"`) that applies to every axis, or
+    a list of mode strings (e.g. `["circular", "zero"]`) — one per axis.
   - Resolves to a normalised per-axis `periodic` tuple via
     `_resolve_periodic` (length checked against `data_dim`).
-  - When `fft_padding` is a per-axis form, **requires** `grid_type=None`
+  - When `fft_padding` is a per-axis list, **requires** `grid_type=None`
     and raises `ValueError` otherwise. When it's a single mode string,
     `grid_type` is required as before.
-  - Boolean inputs (e.g. `(True, False)`) are explicitly rejected with
-    an error that redirects to the string form.
+  - Boolean inputs (e.g. `(True, False)`) and comma-separated strings
+    (`"circular, zero"`) are explicitly rejected with errors that
+    redirect to the list form.
   - Per-axis `grid_lens` and per-axis `L_cache` halving auto-derived in
     tuple mode (halve only on periodic axes); helper
     `_grid_is_single_per_axis(grid_type, periodic)` is the single source
@@ -329,8 +335,11 @@ ______________________________________________________________________
   module-level test suite (`tests/modules/test_ckconv_nd_mixed_bc.py`).
   Full regression sweep on `tests/ops + tests/modules` → 802 passed.
 - **2026-05-21** — Public API revised on PR review: `fft_padding` now
-  accepts mode-name **strings** (single mode or comma-separated /
-  sequence-of-strings per axis) instead of bool tuples. Booleans now
-  raise with a redirect. Rationale: `(True, False)` did not convey which
-  axis was periodic; `"circular, zero"` is self-documenting in YAML/CLI
-  overrides. `rayleigh_benard` config updated to use the string form.
+  accepts mode-name strings only. Two forms: a single mode string
+  (`"zero"` / `"circular"`) that applies to every axis, or a list of mode
+  strings (e.g. `["circular", "zero"]`) — one per axis. Comma-separated
+  strings and bool tuples are both rejected with redirecting errors.
+  Rationale: `(True, False)` did not convey which axis was periodic, and
+  having both a comma-string form and a list form was two ways to say
+  the same thing. The list form reads identically in Python and OmegaConf
+  / YAML overrides. `rayleigh_benard` config updated to the list form.

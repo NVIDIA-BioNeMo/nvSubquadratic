@@ -94,10 +94,10 @@ from nvsubquadratic.ops.fftconv_fp16 import (
 )
 
 # Mixed boundary-condition FFT convolutions (per-axis periodic / non-periodic).
-# Used when ``fft_padding`` is given as a comma-separated string (e.g.
-# ``"circular, zero"``) or a sequence of mode strings rather than a single
-# mode; the all-zero / all-circular corners dispatch internally to the legacy
-# ops below to preserve bit-identical behavior.
+# Used when ``fft_padding`` is given as a list of mode strings (e.g.
+# ``["circular", "zero"]``) rather than a single mode; the all-zero /
+# all-circular corners dispatch internally to the legacy ops below to
+# preserve bit-identical behavior.
 from nvsubquadratic.ops.mixed_fftconv import (
     mixed_fftconv1d_fp32_bhl,
     mixed_fftconv1d_fp32_bhl_chunked,
@@ -219,29 +219,28 @@ def _resolve_periodic(
 
     Accepted forms:
 
-    - **Single string** — applies to every axis (the legacy form):
+    - **Single mode string** — applies to every axis:
 
       - ``"zero"``     → ``(False, ..., False)`` (length ``data_dim``).
       - ``"circular"`` → ``(True,  ..., True)``.
 
-    - **Comma-separated string** — one mode per axis, parsed in order
-      (preferred form for mixed boundary conditions because it is
-      self-documenting in YAML/CLI overrides):
+    - **Sequence of mode strings** — one mode per spatial axis, in order:
 
-      - ``"circular, zero"``       → ``(True, False)``  for ``data_dim=2``.
-      - ``"circular, zero, zero"`` → ``(True, False, False)`` for ``data_dim=3``.
-      - Whitespace and case are normalised; ``"Circular,Zero"`` works.
+      - ``["circular", "zero"]`` → ``(True, False)`` for ``data_dim=2``.
+      - ``["zero", "circular", "zero"]`` → ``(False, True, False)`` for ``data_dim=3``.
+      - ``("circular", "zero")`` (tuple form) is equivalent.
+      - Mode names are case-insensitive and whitespace-stripped, so
+        ``[" Circular ", "ZERO"]`` works.
 
-    - **Sequence of strings** — same semantics as comma-separated; for
-      callers who prefer Python lists/tuples to a single string:
+    Two input shapes that are deliberately **rejected**:
 
-      - ``["circular", "zero"]`` → ``(True, False)``.
-      - ``("circular", "zero")`` → ``(True, False)``.
-
-    Boolean inputs are explicitly **rejected** with a helpful error
-    because ``(True, False)`` does not convey on its own which axis is
-    periodic (the API used to accept this form briefly during initial
-    development and was changed to strings for readability).
+    - **Booleans** (e.g. ``True``, ``(True, False)``): the per-axis intent
+      is not obvious from the boolean values; the error message redirects
+      to the list-of-strings form.
+    - **Comma-separated strings** (e.g. ``"circular, zero"``): the list
+      form is unambiguous and reads the same in Python and OmegaConf, so
+      we keep a single canonical per-axis form to avoid two ways of saying
+      the same thing.
 
     Raises:
         ValueError: on invalid mode strings, wrong number of axes, or
@@ -250,19 +249,17 @@ def _resolve_periodic(
     if isinstance(fft_padding, bool):
         raise ValueError(
             "fft_padding=True/False is not a valid input. Use 'zero' (all axes "
-            "zero-padded), 'circular' (all axes periodic), or a per-axis form "
-            "such as 'circular, zero' or ['circular', 'zero']."
+            "zero-padded), 'circular' (all axes periodic), or a per-axis list "
+            "of mode strings such as ['circular', 'zero']."
         )
 
     if isinstance(fft_padding, str):
         if "," in fft_padding:
-            parts = [p.strip() for p in fft_padding.split(",")]
-            if len(parts) != data_dim:
-                raise ValueError(
-                    f"Comma-separated fft_padding must list exactly data_dim={data_dim} "
-                    f"modes, got {len(parts)}: {fft_padding!r}."
-                )
-            return tuple(_parse_padding_mode(p) for p in parts)
+            raise ValueError(
+                f"fft_padding does not accept comma-separated strings (got "
+                f"{fft_padding!r}). For per-axis modes use a list, e.g. "
+                f"['circular', 'zero']."
+            )
         return (_parse_padding_mode(fft_padding),) * data_dim
 
     if isinstance(fft_padding, Sequence) and not isinstance(fft_padding, (str, bytes)):
@@ -271,9 +268,9 @@ def _resolve_periodic(
             raise ValueError(
                 "fft_padding no longer accepts a sequence of booleans (e.g. "
                 "(True, False)) because the per-axis intent is not obvious "
-                "from the boolean values. Use string modes instead: "
-                "'circular, zero' or ['circular', 'zero'] for a 2D config "
-                "with periodic x and zero-padded y."
+                "from the boolean values. Use mode strings instead: "
+                "['circular', 'zero'] for a 2D config with periodic x and "
+                "zero-padded y."
             )
         if not all(isinstance(item, str) for item in items):
             raise ValueError(
@@ -287,9 +284,9 @@ def _resolve_periodic(
         return tuple(_parse_padding_mode(item) for item in items)
 
     raise ValueError(
-        f"fft_padding must be a padding-mode string ('zero' / 'circular') or a "
-        f"per-axis form (comma-separated string like 'circular, zero', or a "
-        f"sequence of mode strings). Got {fft_padding!r} "
+        f"fft_padding must be a single mode string ('zero' / 'circular') or a "
+        f"sequence of mode strings (one per spatial axis, e.g. "
+        f"['circular', 'zero']). Got {fft_padding!r} "
         f"(type {type(fft_padding).__name__})."
     )
 
@@ -368,18 +365,16 @@ class CKConvND(torch.nn.Module):
 
                 - ``"zero"``     — every axis zero-padded ("same" linear conv).
                 - ``"circular"`` — every axis periodic (wrap-around conv).
-                - ``"<mode>, <mode>, ..."`` — comma-separated per-axis modes
-                  (one per spatial axis), e.g. ``"circular, zero"`` for a 2D
-                  config that is periodic on x and zero-padded on y.
-                - Sequence of mode strings, e.g. ``("circular", "zero")`` or
-                  ``["circular", "zero"]`` — equivalent to the comma-separated
-                  form, convenient for Python (non-YAML) call sites.
+                - **List/tuple of mode strings** — one per spatial axis, in
+                  order, e.g. ``["circular", "zero"]`` for a 2D config that is
+                  periodic on x and zero-padded on y. Mode names are
+                  case-insensitive and whitespace-stripped.
 
                 Required for datasets with mixed periodic/non-periodic
                 boundary conditions (e.g. Well's ``rayleigh_benard``,
                 ``viscoelastic_instability``). When supplied as a per-axis
-                form, the ``grid_type`` argument must be ``None``.
-                Must be ``"zero"`` (or an all-zero per-axis form) when
+                list, the ``grid_type`` argument must be ``None``.
+                Must be ``"zero"`` (or an all-``"zero"`` list) when
                 ``is_causal=True``.
             is_causal: If True, use causal (left-only) convolution where output at position i
                 only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
@@ -408,28 +403,30 @@ class CKConvND(torch.nn.Module):
         )
 
         # ---- Normalise fft_padding & grid_type --------------------------------
-        # The per-axis / "tuple" mode is signalled by either a comma-separated
-        # string (e.g. "circular, zero") or a sequence of mode strings (e.g.
-        # ["circular", "zero"]). The legacy single-mode string form
-        # ("zero" / "circular") is the "string mode" path: it preserves the
-        # existing dispatch and requires the user to supply ``grid_type``.
+        # The per-axis form is a sequence of mode strings (e.g.
+        # ["circular", "zero"]). NOTE: we deliberately use ``Sequence`` rather
+        # than ``(list, tuple)`` because OmegaConf wraps Python lists as
+        # ``ListConfig``, which is *not* a ``list`` subclass; configs flowing
+        # through LazyConfig would otherwise hit the legacy single-mode path
+        # and trip the ``grid_type`` assertion. The legacy single-mode string
+        # form ("zero" / "circular") still requires the user to supply
+        # ``grid_type``.
         _periodic = _resolve_periodic(fft_padding, data_dim)
-        _is_tuple_mode = isinstance(fft_padding, (list, tuple)) or (
-            isinstance(fft_padding, str) and "," in fft_padding
-        )
+        _is_tuple_mode = isinstance(fft_padding, Sequence) and not isinstance(fft_padding, (str, bytes))
 
         if _is_tuple_mode:
             if grid_type is not None:
                 raise ValueError(
                     "grid_type must be None (or omitted) when fft_padding is a "
-                    "per-axis form (comma-separated string or sequence). The "
-                    "per-axis grid is auto-derived "
-                    "('single' on periodic axes, 'double' on non-periodic axes). "
+                    "per-axis list of mode strings. The per-axis grid is "
+                    "auto-derived ('single' on periodic axes, 'double' on "
+                    "non-periodic axes). "
                     f"Got grid_type={grid_type!r}, fft_padding={fft_padding!r}."
                 )
         else:
             assert grid_type in ["double", "single"], (
-                f"Invalid grid type: {grid_type}. Must be 'double' or 'single' when fft_padding is a string."
+                f"Invalid grid type: {grid_type}. Must be 'double' or 'single' "
+                f"when fft_padding is a single mode string."
             )
 
         # Stash the per-axis tuple (single source of truth for forward + flop_count).
@@ -507,8 +504,8 @@ class CKConvND(torch.nn.Module):
         # Per-axis BC: single source of truth used by forward() and flop_count().
         # Always present (length == data_dim), even in legacy single-mode form.
         self._periodic_per_axis: tuple[bool, ...] = self_periodic_per_axis
-        # When the user supplies fft_padding as a per-axis form (comma-separated
-        # string or sequence of mode strings), we dispatch through the unified
+        # When the user supplies fft_padding as a per-axis list of mode strings
+        # (e.g. ["circular", "zero"]), we dispatch through the unified
         # mixed_fftconv* ops for every combination of per-axis BCs. The mixed op
         # auto-routes to the legacy linear/circular ops internally for the
         # uniform corners, preserving bit-identical results for those cases.
@@ -584,10 +581,10 @@ class CKConvND(torch.nn.Module):
                 self.fftconv_fn = fftconv2d_bhl_w_reshape
                 self.fftconv_fn_bhl_input = fftconv2d_bhl
         elif self._is_tuple_mode:
-            # Per-axis ``fft_padding`` (comma-separated string or sequence
-            # of mode strings): route through the unified mixed_fftconv*
-            # ops with ``periodic`` bound via _wrap_mixed_op so the rest of
-            # CKConvND can keep calling the FFT function with the
+            # Per-axis ``fft_padding`` (list of mode strings, e.g.
+            # ["circular", "zero"]): route through the unified
+            # mixed_fftconv* ops with ``periodic`` bound via _wrap_mixed_op so
+            # the rest of CKConvND can keep calling the FFT function with the
             # (x, kernel, shortcut) signature used by every legacy op. The
             # all-zero / all-circular corners are dispatched internally to
             # the legacy linear / circular ops bit-identically (see
