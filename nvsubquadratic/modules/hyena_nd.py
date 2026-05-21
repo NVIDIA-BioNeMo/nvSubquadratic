@@ -247,14 +247,14 @@ class Hyena(torch.nn.Module):
         All tensors are channel-last on entry and exit.
 
         Args:
-            query: [B, *spatial, C] query tensor (from linear projection of input).
-            key: [B, *spatial, C] key tensor.
-            value: [B, *spatial, C] value tensor.
+            query: ``[B, *spatial, C]`` query tensor (from linear projection of input).
+            key: ``[B, *spatial, C]`` key tensor.
+            value: ``[B, *spatial, C]`` value tensor.
             cp_group: Context-parallel process group.  None disables CP.
             **mixer_kwargs: Forwarded to the global conv (e.g. ``conditioning`` for FiLM).
 
         Returns:
-            [B, *spatial, C] output tensor.
+            ``[B, *spatial, C]`` output tensor.
         """
         # Reshape query, key, and value to [B, C, * spatial_dims] (Required for short convolutional projections).
         query = rearrange(query, "b ... c -> b c ...")

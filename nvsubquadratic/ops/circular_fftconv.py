@@ -305,12 +305,10 @@ def circular_fftconv1d_fp32_bhl(
 
     Circular convolution
     --------------------
-    - Spatially, circular (periodic) convolution can be written as:
-        circular_conv(x, k) = roll(irfft(rfft(x) * rfft(k)))
-    - To avoid the explicit spatial roll, we apply an equivalent frequency-domain
-      phase ramp:
-        circular_conv(x, k) = irfft(rfft(x) * rfft(k) * phase_ramp)
-      where ``phase_ramp`` has shape ``[L//2 + 1]`` and encodes the integer shift.
+    - Spatially, circular (periodic) convolution is ``circular_conv(x, k) = roll(irfft(rfft(x) * rfft(k)))``.
+    - To avoid the explicit spatial roll, we apply an equivalent frequency-domain phase ramp:
+      ``circular_conv(x, k) = irfft(rfft(x) * rfft(k) * phase_ramp)``, where ``phase_ramp``
+      has shape ``[L//2 + 1]`` and encodes the integer shift.
 
     Layout and shapes
     -----------------
@@ -401,14 +399,13 @@ def circular_fftconv2d_fp32_bhl(
 ) -> torch.Tensor:
     """2D circular FFT convolution with optional shortcut (BHL layout).
 
-    The circular convolution is computed as:
-        circular_conv(x, kernel) = roll(ifft2(fft2(x) * fft2(kernel)))
-
-    However, by using shifting on the frequency-domain phase ramp, we can compute the convolution as:
-        circular_conv(x, kernel) = ifft2(fft2(x) * fft2(kernel) * phase_ramp)
-    where phase_ramp is a complex tensor of shape (X_in, Y_in//2 + 1) with the phase ramp for the given shift.
-
-    By doing so, this makes the convolution faster and more memory efficient.
+    Spatially, the circular convolution is
+    ``circular_conv(x, kernel) = roll(ifft2(fft2(x) * fft2(kernel)))``.
+    Equivalently, by shifting via a frequency-domain phase ramp:
+    ``circular_conv(x, kernel) = ifft2(fft2(x) * fft2(kernel) * phase_ramp)``,
+    where ``phase_ramp`` is a complex tensor of shape ``(X_in, Y_in // 2 + 1)``
+    encoding the alignment shift.  This avoids the spatial roll, making the
+    convolution faster and more memory-efficient.
 
     Args:
         x: Tensor of shape (B, H, X_in, Y_in), any dtype (internally cast to float32).
@@ -484,12 +481,10 @@ def circular_fftconv3d_fp32_bhl(
 
     Circular convolution
     --------------------
-    - Spatially, circular (periodic) convolution can be written as:
-        circular_conv(x, k) = roll(irfftn(rfftn(x) * rfftn(k)))
-    - To avoid the explicit spatial roll, we apply an equivalent frequency-domain
-      phase ramp:
-        circular_conv(x, k) = irfftn(rfftn(x) * rfftn(k) * phase_ramp)
-      where ``phase_ramp`` has shape ``[X, Y, Z//2 + 1]`` and encodes the integer shifts.
+    - Spatially, circular (periodic) convolution is ``circular_conv(x, k) = roll(irfftn(rfftn(x) * rfftn(k)))``.
+    - To avoid the explicit spatial roll, we apply an equivalent frequency-domain phase ramp:
+      ``circular_conv(x, k) = irfftn(rfftn(x) * rfftn(k) * phase_ramp)``, where ``phase_ramp``
+      has shape ``[X, Y, Z//2 + 1]`` and encodes the integer shifts.
 
     Layout and shapes
     -----------------

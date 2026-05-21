@@ -153,6 +153,21 @@ PYTHONPATH=. python -m pytest tests/ -m "not nightly" -v -o addopts=""
 source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
 ```
 
+### Documentation
+
+The API reference is built with Sphinx. Sources live under [`docs/`](docs/) and the rendered site is published to the `gh-pages` branch on every push to `main` via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
+
+Build and preview locally:
+
+```bash
+pip install -r docs/requirements.txt
+pip install -e . --no-deps
+make -C docs html SPHINXBUILD="python -m sphinx"
+python -m http.server 8000 --directory docs/_build/html
+```
+
+Open <http://localhost:8000> to browse. The autosummary stubs in `docs/generated/` are regenerated on every build (gitignored).
+
 ### CI
 
 GPU tests run automatically on pull requests via a self-hosted [Colossus](https://colossus.nvidia.com) runner.
