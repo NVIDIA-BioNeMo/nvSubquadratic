@@ -34,6 +34,8 @@ Ops — FFT convolutions (CUDA-accelerated)
 -----------------------------------------
 
 Drop-in wrappers around the ``subquadratic_ops_torch`` fused CUDA kernels.
+2D non-causal and 1D causal long-conv variants share the same API as the
+fp32 reference ops above.
 
 .. autosummary::
    :toctree: generated/
@@ -42,6 +44,23 @@ Drop-in wrappers around the ``subquadratic_ops_torch`` fused CUDA kernels.
    ~ops.fftconv_custom.fftconv2d_blh
    ~ops.fftconv_custom.fftconv2d_bhl
    ~ops.fftconv_custom.fftconv2d_bhl_w_reshape
+   ~ops.fftconv_custom.causal_fftconv1d_blh
+   ~ops.fftconv_custom.causal_fftconv1d_bhl
+   ~ops.fftconv_custom.causal_fftconv1d_bhl_w_reshape
+
+Ops — Direct 1D causal convolutions (CUDA-accelerated)
+------------------------------------------------------
+
+Non-FFT CUDA kernels for short and fused 1D causal convolutions. Useful for
+small kernel sizes (where FFT overhead dominates) and as building blocks
+for fused Hyena variants.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~ops.causal_conv1d_custom.causal_conv1d
+   ~ops.causal_conv1d_custom.b2b_causal_conv1d
 
 Ops — Circular FFT convolutions
 -------------------------------
@@ -107,3 +126,4 @@ Modules — Convolutions
    :template: class_template.rst
 
    ~modules.causal_conv1d.CausalConv1D
+   ~modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d

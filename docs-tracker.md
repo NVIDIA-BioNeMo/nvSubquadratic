@@ -25,46 +25,48 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/ops/` — FFT convolution primitives
 
-| File                       | Status | Notes                                                   |
-| -------------------------- | ------ | ------------------------------------------------------- |
-| `README.md`                | \[x\]  | Folder overview, decision tree, math primer (new file)  |
-| `fftconv.py`               | \[x\]  | Module + key per-fn docstrings rewritten with math      |
-| `circular_fftconv.py`      | \[x\]  | Already strong; left as-is                              |
-| `circular_fftconv_fp16.py` | \[x\]  | Already strong; relies on FP16_FFTCONV_DERIVATION.md    |
-| `fftconv_fp16.py`          | \[x\]  | Already adequate; left as-is                            |
-| `fftconv_multihead.py`     | \[x\]  | Module docstring expanded with multi-head/low-rank math |
-| `fftconv_chunked.py`       | \[x\]  | Already strong; left as-is                              |
-| `fftconv_custom.py`        | \[x\]  | Module docstring expanded with motivation               |
+| File                       | Status | Notes                                                                             |
+| -------------------------- | ------ | --------------------------------------------------------------------------------- |
+| `README.md`                | \[x\]  | Folder overview, decision tree, math primer (new file)                            |
+| `fftconv.py`               | \[x\]  | Module + key per-fn docstrings rewritten with math                                |
+| `circular_fftconv.py`      | \[x\]  | Already strong; left as-is                                                        |
+| `circular_fftconv_fp16.py` | \[x\]  | Already strong; relies on FP16_FFTCONV_DERIVATION.md                              |
+| `fftconv_fp16.py`          | \[x\]  | Already adequate; left as-is                                                      |
+| `fftconv_multihead.py`     | \[x\]  | Module docstring expanded with multi-head/low-rank math                           |
+| `fftconv_chunked.py`       | \[x\]  | Already strong; left as-is                                                        |
+| `fftconv_custom.py`        | \[x\]  | Module docstring expanded with motivation; 1D causal wrappers added in 1D PR      |
+| `causal_conv1d_custom.py`  | \[x\]  | New (1D PR): thin wrappers for direct `causal_conv1d` + fused `b2b_causal_conv1d` |
 
 ### `nvsubquadratic/modules/` — Building blocks
 
-| File                               | Status | Notes                                     |
-| ---------------------------------- | ------ | ----------------------------------------- |
-| `kernels_nd.py`                    | \[ \]  | Learned kernel parametrisation            |
-| `hyena_nd.py`                      | \[ \]  | Hyena operator (ND) — key paper component |
-| `ckconv_nd.py`                     | \[ \]  | CKConv (ND)                               |
-| `ckconv_multihead_nd.py`           | \[ \]  | Multi-head CKConv                         |
-| `mamba_nd.py`                      | \[ \]  | Mamba SSM (ND)                            |
-| `attention.py`                     | \[ \]  | Standard attention                        |
-| `vit5_attention.py`                | \[ \]  | ViT5 attention variant                    |
-| `vit5_hyena_adapter.py`            | \[ \]  | Hyena adapter for ViT5                    |
-| `sequence_mixer.py`                | \[ \]  | Mixer abstraction                         |
-| `condition_mixer.py`               | \[ \]  | Conditioning mixer                        |
-| `residual_block.py`                | \[ \]  | Residual block                            |
-| `vit5_residual_block.py`           | \[ \]  | ViT5 residual block                       |
-| `patchify.py`                      | \[ \]  | Patch embedding                           |
-| `position_encoding.py`             | \[ \]  | Position encodings                        |
-| `masks_nd.py`                      | \[ \]  | ND masking utils                          |
-| `mlp.py`                           | \[ \]  | MLP block                                 |
-| `film.py`                          | \[ \]  | FiLM conditioning                         |
-| `grn.py`                           | \[ \]  | GRN normalisation                         |
-| `layer_scale.py`                   | \[ \]  | LayerScale                                |
-| `rms_norm.py`                      | \[ \]  | RMS normalisation                         |
-| `rms_norm_channel_first.py`        | \[ \]  | Channel-first RMS norm                    |
-| `drop_path.py`                     | \[ \]  | Stochastic depth                          |
-| `causal_conv1d.py`                 | \[ \]  | Causal 1D conv                            |
-| `schedulers.py`                    | \[ \]  | LR schedulers                             |
-| `distributed_depthwise_conv_nd.py` | \[ \]  | Distributed depthwise conv                |
+| File                               | Status | Notes                                                                                 |
+| ---------------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| `kernels_nd.py`                    | \[ \]  | Learned kernel parametrisation                                                        |
+| `hyena_nd.py`                      | \[ \]  | Hyena operator (ND) — key paper component                                             |
+| `ckconv_nd.py`                     | \[ \]  | CKConv (ND)                                                                           |
+| `ckconv_multihead_nd.py`           | \[ \]  | Multi-head CKConv                                                                     |
+| `mamba_nd.py`                      | \[ \]  | Mamba SSM (ND)                                                                        |
+| `attention.py`                     | \[ \]  | Standard attention                                                                    |
+| `vit5_attention.py`                | \[ \]  | ViT5 attention variant                                                                |
+| `vit5_hyena_adapter.py`            | \[ \]  | Hyena adapter for ViT5                                                                |
+| `sequence_mixer.py`                | \[ \]  | Mixer abstraction                                                                     |
+| `condition_mixer.py`               | \[ \]  | Conditioning mixer                                                                    |
+| `residual_block.py`                | \[ \]  | Residual block                                                                        |
+| `vit5_residual_block.py`           | \[ \]  | ViT5 residual block                                                                   |
+| `patchify.py`                      | \[ \]  | Patch embedding                                                                       |
+| `position_encoding.py`             | \[ \]  | Position encodings                                                                    |
+| `masks_nd.py`                      | \[ \]  | ND masking utils                                                                      |
+| `mlp.py`                           | \[ \]  | MLP block                                                                             |
+| `film.py`                          | \[ \]  | FiLM conditioning                                                                     |
+| `grn.py`                           | \[ \]  | GRN normalisation                                                                     |
+| `layer_scale.py`                   | \[ \]  | LayerScale                                                                            |
+| `rms_norm.py`                      | \[ \]  | RMS normalisation                                                                     |
+| `rms_norm_channel_first.py`        | \[ \]  | Channel-first RMS norm                                                                |
+| `drop_path.py`                     | \[ \]  | Stochastic depth                                                                      |
+| `causal_conv1d.py`                 | \[ \]  | Causal 1D conv                                                                        |
+| `subq_ops_causal_conv1d.py`        | \[x\]  | New (1D PR): `nn.Conv1d`-compatible depthwise wrapper around `subq_ops.causal_conv1d` |
+| `schedulers.py`                    | \[ \]  | LR schedulers                                                                         |
+| `distributed_depthwise_conv_nd.py` | \[ \]  | Distributed depthwise conv                                                            |
 
 ### `nvsubquadratic/networks/` — Full architectures
 
