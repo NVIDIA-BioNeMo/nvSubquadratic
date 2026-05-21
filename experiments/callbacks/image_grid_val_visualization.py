@@ -138,9 +138,22 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Forward pass.  Lightning's precision plugin only wraps
+        # training_step/validation_step/test_step in autocast — it does NOT
+        # wrap callbacks.  For bf16/fp16-mixed runs the model is trained under
+        # autocast and the forward output can differ catastrophically between
+        # autocast-ON and autocast-OFF (see Hyena+SIREN at large ω₀).  Enter
+        # the precision plugin's forward_context() so visualisations reflect
+        # the actual model output.  ``.float()`` afterwards converts any bf16
+        # tensors back to fp32 (numpy/matplotlib can't handle bf16).
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        forward_context = getattr(trainer.precision_plugin, "forward_context", None)
+        ctx = forward_context() if callable(forward_context) else torch.amp.autocast(
+            device_type="cuda" if x.is_cuda else "cpu", enabled=False
+        )
+        with ctx:
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()
 
         # Convert to NCHW images, supporting flattened inputs.
         x_nchw = self._as_nchw_images(x)
@@ -514,9 +527,15 @@ class ValidationVolumeGridCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Forward pass — see ValidationImageGridCallback above for rationale.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        forward_context = getattr(trainer.precision_plugin, "forward_context", None)
+        ctx = forward_context() if callable(forward_context) else torch.amp.autocast(
+            device_type="cuda" if x.is_cuda else "cpu", enabled=False
+        )
+        with ctx:
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()
 
         # Limit samples
         n = min(self.num_samples, x.shape[0])
