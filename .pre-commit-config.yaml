@@ -21,6 +21,10 @@ repos:
           - mdformat-gfm
           - mdformat-black
           - mdformat-frontmatter
+          # Teach mdformat about MyST syntax (notably the $$...$$ and $...$
+          # dollarmath blocks used in docs/ops/) so it stops over-escaping
+          # LaTeX inside them on every commit.
+          - mdformat-myst
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
