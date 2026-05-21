@@ -344,7 +344,7 @@ class CKConvND(torch.nn.Module):
                 else:
                     self.fftconv_fn = causal_fftconv1d_bhl_w_reshape
                     self.fftconv_fn_bhl_input = causal_fftconv1d_bhl
-            else:
+            elif data_dim == 2:
                 from nvsubquadratic.ops.fftconv_custom import (
                     fftconv2d_bhl,
                     fftconv2d_bhl_chunked,
@@ -358,6 +358,11 @@ class CKConvND(torch.nn.Module):
                 else:
                     self.fftconv_fn = fftconv2d_bhl_w_reshape
                     self.fftconv_fn_bhl_input = fftconv2d_bhl
+            else:
+                raise AssertionError(
+                    f"fft_backend='subq_ops' dispatch reached unexpected data_dim={data_dim}; "
+                    "the constraint block above should have rejected this."
+                )
         else:
             # torch_fft backend: use lookup tables
             # Causal mode overrides fft_padding for 1D
