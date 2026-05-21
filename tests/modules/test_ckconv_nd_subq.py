@@ -203,9 +203,9 @@ class TestChunked:
 class TestAssertions:
     """CKConvND raises AssertionError for invalid subq_ops configurations."""
 
-    def test_rejects_data_dim_1(self):
-        """data_dim=1 is rejected."""
-        with pytest.raises(AssertionError, match="only supports 2D"):
+    def test_rejects_data_dim_1_non_causal(self):
+        """1D requires is_causal=True under subq_ops (no non-causal 1D kernel)."""
+        with pytest.raises(AssertionError, match="1D requires is_causal=True"):
             CKConvND(
                 data_dim=1,
                 hidden_dim=32,
@@ -218,7 +218,7 @@ class TestAssertions:
 
     def test_rejects_data_dim_3(self):
         """data_dim=3 is rejected."""
-        with pytest.raises(AssertionError, match="only supports 2D"):
+        with pytest.raises(AssertionError, match=r"only supports data_dim in \(1, 2\)"):
             CKConvND(
                 data_dim=3,
                 hidden_dim=32,
@@ -230,7 +230,7 @@ class TestAssertions:
             )
 
     def test_rejects_circular_padding(self):
-        """fft_padding='circular' is rejected."""
+        """fft_padding='circular' is rejected on the 2D path."""
         with pytest.raises(AssertionError, match="only supports zero-padded"):
             CKConvND(
                 data_dim=2,
@@ -247,20 +247,6 @@ class TestAssertions:
         with pytest.raises(AssertionError, match="Causal CKConvND only supports 1D"):
             CKConvND(
                 data_dim=2,
-                hidden_dim=32,
-                kernel_cfg=LazyConfig(torch.nn.Identity)(),
-                mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double",
-                fft_padding="zero",
-                is_causal=True,
-                fft_backend="subq_ops",
-            )
-
-    def test_rejects_causal_with_1d(self):
-        """is_causal=True + data_dim=1 hits the subq_ops data_dim=2 constraint."""
-        with pytest.raises(AssertionError, match="only supports 2D"):
-            CKConvND(
-                data_dim=1,
                 hidden_dim=32,
                 kernel_cfg=LazyConfig(torch.nn.Identity)(),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
@@ -296,3 +282,98 @@ class TestAssertions:
                 fft_padding="zero",
                 fft_backend="invalid",
             )
+
+
+# ---------------------------------------------------------------------------
+# 1D causal integration — subq_ops vs torch_fft parity
+# ---------------------------------------------------------------------------
+
+
+HIDDEN_DIM_1D = 32
+SEQ_LEN_1D = 128
+
+
+def _make_ckconv_1d(fft_backend, use_chunked=False):
+    """Build a 1D causal CKConvND with a small SIREN kernel."""
+    kernel_cfg = LazyConfig(SIRENKernelND)(
+        data_dim=1,
+        out_dim=HIDDEN_DIM_1D,
+        mlp_hidden_dim=16,
+        num_layers=2,
+        embedding_dim=16,
+        omega_0=100.0,
+        L_cache=SEQ_LEN_1D,
+        use_bias=True,
+    )
+    return CKConvND(
+        data_dim=1,
+        hidden_dim=HIDDEN_DIM_1D,
+        kernel_cfg=kernel_cfg,
+        mask_cfg=LazyConfig(torch.nn.Identity)(),
+        grid_type="double",
+        fft_padding="zero",
+        is_causal=True,
+        fft_backend=fft_backend,
+        use_chunked_fftconv=use_chunked,
+    )
+
+
+class Test1DCausalForwardBackward:
+    """CKConvND 1D causal with subq_ops matches the torch_fft reference."""
+
+    def test_forward_matches(self):
+        torch.manual_seed(42)
+        model_ref = _make_ckconv_1d("torch_fft").cuda()
+        model_subq = _make_ckconv_1d("subq_ops").cuda()
+        _sync_weights(model_ref, model_subq)
+
+        x = torch.randn(2, SEQ_LEN_1D, HIDDEN_DIM_1D, device="cuda", dtype=torch.float32)
+        torch.testing.assert_close(model_subq(x), model_ref(x), atol=ATOL, rtol=RTOL)
+
+    def test_backward_matches(self):
+        torch.manual_seed(42)
+        model_ref = _make_ckconv_1d("torch_fft").cuda()
+        model_subq = _make_ckconv_1d("subq_ops").cuda()
+        _sync_weights(model_ref, model_subq)
+
+        x_ref = torch.randn(2, SEQ_LEN_1D, HIDDEN_DIM_1D, device="cuda", dtype=torch.float32, requires_grad=True)
+        x_sub = x_ref.detach().clone().requires_grad_(True)
+        model_ref(x_ref).sum().backward()
+        model_subq(x_sub).sum().backward()
+
+        torch.testing.assert_close(x_sub.grad, x_ref.grad, atol=ATOL_GRAD, rtol=RTOL_GRAD)
+
+        ref_grads = {n: p.grad for n, p in model_ref.named_parameters() if p.grad is not None}
+        subq_grads = {n: p.grad for n, p in model_subq.named_parameters() if p.grad is not None}
+        for name in ref_grads:
+            torch.testing.assert_close(
+                subq_grads[name],
+                ref_grads[name],
+                atol=ATOL_GRAD,
+                rtol=RTOL_GRAD,
+                msg=f"Gradient mismatch for {name}",
+            )
+
+    def test_chunked_matches_non_chunked(self):
+        torch.manual_seed(42)
+        model = _make_ckconv_1d("subq_ops", use_chunked=False).cuda()
+        model_chunk = _make_ckconv_1d("subq_ops", use_chunked=True).cuda()
+        _sync_weights(model, model_chunk)
+
+        x = torch.randn(2, SEQ_LEN_1D, HIDDEN_DIM_1D, device="cuda", dtype=torch.float32)
+        torch.testing.assert_close(model_chunk(x), model(x), atol=0, rtol=0)
+
+    def test_forward_bhl_input(self):
+        """is_bhl_input=True path (BHL layout) matches torch_fft reference."""
+        torch.manual_seed(42)
+        model_ref = _make_ckconv_1d("torch_fft").cuda()
+        model_subq = _make_ckconv_1d("subq_ops").cuda()
+        _sync_weights(model_ref, model_subq)
+
+        x = torch.randn(2, HIDDEN_DIM_1D, SEQ_LEN_1D, device="cuda", dtype=torch.float32)
+        torch.testing.assert_close(
+            model_subq(x, is_bhl_input=True),
+            model_ref(x, is_bhl_input=True),
+            atol=ATOL,
+            rtol=RTOL,
+        )

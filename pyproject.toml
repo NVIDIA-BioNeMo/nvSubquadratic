@@ -24,7 +24,7 @@ dependencies = [
     "rich>=13.0.0",
     "Pillow",
     "huggingface_hub",
-    "subquadratic-ops-torch-cu12",
+    "subquadratic-ops-torch-cu12>=0.2.0",
     "timm==1.0.24",
     "nvidia-dali-cuda120==1.53.0",
 ]
