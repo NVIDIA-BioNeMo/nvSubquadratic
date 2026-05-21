@@ -39,17 +39,17 @@ ______________________________________________________________________
 
 ### Table 13 — Patch-size ablation (Top-1 / GFLOPs)
 
-GFLOPs shown in parentheses. Attention at p=1 is expected OOM.
+GFLOPs shown in parentheses.
 
-| Model                     | p=16           | p=8            | p=4           | p=2        |
-| ------------------------- | -------------- | -------------- | ------------- | ---------- |
-| Attention                 | 81.8 ✅ (9.4)  | 84.3 ✅ (45.5) | 85.1 ✅ (317) | 📝 (3,444) |
-| HyenaND-S (pure)          | 81.5 ✅ (10.0) | 83.7 ✅ (39.0) | 84.0 ✅ (155) | 📝 (623)   |
-| HyenaND-S (pure) + FiLM   | 📝             | 📝             | 📝            | 📝         |
-| HyenaND-S (HA)×6          | 82.1 ✅ (9.7)  | 84.2 ✅ (42.3) | 85.0 ✅ (236) | 📝 (2,033) |
-| HyenaND-S (HA)×6 + FiLM   | 📝             | 📝             | 📝            | 📝         |
-| HyenaND-S (HHHA)×3        | 82.0 ✅ (9.8)  | 84.0 ✅ (40.7) | 84.4 ✅ (196) | 📝 (1,328) |
-| HyenaND-S (HHHA)×3 + FiLM | 📝             | 📝             | 📝            | 📝         |
+| Model                     | p=16           | p=8            | p=4           |
+| ------------------------- | -------------- | -------------- | ------------- |
+| Attention                 | 81.8 ✅ (9.4)  | 84.3 ✅ (45.5) | 85.1 ✅ (317) |
+| HyenaND-S (pure)          | 81.5 ✅ (10.0) | 83.7 ✅ (39.0) | 84.0 ✅ (155) |
+| HyenaND-S (pure) + FiLM   | 📝             | 📝             | 📝            |
+| HyenaND-S (HA)×6          | 82.1 ✅ (9.7)  | 84.2 ✅ (42.3) | 85.0 ✅ (236) |
+| HyenaND-S (HA)×6 + FiLM   | 📝             | 📝             | 📝            |
+| HyenaND-S (HHHA)×3        | 82.0 ✅ (9.8)  | 84.0 ✅ (40.7) | 84.4 ✅ (196) |
+| HyenaND-S (HHHA)×3 + FiLM | 📝             | 📝             | 📝            |
 
 > FiLM GFLOPs ≈ same as non-FiLM (small SIREN-MLP overhead, negligible vs attention savings).
 > v5_patch configs for Hyena+FiLM at all patch sizes are set up and ready in [examples/vit5_imagenet/v5_patch/](examples/vit5_imagenet/v5_patch/). Hybrid+FiLM configs are in [examples/vit5_imagenet/vit5_hybrid/](examples/vit5_imagenet/vit5_hybrid/).
