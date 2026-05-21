@@ -12,7 +12,9 @@ half-precision (FP16) FFTs for speed and memory savings.
 
 The standard approach is:
 
-$$y = \\text{IFFT}!\\bigl(\\text{FFT}(x) \\odot \\text{FFT}(k\_{\\text{pad}})\\bigr)$$
+$$
+y ;=; \\text{IFFT}!\\bigl( \\text{FFT}(x) \\odot \\text{FFT}(k\_{\\text{pad}}) \\bigr)
+$$
 
 where $k\_{\\text{pad}}$ is **k** zero-padded to length $N$.
 
@@ -41,7 +43,11 @@ $\\text{ortho-IFFT}(\\text{ortho-FFT}(x) \\odot \\text{ortho-FFT}(k)) = y / \\sq
 We multiply by $\\sqrt{N}$ after the inverse to recover the correct
 scale:
 
-$$y = \\sqrt{N} \\cdot \\text{IFFT}_{\\text{ortho}}!\\bigl(\\text{FFT}_{\\text{ortho}}(x) \\odot \\text{FFT}_{\\text{ortho}}(k_{\\text{pad}})\\bigr)$$
+$$
+y ;=; \\sqrt{N} \\cdot \\text{IFFT}_{\\text{ortho}}!\\bigl(
+\\text{FFT}_{\\text{ortho}}(x) \\odot \\text{FFT}_{\\text{ortho}}(k_{\\text{pad}})
+\\bigr)
+$$
 
 This reduces the DC bin to $\\mu_x \\sqrt{N}$, and the DC product to
 $\\mu_x \\mu_k N$, which still overflows for large $N$.  More importantly,
@@ -54,7 +60,9 @@ cuFFT performs the $\\sqrt{N}$ scaling *after* the butterfly, not during.
 
 Remove the DC component from both signals before the FFT:
 
-$$x_c = x - \\mu_x, \\qquad k_c = k - \\mu_k$$
+$$
+x_c = x - \\mu_x, \\qquad k_c = k - \\mu_k
+$$
 
 Both centered signals have zero mean, so:
 
@@ -78,14 +86,19 @@ Define:
 
 Then the zero-padded kernel decomposes as:
 
-$$k\_{\\text{pad}} = k\_{c,\\text{pad}} + \\delta$$
+$$
+k\_{\\text{pad}} = k\_{c,\\text{pad}} + \\delta
+$$
 
 Expanding the circular convolution:
 
-$$y\[n\] = \\underbrace{(x_c * k\_{c,\\text{pad}})\[n\]}_{T_1}
-\+ \\underbrace{(x_c * \\delta)\[n\]}_{T_2}
-\+ \\underbrace{\\mu_x \\sum_m k\_{c,\\text{pad}}\[m\]}_{T_3}
-\+ \\underbrace{\\mu_x \\cdot \\mu_k \\cdot K}_{T_4}$$
+$$
+y\[n\] ;=;
+\\underbrace{(x_c * k\_{c,\\text{pad}})\[n\]}_{T_1}
+;+; \\underbrace{(x_c * \\delta)\[n\]}_{T_2}
+;+; \\underbrace{\\mu_x \\sum_m k\_{c,\\text{pad}}\[m\]}_{T_3}
+;+; \\underbrace{\\mu_x \\cdot \\mu_k \\cdot K}_{T_4}
+$$
 
 where $\*$ denotes circular convolution.
 
@@ -100,11 +113,16 @@ bins are 0, internal magnitudes are $O(\\sigma)$.  Computed via FP16 FFT.
 
 #### T2: Centering correction (1D)
 
-$$T_2\[n\] = \\sum_m x_c\[(n-m) \\bmod L\] \\cdot \\delta\[m\] = \\mu_k \\sum\_{m=0}^{K-1} x_c\[(n-m) \\bmod L\]$$
+$$
+T_2\[n\] ;=; \\sum_m x_c\[(n-m) \\bmod L\] \\cdot \\delta\[m\]
+;=; \\mu_k \\sum\_{m=0}^{K-1} x_c\[(n-m) \\bmod L\]
+$$
 
 **Case $K = L$** (kernel covers the full circle):
 
-$$T_2\[n\] = \\mu_k \\sum\_{m=0}^{L-1} x_c\[(n-m) \\bmod L\] = \\mu_k \\cdot 0 = 0$$
+$$
+T_2\[n\] ;=; \\mu_k \\sum\_{m=0}^{L-1} x_c\[(n-m) \\bmod L\] ;=; \\mu_k \\cdot 0 ;=; 0
+$$
 
 because $\\sum x_c = 0$.  **No correction needed.**
 
@@ -112,7 +130,10 @@ because $\\sum x_c = 0$.  **No correction needed.**
 
 The sum covers all positions except $m = L-1$:
 
-$$T_2\[n\] = \\mu_k !!\\sum\_{m \\ne L-1}!! x_c\[(n-m) \\bmod L\] = -\\mu_k \\cdot x_c\[(n+1) \\bmod L\]$$
+$$
+T_2\[n\] ;=; \\mu_k !!\\sum\_{m \\ne L-1}!! x_c\[(n-m) \\bmod L\]
+;=; -\\mu_k \\cdot x_c\[(n+1) \\bmod L\]
+$$
 
 This is just $-\\mu_k$ times a circular shift of $x_c$ by $-1$.
 
@@ -124,12 +145,17 @@ multiplication by the phase ramp $\\phi_s\[f\] = e^{-2\\pi i f s / L}$.
 When the kernel is centered with shift $s = -\\lfloor(K-1)/2\\rfloor$,
 the zero-padded position moves, and the correction becomes:
 
-$$T_2\[n\] = -\\mu_k \\cdot x_c\[(n - s + 1) \\bmod L\]$$
+$$
+T_2\[n\] ;=; -\\mu_k \\cdot x_c\[(n - s + 1) \\bmod L\]
+$$
 
 In frequency domain, the effective kernel spectrum (including T1 + T2)
 is:
 
-$$\\hat{k}\_{\\text{eff}}\[f\] = \\phi_s\[f\] \\cdot \\biggl(\\hat{k}_c\[f\] - \\frac{\\mu_k}{\\sqrt{L}} \\cdot \\phi_{-1}\[f\]\\biggr)$$
+$$
+\\hat{k}\_{\\text{eff}}\[f\] ;=; \\phi_s\[f\] \\cdot
+\\biggl(\\hat{k}_c\[f\] ;-; \\tfrac{\\mu_k}{\\sqrt{L}} \\cdot \\phi_{-1}\[f\]\\biggr)
+$$
 
 where $\\hat{k}_c$ is the ortho-normalized FFT of $k_c$ (zero-padded),
 and $\\phi_{-1}\[f\] = e^{2\\pi i f / L}$ is the DFT of the delta at
@@ -141,7 +167,11 @@ FFT in FP32.
 
 ### Final 1D formula
 
-$$y = \\sqrt{L};\\text{IFFT}\_{\\text{ortho}}!\\bigl(\\hat{x}_c \\odot \\hat{k}_{\\text{eff}}\\bigr) + \\mu_x \\mu_k K$$
+$$
+y ;=; \\sqrt{L},\\text{IFFT}\_{\\text{ortho}}!\\bigl(
+\\hat{x}_c \\odot \\hat{k}_{\\text{eff}}
+\\bigr) ;+; \\mu_x \\mu_k K
+$$
 
 where $\\hat{x}_c = \\text{FFT}_{\\text{ortho}}(x_c)$ is computed in FP16,
 $\\hat{k}\_{\\text{eff}}$ is assembled in FP32 (small tensor, no batch dim)
@@ -154,7 +184,10 @@ For $d$-dimensional signals of shape $N_1 \\times \\cdots \\times N_d$
 with kernel shape $K_1 \\times \\cdots \\times K_d$, the decomposition
 generalizes.  The T1 and T4 terms carry over directly:
 
-$$T_1 = \\text{circ_conv}(x_c, k\_{c,\\text{pad}}), \\qquad T_4 = \\mu_x \\mu_k \\prod_i K_i$$
+$$
+T_1 ;=; \\text{circ_conv}(x_c, k\_{c,\\text{pad}}), \\qquad
+T_4 ;=; \\mu_x \\mu_k \\prod_i K_i
+$$
 
 T3 is again zero.  **T2 becomes an inclusion-exclusion sum over
 corrected axes** — those axes where $K_i \< N_i$ (i.e., there is at
@@ -169,11 +202,18 @@ position $N_i - 1$ along axis $i$).
 
 The geometric correction in frequency domain is:
 
-$$\\text{geo}\[\\mathbf{f}\] = \\sum\_{\\emptyset \\ne S \\subseteq \\mathcal{C}} (-1)^{|S|} \\Bigl(\\prod\_{i \\in S} p_i\[f_i\]\\Bigr) \\Bigl(\\prod\_{j \\notin S} N_j\\Bigr)$$
+$$
+\\text{geo}\[\\mathbf{f}\] ;=; \\sum\_{\\emptyset \\ne S \\subseteq \\mathcal{C}}
+(-1)^{|S|} \\Bigl(\\prod\_{i \\in S} p_i\[f_i\]\\Bigr)
+\\Bigl(\\prod\_{j \\notin S} N_j\\Bigr)
+$$
 
 The corrected effective kernel spectrum is:
 
-$$\\hat{k}\_{\\text{eff}}\[\\mathbf{f}\] = \\hat{k}\_c\[\\mathbf{f}\] + \\frac{\\mu_k}{\\sqrt{N}} \\cdot \\text{geo}\[\\mathbf{f}\]$$
+$$
+\\hat{k}\_{\\text{eff}}\[\\mathbf{f}\] ;=; \\hat{k}\_c\[\\mathbf{f}\]
+;+; \\tfrac{\\mu_k}{\\sqrt{N}} \\cdot \\text{geo}\[\\mathbf{f}\]
+$$
 
 followed by the phase-ramp shift for kernel centering.
 
@@ -183,18 +223,25 @@ For a 2D signal $X \\times Y$ with kernel $K_x \\times K_y$:
 
 - If $K_x \< X$ and $K_y \< Y$ (both axes corrected):
 
-$$\\text{geo}\[f_1, f_2\] = -Y \\cdot p_x\[f_1\],\\delta\_{f_2=0} - X \\cdot \\delta\_{f_1=0},p_y\[f_2\] + p_x\[f_1\],p_y\[f_2\]$$
+  $$
+  \\text{geo}\[f_1, f_2\] ;=; -Y \\cdot p_x\[f_1\],\\delta\_{f_2=0}
+  ;-; X \\cdot \\delta\_{f_1=0},p_y\[f_2\]
+  ;+; p_x\[f_1\],p_y\[f_2\]
+  $$
 
 - If only one axis is corrected (e.g., $K_x \< X$, $K_y = Y$):
 
-$$\\text{geo}\[f_1, f_2\] = -Y \\cdot p_x\[f_1\],\\delta\_{f_2=0}$$
+  $$
+  \\text{geo}\[f_1, f_2\] ;=; -Y \\cdot p_x\[f_1\],\\delta\_{f_2=0}
+  $$
 
 ### Caching
 
-The geometric factor `geo` depends only on $(K_1, \\ldots, K_d, N_1,
-\\ldots, N_d, \\text{device})$ and is **constant** during training.  It is
-computed once and cached with an LRU policy.  Only the scalar
-$\\mu_k / \\sqrt{N}$ changes per forward call.
+The geometric factor `geo` depends only on
+$(K_1, \\ldots, K_d, N_1, \\ldots, N_d, \\text{device})$ and is
+**constant** during training.  It is computed once and cached with an
+LRU policy.  Only the scalar $\\mu_k / \\sqrt{N}$ changes per forward
+call.
 
 ## 4. Implementation Details
 

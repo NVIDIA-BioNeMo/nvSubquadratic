@@ -10,17 +10,17 @@ ______________________________________________________________________
 
 A standard spatial convolution between an input `x` of length `N` and a kernel `k` of length `K`,
 
-```
-y[n] = Σ_m x[n − m] · k[m]
-```
+$$
+y\[n\] ;=; \\sum\_{m} x\[n - m\] ,\\cdot, k\[m\]
+$$
 
 costs `O(N · K)` per channel. When `K` is small (e.g. a 3×3 image kernel) that is fine. When `K` is **comparable to `N`** — the regime Hyena-style models live in, where each layer's effective receptive field can span the whole input — the spatial cost grows quadratically with sequence length.
 
 The **convolution theorem** lets us replace the spatial convolution with an element-wise product in the frequency domain:
 
-```
-y = F⁻¹( F(x) ⊙ F(k) )
-```
+$$
+y ;=; \\mathcal{F}^{-1}!\\bigl( \\mathcal{F}(x) ,\\odot, \\mathcal{F}(k) \\bigr)
+$$
 
 The two FFTs and the inverse each cost `O(N log N)`, the element-wise product is `O(N)`, and the total cost is **independent of kernel size**. That is what makes "global-kernel" convolutional sequence models subquadratic.
 
@@ -44,7 +44,8 @@ ______________________________________________________________________
 | [circular_fftconv_fp16.py](../../nvsubquadratic/ops/circular_fftconv_fp16.py) | fp16      | circular          | depthwise                            | Same as above for the circular case. Uses **dual mean-centering** for fp16 stability — see [FP16_FFTCONV_DERIVATION.md](FP16_FFTCONV_DERIVATION.md).                                                                                              |
 | [fftconv_chunked.py](../../nvsubquadratic/ops/fftconv_chunked.py)             | fp32      | linear            | depthwise                            | Memory-constrained training; processes channels in chunks. Has a global flag so models can opt in transparently.                                                                                                                                  |
 | [fftconv_multihead.py](../../nvsubquadratic/ops/fftconv_multihead.py)         | fp32      | linear & circular | dense within head, optional low-rank | Multi-head FFT conv — channel mixing inside each head, in the spirit of multi-head attention.                                                                                                                                                     |
-| [fftconv_custom.py](../../nvsubquadratic/ops/fftconv_custom.py)               | fp32      | linear            | depthwise                            | Wraps an optional fused CUDA kernel (`subquadratic_ops_torch.fft_conv2d`) behind the same API as `fftconv.py`.                                                                                                                                    |
+| [fftconv_custom.py](../../nvsubquadratic/ops/fftconv_custom.py)               | fp32      | linear            | depthwise                            | Wraps optional fused CUDA kernels (`subquadratic_ops_torch.fft_conv2d` for 2D non-causal, `fft_causal_conv1d` for 1D causal) behind the same API as `fftconv.py`.                                                                                 |
+| [causal_conv1d_custom.py](../../nvsubquadratic/ops/causal_conv1d_custom.py)   | fp32      | direct causal     | depthwise                            | Non-FFT 1D causal kernels (`causal_conv1d` short conv, `b2b_causal_conv1d` fused proj-gate-mixer-gate). Use for kernels short enough that FFT overhead dominates, or as a fused-Hyena building block.                                             |
 
 `FP16_FFTCONV_DERIVATION.md` contains the full derivation of the numerically stable fp16 circular conv (dual mean-centering + inclusion-exclusion geometric correction). Read it if you are touching the fp16 path or want to understand the math behind those `T1, T2, T3, T4` terms in the code.
 
@@ -69,6 +70,8 @@ Every function name encodes its contract:
 
 So `causal_fftconv1d_fp32_bhl_w_reshape` is: causal 1D FFT conv, fp32 internal, accepts channels-last input, internally uses the channels-first kernel.
 
+The CUDA-accelerated wrappers in `fftconv_custom.py` drop the `_fp32_` / `_fp16_` token because the underlying kernel manages its own precision internally — so the same name in `fftconv_custom` is `causal_fftconv1d_bhl_w_reshape`. The direct-conv wrappers in `causal_conv1d_custom.py` (`causal_conv1d`, `b2b_causal_conv1d`) do not follow this scheme because they are thin pass-throughs to the upstream API; see their docstrings for shapes.
+
 ______________________________________________________________________
 
 ## Shape conventions
@@ -84,9 +87,9 @@ The kernel's leading dim is either `1` (shared kernel across the batch — the s
 
 Every operator accepts an optional `shortcut: [H]` tensor and computes
 
-```
-y ← y + shortcut ⊙ x
-```
+$$
+y ;\\leftarrow; y + \\mathrm{shortcut} ,\\odot, x
+$$
 
 i.e. a per-channel residual scale. This is *not* a generic skip connection — it fuses a specific algebraic shortcut that shows up repeatedly in Hyena-style gating, saving a separate kernel launch. Pass `None` if you don't need it.
 
@@ -127,7 +130,9 @@ ______________________________________________________________________
 
 1. **Is there a fused CUDA kernel for my shape?**
 
-   - If you have `subquadratic_ops_torch` installed, `fftconv_custom.py` exposes its fused 2D kernel through the same API. Wire it in via the `fft_backend` config flag.
+   - 2D non-causal or 1D causal long-conv → `fftconv_custom.py` exposes the upstream fused FFT kernels (`fft_conv2d`, `fft_causal_conv1d`) through the same API. Wire in via the `fft_backend="subq_ops"` flag on `CKConvND`. The 1D path requires `data_dim=1, is_causal=True`; the 2D path requires `data_dim=2, is_causal=False`.
+   - 1D causal short conv (typical short_conv slot in a Hyena block) → `causal_conv1d_custom.py` exposes `causal_conv1d` directly, and `nvsubquadratic.modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d` wraps it as a depthwise `nn.Conv1d`-compatible module.
+   - 1D causal fused proj+gate+mixer+gate block → `b2b_causal_conv1d` in `causal_conv1d_custom.py`. Not yet wired into a `Hyena` variant; exposed as a building block.
 
 ______________________________________________________________________
 
@@ -144,3 +149,11 @@ ______________________________________________________________________
 - **[`nvsubquadratic/modules/kernels_nd.py`](../../nvsubquadratic/modules/kernels_nd.py)** — learned kernel parametrisations that produce the kernels these ops consume.
 - **[`nvsubquadratic/modules/hyena_nd.py`](../../nvsubquadratic/modules/hyena_nd.py)** — the Hyena operator, the main consumer of these ops.
 - **[`nvsubquadratic/modules/ckconv_nd.py`](../../nvsubquadratic/modules/ckconv_nd.py)** / **[`ckconv_multihead_nd.py`](../../nvsubquadratic/modules/ckconv_multihead_nd.py)** — CKConv variants that compose these primitives.
+
+```{toctree}
+:maxdepth: 1
+:caption: Further reading
+
+FP16_FFTCONV_DERIVATION
+MIXED_BC_PLAN
+```
