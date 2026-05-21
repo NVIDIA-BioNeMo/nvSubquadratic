@@ -225,7 +225,8 @@ class TestValidation:
             _make_ckconv(data_dim=2, fft_padding="circular, zero")
 
     def test_causal_with_periodic_axis_raises(self):
-        # 1D causal cannot combine with a periodic axis.
+        # 1D causal cannot combine with a periodic axis. Exercises the
+        # single-mode ``any(_periodic)`` branch.
         kernel_cfg = _make_kernel_cfg(data_dim=1)
         with pytest.raises(ValueError, match=r"is_causal=True is incompatible"):
             CKConvND(
@@ -233,8 +234,27 @@ class TestValidation:
                 hidden_dim=HIDDEN_DIM,
                 kernel_cfg=kernel_cfg,
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
+                grid_type="single",
+                fft_padding="circular",
+                is_causal=True,
+            )
+
+    def test_causal_with_per_axis_padding_raises(self):
+        # is_causal=True + a per-axis ``fft_padding`` list must be rejected
+        # explicitly. The mixed_fftconv* ops only implement non-causal
+        # linear/circular conv; falling through silently would dispatch to
+        # the non-causal op and produce output that leaks future positions.
+        # Covers the all-zero tuple case (``["zero"]``) that the
+        # ``any(_periodic)`` check above does not catch.
+        kernel_cfg = _make_kernel_cfg(data_dim=1)
+        with pytest.raises(ValueError, match=r"not supported with a per-axis fft_padding"):
+            CKConvND(
+                data_dim=1,
+                hidden_dim=HIDDEN_DIM,
+                kernel_cfg=kernel_cfg,
+                mask_cfg=LazyConfig(torch.nn.Identity)(),
                 grid_type=None,
-                fft_padding=["circular"],
+                fft_padding=["zero"],
                 is_causal=True,
             )
 

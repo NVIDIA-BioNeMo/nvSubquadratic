@@ -444,6 +444,17 @@ class CKConvND(torch.nn.Module):
         # ---- Causal / mixed-BC compatibility ---------------------------------
         if is_causal:
             assert data_dim == 1, f"Causal CKConvND only supports 1D inputs. Got {data_dim}D."
+            if _is_tuple_mode:
+                # The mixed_fftconv* ops implement non-causal linear/circular
+                # convolution; there is no causal mixed path. Falling through
+                # silently would dispatch to the non-causal op and produce
+                # output that leaks future positions. Use fft_padding="zero"
+                # (single-mode string) for 1D causal.
+                raise ValueError(
+                    "is_causal=True is not supported with a per-axis fft_padding "
+                    "list. Use fft_padding='zero' (single-mode string) for 1D "
+                    f"causal. Got fft_padding={fft_padding!r}."
+                )
             if any(_periodic):
                 raise ValueError(
                     "is_causal=True is incompatible with periodic FFT padding. "
