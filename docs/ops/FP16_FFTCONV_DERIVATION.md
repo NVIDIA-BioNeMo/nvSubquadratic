@@ -185,7 +185,7 @@ with kernel shape $K_1 \times \cdots \times K_d$, the decomposition
 generalizes.  The T1 and T4 terms carry over directly:
 
 $$
-T_1 = \text{circ_conv}(x_c, k_{c,\text{pad}}), \qquad
+T_1 = \text{circ\_conv}(x_c, k_{c,\text{pad}}), \qquad
 T_4 = \mu_x \mu_k \prod_i K_i
 $$
 
