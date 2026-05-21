@@ -1,22 +1,69 @@
 # TODO: Add license header here
 
 
-"""Multi-head FFT convolution operators for 2D signals.
+r"""Multi-head 2D FFT convolution operators with dense within-head channel mixing.
 
-This module provides FFT convolutions with dense within-head channel mixing,
-analogous to multi-head attention but for convolutions.
+Motivation
+----------
+The standard FFT convolutions in :mod:`nvsubquadratic.ops.fftconv` are
+*depthwise*: each output channel is the convolution of a single input
+channel with its own kernel, i.e. the kernel has shape ``[H, K_x, K_y]`` and
+the frequency-domain product is element-wise across channels. This is fast
+but lets no information flow between channels — channel mixing has to be
+done by a separate pointwise layer (typically a 1x1 conv or MLP).
 
-Key difference from standard (depthwise) FFT conv:
-- Depthwise: kernel shape [1, H, K_x, K_y], element-wise multiply in freq domain
-- Multi-head: kernel shape [num_heads, head_dim, head_dim, K_x, K_y], dense matmul within heads
+The **multi-head** variant in this module bundles depthwise spatial mixing
+and dense channel mixing into a single op, in the spirit of multi-head
+attention:
 
-Shapes:
-- Input x: [B, num_heads, head_dim, H, W]
-- Kernel: [num_heads, head_dim_out, head_dim_in, K_x, K_y]
-- Output: [B, num_heads, head_dim, H, W]
+- Channels are split into ``num_heads`` groups of ``head_dim`` each.
+- Within a head, the convolution is *dense* across channels: every output
+  channel sees every input channel through its own learned 2D kernel.
+- Across heads, channels remain isolated (no cross-head mixing).
 
-The convolution applies dense channel mixing within each head independently,
-enabling cross-channel learning while maintaining head isolation.
+Frequency-domain operation
+--------------------------
+Concretely, if :math:`\hat{x} \in \mathbb{C}^{B \times n \times d \times F_x \times F_y}`
+is the rFFT of the input (with :math:`d = \text{head\_dim}`,
+:math:`n = \text{num\_heads}`), and
+:math:`\hat{K} \in \mathbb{C}^{n \times d_o \times d_i \times F_x \times F_y}`
+is the rFFT of the kernel, then per spatial frequency bin :math:`(f_x, f_y)`
+each head applies a dense :math:`d_o \times d_i` matrix to the input vector:
+
+.. math::
+    \hat{y}_{b, n, o, f_x, f_y}
+        = \sum_{i} \hat{K}_{n, o, i, f_x, f_y} \, \hat{x}_{b, n, i, f_x, f_y}
+
+Implemented as a single :func:`torch.einsum` over the frequency-domain
+tensors. The inverse rFFT then materialises the spatial output.
+
+Low-rank variant
+----------------
+For large ``head_dim``, the dense kernel ``[d_o, d_i, K_x, K_y]`` has
+:math:`d^2 K_x K_y` parameters and a matching memory/compute cost in
+frequency domain. The low-rank functions factor the kernel as
+:math:`K = U V` with rank ``r < d``:
+
+.. math::
+    \hat{y} = \hat{U} \,(\hat{V} \hat{x})
+
+This drops the per-frequency-bin cost from :math:`O(d^2)` to :math:`O(2 d r)`
+and the parameter count from :math:`d^2 K_x K_y` to :math:`2 d r K_x K_y`,
+without materialising the full :math:`d \times d` kernel spectrum.
+
+Shape conventions
+-----------------
+- Input: ``x: [B, num_heads, head_dim, H, W]``
+- Dense kernel: ``[num_heads, head_dim_out, head_dim_in, K_x, K_y]``
+- Low-rank factors: ``U: [n, d, r, K_x, K_y]``, ``V: [n, r, d, K_x, K_y]``
+- Output: ``[B, num_heads, head_dim, H, W]``
+
+Linear vs. circular
+-------------------
+Functions without the ``_circular`` suffix produce same-aligned *linear*
+convolutions (zero-padded FFTs with crop). The ``_circular_*`` variants
+compute the periodic convolution at the same spatial size (no padding,
+no crop) and expect ``K_x == H``, ``K_y == W``.
 """
 
 __all__ = [

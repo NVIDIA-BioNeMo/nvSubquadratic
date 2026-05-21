@@ -9,8 +9,6 @@ Computation graph (per-block):
          │
     short_conv([Q; K; V])                   depthwise short conv on concatenated QKV
          │
-    RoPE(Q, K)                              optional rotary positional encoding
-         │
     QK-Norm(Q [, K])                        optional per-channel normalization
          │                                  (K is only normalized when gate_nonlinear is Identity)
     z = Q ⊙ σ(K)                            first multiplicative gate
@@ -45,7 +43,6 @@ from nvsubquadratic.modules.distributed_depthwise_conv_nd import (
     DistributedDepthwiseConv3d,
 )
 from nvsubquadratic.parallel.a2a_comms import AllToAllSingleFunction
-from nvsubquadratic.utils import rope
 
 
 class Hyena(torch.nn.Module):
@@ -63,7 +60,6 @@ class Hyena(torch.nn.Module):
 
     Optional components (each disabled by passing Identity or None):
         - Short depthwise convolution on concatenated [Q, K, V]
-        - Rotary positional encoding (RoPE) on Q and K (1D/2D/3D)
         - QK normalization (Q always; K only when σ = Identity)
         - PixelHyena normalization between first gate and global conv
         - Output normalization after second gate
@@ -76,9 +72,7 @@ class Hyena(torch.nn.Module):
         short_conv_cfg: LazyConfig,
         gate_nonlinear_cfg: LazyConfig,
         pixelhyena_norm_cfg: LazyConfig,
-        use_rope: bool,
         qk_norm_cfg: Optional[LazyConfig] | None,
-        rope_base: float = 10000.0,
         output_norm_cfg: LazyConfig = LazyConfig(torch.nn.Identity)(),
         gate_nonlinear_2_cfg: Optional[LazyConfig] = None,
     ):
@@ -92,11 +86,9 @@ class Hyena(torch.nn.Module):
                 Use Identity for linear gating.
             pixelhyena_norm_cfg: Normalization between first gate and global conv.
                 Use Identity to disable.
-            use_rope: Whether to apply rotary positional encoding to Q and K.
             qk_norm_cfg: Per-channel normalization for Q (and K when gate is Identity).
                 None to disable.  Separate instances are created for Q and K to
                 support stateful norms (e.g. RMSNorm with learnable scale).
-            rope_base: Base frequency for RoPE (default: 10000.0).
             output_norm_cfg: Normalization after the second gate.  Defaults to Identity.
             gate_nonlinear_2_cfg: Activation for the second multiplicative gate.
                 If None (default), reuses gate_nonlinear_cfg for both gates.
@@ -152,21 +144,12 @@ class Hyena(torch.nn.Module):
             self.q_norm = None
             self.k_norm = None
 
-        # RoPE
-        self.use_rope = use_rope
-        self.rope_base = rope_base
-        # RoPE caches (keyed by shape, dtype, device)
-        if self.use_rope:
-            self._rope1d_cache = {}
-            self._rope2d_cache = {}
-            self._rope3d_cache = {}
-
     def extra_repr(self) -> str:
         """Return extra representation string for the module."""
         is_causal = getattr(self.global_conv, "is_causal", None)
         q_norm_str = self.q_norm.__class__.__name__ if self.q_norm is not None else "None"
         k_norm_str = self.k_norm.__class__.__name__ if self.k_norm is not None else "None"
-        parts = [f"q_norm={q_norm_str}", f"k_norm={k_norm_str}", f"use_rope={self.use_rope}"]
+        parts = [f"q_norm={q_norm_str}", f"k_norm={k_norm_str}"]
         if self.gate_nonlinear is not self.gate_nonlinear_2:
             g1 = self.gate_nonlinear.__class__.__name__
             g2 = self.gate_nonlinear_2.__class__.__name__
@@ -174,102 +157,6 @@ class Hyena(torch.nn.Module):
         if is_causal is not None:
             parts.append(f"is_causal={is_causal}")
         return ", ".join(parts)
-
-    def _rope_cache_1d(self, seq_len: int, dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
-        """Precompute and cache 1D RoPE tables for input of length seq_len.
-
-        Args:
-            seq_len: Number of positions T.
-            dim: Per-axis channel dimension. Must be even because rotations operate on pairs.
-            device: Target device for the cached tensors.
-            dtype: Target dtype for the cached tensors.
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor]: ``(cos, sin)``
-            where shapes are:
-            - cos: [dim, seq_len]
-            - sin: [dim, seq_len]
-
-        Notes:
-            The cache key is ``(T, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
-        """
-        key = (int(seq_len), int(dim), str(device), str(dtype))
-        if key in self._rope1d_cache:
-            return self._rope1d_cache[key]
-        # If not in cache, compute and cache
-        with torch.inference_mode(False):
-            with torch.no_grad():
-                cos, sin = rope.construct_rope_1d_cache_bhl(seq_len, dim, device, dtype, self.rope_base)
-                self._rope1d_cache[key] = (cos, sin)
-        return cos, sin
-
-    def _rope_cache_2d(
-        self, height: int, width: int, dim_half: int, device, dtype
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Precompute and cache 2D RoPE tables for Y and X axes.
-
-        Args:
-            height: Number of rows H.
-            width: Number of columns W.
-            dim_half: Per-axis channel dimension. Must be even because rotations operate on pairs.
-            device: Target device for the cached tensors.
-            dtype: Target dtype for the cached tensors.
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_y, sin_y, cos_x, sin_x)``
-            where shapes are:
-            - cos_y/sin_y: [dim_half, height]
-            - cos_x/sin_x: [dim_half, width]
-
-        Notes:
-            The cache key is ``(H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
-        """
-        key = (int(height), int(width), int(dim_half), str(device), str(dtype))
-        if key in self._rope2d_cache:
-            return self._rope2d_cache[key]
-        # If not in cache, compute and cache
-        with torch.inference_mode(False):
-            with torch.no_grad():
-                cos_y, sin_y, cos_x, sin_x = rope.construct_rope_2d_cache_bhl(
-                    height, width, dim_half, device, dtype, self.rope_base
-                )
-                self._rope2d_cache[key] = (cos_y, sin_y, cos_x, sin_x)
-        return cos_y, sin_y, cos_x, sin_x
-
-    def _rope_cache_3d(
-        self, depth: int, height: int, width: int, dim_third: int, device, dtype
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Precompute and cache 3D RoPE tables for Z, Y, and X axes.
-
-        Args:
-            depth: Number of depth D.
-            height: Number of rows H.
-            width: Number of columns W.
-            dim_third: Per-axis channel dimension. Must be even because rotations operate on pairs.
-            device: Target device for the cached tensors.
-            dtype: Target dtype for the cached tensors.
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ``(cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)``
-            where shapes are:
-            - cos_z, sin_z: [dim_third, depth]
-            - cos_y, sin_y: [dim_third, height]
-            - cos_x, sin_x: [dim_third, width]
-
-        Notes:
-            The cache key is ``(D, H, W, D_axis, device, dtype)``. Tables are built under ``torch.no_grad()`` and reused across calls.
-        """
-        key = (int(depth), int(height), int(width), int(dim_third), str(device), str(dtype))
-        if key in self._rope3d_cache:
-            return self._rope3d_cache[key]
-        # If not in cache, compute and cache
-        with torch.inference_mode(False):
-            with torch.no_grad():
-                cos_z, sin_z, cos_y, sin_y, cos_x, sin_x = rope.construct_rope_3d_cache_bhl(
-                    depth, height, width, dim_third, device, dtype, self.rope_base
-                )
-                self._rope3d_cache[key] = (cos_z, sin_z, cos_y, sin_y, cos_x, sin_x)
-        return cos_z, sin_z, cos_y, sin_y, cos_x, sin_x
 
     def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
         """Count FLOPs for the Hyena gated global convolutional mixer.
@@ -281,21 +168,18 @@ class Hyena(torch.nn.Module):
              2 * 3C * S * k_prod,  where k_prod = product of kernel sizes.
              Each output element: k_prod MACs for 1 depthwise filter.
              Skipped when short_conv is Identity.
-          2. RoPE on Q and K (when ``self.use_rope``):  4 * C * S.
-             Each of Q, K: x * cos + rotate(x) * sin = 2 elementwise ops
-             per element, over C * S elements.
-          3. QK-Norm (when ``self.q_norm is not None``):
+          2. QK-Norm (when ``self.q_norm is not None``):
              Q: 3 * C * S  (RMSNorm-like).
              K: 3 * C * S  only when ``self.gate_nonlinear`` is Identity
              (linear gating); a nonlinear σ(K) already bounds magnitude.
-          4. First gate  Q ⊙ σ(K):  C * S (multiply).
+          3. First gate  Q ⊙ σ(K):  C * S (multiply).
              + C * S for activation on K if gate_nonlinear is not Identity.
-          5. PixelHyena norm (if not Identity):  3 * C * S.
-          6. Global convolution (CKConvND):
+          4. PixelHyena norm (if not Identity):  3 * C * S.
+          5. Global convolution (CKConvND):
              Delegated to ``self.global_conv.flop_count(spatial_dims, inference)``.
-          7. Second gate  h ⊙ σ₂(V):  C * S (multiply).
+          6. Second gate  h ⊙ σ₂(V):  C * S (multiply).
              + C * S for activation on V if gate_nonlinear_2 is not Identity.
-          8. Output norm (if not Identity):  3 * C * S.
+          7. Output norm (if not Identity):  3 * C * S.
 
         Args:
             spatial_dims: Spatial dimensions of the input, e.g. (H, W) for 2D.
@@ -321,34 +205,30 @@ class Hyena(torch.nn.Module):
             out_ch = self.short_conv.out_channels
             flops += 2 * (in_ch // groups) * out_ch * S * k_prod
 
-        # 2. RoPE
-        if self.use_rope:
-            flops += 4 * C * S
-
-        # 3. QK-Norm (k_norm is Identity when gate is non-linear, so no extra FLOPs)
+        # 2. QK-Norm (k_norm is Identity when gate is non-linear, so no extra FLOPs)
         if self.q_norm is not None:
             flops += 3 * C * S  # Q norm
             if not isinstance(self.k_norm, torch.nn.Identity):
                 flops += 3 * C * S  # K norm (only for linear gating)
 
-        # 4. First gate: Q * σ(K)
+        # 3. First gate: Q * σ(K)
         flops += C * S  # elementwise multiply
         if not isinstance(self.gate_nonlinear, torch.nn.Identity):
             flops += C * S  # activation on K
 
-        # 5. PixelHyena norm
+        # 4. PixelHyena norm
         if not isinstance(self.pixelhyena_norm, torch.nn.Identity):
             flops += 3 * C * S
 
-        # 6. Global convolution
+        # 5. Global convolution
         flops += self.global_conv.flop_count(spatial_dims, inference=inference)
 
-        # 7. Second gate: h * σ₂(V)
+        # 6. Second gate: h * σ₂(V)
         flops += C * S
         if not isinstance(self.gate_nonlinear_2, torch.nn.Identity):
             flops += C * S  # activation on V
 
-        # 8. Output norm
+        # 7. Output norm
         if not isinstance(self.output_norm, torch.nn.Identity):
             flops += 3 * C * S
 
@@ -408,56 +288,7 @@ class Hyena(torch.nn.Module):
             key = key.contiguous()
             value = value.contiguous()
 
-        # Optional RoPE positional encoding (before normalization)
-        if self.use_rope:
-            # Get the dimensionality of the input and apply RoPE based on the dimensionality
-            dimensionality_input = query.ndim - 2
-            if dimensionality_input == 1:
-                assert query.shape[1] % 2 == 0, (
-                    f"With 1D RoPE, the number of channels must be divisible by 2. Got {query.shape[1]}."
-                )
-                assert key.shape[1] % 2 == 0, (
-                    f"With 1D RoPE, the number of channels must be divisible by 2. Got {key.shape[1]}."
-                )
-                # Gather or contsruct the RoPE 1D cache
-                _, hidden_dim, seq_len = query.shape
-                rope_1d_cache = self._rope_cache_1d(seq_len, hidden_dim, query.device, query.dtype)
-                # Apply RoPE to query and key
-                query = rope.apply_rope_1d_bhl(query, rope_1d_cache)
-                key = rope.apply_rope_1d_bhl(key, rope_1d_cache)
-
-            elif dimensionality_input == 2:
-                assert query.shape[1] % 4 == 0, (
-                    f"With 2D RoPE, the number of channels must be divisible by 4. Got {query.shape[1]}."
-                )
-                assert key.shape[1] % 4 == 0, (
-                    f"With 2D RoPE, the number of channels must be divisible by 4. Got {key.shape[1]}."
-                )
-                # Gather or contsruct the RoPE 2D cache
-                _, hidden_dim, height, width = query.shape
-                rope_2d_cache = self._rope_cache_2d(height, width, hidden_dim // 2, query.device, query.dtype)
-                # Apply RoPE to query and key
-                query = rope.apply_rope_2d_bhl(query, rope_2d_cache)
-                key = rope.apply_rope_2d_bhl(key, rope_2d_cache)
-
-            elif dimensionality_input == 3:
-                assert query.shape[1] % 6 == 0, (
-                    f"With 3D RoPE, the number of channels must be divisible by 6. Got {query.shape[1]}."
-                )
-                assert key.shape[1] % 6 == 0, (
-                    f"With 3D RoPE, the number of channels must be divisible by 6. Got {key.shape[1]}."
-                )
-                # Gather or contsruct the RoPE 3D cache
-                _, hidden_dim, depth, height, width = query.shape
-                rope_3d_cache = self._rope_cache_3d(depth, height, width, hidden_dim // 3, query.device, query.dtype)
-                # Apply RoPE to query and key
-                query = rope.apply_rope_3d_bhl(query, rope_3d_cache)
-                key = rope.apply_rope_3d_bhl(key, rope_3d_cache)
-
-            else:
-                raise NotImplementedError(f"RoPE is not implemented for {dimensionality_input}D inputs.")
-
-        # QK normalization (after RoPE).
+        # QK normalization.
         # Tensors are BHL: [B, C, *spatial]. Channel-first norms can operate
         # directly; channel-last norms need movedim(1, -1) / movedim(-1, 1).
         # K is only normalized when gate_nonlinear is Identity (linear gating),

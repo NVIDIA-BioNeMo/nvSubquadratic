@@ -2,7 +2,7 @@
 
 W&B project: [nvsubquadratic](https://wandb.ai/implicit-long-convs/nvsubquadratic)
 
-> **Status**: All 1D/2D/3D runs complete for Hyena, Attention, and Mamba. Hyena Gaussian mask 2D ablation complete. Only remaining: 3D Attention color_cond no-patch rerun (compile=False).
+> **Status**: All 1D/2D/3D runs complete for Hyena, Attention, and Mamba. Hyena Gaussian mask 2D + 3D ablations complete (3D 2x2 init_extent / ω₀ ablation: per-axis `init_extent` is the dominant fix; ω₀=30 hurts). Only remaining: 3D Attention color_cond no-patch rerun (compile=False).
 
 ______________________________________________________________________
 
@@ -158,6 +158,33 @@ Legend: **bold** = best per task/row, 🔄 = running, 🚫 = not yet run
 
 > 3D Mamba non-patched color_cond (**0.0150**) crushes Hyena (0.225) and Hyena patched p=8 (0.150) by 10-15x. Mamba patched also strong: p=2 (0.0463) already beats Hyena best (0.150). Mamba p=8 (0.128) is worse than non-patched — patching hurts Mamba on 3D color_cond.
 
+### 3D — Hyena Gaussian Mask 2×2 Ablation (color_conditioning, no patch, 50k iters)
+
+The 3D `color_conditioning` volume is **anisotropic**: D=8, H=W=64 over a SIREN kernel cache of L=64. Two fixes were tested in a 2×2 to repair Hyena's poor 3D performance (0.225 with the default Identity mask):
+
+- **Per-axis `init_extent`** for the Gaussian mask. Setting it to `(0.125, 1.0, 1.0)` matches each Gaussian's logspace ramp to the actual fraction of the kernel grid covered along that axis (8/64 along D, 64/64 along H/W).
+- **Bumping `omega_0` from 10 → 30** in the SIREN kernel — hypothesis was that more initial frequency helps with fine 3D detail.
+
+| Variant                     | `init_extent` | `omega_0` | val/loss   | train/loss_epoch | wandb                                                                         |
+| --------------------------- | ------------- | --------- | ---------- | ---------------- | ----------------------------------------------------------------------------- |
+| **per-axis only** ⭐        | per-axis      | 10        | **0.0338** | 0.0319           | [iaaj7ij9](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/iaaj7ij9) |
+| baseline (Gaussian, scalar) | scalar 1.0    | 10        | 0.0496     | 0.0456           | [38z9ubpo](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/38z9ubpo) |
+| both (per-axis + ω₀=30)     | per-axis      | 30        | 0.0588     | 0.0551           | [gcgsp5sg](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/gcgsp5sg) |
+| ω₀=30 only                  | scalar 1.0    | 30        | 0.1049     | 0.1006           | [iun0rqsu](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/iun0rqsu) |
+
+> **Per-axis `init_extent` is the dominant fix.** It solves the task ~10k steps earlier than the scalar baseline and reaches a 32% lower final val/loss (0.0338 vs 0.0496).
+> **`omega_0=30` is harmful in 3D color_cond.** Alone it more than doubles the loss vs scalar baseline (0.1049 vs 0.0496), and combined with the per-axis init it actively dampens its benefit (0.0588 vs 0.0338).
+> **Strong negative interaction**: bumping ω₀ undoes a large fraction of the per-axis gain. Recommended setting going forward: per-axis `init_extent`, **default ω₀=10**.
+> **Adding the Gaussian mask alone (scalar init=1.0, ω₀=10)** already improves Hyena 3D color_cond from 0.225 → 0.0496 (4.5× better) — most of the 6.6× total gain comes from the mask itself; per-axis init contributes the remaining 32%.
+> The patch variant (`hyena_gaussian_mask_patch.py`, p=4, both per-axis + ω₀=30) finished at val/loss=0.2398 ([tg8kfq1i](https://wandb.ai/implicit-long-convs/nvsubquadratic/runs/tg8kfq1i)) — only marginally different from the original Hyena patched run (0.209) and far behind the no-patch peraxis result. Patching does not help here.
+
+> **Ranking on 3D color_conditioning (no patch)**:
+>
+> 1. Mamba bidir 0.0150 — still **best overall** (2.3× ahead of best Hyena)
+> 1. **Hyena Gaussian mask + per-axis init: 0.0338** ← new best Hyena (6.6× over Hyena Identity-mask)
+> 1. Hyena Gaussian mask scalar init: 0.0496
+> 1. Hyena Identity mask: 0.225 (original)
+
 ______________________________________________________________________
 
 ## Phase 1 — Hyperparameter Ablation (1D Simple Copy, 20k iters)
@@ -265,6 +292,7 @@ ______________________________________________________________________
 1. **Mamba 3D color_conditioning**: non-patched **0.0150** crushes Hyena no-patch (0.225, 15x) and Hyena best patched (0.150, 10x). Mamba dominates color_conditioning across all dimensions. Patching *hurts* Mamba on 3D cc: p=2 (0.0463), p=4 (0.0563), p=8 (0.128) — all worse than non-patched (0.0150).
 1. **Hyena Gaussian mask (2D)**: Gaussian mask slightly improves simple_copy non-patched (1.31e-4 vs 2.08e-4 standard) but is comparable/slightly worse on color_cond (3.18e-3 vs 2.54e-3). Patched results similar to standard Hyena — no dramatic improvement from Gaussian masking.
 1. **omega_0 scaling (2D Gaussian mask)**: task-dependent. Scaling ω₀ down (∝L_cache) *hurts* simple_copy (3-5x worse) but *helps* color_cond at p=2/4/8 (up to 1.4x). Scaling ω₀ *up* to 30 mostly hurts color_cond. Conclusion: simple_copy wants max frequency content; color_cond prefers frequency-matched kernels (lower ω₀ for coarser grids).
+1. **3D Hyena Gaussian mask + per-axis `init_extent`** (new best Hyena on 3D color_cond): scalar Gaussian mask alone takes Hyena from 0.225 → **0.0496** (4.5x); switching `init_extent` to per-axis `(0.125, 1.0, 1.0)` (matched to the anisotropic 8×64×64 volume on an L=64 kernel cache) further drops it to **0.0338** (6.6× over Identity mask). Bumping ω₀ to 30 is counter-productive in 3D color_cond — alone (0.105) and even combined with per-axis init (0.0588) it loses most of the gain. **Mamba bidir non-patched (0.0150) is still 2.3× ahead** of the best Hyena variant on 3D color_cond.
 
 ______________________________________________________________________
 
@@ -286,8 +314,9 @@ ______________________________________________________________________
 - [x] ~~3D color_conditioning~~ — implemented and initial patched runs complete
 - [x] ~~omega_0 ∝ L scaling sweep (2D Gaussian mask, 50k iters)~~ — 40925–40932, all complete
 - [x] ~~omega_0=30 ablation on color_cond 2D Gaussian mask (no-patch + patch sizes)~~ — 40962–40966, all complete
+- [x] ~~3D Hyena Gaussian mask 2×2 ablation (per-axis `init_extent` × ω₀=30)~~ — 42070–42074, all complete
 - [ ] Rerun 3D Attention color_cond no-patch with `compile=False` (OOM with inductor)
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-04-14
+**Last Updated**: 2026-04-27

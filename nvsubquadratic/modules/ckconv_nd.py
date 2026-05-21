@@ -7,12 +7,14 @@ import copy
 import inspect
 import math
 import warnings
+from collections.abc import Sequence
 from typing import Literal
 
 import torch
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, _resolve_target, instantiate
+from nvsubquadratic.modules.kernels_nd import _normalize_l_cache
 
 # Standard FFT convolutions
 from nvsubquadratic.ops.circular_fftconv import (
@@ -264,23 +266,41 @@ class CKConvND(torch.nn.Module):
         # When grid_type="single", grid_lens is halved relative to spatial_dims
         # (see forward()).  Adjust L_cache so the positional-embedding grid_cache
         # spans [-1, 1] for the actual kernel size instead of a truncated subrange.
-        effective_L = getattr(kernel_cfg, "L_cache", None)
-        if grid_type == "single" and effective_L is not None:
-            # Deepcopy before mutating so shared config objects aren't corrupted.
-            kernel_cfg = copy.deepcopy(kernel_cfg)
-            effective_L = (effective_L + 1) // 2
-            kernel_cfg.L_cache = effective_L
+        # ``L_cache`` may be either a scalar int (isotropic grid) or a sequence
+        # of length ``data_dim`` (anisotropic grid); both forms are supported
+        # uniformly via ``_normalize_l_cache``.
+        L_cache_raw = getattr(kernel_cfg, "L_cache", None)
+        effective_L_per_axis: tuple[int, ...] | None = None
+        if L_cache_raw is not None:
+            effective_L_per_axis = _normalize_l_cache(L_cache_raw, data_dim)
+            if grid_type == "single":
+                # Deepcopy before mutating so shared config objects aren't corrupted.
+                kernel_cfg = copy.deepcopy(kernel_cfg)
+                effective_L_per_axis = tuple((L + 1) // 2 for L in effective_L_per_axis)
+                # Pass the new L_cache back in the same form the user supplied
+                # (scalar in / scalar out, sequence in / sequence out) so config
+                # serialization round-trips cleanly.
+                if isinstance(L_cache_raw, Sequence) and not isinstance(L_cache_raw, (str, bytes)):
+                    kernel_cfg.L_cache = list(effective_L_per_axis)
+                else:
+                    # Anisotropic shrink of a scalar should never happen because
+                    # ``_normalize_l_cache(int, ...)`` broadcasts to a uniform tuple.
+                    kernel_cfg.L_cache = int(effective_L_per_axis[0])
 
         # Inject the actual kernel size into mask_cfg so that attenuation-based
         # initialization (GaussianModulationND) uses the correct grid geometry.
-        # This keeps grid_type logic in one place (here) instead of duplicating
-        # it in the mask.
-        if effective_L is not None:
+        # The mask is intentionally isotropic here (one ``grid_size`` shared
+        # across axes); we feed it the *largest* per-axis kernel size so the
+        # narrowest reachable Gaussian bandwidth (``min_std`` from
+        # ``min_attenuation_at_step``) stays achievable on the highest-resolution
+        # axis.  Per-axis bandwidth differences should be expressed via the
+        # mask's per-axis ``init_extent`` instead.
+        if effective_L_per_axis is not None:
             mask_target = _resolve_target(mask_cfg["__target__"]) if "__target__" in mask_cfg else None
             if mask_target is not None and "grid_size" in inspect.signature(mask_target).parameters:
                 # Deepcopy before mutating so shared config objects aren't corrupted.
                 mask_cfg = copy.deepcopy(mask_cfg)
-                mask_cfg.grid_size = 2 * effective_L - 1
+                mask_cfg.grid_size = 2 * max(effective_L_per_axis) - 1
 
         # Construct kernel and mask
         self.kernel = instantiate(kernel_cfg)

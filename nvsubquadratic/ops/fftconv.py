@@ -1,63 +1,105 @@
 # TODO: Add license header here
 
 
-"""FFT-based convolution operators for 1D, 2D, and 3D signals.
+r"""FFT-based convolution operators (fp32) for 1D, 2D, and 3D signals.
 
-This module provides fast FFT convolutions for both common memory layouts:
+Mathematical background
+-----------------------
+The discrete convolution of an input :math:`x` with a kernel :math:`k` is
 
-- BLH: ``[batch, * spatial_dims, hidden]``
-- BHL: ``[batch, hidden, * spatial_dims]``
+.. math::
+    y[n] = \sum_{m} x[n - m] \, k[m]
+
+Computing this directly costs :math:`O(N \cdot K)` per channel (and per
+spatial dimension), which becomes the bottleneck once the kernel grows large
+relative to the input — the regime needed by Hyena-style models with global
+("input-length") kernels. The **convolution theorem** lets us replace the
+spatial product with an element-wise frequency-domain product:
+
+.. math::
+    y = \mathcal{F}^{-1}\bigl( \mathcal{F}(x) \odot \mathcal{F}(k) \bigr)
+
+so the cost drops to :math:`O(N \log N)` per channel, independent of kernel
+size. This is what makes Hyena and related sequence/spatial mixers
+*subquadratic* even when their effective receptive field spans the whole
+input.
+
+These ops implement that convolution via PyTorch's real-input FFT
+(:func:`torch.fft.rfft` / :func:`torch.fft.rfftn`), which exploits the
+real-valued input to halve the memory of the frequency-domain tensors.
+
+Linear vs. circular convolution
+-------------------------------
+A naive same-size FFT product gives *circular* convolution (kernel wraps
+around the input boundary). To get the standard *linear* "same" output you
+zero-pad both signals to a length :math:`F \ge N + K - 1`, multiply in
+frequency, invert, and crop. The functions in this module use the smallest
+such :math:`F`:
+
+- Causal 1D: ``F = min(L + K, 2L)`` and crop the trailing ``L`` samples.
+- Non-causal nD: ``F_d = min(N_d + ceil(K_d / 2), 2 N_d)`` per axis and crop
+  the centered ``N_d`` samples.
+
+The non-causal variant is cheaper because it needs less padding (the
+"same" output only needs enough headroom for *half* the kernel on each side).
+
+For *circular* convolutions (no wrap-around removal), see
+:mod:`nvsubquadratic.ops.circular_fftconv`.
+
+Layouts
+-------
+Two channel orderings are supported. Pick whichever matches your model:
+
+- **BHL** (channels-first, ``[batch, hidden, * spatial_dims]``): standard for
+  ``torch.nn.ConvNd``-style modules. **Faster** under the hood because the
+  FFT runs on contiguous spatial axes without a transpose.
+- **BLH** (channels-last, ``[batch, * spatial_dims, hidden]``): common in
+  transformer-style code. The ``*_fp32_bhl_w_reshape`` wrappers transparently
+  reshape BLH -> BHL -> BLH and are the recommended entry point for
+  channels-last callers.
 
 Families provided
 -----------------
-- 1D convolutions (causal and non-causal) with optional per-channel shortcut
-  - BLH: ``causal_fftconv1d_fp32_blh``, ``fftconv1d_fp32_blh``
-  - BHL: ``causal_fftconv1d_fp32_bhl``, ``fftconv1d_fp32_bhl``
-- 2D convolutions with optional per-channel shortcut
-  - BLH: ``fftconv2d_fp32_blh``
-  - BHL: ``fftconv2d_fp32_bhl``
-- 3D convolutions with optional per-channel shortcut
-  - BLH: ``fftconv3d_fp32_blh``
-  - BHL: ``fftconv3d_fp32_bhl``
+- 1D, causal and non-causal: ``[causal_]fftconv1d_fp32_{blh,bhl}[_w_reshape]``
+- 2D, non-causal: ``fftconv2d_fp32_{blh,bhl}[_w_reshape]``
+- 3D, non-causal: ``fftconv3d_fp32_{blh,bhl}[_w_reshape]``
 
-Wrapper variants (recommended for BLH inputs)
---------------------------------------------
-- ``*_fp32_bhl_w_reshape`` wrappers accept BLH inputs, internally reshape to BHL for
-  faster execution, apply the BHL operator, and then reshape back. They return
-  tensors in the same layout they received (BLH).
+Shape conventions
+-----------------
+- BHL kernels are ``[1|B, H, * K_dims]`` (channels first); BLH kernels are
+  ``[1|B, * K_dims, H]``.
+- A leading dim of ``1`` indicates a *shared* kernel across the batch (the
+  standard depthwise case); a leading dim of ``B`` indicates a *per-sample*
+  kernel (e.g. FiLM-conditioned Hyena, where each sample gets its own kernel).
 
-Shapes and conventions
-----------------------
-- BLH inputs and kernels:
-  - 1D: ``x: [B, L, H]``, ``kernel: [1|B, K, H]``
-  - 2D: ``x: [B, X_in, Y_in, H]``, ``kernel: [1|B, K_x, K_y, H]``
-  - 3D: ``x: [B, X_in, Y_in, Z_in, H]``, ``kernel: [1|B, K_x, K_y, K_z, H]``
-- BHL inputs and kernels:
-  - 1D: ``x: [B, H, L]``, ``kernel: [1|B, H, K]``
-  - 2D: ``x: [B, H, X_in, Y_in]``, ``kernel: [1|B, H, K_x, K_y]``
-  - 3D: ``x: [B, H, X_in, Y_in, Z_in]``, ``kernel: [1|B, H, K_x, K_y, K_z]``
+Shortcut term
+-------------
+Optional ``shortcut: [H]`` adds a per-channel residual scale of the input:
 
-Cropping and causality
-----------------------
-- Non-causal variants produce "same" outputs by cropping the linear convolution
-  result centered on the input. Crop offsets are ``K//2`` (1D) or per-axis.
-- Causal 1D uses ``fft_len = min(L + K, 2L)`` and crops the tail to length ``L``.
-  Non-causal 1D uses ``fft_len = min(L + ceil(K/2), 2L)`` and centers the crop.
-- Non-causal variants are faster and more memory efficient, as they require
-  less padding.
+.. math::
+    y \leftarrow y + \text{shortcut} \odot x
 
-Shortcuts and dtype
--------------------
-- Optional ``shortcut: [H]`` scales the input per-channel and is added to the
-  convolution output: ``y += shortcut * x`` (broadcasted along spatial dims).
-- All operators accept any input dtype. Internally, ``x`` and ``kernel`` are
-  cast to ``float32`` for numerical stability; the output is returned in the
-  original dtype of ``x``.
+broadcast along the spatial dimensions. This fuses the residual into the same
+kernel launch and matches the algebra used by the multi-head FFT conv (see
+:mod:`nvsubquadratic.ops.fftconv_multihead`) and by Hyena gating.
+
+Precision
+---------
+All operators accept any input dtype. Internally ``x`` and ``kernel`` are
+cast to ``float32`` for numerical stability (the frequency-domain product
+amplifies the dynamic range of intermediate values); the output is returned
+in the original dtype of ``x``. For aggressive memory/compute savings on
+power-of-two spatial dims, see the fp16 counterparts in
+:mod:`nvsubquadratic.ops.fftconv_fp16` and
+:mod:`nvsubquadratic.ops.circular_fftconv_fp16`.
 
 Performance
 -----------
-- For BLH inputs, prefer the ``*_fp32_bhl_w_reshape`` wrappers; benchmarks show they
-  are faster than operating directly in BLH layout.
+- For BLH inputs, prefer the ``*_fp32_bhl_w_reshape`` wrappers; benchmarks
+  show they are consistently faster than operating directly in BLH layout
+  because the FFT then runs on contiguous spatial axes.
+- For memory-constrained workloads, see
+  :mod:`nvsubquadratic.ops.fftconv_chunked` for channel-chunked variants.
 """
 
 __all__ = [
@@ -115,18 +157,33 @@ def causal_fftconv1d_fp32_blh(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """1D FFT convolution with optional shortcut. When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+    r"""Causal 1D FFT convolution (BLH layout, channels-last) with optional shortcut.
 
-    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
-    numerical stability and returns the result in the original dtype of ``x``.
+    Computes :math:`y[n] = \sum_{m=0}^{n} x[n-m]\, k[m]` per channel via the
+    FFT path:
+
+    .. math::
+        y = \mathcal{F}^{-1}\bigl(\mathcal{F}_F(x) \odot \mathcal{F}_F(k)\bigr)[\,:L\,]
+
+    where :math:`F = \min(L + K, 2L)` is the zero-pad length that prevents
+    wrap-around. Causality is enforced implicitly by keeping only the leading
+    ``L`` samples of the inverse FFT (no future taps leak into position ``n``).
+
+    When ``shortcut`` is provided, the per-channel residual is added:
+
+    .. math::
+        y \leftarrow y + \text{shortcut} \odot x
 
     Args:
-        x (torch.Tensor): Input tensor of shape (batch_size, seq_len, hidden_dim).
-        kernel (torch.Tensor): Kernel tensor of shape (1, kernel_len, hidden_dim).
-        shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
+        x: Input tensor of shape ``[batch_size, seq_len, hidden_dim]``.
+        kernel: Kernel tensor of shape ``[1|B, kernel_len, hidden_dim]``. The
+            leading dim is ``1`` for a shared kernel or ``B`` for FiLM-style
+            per-sample kernels.
+        shortcut: Optional ``[hidden_dim]`` per-channel residual scale.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
+        Output tensor of shape ``[batch_size, seq_len, hidden_dim]`` in the
+        original dtype of ``x``.
     """
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)
@@ -172,18 +229,27 @@ def fftconv1d_fp32_blh(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """1D FFT convolution with optional shortcut. When shortcut provided, then the output is given by shortcut(x) + conv(x, kernel).
+    r"""Non-causal 1D FFT convolution (BLH layout, channels-last) with optional shortcut.
 
-    Accepts any input dtype. Internally casts ``x`` and ``kernel`` to float32 for
-    numerical stability and returns the result in the original dtype of ``x``.
+    Computes a "same"-aligned linear convolution per channel by zero-padding
+    to :math:`F = \min(L + \lceil K/2 \rceil, 2L)`, multiplying in the
+    frequency domain, inverting, and cropping centered with offset ``K // 2``.
+    The non-causal variant only needs enough headroom for half the kernel on
+    each side, so it is cheaper than the causal variant.
+
+    When ``shortcut`` is provided, the per-channel residual is added:
+
+    .. math::
+        y \leftarrow y + \text{shortcut} \odot x
 
     Args:
-        x (torch.Tensor): Input tensor of shape (batch_size, seq_len, hidden_dim).
-        kernel (torch.Tensor): Kernel tensor of shape (1, kernel_len, hidden_dim).
-        shortcut (torch.Tensor | None, optional): Optional shortcut tensor of shape (hidden_dim). Defaults to None.
+        x: Input tensor of shape ``[batch_size, seq_len, hidden_dim]``.
+        kernel: Kernel tensor of shape ``[1|B, kernel_len, hidden_dim]``.
+        shortcut: Optional ``[hidden_dim]`` per-channel residual scale.
 
     Returns:
-        torch.Tensor: Output tensor of shape (batch_size, seq_len, hidden_dim), in the original dtype of ``x``.
+        Output tensor of shape ``[batch_size, seq_len, hidden_dim]`` in the
+        original dtype of ``x``.
     """
     x_fp32 = x.to(torch.float32)
     k_fp32 = kernel.to(torch.float32)

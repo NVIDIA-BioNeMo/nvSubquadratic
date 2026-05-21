@@ -191,7 +191,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         seq_mod = seq_norm * (1.0 + expand(scale_seq, seq_norm)) + expand(
             shift_seq, seq_norm
         )  # (B, *spatial_dims, hidden_dim)
-        seq_out = self.sequence_mixer(seq_mod)  # (B, *spatial_dims, hidden_dim)
+        seq_out = self.sequence_mixer(seq_mod, conditioning=cond)  # (B, *spatial_dims, hidden_dim)
         seq_out = self.dropout(seq_out)  # (B, *spatial_dims, hidden_dim)
         seq_out = seq_out * expand(gate_seq, seq_out)  # (B, *spatial_dims, hidden_dim)
         x = x + seq_out  # (B, *spatial_dims, hidden_dim)
