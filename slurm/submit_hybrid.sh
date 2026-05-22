@@ -42,7 +42,7 @@ CONFIG_FILE="$1"; shift
 
 CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
-CONFIG_OVERRIDES="${CONFIG_OVERRIDES} compile_mode=max-autotune-no-cudagraphs"
+# compile_mode is now expected to be passed as a CLI override (via queue.sh extra args)
 # Append any extra overrides passed on the command line
 for arg in "$@"; do
     CONFIG_OVERRIDES="${CONFIG_OVERRIDES} ${arg}"
@@ -124,6 +124,7 @@ echo "================================================"
 # Environment Setup
 # ============================================================================
 export WANDB_API_KEY="${WANDB_API_KEY:-}"
+export WANDB_MODE=offline
 export HF_TOKEN="${HF_TOKEN:-}"
 export PYTHONPATH="."
 export DALI_NO_MMAP=1

@@ -41,7 +41,7 @@ def get_config() -> ExperimentConfig:
     """Build the HHHA hybrid config with learnable-ω₀ scalar kernels."""
     config = get_base_config()
     config.compile = True
-    config.compile_mode = "max-autotune-no-cudagraphs"
+    config.compile_mode = "default"
     config.net = build_hybrid_net(layer_pattern=LAYER_PATTERN, patch_size=PATCH_SIZE)
     apply_learnable_omega_overrides(config)
     config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))

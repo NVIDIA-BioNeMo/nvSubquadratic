@@ -205,11 +205,18 @@ def main() -> None:
 
     # If autoresume is enabled, search W&B for existing run and download checkpoint
     if config.autoresume.enabled and not offline:
-        api = wandb.Api()
-        runs = api.runs(
-            path=f"{config.wandb.entity}/{config.wandb.project}",
-            filters={"display_name": run_name},
-        )
+        try:
+            api = wandb.Api()
+            # Force materialization here so HTTPError surfaces inside this try (the
+            # iterator returned by api.runs(...) is lazy; len() / iteration is what
+            # hits the network and can 429).
+            runs = list(api.runs(
+                path=f"{config.wandb.entity}/{config.wandb.project}",
+                filters={"display_name": run_name},
+            ))
+        except Exception as e:
+            print(f"[autoresume] W&B API search failed ({type(e).__name__}: {e}). Falling back to local checkpoint.")
+            runs = []
         if len(runs) > 1:
             raise RuntimeError(
                 f"[autoresume] Multiple runs found with name '{run_name}'. Refusing to resume. Count={len(runs)}"

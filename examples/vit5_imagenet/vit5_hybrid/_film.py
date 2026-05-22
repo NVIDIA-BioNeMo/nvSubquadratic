@@ -52,7 +52,7 @@ FILM_WEIGHT_DECAY = 5e-3
 # Fix the register count across patch sizes.  RegisterPooling produces a
 # ``[B, hidden_dim]`` cond vector regardless of how many registers it
 # averages, so changing ``num_registers`` does not change FiLM ``cond_dim``.
-NUM_REGISTERS_DEFAULT = 8
+NUM_REGISTERS_DEFAULT = 4
 
 
 def apply_film_overrides(

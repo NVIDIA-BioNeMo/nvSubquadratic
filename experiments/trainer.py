@@ -1,12 +1,14 @@
 # TODO: Add licence header
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning import callbacks as pl_callbacks
+from pytorch_lightning.strategies import DDPStrategy
 
 from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
 from experiments.callbacks.wandb_cache_cleanup import WandbCacheCleanupCallback
@@ -104,10 +106,12 @@ def construct_trainer(
 
     device_count = torch.cuda.device_count()
     if device_count > 1:  # Multi-GPU training
-        if cfg.trainer.find_unused_parameters:
-            strategy = "ddp_find_unused_parameters_true"
-        else:
-            strategy = "ddp"
+        # 1h per-collective timeout (default is 30 min) — guards against
+        # transient lazy-recompile desync across nodes under max-autotune.
+        strategy = DDPStrategy(
+            find_unused_parameters=cfg.trainer.find_unused_parameters,
+            timeout=timedelta(seconds=3600),
+        )
         sync_batchnorm = True
     else:
         strategy = "auto"

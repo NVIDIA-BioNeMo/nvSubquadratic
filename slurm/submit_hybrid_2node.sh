@@ -1,27 +1,30 @@
 #!/bin/bash
 #SBATCH --account=healthcareeng_research
-#SBATCH --nodes=4
+#SBATCH --nodes=2
 #SBATCH --partition=batch,backfill
 #SBATCH --ntasks-per-node=8
 #SBATCH --time=04:00:00
 #SBATCH --mem=0
 #SBATCH --mail-type=FAIL
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybrid4n
+#SBATCH --job-name=healthcareeng_research-nvsubq.v5hybrid2n
 
 # Usage (from repo root):
-#   sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
-#       net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+#   sbatch slurm/submit_hybrid_2node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py
+#   sbatch slurm/submit_hybrid_2node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
+#       net.patch_size=8 dataset.batch_size=128 train.accumulate_grad_steps=1
 #
-# Patch size / batch / accum guide (4 nodes = 32 GPUs, effective batch = 2048):
-#   patch 4:  batch_size=16  accumulate_grad_steps=4
-#   patch 2:  batch_size=4   accumulate_grad_steps=16
-#   patch 1:  batch_size=1   accumulate_grad_steps=64
+# Effective batch on 2 nodes (16 GPUs): batch_size * 16 * accum_steps
+# For effective 2048 with batch_size=128: accum=1.
+#
+# Via queue.sh for chaining:
+#   bash slurm/queue.sh slurm/submit_hybrid_2node.sh 12 \
+#       examples/vit5_imagenet/vit5_hybrid/full_attention.py
 
 set -x
 
 if [ -z "${1:-}" ]; then
-    echo "Usage: sbatch slurm/submit_hybrid_4node.sh <config.py> [overrides...]"
+    echo "Usage: sbatch slurm/submit_hybrid_2node.sh <config.py> [overrides...]"
     exit 1
 fi
 
@@ -42,7 +45,7 @@ CONFIG_FILE="$1"; shift
 
 CONFIG_OVERRIDES="num_nodes=${SLURM_JOB_NUM_NODES}"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} experiment_dir=${CONTAINER_RESULTS}"
-CONFIG_OVERRIDES="${CONFIG_OVERRIDES} compile_mode=default"
+# compile_mode is now expected to be passed as a CLI override (via queue.sh extra args)
 # Append any extra overrides passed on the command line
 for arg in "$@"; do
     CONFIG_OVERRIDES="${CONFIG_OVERRIDES} ${arg}"
@@ -131,6 +134,7 @@ export DALI_NO_MMAP=1
 export TRITON_CACHE_DIR="/tmp/triton_${SLURM_JOB_ID}"
 export TORCHINDUCTOR_FX_GRAPH_CACHE=0
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # ImageNet paths (container-side) -- imagenet_folder is the ImageFolder layout
