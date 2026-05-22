@@ -202,9 +202,13 @@ def main() -> None:
     # Determine if we should attach to an existing run by name (autoresume)
     autoresume_ckpt_path = None
     attach_run_id = None
+    run_id_file = experiment_dir / "run.id"
 
-    # If autoresume is enabled, search W&B for existing run and download checkpoint
-    if config.autoresume.enabled and not offline:
+    # If autoresume is enabled, search W&B for existing run and download checkpoint.
+    # Skip the API search when run.id already exists locally — the local file is
+    # authoritative for chained jobs, and hitting the W&B GraphQL endpoint on every
+    # job start can 429 and kill the job before training begins.
+    if config.autoresume.enabled and not offline and not run_id_file.exists():
         api = wandb.Api()
         runs = api.runs(
             path=f"{config.wandb.entity}/{config.wandb.project}",
@@ -229,6 +233,8 @@ def main() -> None:
                 print("[autoresume] Will check for local checkpoint instead.")
         else:
             print(f"[autoresume] No existing run found with name '{run_name}', starting fresh.")
+    elif config.autoresume.enabled and run_id_file.exists():
+        print(f"[autoresume] Found local run.id at {run_id_file}, skipping W&B API search.")
 
     # If autoresume enabled but no W&B checkpoint found, check for local checkpoint
     if config.autoresume.enabled and autoresume_ckpt_path is None:
@@ -242,7 +248,6 @@ def main() -> None:
                 print(f"[autoresume] No last.ckpt found in {ckpt_dir}, starting from scratch.")
 
     # Generate or reuse run ID
-    run_id_file = experiment_dir / "run.id"
     if config.wandb.run_id is not None:
         # Explicit run_id provided via config override
         attach_run_id = config.wandb.run_id

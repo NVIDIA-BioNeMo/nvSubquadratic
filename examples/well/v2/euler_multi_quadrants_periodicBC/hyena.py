@@ -3,7 +3,7 @@
 Uses a ResidualNetwork with Hyena (QKV + CKConv global conv) as the
 sequence mixer.  Circular FFT padding matches the dataset's periodic
 boundary conditions.  With patch_size=16 the effective sequence
-resolution is 16×16.
+resolution is 32×32.
 
 Patch-size CLI override
 -----------------------
@@ -94,7 +94,7 @@ def get_config() -> ExperimentConfig:
                             num_layers=3,
                             embedding_dim=64,
                             omega_0=OMEGA_0,
-                            L_cache="${eval:'256 // ${net.in_proj_cfg.patch_size}'}",
+                            L_cache="${eval:'512 // ${net.in_proj_cfg.patch_size}'}",
                             use_bias=True,
                             hidden_omega_0=1.0,
                         ),

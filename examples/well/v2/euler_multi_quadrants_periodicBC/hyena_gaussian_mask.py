@@ -4,9 +4,9 @@ Identical to ``cfg_hyena.py`` but replaces the ``nn.Identity`` mask with a
 ``GaussianModulationND`` mask on the CKConv global convolution kernel.
 """
 
-from examples.well.v2.active_matter._base import DATA_DIM
-from examples.well.v2.active_matter.hyena import NUM_HIDDEN_CHANNELS
-from examples.well.v2.active_matter.hyena import get_config as _get_hyena_config
+from examples.well.v2.euler_multi_quadrants_periodicBC._base import DATA_DIM
+from examples.well.v2.euler_multi_quadrants_periodicBC.hyena import NUM_HIDDEN_CHANNELS
+from examples.well.v2.euler_multi_quadrants_periodicBC.hyena import get_config as _get_hyena_config
 from experiments.callbacks.mask_monitor import MaskMonitorCallback
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
