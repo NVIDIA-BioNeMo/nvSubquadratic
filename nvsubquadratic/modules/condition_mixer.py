@@ -24,13 +24,24 @@ The conditioning mixer is the *middle* sub-branch of
 sequence mixer has let spatial positions exchange information, the condition
 mixer injects an external conditioning signal ``c`` — such as a diffusion
 timestep embedding, a class label embedding, or a physics parameter vector —
-into the residual stream ``x``:
+into the residual stream ``x``.  In practice ``x`` is first passed through
+``condition_mixer_norm`` by the enclosing
+:class:`~nvsubquadratic.modules.residual_block.ResidualBlock` before this
+module receives it; the condition mixer itself therefore operates on a
+*normalised* feature map:
 
 .. code-block:: text
 
-    x ──[seq_mixer]──► x'
-    x'──[cond_mixer(x', c)]──► x''    ← this module
-    x''─[mlp]──────────────► output
+    x ──[seq_mixer]──────────────────────► x'
+    x'──[condition_mixer_norm]──► x'_norm
+    x'_norm──[cond_mixer(x'_norm, c)]──► x''    ← this module
+    x''─[mlp]───────────────────────────► output
+
+This module is **only** used with
+:class:`~nvsubquadratic.modules.residual_block.ResidualBlock`.  The
+alternative :class:`~nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock`
+has no condition-mixer branch at all; it routes all conditioning through its
+zero-initialised AdaLN-Zero projection.
 
 **Comparison with other conditioning strategies**
 
@@ -64,7 +75,11 @@ The condition tensor ``c`` may be:
   (e.g. encoder output in an encoder-decoder architecture).  Must have the
   same number of dimensions as the feature map ``x``.
 
-In both cases the channel dimension ``C`` must equal ``hidden_dim``.
+In both cases the channel dimension ``C`` **must** equal ``hidden_dim``.
+``kv_proj`` and ``q_proj`` are ``Linear(hidden_dim, ...)`` and operate
+directly on ``condition``; passing a tensor whose last dimension differs
+from ``hidden_dim`` will silently produce a wrong-shaped K/V and corrupt the
+forward pass — no shape check is performed.
 
 All tensors use **channels-last** layout: ``(B, *spatial, C)``.
 """
@@ -102,7 +117,18 @@ class QKVConditionMixer(torch.nn.Module):
     same operator-agnostic dispatch pattern as
     :class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer`.  Any
     module whose ``forward(q, k, v)`` conforms to channels-last tensors of
-    shape ``(B, *spatial, C)`` can be used as the inner mixer.
+    shape ``(B, *spatial, C)`` and returns a tensor of the same shape as ``q``
+    can be used as the inner mixer.  If the inner mixer returns a different
+    shape, ``out_proj`` will raise a shape error.
+
+    .. note::
+
+        In practice ``x`` arriving at :meth:`forward` has already been passed
+        through ``condition_mixer_norm`` by the enclosing
+        :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`.  This
+        module is **not** used with
+        :class:`~nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock`,
+        which has no condition-mixer branch.
 
     **Weight initialisation**
 
@@ -118,14 +144,23 @@ class QKVConditionMixer(torch.nn.Module):
     for any per-parameter weight-decay grouping (see the analogous logic in
     :class:`~nvsubquadratic.modules.film.KernelFiLMGenerator`).
 
+    See Also:
+        :class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer`:
+            Structurally parallel module for self-attention / sequence mixing
+            (``forward(x)`` rather than ``forward(x, condition)``).
+        :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`:
+            The enclosing block that calls this module's ``forward`` after
+            applying ``condition_mixer_norm`` to the residual stream.
+
     Attributes:
         mixer (torch.nn.Module): The instantiated inner mixing operator.  Its
-            ``forward(q, k, v)`` method receives channels-last tensors of shape
-            ``(B, *spatial, C)`` and must return a tensor of the same shape as
+            ``forward(q, k, v)`` method receives channels-last tensors and must
+            return a tensor of the same spatial shape and channel dimension as
             ``q``.
         kv_proj (torch.nn.Linear): Combined K+V projection (no bias) that maps
             the conditioning signal from ``C`` to ``2·C``.  Weight shape:
-            ``(2·hidden_dim, hidden_dim)``.
+            ``(2·hidden_dim, hidden_dim)``.  The input channel dimension
+            ``hidden_dim`` can be recovered via ``self.kv_proj.in_features``.
         q_proj (torch.nn.Linear): Query projection (no bias) that maps the
             feature map from ``C`` to ``C``.  Weight shape:
             ``(hidden_dim, hidden_dim)``.
@@ -138,16 +173,19 @@ class QKVConditionMixer(torch.nn.Module):
         self,
         hidden_dim: int,
         mixer_cfg: LazyConfig,
-        init_method_in: Callable[[torch.Tensor], torch.Tensor] | None = None,
-        init_method_out: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        init_method_in: Callable[[int], Callable[[torch.Tensor], None]] | None = None,
+        init_method_out: Callable[[int], Callable[[torch.Tensor], None]] | None = None,
     ):
         """Initialise the QKVConditionMixer.
 
         Args:
             hidden_dim: Channel dimension ``C`` shared by the feature map ``x``
-                and the conditioning signal ``c``.  All four linear projections
+                and the conditioning signal ``c``.  All linear projections
                 (``q_proj``, ``kv_proj``, ``out_proj``) are sized using this
-                value.
+                value.  The conditioning tensor ``c`` must have its last
+                dimension equal to ``hidden_dim``; mismatches are not checked
+                at init time and will silently produce wrong-shaped K/V tensors
+                during the forward pass.
             mixer_cfg: :class:`~nvsubquadratic.lazy_config.LazyConfig` for the
                 inner mixing operator.  The instantiated module's ``forward``
                 must accept ``(q, k, v)`` as positional arguments and return a
@@ -155,14 +193,15 @@ class QKVConditionMixer(torch.nn.Module):
                 module (e.g. a dot-product attention layer) can be used here.
             init_method_in: Optional *curried* weight initialiser applied to
                 both ``q_proj.weight`` and ``kv_proj.weight``.  Must have the
-                signature ``fn(dim: int) -> fn(tensor: Tensor) -> None``.
-                When provided, ``fn(hidden_dim)`` is called and the returned
-                callable is applied in-place to each weight matrix.  Pass
-                ``None`` to keep PyTorch's default Kaiming-uniform init.
-            init_method_out: Same as ``init_method_in`` but applied to
-                ``out_proj.weight``.  A common choice is a depth-scaled
-                Gaussian (GPT / Megatron style) to control the residual branch
-                variance at initialisation.  Pass ``None`` to keep the default.
+                signature ``fn(dim: int) -> fn(tensor: Tensor) -> None`` —
+                ``fn(hidden_dim)`` is called and the returned callable is
+                applied in-place to each weight matrix.  Pass ``None`` to keep
+                PyTorch's default Kaiming-uniform init.
+            init_method_out: Same curried signature as ``init_method_in``,
+                applied to ``out_proj.weight``.  A common choice is a
+                depth-scaled Gaussian (GPT / Megatron style) to control the
+                residual branch variance at initialisation.  Pass ``None`` to
+                keep the default.
         """
         super().__init__()
 
@@ -185,9 +224,15 @@ class QKVConditionMixer(torch.nn.Module):
     def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
         """Inject the conditioning signal into the feature map via cross-attention.
 
-        Computes queries from the current feature map ``x`` and keys/values
-        from the conditioning signal ``condition``, then mixes them with the
-        inner ``mixer`` and projects the result back to ``hidden_dim``.
+        Computes queries from the (pre-normalised) feature map ``x`` and
+        keys/values from the conditioning signal ``condition``, then mixes them
+        with the inner ``mixer`` and projects the result back to ``hidden_dim``.
+
+        .. note::
+
+            In the standard :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`
+            usage, ``x`` has already been passed through ``condition_mixer_norm``
+            before this method is called.
 
         The signal flow is:
 
@@ -196,6 +241,10 @@ class QKVConditionMixer(torch.nn.Module):
             Q = q_proj(x)                     # (B, *spatial_dims, C)
             K, V = split(kv_proj(condition))  # each (B, *spatial_dims_cond, C)
             y = out_proj(mixer(Q, K, V))      # (B, *spatial_dims, C)
+
+        The inner ``mixer`` must return a tensor of the same shape as ``Q``
+        (i.e. ``(B, *spatial_dims, C)``); if it does not, ``out_proj`` will
+        raise a shape error.
 
         A global (non-spatial) conditioning vector of shape ``(B, C)`` is
         automatically unsqueezed to ``(B, 1, C)`` before the K/V projection
@@ -218,8 +267,8 @@ class QKVConditionMixer(torch.nn.Module):
                   ``spatial_dims_cond`` need not match ``spatial_dims`` of
                   ``x``.
 
-                The channel dimension ``C`` must equal ``hidden_dim`` in both
-                cases.
+                The channel dimension ``C`` **must** equal ``hidden_dim``
+                (``self.kv_proj.in_features``); this is not checked at runtime.
 
         Returns:
             Output tensor of shape ``(B, *spatial_dims, C)`` — same spatial
@@ -242,7 +291,7 @@ class QKVConditionMixer(torch.nn.Module):
         elif condition.ndim != x.ndim:
             raise ValueError(
                 f"Condition must have either 2 dimensions (global) or match x's spatial rank. "
-                f"Got condition.ndim={condition.ndim}, expected {x.ndim}."
+                f"Got condition.ndim={condition.ndim}, expected 2 (global vector) or {x.ndim} (matching spatial rank)."
             )
 
         # Q projection from the current stream
