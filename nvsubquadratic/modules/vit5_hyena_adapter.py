@@ -1,6 +1,9 @@
 """Adapter that plugs 2-D sequence mixers (e.g. Hyena) into the ViT-5 token-sequence architecture.
 
 Drop-in replacement interface for :class:`~nvsubquadratic.modules.vit5_attention.ViT5Attention`.
+**Important**: unlike ``ViT5Attention``, the adapter owns no QKV or output projections.
+All projection dimensions (``hidden_dim``, ``num_heads``, etc.) must be configured
+inside ``inner_mixer_cfg`` (e.g. as part of ``QKVSequenceMixer``).
 
 Why an adapter is needed
 ------------------------
@@ -46,6 +49,8 @@ Interface contract (same as ``ViT5Attention``)
 
 * Input:  ``x`` of shape ``[B, T, C]``.
 * Output: tensor of shape ``[B, T, C]``.
+* The inner mixer must return a tensor of the same shape ``[B, H, W, C]`` it received;
+  downsampling or strided mixers are not supported.
 * Optional kwargs (e.g. ``conditioning``) are forwarded verbatim to the inner mixer.
 
 The module also exposes a ``flop_count(num_tokens, inference)`` method that
@@ -103,7 +108,10 @@ class ViT5HyenaAdapter(nn.Module):
            stage after patch merging changes the spatial width.
 
     Attributes:
-        inner_mixer (nn.Module): The instantiated 2-D sequence mixer.
+        inner_mixer (nn.Module): The instantiated 2-D sequence mixer.  Accepts
+            and returns ``[B, H, W, C]`` tensors in channels-last layout.
+            Typically a :class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer`
+            wrapping :class:`~nvsubquadratic.modules.hyena_nd.Hyena`.
         grid_w (int): Width of the 2-D spatial grid.  The height is inferred
             at runtime as ``T // grid_w``.
     """
@@ -129,7 +137,10 @@ class ViT5HyenaAdapter(nn.Module):
                 must supply a sequence length ``T`` that satisfies
                 ``T % grid_w == 0``; the grid height is computed as
                 ``H = T // grid_w``.  In a hierarchical network, pass the
-                correct ``grid_w`` for each stage (after patch merging).
+                correct ``grid_w`` for each stage (after patch merging).  After
+                a 2× patch-merging step, ``grid_w`` halves; the network's stage
+                configuration (e.g. ``ViT5HierarchicalClassificationNet``) is the
+                source of truth for each stage's ``grid_w``.
         """
         super().__init__()
         self.inner_mixer = instantiate(inner_mixer_cfg)
@@ -185,6 +196,10 @@ class ViT5HyenaAdapter(nn.Module):
                 * ``cp_group`` — process group for context-parallel (AllToAll)
                   sharding inside the Hyena operator.
 
+                Any additional kwargs accepted by the concrete inner mixer are
+                also forwarded; consult the inner mixer's docstring for the full
+                list.
+
         Returns:
             Tensor of shape ``[B, T, C]`` — the token sequence after 2-D
             Hyena mixing.  The first ``reshape`` (to ``[B, H, W, C]``) is a
@@ -192,9 +207,14 @@ class ViT5HyenaAdapter(nn.Module):
             a non-contiguous tensor, the final ``reshape`` (back to ``[B, T, C]``)
             triggers a contiguous copy; this does not affect correctness but can
             affect memory traffic in CUDA-graph or ``torch.compile`` contexts.
+            In practice, ``QKVSequenceMixer`` returns a contiguous tensor (its
+            output projection is a ``Linear`` on the last axis), so the final
+            ``reshape`` is typically a free view.
 
         Raises:
-            RuntimeError: If ``T % grid_w != 0`` (implicit, from ``reshape``).
+            RuntimeError: Raised by ``torch.Tensor.reshape`` if
+                ``T % grid_w != 0``, with a message reporting the mismatched
+                total element count.
         """
         B, T, C = x.shape
         x = x.reshape(B, T // self.grid_w, self.grid_w, C)
@@ -203,5 +223,5 @@ class ViT5HyenaAdapter(nn.Module):
         return x
 
     def extra_repr(self) -> str:
-        """Return ``grid_w=<value>`` appended to PyTorch's default module repr."""
+        """Return the string ``'grid_w=<value>'`` inserted into PyTorch's module repr."""
         return f"grid_w={self.grid_w}"
