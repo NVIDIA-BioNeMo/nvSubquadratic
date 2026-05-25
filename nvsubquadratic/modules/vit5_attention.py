@@ -1,16 +1,66 @@
 """ViT-5 Attention: Multi-head self-attention with RMSNorm QK-Norm and register-aware 2D RoPE.
 
-Key differences from the base Attention module:
-- QK-Norm uses RMSNorm (learnable, per-head) instead of L2 normalization.
-- RoPE is applied only to patch tokens (not cls token).
-- Register tokens get their own high-frequency RoPE.
-- Operates on flattened sequences [B, T, C] where T = N (patches) + 1 (cls) + R (registers).
+This module implements the specialised self-attention block used throughout the
+ViT-5 family of hierarchical vision transformers.  It is a *self-contained*
+alternative to the generic :class:`~nvsubquadratic.modules.attention.Attention`
+module and is **not** interchangeable with it through the
+:class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer` dispatch layer.
+The key ViT-5-specific design choices are described below.
 
-Optimizations vs naive implementation:
-- RoPE cos/sin are precomputed as registered buffers (CUDA-graph safe, no graph breaks).
-- RoPE applied via a single broadcast multiply on [B, T, H, D] — no reshape to (B*H, T, D).
-- SDPA backend auto-selected by PyTorch (CuDNN preferred on H100).
-- No redundant dtype casts around SDPA (autocast handles precision).
+**Structural differences vs.** :class:`~nvsubquadratic.modules.attention.Attention`
+
+1. **Self-contained projections** — :class:`ViT5Attention` owns its own QKV
+   projection (``nn.Linear(C, 3C)``) and output projection (``nn.Linear(C, C)``),
+   plus an optional output dropout.  The generic :class:`Attention` is a *pure*
+   attention kernel that receives pre-projected Q, K, V tensors from the
+   surrounding :class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer`.
+   :class:`ViT5Attention` is therefore consumed directly by
+   :class:`~nvsubquadratic.modules.vit5_residual_block.ViT5ResidualBlock` without
+   any outer projection wrapper.
+
+2. **RMSNorm QK-Norm (per-head, learnable)** — When ``qk_norm`` is provided,
+   :class:`ViT5Attention` instantiates two independent norm modules (one for Q,
+   one for K) via :func:`~nvsubquadratic.lazy_config.instantiate`.  The generic
+   :class:`Attention` uses a *shared* L2 (cosine) normalisation function
+   (:func:`~nvsubquadratic.utils.qk_norm.apply_qk_norm`) without learnable
+   parameters.  The ViT-5 norm is applied after the per-head reshape so that
+   each head's Q and K are normalised independently.
+
+3. **Register-aware, dual-base 2D RoPE** — Patch tokens receive 2D RoPE with
+   base frequency ``rope_base`` (default 10000).  Register tokens receive
+   their own 2D RoPE with a *different* base ``reg_rope_base`` (default 100,
+   i.e., much higher frequency), reflecting their role as global context carriers
+   rather than spatially localised patch representations.  The CLS token, when
+   present, receives an identity rotation (cos=1, sin=0).  The generic
+   :class:`Attention` applies a single shared RoPE base to all tokens uniformly.
+
+4. **Fixed token layout** — The input sequence ``[B, T, C]`` must follow the
+   strict ViT-5 token layout ``[patches, (CLS,) registers]`` where
+   ``T = H*W + (1 if has_cls else 0) + R``.  There is no support for arbitrary
+   spatial shapes or causal masking.  The generic :class:`Attention` accepts
+   1D/2D/3D channels-last tensors and supports both causal and non-causal modes.
+
+5. **CUDA-graph-safe precomputed RoPE buffers** — Both patch and register
+   cos/sin tables are concatenated into a single ``[T, head_dim]`` buffer pair
+   (``rope_cos``, ``rope_sin``) stored as non-persistent ``register_buffer``
+   entries, making the forward pass free of dynamic tensor creation and safe
+   for ``torch.compile(mode="max-autotune")`` and CUDA-graph capture.
+
+6. **RoPE rotation convention** — :func:`_rotate_half_per_axis` uses the
+   *split-half* convention from ``nvsubquadratic.utils.rope.rotate_half_blh``
+   rather than the interleaved rotation used in some external codebases.
+   Existing checkpoints trained with this convention will produce ~4 pp accuracy
+   drops if the rotation function is swapped.  See :func:`_rotate_half_per_axis`
+   for the full explanation.
+
+**Cross-references**
+
+* :class:`~nvsubquadratic.modules.attention.Attention` — generic 1D/2D/3D
+  scaled dot-product attention, used via ``QKVSequenceMixer``.
+* :class:`~nvsubquadratic.modules.vit5_residual_block.ViT5ResidualBlock` —
+  consumes :class:`ViT5Attention` directly as its ``sequence_mixer``.
+* :func:`_build_2d_rope_flat` — constructs the flattened 2D RoPE tables.
+* :func:`_rotate_half_per_axis` — split-half rotation operator used in ``forward``.
 """
 
 from typing import Callable, Optional
@@ -28,7 +78,7 @@ def _build_2d_rope_flat(
     head_dim: int,
     rope_base: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Precompute flattened 2D RoPE cos/sin for a (height x width) grid.
+    r"""Precompute flattened 2D RoPE cos/sin for a (height x width) grid.
 
     The original codebase (``nvsubquadratic.utils.rope``) computed RoPE on the
     fly during every forward pass.  We precompute the cos/sin tables at init
@@ -42,14 +92,45 @@ def _build_2d_rope_flat(
        tables follow the module to the correct device/dtype via ``.to()``
        without manual bookkeeping.
 
-    Channel layout (matches ``_rotate_half_per_axis``):
-        [Y_half | X_half], each of size head_dim/2.
-        Within each half, frequencies are ``repeat_interleave(2)`` so that the
-        paired-swap rotation in ``_rotate_half_per_axis`` operates on matching
-        frequency pairs.
+    **Frequency schedule**
+
+    For each spatial axis, frequencies follow the standard RoPE schedule:
+
+    .. math::
+
+        \theta_j = \text{rope\_base}^{-2j / (d_k/2)},
+        \quad j = 0, 1, \ldots, d_k/4 - 1
+
+    where :math:`d_k` = ``head_dim``.  Angles for position :math:`p` are
+    :math:`\phi_{p,j} = p \cdot \theta_j`, then ``repeat_interleave(2)``
+    doubles each frequency so the paired-swap rotation in
+    :func:`_rotate_half_per_axis` operates on matching frequency pairs.
+
+    **Channel layout** (matches :func:`_rotate_half_per_axis`):
+    ``[Y_half | X_half]``, each of size ``head_dim / 2``.
+    Within each half, frequencies are ``repeat_interleave(2)`` so that the
+    paired-swap rotation in :func:`_rotate_half_per_axis` operates on matching
+    frequency pairs.
+
+    Note:
+        ``head_dim`` must be divisible by 4 (two halves of ``head_dim/2`` each,
+        further split into pairs of size ``head_dim/4`` for the repeat-interleave
+        step).  This constraint is enforced by the caller
+        (:class:`ViT5Attention.__init__`).
+
+    Args:
+        height: Number of patch rows ``H`` in the 2D grid.
+        width: Number of patch columns ``W`` in the 2D grid.
+        head_dim: Per-head channel dimension ``d_k``.  Must be divisible by 4.
+        rope_base: Base frequency for the geometric frequency schedule.
+            Typical values: ``10000.0`` for patch tokens, ``100.0`` for
+            register tokens (higher frequency = denser positional encoding).
 
     Returns:
-        (cos, sin) each of shape [height * width, head_dim].
+        A tuple ``(cos, sin)`` where each tensor has shape
+        ``[height * width, head_dim]``.  These are meant to be stored as
+        non-persistent ``register_buffer`` entries and concatenated with the
+        CLS and register entries in :class:`ViT5Attention.__init__`.
     """
     dim_half = head_dim // 2
     theta = 1.0 / (rope_base ** (torch.arange(0, dim_half, 2).float() / dim_half))
@@ -77,19 +158,45 @@ def _build_2d_rope_flat(
 
 
 def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
-    """Split-half rotation applied independently to Y and X channel halves.
+    r"""Split-half rotation applied independently to Y and X channel halves.
 
-    **Why not the standard interleaved ``rotate_half``?**
+    This implements the rotation component of the RoPE formula
+    ``x' = x * cos + rotate(x) * sin``.  The rotation maps each channel vector
+    to its 90-degree rotated counterpart using a *split-half* convention:
+
+    .. math::
+
+        \text{rotate}(x) = \text{Concat}\bigl(
+            -x_{y,2},\, x_{y,1},\, -x_{x,2},\, x_{x,1}
+        \bigr)
+
+    where :math:`x_{y,1}` and :math:`x_{y,2}` are the first and second
+    quarters of the head-dim vector (the Y-axis half, each of size
+    ``head_dim / 4``), and similarly :math:`x_{x,1}`, :math:`x_{x,2}` for
+    the X-axis half.
+
+    **Why not the standard interleaved** ``rotate_half``?
+
     The original training run used ``rotate_half_blh`` from
     ``nvsubquadratic.utils.rope``, which splits each axis-half at the midpoint
-    and swaps with negation ([-x2, x1]).  The commonly-seen interleaved
-    rotation ([-x1, x0, -x3, x2, ...]) is numerically *incompatible* with
+    and swaps with negation (``[-x2, x1]``).  The commonly-seen interleaved
+    rotation (``[-x1, x0, -x3, x2, ...]``) is numerically *incompatible* with
     checkpoints trained under the split-half convention — using it causes a
     ~4 pp accuracy drop at validation.  This function preserves exact numerical
     parity with the original rotation so existing checkpoints remain valid.
 
-    Channel layout: [Y_half | X_half], each half of size D/2.
-    Within each half: split at D/4 and swap with negation.
+    **Channel layout**: ``[Y_half | X_half]``, each half of size ``D/2``.
+    Within each half: split at ``D/4`` and swap with negation.
+
+    Args:
+        x: Query or key tensor of shape ``[B, T, H, D]`` (before the SDPA
+            transpose) or any shape whose last dimension is the head dimension
+            ``D``.  ``D`` must be divisible by 4 to allow the quarter-split.
+
+    Returns:
+        torch.Tensor: Rotated tensor of the same shape as ``x``, representing
+        the 90-degree rotation of each frequency pair within the Y and X
+        channel halves.
     """
     d = x.shape[-1]
     d_half = d // 2
@@ -102,33 +209,172 @@ def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
 
 
 class ViT5Attention(nn.Module):
-    """ViT-5 multi-head self-attention with RMSNorm QK-Norm and register-aware RoPE.
+    r"""ViT-5 multi-head self-attention with RMSNorm QK-Norm and register-aware RoPE.
 
-    Expects input as [B, T, C] where T = num_patches + (1 if has_cls) + num_registers.
-    Token layout: [patches, (CLS), registers] -- no padding (stripped by the network).
-    The module includes its own QKV and output projections (unlike the base Attention
-    which is wrapped in QKVSequenceMixer).
+    This module is the primary sequence-mixing operator for the ViT-5 family of
+    hierarchical vision transformers.  It computes standard scaled dot-product
+    attention:
+
+    .. math::
+
+        \text{head}_i = \text{softmax}\!\left(
+            \frac{Q_i K_i^\top}{\sqrt{d_k}}
+        \right) V_i, \quad
+        \text{out} = \text{Concat}(\text{head}_1, \ldots, \text{head}_H) W_O
+
+    where :math:`d_k = C / H` is the per-head dimension and :math:`W_O` is the
+    output projection.  Q, K, V are obtained from a single fused linear
+    projection :math:`[Q, K, V] = x W_{QKV}`.
+
+    **Token layout**
+
+    Input shape: ``[B, T, C]`` where
+    ``T = num_patches_h * num_patches_w + (1 if has_cls else 0) + num_registers``.
+    Token ordering within the sequence axis:
+
+    .. code-block:: text
+
+        [ patch_0, patch_1, ..., patch_{H*W-1}, (CLS,) reg_0, ..., reg_{R-1} ]
+          <----- H*W patch tokens --------->   <--1-->  <---- R registers ---->
+
+    This ordering must be consistent with the token layout produced by the
+    network's patchify + register-injection layers (see
+    :class:`~nvsubquadratic.networks.vit5_classification.ViT5Classifier`).
+
+    **Positional encoding**
+
+    Three distinct positional encodings are applied:
+
+    * **Patch tokens** — 2D RoPE with base frequency ``rope_base`` (default
+      10000).  The H×W grid is linearised in row-major (Y-then-X) order.
+    * **CLS token** — identity rotation: cos=1, sin=0.  No positional bias is
+      imposed on the class token.
+    * **Register tokens** — 2D RoPE with base ``reg_rope_base`` (default 100),
+      treating the ``R`` registers as a ``sqrt(R) × sqrt(R)`` grid.  The higher
+      base frequency (lower theta) gives denser angular spacing, reflecting the
+      role of registers as global context carriers without fixed spatial meaning.
+
+    All three tables are concatenated into a single buffer pair (``rope_cos``,
+    ``rope_sin``) of shape ``[T, head_dim]`` and applied with a single broadcast
+    multiply in :meth:`forward`.
+
+    **QK normalisation**
+
+    When ``qk_norm`` is provided, two independent norm modules (``q_norm``,
+    ``k_norm``) are instantiated and applied to Q and K *after* the per-head
+    reshape but *before* RoPE.  The norm is expected to be a learnable RMSNorm
+    or equivalent.  Unlike the generic :class:`~nvsubquadratic.modules.attention.Attention`
+    module which uses a fixed L2 (cosine) normalisation, the learnable per-head
+    norm here allows the model to control the scale of the dot products.
+
+    Note:
+        Norm is applied before RoPE in this module (``q_norm → rope``), whereas
+        the generic :class:`Attention` applies RoPE before L2-norm.  The order
+        matters for checkpoint compatibility.
+
+    **Differences vs.** :class:`~nvsubquadratic.modules.attention.Attention`
+
+    * Self-contained QKV + output projections (generic uses outer
+      ``QKVSequenceMixer``).
+    * RMSNorm QK-Norm instead of L2 normalisation.
+    * Dual-base register-aware RoPE instead of single-base uniform RoPE.
+    * Fixed ``[B, T, C]`` input — no multi-dimensional spatial support, no
+      causal masking, no context-parallelism guard.
+
+    Attributes:
+        hidden_dim (int): Total channel dimension ``C``.
+        num_heads (int): Number of attention heads ``H``.
+        head_dim (int): Per-head dimension ``d_k = C / H``.
+        scale (float): Attention logit scale, default ``head_dim ** -0.5``.
+        num_patches_h (int): Height of the patch grid used for 2D RoPE.
+        num_patches_w (int): Width of the patch grid used for 2D RoPE.
+        num_registers (int): Number of register tokens ``R``.
+        has_cls (bool): Whether the token sequence includes a CLS token
+            between the patch tokens and the register tokens.
+        attn_dropout (float): Dropout probability applied to attention weights
+            during training; set to 0.0 at inference.
+        qkv (nn.Linear): Fused QKV projection: ``Linear(C, 3C, bias=qkv_bias)``.
+        proj (nn.Linear): Output projection: ``Linear(C, C, bias=out_proj_bias)``.
+        proj_drop (nn.Dropout | nn.Identity): Dropout on the projected output.
+        q_norm (nn.Module): Per-head query normaliser.  Present only when
+            ``qk_norm`` is provided (i.e. ``self.qk_norm is True``).
+        k_norm (nn.Module): Per-head key normaliser.  Present only when
+            ``qk_norm`` is provided.
+        qk_norm (bool): Flag indicating whether QK normalisation is active.
+        rope_base (float): Base frequency for patch-token RoPE.
+        reg_rope_base (float): Base frequency for register-token RoPE.
+        reg_rope_h (int): Height dimension of the register RoPE grid
+            (``int(num_registers ** 0.5)``).
+        reg_rope_w (int): Width dimension of the register RoPE grid
+            (``int(num_registers ** 0.5)``).
+        rope_cos (torch.Tensor): Non-persistent buffer of shape ``[T, head_dim]``
+            containing the concatenated patch + CLS + register cosine tables.
+        rope_sin (torch.Tensor): Non-persistent buffer of shape ``[T, head_dim]``
+            containing the concatenated patch + CLS + register sine tables.
 
     Args:
-        hidden_dim: Total hidden dimension.
-        num_heads: Number of attention heads.
-        num_patches_h: Height of the patch grid (for 2D RoPE).
-        num_patches_w: Width of the patch grid (for 2D RoPE).
-        num_registers: Number of register tokens.
-        qk_norm: LazyConfig for the QK normalization layer, or None to disable.
-        rope_base: Base frequency for patch RoPE.
-        reg_rope_base: Base frequency for register RoPE (high frequency = 100 in paper).
-        attn_dropout: Attention dropout rate.
-        proj_dropout: Output projection dropout rate.
-        qkv_bias: Whether to use bias in QKV projection.
-        out_proj_bias: Whether to use bias in the output projection.
-        scale: Attention scaling factor. When None, defaults to ``head_dim ** -0.5``.
-        init_fn_qkv_proj: Optional callable ``fn(tensor) -> None`` applied to the
-            QKV projection weights. When None, weights keep PyTorch's default init.
-        has_cls: Whether the sequence contains a CLS token (between patches and
-            registers in the token layout). Defaults to True.
-        init_fn_out_proj: Optional callable ``fn(tensor) -> None`` applied to the
-            output projection weights. When None, weights keep PyTorch's default init.
+        hidden_dim: Total hidden dimension ``C``. Must be divisible by
+            ``num_heads``.
+        num_heads: Number of attention heads ``H``.
+        num_patches_h: Height of the patch grid (number of patch rows).
+            Used to build the patch 2D RoPE table.
+        num_patches_w: Width of the patch grid (number of patch columns).
+            Used to build the patch 2D RoPE table.
+        num_registers: Number of register tokens ``R`` appended after the
+            (optional) CLS token.  Must be a perfect square when > 0 so that
+            the register RoPE grid is square (``sqrt(R) × sqrt(R)``).
+            Defaults to ``4``.
+        has_cls: If ``True``, the token sequence contains one CLS token
+            immediately after the patch tokens.  The CLS token receives
+            identity RoPE (cos=1, sin=0).  Defaults to ``True``.
+        qk_norm: :class:`~nvsubquadratic.lazy_config.LazyConfig` for the
+            per-head QK normalisation module (e.g. ``RMSNorm(head_dim)``).
+            When ``None``, QK normalisation is disabled.  Defaults to ``None``.
+        rope_base: Base frequency :math:`\\theta_0` for the patch RoPE
+            frequency schedule.  Defaults to ``10000.0``.
+        reg_rope_base: Base frequency for the register-token RoPE schedule.
+            A lower base (higher frequency) gives denser angular spacing.
+            Defaults to ``100.0``.
+        attn_dropout: Dropout rate on attention weights, applied only during
+            training (``module.training is True``).  Defaults to ``0.0``.
+        proj_dropout: Dropout rate on the output projection.  When ``0.0``,
+            ``proj_drop`` is an ``nn.Identity``.  Defaults to ``0.0``.
+        qkv_bias: Whether to include a bias term in the fused QKV projection.
+            Defaults to ``False``.
+        out_proj_bias: Whether to include a bias term in the output projection.
+            Defaults to ``False``.
+        scale: Explicit attention logit scale.  When ``None``, the scale
+            defaults to ``head_dim ** -0.5``.  Defaults to ``None``.
+        init_fn_qkv_proj: Optional callable ``fn(weight: Tensor) -> None``
+            applied to ``self.qkv.weight`` after construction.  The bias, if
+            present, is zero-initialised.  When ``None``, PyTorch's default
+            Xavier uniform initialisation is used.  Defaults to ``None``.
+        init_fn_out_proj: Optional callable ``fn(weight: Tensor) -> None``
+            applied to ``self.proj.weight`` after construction.  The bias, if
+            present, is zero-initialised.  When ``None``, PyTorch's default
+            initialisation is used.  Defaults to ``None``.
+
+    Example::
+
+        import torch
+        from nvsubquadratic.modules.vit5_attention import ViT5Attention
+        from nvsubquadratic.lazy_config import LazyConfig
+        import nvsubquadratic.modules.rms_norm as rms_norm_mod
+
+        # 2D patch grid of 14×14 with 4 register tokens and 1 CLS token
+        attn = ViT5Attention(
+            hidden_dim=384,
+            num_heads=6,
+            num_patches_h=14,
+            num_patches_w=14,
+            num_registers=4,
+            has_cls=True,
+            qk_norm=LazyConfig(target=rms_norm_mod.RMSNorm, dim=64),
+        )
+        T = 14 * 14 + 1 + 4  # patches + CLS + registers = 201
+        x = torch.randn(2, T, 384)  # [B, T, C]
+        out = attn(x)               # [B, T, C]
+        assert out.shape == x.shape
     """
 
     def __init__(  # noqa: D107
@@ -258,9 +504,18 @@ class ViT5Attention(nn.Module):
 
         Total: 8 * T * D² + 4 * T² * D + 4 * T * D + qk_norm_flops.
 
+        Note:
+            ``num_tokens`` should equal
+            ``num_patches_h * num_patches_w + (1 if has_cls else 0) + num_registers``
+            to match the actual sequence length seen during :meth:`forward`.
+            Passing a different value will give a proportionally scaled estimate.
+
         Args:
-            num_tokens: Total sequence length T (cls + patches + registers).
-            inference: Accepted for API consistency; does not affect the count.
+            num_tokens: Total sequence length T
+                (cls + patches + registers).  Should equal
+                ``num_patches_h * num_patches_w + (1 if has_cls else 0) + num_registers``.
+            inference: Accepted for API consistency with other sequence-mixer
+                modules (e.g. Hyena); does not affect the FLOP count.
 
         Returns:
             Total FLOPs as an integer.
@@ -284,14 +539,49 @@ class ViT5Attention(nn.Module):
         return flops
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
+        """Apply ViT-5 multi-head self-attention to a token sequence.
+
+        Executes the following pipeline:
+
+        1. **QKV projection** — ``x W_{QKV}`` reshaped to
+           ``[B, T, 3, H, d_k]``, then split into Q, K, V each of shape
+           ``[B, T, H, d_k]``.
+        2. **(Optional) QK normalisation** — ``q_norm(Q)`` and ``k_norm(K)``
+           applied independently along the last (head-dim) axis.
+        3. **RoPE** — ``Q' = Q * cos + rotate(Q) * sin`` and
+           ``K' = K * cos + rotate(K) * sin``, where ``cos`` / ``sin`` are the
+           precomputed ``[T, head_dim]`` buffers broadcast to
+           ``[1, T, 1, head_dim]`` over the batch and head axes.  Uses
+           :func:`_rotate_half_per_axis` (split-half convention).
+        4. **Transpose for SDPA** — rearrange to ``[B, H, T, d_k]``.
+        5. **Scaled dot-product attention** — delegates to
+           ``F.scaled_dot_product_attention``; PyTorch auto-selects the best
+           backend (CuDNN on H100, FlashAttention on A100, etc.).  The
+           ``dropout_p`` is set to ``self.attn_dropout`` during training and
+           0.0 at inference.
+        6. **Merge heads** — ``out.transpose(1, 2).reshape(B, T, C)``.
+        7. **Output projection + dropout** — ``proj_drop(proj(out))``.
 
         Args:
-            x: [B, T, C] where T = num_patches + (1 if has_cls) + num_registers.
-                Token layout: [patches, (CLS), registers].
+            x: Input token sequence of shape ``[B, T, C]`` where:
+
+                * ``B`` — batch size,
+                * ``T = num_patches_h * num_patches_w + (1 if has_cls else 0)
+                  + num_registers`` — total token count following the ViT-5
+                  layout ``[patches, (CLS,) registers]``,
+                * ``C = hidden_dim`` — channel dimension.
+
+                The spatial dimensions of the patch grid are baked into the
+                precomputed ``rope_cos`` / ``rope_sin`` buffers; ``T`` must
+                match ``rope_cos.shape[0]`` exactly.
 
         Returns:
-            [B, T, C]
+            torch.Tensor: Output tensor of shape ``[B, T, C]``, the same shape
+            as the input.
+
+        Raises:
+            RuntimeError: If ``T`` does not match ``rope_cos.shape[0]``,
+                which would cause a shape mismatch in the broadcast multiply.
         """
         B, T, C = x.shape
 
@@ -330,7 +620,15 @@ class ViT5Attention(nn.Module):
         out = self.proj_drop(out)
         return out
 
-    def extra_repr(self) -> str:  # noqa: D102
+    def extra_repr(self) -> str:
+        """Return a concise string summary of this module's configuration.
+
+        Returns:
+            str: Comma-separated key=value pairs covering the most important
+            hyperparameters: ``hidden_dim``, ``num_heads``, ``qk_norm``,
+            ``num_registers``, patch grid size, ``rope_base``, and
+            ``reg_rope_base``.
+        """
         return (
             f"hidden_dim={self.hidden_dim}, num_heads={self.num_heads}, "
             f"qk_norm={self.qk_norm}, num_registers={self.num_registers}, "
