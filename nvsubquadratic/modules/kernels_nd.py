@@ -46,6 +46,23 @@ covers ``[-1, 1]^D`` normalised across all axes; the ``L_cache`` parameter
 controls the number of discrete grid positions cached per axis, and the cache
 grows automatically at runtime whenever a larger input is encountered.
 
+Input-dependent / conditional kernels
+--------------------------------------
+``SIRENKernelND`` and all its subclasses accept an optional
+``conditioning`` argument of shape ``[B, C]`` in their ``forward`` method.
+When a ``KernelFiLMGenerator`` is wired in via the ``film_cfg`` constructor
+argument, the generator maps this conditioning vector to a list of per-layer
+``(gamma, beta)`` pairs that modulate the SIREN's hidden activations via
+Feature-wise Linear Modulation (FiLM):
+
+    h_i <- gamma_i * h_i + beta_i
+
+This makes the produced kernel batch-dependent: the output has shape
+``[B, *spatial, out_dim]`` instead of the usual ``[1, *spatial, out_dim]``.
+This feature is used in diffusion models and other conditional generation tasks
+where each sample needs a different long-range filter.  The ``conditioning``
+argument is ignored (no-op) when no ``film_cfg`` is provided.
+
 Kernel classes in this module
 ------------------------------
 ``RandomFourierKernelND``
@@ -106,6 +123,16 @@ def _normalize_l_cache(L_cache: int | Sequence[int], data_dim: int) -> tuple[int
 
     Returns:
         Tuple of length ``data_dim`` with one positive int per axis.
+
+    Raises:
+        TypeError: If ``L_cache`` is a ``bool`` (which would silently cast to
+            ``0`` or ``1`` and fail the minimum-value check), or if it is
+            neither an ``int`` nor a sequence of ints.
+        ValueError: If ``L_cache`` is a sequence whose length differs from
+            ``data_dim``, or if any value in the resulting tuple is less
+            than 2 (required because the grid uses ``linspace(-1, 1, 2*L-1)``
+            which needs at least 3 points, and the step ``1/(L-1)`` is
+            undefined at ``L=1``).
     """
     if isinstance(L_cache, bool):
         raise TypeError("L_cache must be an int or a sequence of ints, got bool")
@@ -256,6 +283,19 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         Each axis spans ``[-max_limit_i, +max_limit_i]`` sampled at
         ``2 * L_i - 1`` points (default ``max_limit_i = 1.0`` at construction,
         possibly larger after a runtime extension to keep step size constant).
+
+        Args:
+            L_per_axis: Per-axis cache extents.  The number of grid points
+                along axis ``i`` is ``2 * L_per_axis[i] - 1``.
+            max_limits: Per-axis coordinate limits; axis ``i`` spans
+                ``[-max_limits[i], +max_limits[i]]``.  Defaults to ``1.0``
+                on all axes (the standard ``[-1, 1]`` normalised range).
+            device: Target device for the returned tensor.  Defaults to CPU.
+
+        Returns:
+            Float32 tensor of shape
+            ``[1, 2*L_0-1, ..., 2*L_{d-1}-1, data_dim]`` representing the
+            coordinate meshgrid, with a leading batch dimension of 1.
         """
         if max_limits is None:
             max_limits = (1.0,) * len(L_per_axis)
@@ -274,6 +314,15 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         ``max_limit = 1.0 + step_size * (seq_len - L_cache_orig)``.  Axes
         that are not extended are rebuilt at their existing extent so the
         cache remains a single rectangular tensor.
+
+        Args:
+            seq_lens: Requested per-axis output sequence lengths.  Any axis
+                where ``seq_lens[i] > self.L_cache_per_axis[i]`` triggers a
+                cache extension for that axis.
+
+        Returns:
+            None.  Modifies ``self.grid_cache`` and
+            ``self.L_cache_per_axis`` in-place when an extension is needed.
         """
         if all(L >= sl for L, sl in zip(self.L_cache_per_axis, seq_lens)):
             return
@@ -291,19 +340,24 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         self.L_cache_per_axis = new_L_per_axis
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
-        """Computes the positional embeddings for a sequence of the given length.
+        """Compute the RFF positional embeddings for a given spatial grid.
 
         Args:
-            seq_lens (tuple[int, ...]): Lengths of the input grid for which to compute the positional embeddings.
+            seq_lens: Per-axis output sequence lengths.  Length must equal
+                ``self.data_dim``.  For example, for a 2D signal of height H
+                and width W, pass ``(H, W)``.
 
         Returns:
             tuple:
-                - torch.Tensor: The positional embeddings, concatenated sine and cosine values (shape: [1, * spatial_dims, embedding_dim]).
-                - torch.Tensor: The input positions normalized between [-1, 1] (shape: [1, * spatial_dims, 1]).
+                - torch.Tensor: The positional embeddings,
+                  ``[cos(Wx+b), sin(Wx+b)]`` concatenated along the last axis.
+                  Shape ``[1, *spatial_dims, embedding_dim]``.
+                - torch.Tensor: The coordinate grid of positions normalised to
+                  ``[-1, 1]`` per axis.  Shape ``[1, *spatial_dims, data_dim]``.
 
         Raises:
-            AssertionError: If `seq_lens` is not of length `self.data_dim`.
-            AssertionError: If `self.grid_cache` is not of type `torch.float32`.
+            AssertionError: If ``len(seq_lens) != self.data_dim``.
+            AssertionError: If ``self.grid_cache`` is not ``float32``.
         """
         # Check that the sequence lengths are of the correct length.
         assert len(seq_lens) == self.data_dim, (
@@ -478,16 +532,21 @@ class RandomFourierKernelND(torch.nn.Module):
             self.out_linear.weight.data *= math.sqrt(1.0 / kernel_volume)
 
     def forward(self, seq_lens: tuple[int, ...], conditioning: torch.Tensor | None = None) -> torch.Tensor:
-        """Computes the random Fourier kernel for a given grid of spatial dimensions.
+        """Compute the RFF kernel for a given grid of spatial dimensions.
 
         Args:
-            seq_lens (tuple[int, ...]): Lengths of the input grid for which to compute the positional embeddings.
-            conditioning: Unused. Accepted for API compatibility with FiLM-enabled kernels.
+            seq_lens: Per-axis output sequence lengths.  Length must equal
+                ``self.data_dim``.
+            conditioning: Unused.  Accepted for API compatibility with
+                FiLM-enabled kernels (e.g. ``SIRENKernelND`` with
+                ``film_cfg``).
 
         Returns:
-            tuple[torch.Tensor, torch.Tensor]: The computed random Fourier kernel and the corresponding grid values.
-                The kernel is a tensor of shape (1, * spatial_dims, out_dim)
-                The grid is a tensor of shape (1, * spatial_dims, data_dim)
+            tuple:
+                - torch.Tensor: Kernel values of shape
+                  ``[1, *spatial_dims, out_dim]``.
+                - torch.Tensor: Coordinate grid of shape
+                  ``[1, *spatial_dims, data_dim]``.
         """
         # Generate positional embeddings and corresponding grid values
         pos_emb, grid = self.positional_embedding(seq_lens)
@@ -688,6 +747,19 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         ``2 * L_i - 1`` points.  At construction every ``max_limit_i`` is
         ``1.0``; runtime extensions can pass per-axis values larger than 1
         to preserve the original step size on extended axes.
+
+        Args:
+            L_per_axis: Per-axis cache extents.  The number of grid points
+                along axis ``i`` is ``2 * L_per_axis[i] - 1``.
+            max_limits: Per-axis coordinate limits; axis ``i`` spans
+                ``[-max_limits[i], +max_limits[i]]``.  Defaults to ``1.0``
+                on all axes.
+            device: Target device for the returned tensor.  Defaults to CPU.
+
+        Returns:
+            Float32 tensor of shape
+            ``[1, 2*L_0-1, ..., 2*L_{d-1}-1, data_dim]`` representing the
+            coordinate meshgrid, with a leading batch dimension of 1.
         """
         if max_limits is None:
             max_limits = (1.0,) * len(L_per_axis)
@@ -706,6 +778,15 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         ``max_limit = 1.0 + step_size * (seq_len - L_cache_orig)``.  Axes
         that already cover their requested ``seq_len`` are rebuilt at their
         existing extent so the cache stays a single rectangular tensor.
+
+        Args:
+            seq_lens: Requested per-axis output sequence lengths.  Any axis
+                where ``seq_lens[i] > self.L_cache_per_axis[i]`` triggers a
+                cache extension for that axis.
+
+        Returns:
+            None.  Modifies ``self.grid_cache`` and
+            ``self.L_cache_per_axis`` in-place when an extension is needed.
         """
         if all(L >= sl for L, sl in zip(self.L_cache_per_axis, seq_lens)):
             return
@@ -723,19 +804,25 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         self.L_cache_per_axis = new_L_per_axis
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
-        """Computes the positional embeddings for a sequence of the given length.
+        """Compute the SIREN positional embeddings for a given spatial grid.
 
         Args:
-            seq_lens (tuple[int, ...]): Lengths of the input grid for which to compute the positional embeddings.
+            seq_lens: Per-axis output sequence lengths.  Length must equal
+                ``self.data_dim``.  For example, for a 2D signal of height H
+                and width W, pass ``(H, W)``.
 
         Returns:
             tuple:
-                - torch.Tensor: The positional embeddings, concatenated sine and cosine values (shape: [1, * spatial_dims, embedding_dim]).
-                - torch.Tensor: The input positions normalized between [-1, 1] (shape: [1, * spatial_dims, 1]).
+                - torch.Tensor: The positional embeddings ``sin(W x + b)``,
+                  where the linear projection is computed in float32 and the
+                  result is cast back to the weight dtype.
+                  Shape ``[1, *spatial_dims, embedding_dim]``.
+                - torch.Tensor: The coordinate grid of positions normalised to
+                  ``[-1, 1]`` per axis.  Shape ``[1, *spatial_dims, data_dim]``.
 
         Raises:
-            AssertionError: If `seq_lens` is not of length `self.data_dim`.
-            AssertionError: If `self.grid_cache` is not of type `torch.float32`.
+            AssertionError: If ``len(seq_lens) != self.data_dim``.
+            AssertionError: If ``self.grid_cache`` is not ``float32``.
         """
         # Check that the sequence lengths are of the correct length.
         assert len(seq_lens) == self.data_dim, (
@@ -831,6 +918,10 @@ class SIRENKernelND(torch.nn.Module):
     * All ``hidden_linears`` are SIREN-initialised with ``hidden_omega_0``.
     * ``out_linear`` is SIREN-initialised with ``hidden_omega_0``, then
       additionally Wang-scaled by ``sqrt(1 / prod(L_cache_per_axis))``.
+      This "Wang init" (from the CKConv paper, Romero et al. 2021) divides
+      the output layer's weights by the square root of the total grid volume
+      (``L_cache**data_dim`` for isotropic grids), so the initial filter's
+      L2 energy is independent of the grid resolution.
     * Hidden linear weights and output bias get ``_no_weight_decay = True``
       so that weight-decay optimizers do not destroy the SIREN spectrum.
 
@@ -969,7 +1060,7 @@ class SIRENKernelND(torch.nn.Module):
             self.film_generator = None
 
     def flop_count(self, grid_lens: tuple[int, ...], inference: bool = False) -> int:
-        """Count FLOPs for SIREN kernel generation on the positional grid.
+        """Return an integer FLOP estimate for one kernel generation forward pass.
 
         At ``inference=True`` with no FiLM generator, returns 0 because the
         kernel is input-independent and can be precomputed once and cached.
@@ -1003,8 +1094,10 @@ class SIRENKernelND(torch.nn.Module):
                 (Note: film_after_pos_embed requires embedding_dim == mlp_hidden_dim.)
 
         Args:
-            grid_lens: Spatial extents passed to the positional embedding.
-                The kernel grid has size ``(2 * L - 1)`` per dimension.
+            grid_lens: Per-axis output sequence lengths — the same tuple you
+                would pass to ``forward`` as ``seq_lens``.  The total number
+                of coordinate points the MLP processes is
+                ``G = prod(2*L - 1 for L in grid_lens)``.
             inference: If True and no FiLM generator, return 0 (cacheable kernel).
 
         Returns:
@@ -1527,8 +1620,29 @@ class BlockDiagonalMultiOmegaSIRENKernelND(MultiOmegaSIRENKernelND):
         """Build a block-mask: 1.0 on the diagonal blocks, ``off_block_scale`` elsewhere.
 
         The returned tensor has shape ``[out_dim, in_dim]``.  Block sizes are
-        ``out_dim // num_blocks`` rows by ``in_dim // num_blocks`` columns;
-        ``out_dim`` and ``in_dim`` must both be divisible by ``num_blocks``.
+        ``out_dim // num_blocks`` rows by ``in_dim // num_blocks`` columns.
+
+        Note: if ``out_dim`` or ``in_dim`` is not divisible by ``num_blocks``,
+        block sizes are silently truncated via integer division.  The calling
+        ``__init__`` validates divisibility and raises ``ValueError`` before
+        reaching this method.
+
+        Args:
+            out_dim: Number of output features (rows of the weight matrix).
+            in_dim: Number of input features (columns of the weight matrix).
+            num_blocks: Number of equal-sized blocks along both axes.
+            off_block_scale: Scalar fill value for off-diagonal block entries.
+                Use ``0.0`` for a strict block-diagonal and ``1.0`` to leave
+                the weights unmodified.
+            device: Target device for the mask tensor.
+            dtype: Target dtype for the mask tensor (should match the weight).
+
+        Returns:
+            Tensor of shape ``[out_dim, in_dim]`` with ``1.0`` on the block
+            diagonal and ``off_block_scale`` elsewhere.
+
+        Raises:
+            ZeroDivisionError: If ``num_blocks == 0``.
         """
         rows_per_block = out_dim // num_blocks
         cols_per_block = in_dim // num_blocks
@@ -1604,13 +1718,14 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
         omega_0_scale_max: Upper clamp on ``ω₀_scale``. Default 2.0, giving
             a total multiplier inside the sine of up to ``4π·ω₀``.
         use_bias: Whether to include a bias term.
-        apply_lr_scale: When True, attach ``_lr_scale = 1/(2π·omega_0)`` to
-            ``self.linear.weight`` so that ``_build_param_groups`` lowers
-            its learning rate to compensate for the absent ``2π·ω₀`` factor
-            in the init bound.  Default False (opt-in; off by default so
-            the optimizer behaviour matches the existing SIREN exactly,
-            and the new classes can be A/B-tested with and without LR
-            compensation).
+        apply_lr_scale: When True, attach ``_lr_scale = 1/(2*pi*omega_0)``
+            to ``self.linear.weight``.  The optimizer utility
+            ``_build_param_groups`` (in ``experiments/``) reads this attribute
+            and multiplies the layer's effective learning rate by
+            ``_lr_scale``, compensating for the missing ``2*pi*omega_0``
+            factor in the SIREN-1 init bound so that the per-step update size
+            matches a standard SIREN.  Default False (opt-in, so existing
+            runs are unaffected and the new classes can be A/B-tested).
 
     Attributes:
         omega_0 (float): Constant part of the runtime multiplier (same as the
@@ -1727,7 +1842,24 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
                 self.linear.bias._lr_scale = 1.0 / (2.0 * math.pi * float(omega_0))
 
     def _clamp_omega_scale_pre_hook(self, module, inputs):
-        """Clamp ``omega_0_scale`` into ``[scale_min, scale_max]`` in-place before forward."""
+        """Clamp ``omega_0_scale`` into ``[scale_min, scale_max]`` in-place before forward.
+
+        Registered as a ``register_forward_pre_hook`` so the clamp runs
+        automatically at the start of every forward call without requiring the
+        caller to call it explicitly.  This is a "direct" parametrisation — the
+        clamping does not block gradient flow for values already inside the
+        valid range.
+
+        Args:
+            module: The module instance (``self``); provided by PyTorch's hook
+                mechanism and not used directly.
+            inputs: The positional inputs tuple passed to ``forward``; not
+                inspected or modified.
+
+        Returns:
+            None.  Modifies ``self.omega_0_scale.data`` in-place via
+            ``clamp_``.
+        """
         with torch.no_grad():
             self.omega_0_scale.data.clamp_(min=self.omega_0_scale_min, max=self.omega_0_scale_max)
 
