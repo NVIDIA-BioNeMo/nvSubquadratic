@@ -37,6 +37,7 @@ from nvsubquadratic.modules.film import KernelFiLMGenerator, RegisterPooling
 from nvsubquadratic.modules.grn import GlobalResponseNorm
 from nvsubquadratic.modules.hyena_nd import Hyena
 from nvsubquadratic.modules.kernels_nd import BlockDiagonalLearnableOmegaSIRENKernelND
+from nvsubquadratic.modules.masks_nd import BlockAlignedGaussianModulationND
 from nvsubquadratic.modules.mlp import MLP
 from nvsubquadratic.modules.patch_merging import PatchMerging
 from nvsubquadratic.modules.rms_norm import RMSNorm
@@ -91,7 +92,12 @@ KERNEL_HIDDEN_OMEGA_0 = 1.0
 KERNEL_OFF_BLOCK_SCALE = 0.1
 
 # ─── FiLM conditioning (variant-only) ────────────────────────────────────────
+# Matches vit5_hybrid/_film.py: identity init (γ=1, β=0), film_after_pos_embed,
+# and dedicated per-group WD of 5e-3 (best v3 LAMB+FiLM result on ImageNet).
 FILM_HIDDEN_DIM = 64
+FILM_INIT_TYPE = "identity"  # γ=1, β=0 at init — start from no-modulation baseline
+FILM_WEIGHT_DECAY = 5e-3  # dedicated WD group for FiLM weights (biases excluded)
+FILM_AFTER_POS_EMBED = True  # modulate the positional-embedding sine (adds one FiLM pair)
 
 # ─── Training recipe (matches v5_patch) ──────────────────────────────────────
 EPOCHS = 800
@@ -123,8 +129,13 @@ INIT_FN_FACTORY = trunc_normal_init_factory(std=0.02)
 
 
 def _siren_kernel_cfg(hidden_dim: int, L_cache: int, film_cfg: LazyConfig | None) -> LazyConfig:
-    """SIREN kernel for one stage: BlockDiagonal + learnable per-row ω₀."""
-    return LazyConfig(BlockDiagonalLearnableOmegaSIRENKernelND)(
+    """SIREN kernel for one stage: BlockDiagonal + learnable per-row ω₀.
+
+    When ``film_cfg`` is provided, ``film_after_pos_embed=True`` is set so the
+    FiLM generator modulates the positional-embedding sine in addition to the
+    two hidden linear layers, matching the vit5_hybrid/_film.py convention.
+    """
+    cfg = LazyConfig(BlockDiagonalLearnableOmegaSIRENKernelND)(
         data_dim=2,
         out_dim=hidden_dim,
         mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
@@ -140,6 +151,9 @@ def _siren_kernel_cfg(hidden_dim: int, L_cache: int, film_cfg: LazyConfig | None
         hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
         film_cfg=film_cfg,
     )
+    if film_cfg is not None:
+        cfg.film_after_pos_embed = FILM_AFTER_POS_EMBED
+    return cfg
 
 
 def _hyena_mixer_cfg(hidden_dim: int, L_cache: int, film_cfg: LazyConfig | None) -> LazyConfig:
@@ -151,7 +165,14 @@ def _hyena_mixer_cfg(hidden_dim: int, L_cache: int, film_cfg: LazyConfig | None)
                 data_dim=2,
                 hidden_dim=hidden_dim,
                 kernel_cfg=_siren_kernel_cfg(hidden_dim=hidden_dim, L_cache=L_cache, film_cfg=film_cfg),
-                mask_cfg=LazyConfig(torch.nn.Identity)(),
+                mask_cfg=LazyConfig(BlockAlignedGaussianModulationND)(
+                    data_dim=2,
+                    num_channels=hidden_dim,
+                    min_attenuation_at_step=0.1,
+                    max_attenuation_at_limit=0.95,
+                    init_extent=1.0,
+                    parametrization="direct",
+                ),
                 grid_type="double",
                 fft_padding="zero",
             ),
@@ -192,8 +213,12 @@ def _stage_block_cfg(
         film_cfg = LazyConfig(KernelFiLMGenerator)(
             cond_dim=hidden_dim,
             kernel_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
-            num_film_layers=KERNEL_NUM_LAYERS - 1,
+            # FILM_AFTER_POS_EMBED=True adds a 3rd pair (for the pos-embed sine)
+            # so num_film_layers must equal KERNEL_NUM_LAYERS (not KERNEL_NUM_LAYERS-1).
+            num_film_layers=KERNEL_NUM_LAYERS,
             film_hidden_dim=FILM_HIDDEN_DIM,
+            init_type=FILM_INIT_TYPE,
+            no_weight_decay=FILM_WEIGHT_DECAY,
         )
         register_pooling_cfg = LazyConfig(RegisterPooling)(num_registers=NUM_REGISTERS)
         num_registers = NUM_REGISTERS
