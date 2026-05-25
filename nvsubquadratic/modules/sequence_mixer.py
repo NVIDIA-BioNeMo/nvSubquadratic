@@ -22,8 +22,11 @@ CKConv, requires only a config change.
 Dispatch pattern
 ----------------
 The dispatch is performed by :func:`~nvsubquadratic.lazy_config.instantiate`
-acting on ``mixer_cfg``.  Any class whose constructor accepts ``(q, k, v,
-cp_group, **kwargs)`` in its ``forward`` method can be used as the inner mixer.
+acting on ``mixer_cfg``.  Any class whose ``forward`` method accepts
+``(q, k, v, cp_group, **kwargs)`` can be used as the inner mixer.  Note that
+``cp_group`` is passed **positionally** as the fourth argument; an inner mixer
+that captures it only via ``**kwargs`` would silently not receive it.
+
 The currently supported inner mixers are:
 
 * :class:`~nvsubquadratic.modules.hyena_nd.Hyena` — gated global-conv mixer
@@ -33,8 +36,16 @@ The currently supported inner mixers are:
   and easy to compose with RoPE).
 * :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND` — continuous-kernel conv
   (any spatial rank, learned kernel parametrisation via an MLP).
-* :class:`~nvsubquadratic.modules.mamba_nd.MambaNd` — Mamba SSM variant for
+* :class:`~nvsubquadratic.modules.mamba_nd.Mamba` — Mamba SSM variant for
   ND inputs.
+
+Note:
+    To add a new mixer type, implement a :class:`torch.nn.Module` whose
+    ``forward(q, k, v, cp_group, **kwargs)`` method follows the channels-last
+    convention ``[B, *spatial, C]`` and, optionally, implement
+    ``flop_count(spatial_dims, inference) -> int``.  Then pass its
+    :class:`~nvsubquadratic.lazy_config.LazyConfig` as ``mixer_cfg`` to
+    :class:`QKVSequenceMixer` — no other changes are needed.
 
 Input / output layout
 ---------------------
@@ -66,22 +77,24 @@ class QKVSequenceMixer(torch.nn.Module):
 
     .. code-block:: text
 
-        x  ─[Linear(C, 3C)]──► split ──► Q, K, V
-                                               │
-                              inner_mixer(Q, K, V, cp_group, **kwargs)
-                                               │
-                              [Linear(C, C)]──► y
+        x  ─[Linear(C → 3C, + bias?)]──► split ──► Q, K, V
+                                                         │
+                                 inner_mixer(Q, K, V, cp_group, **kwargs)
+                                                         │
+                                 [Linear(C → C, + bias?)]──► y
 
     The QKV projection packs all three projections into a single
     ``Linear(C, 3·C)`` call for efficiency; the output projection maps back to
-    ``C``.
+    ``C``.  Both projections optionally include a bias term (disabled by
+    default; see ``qkv_bias`` and ``out_proj_bias``).
 
     Attributes:
         mixer (torch.nn.Module): The instantiated inner sequence-mixing
             operator (e.g. :class:`~nvsubquadratic.modules.hyena_nd.Hyena`).
-        qkv_proj (torch.nn.Linear): Combined Q+K+V input projection,
-            shape ``(C, 3·C)``.
-        out_proj (torch.nn.Linear): Output projection, shape ``(C, C)``.
+        qkv_proj (torch.nn.Linear): Combined Q+K+V input projection;
+            maps ``C`` → ``3·C`` (weight shape ``(3C, C)``).
+        out_proj (torch.nn.Linear): Output projection; maps ``C`` → ``C``
+            (weight shape ``(C, C)``).
 
     Example::
 
@@ -116,13 +129,14 @@ class QKVSequenceMixer(torch.nn.Module):
             hidden_dim: Channel dimension ``C`` of the input / output tensor.
                 Both ``qkv_proj`` and ``out_proj`` are sized using this value.
             mixer_cfg: :class:`~nvsubquadratic.lazy_config.LazyConfig` for the
-                inner sequence-mixing operator.  The target class must accept
-                ``(q, k, v, cp_group, **kwargs)`` in its ``forward`` method.
-                Supported targets include
+                inner sequence-mixing operator.  The target class's ``forward``
+                method must accept ``(q, k, v, cp_group, **kwargs)`` where
+                ``cp_group`` is the fourth positional argument.  Supported
+                targets include
                 :class:`~nvsubquadratic.modules.hyena_nd.Hyena`,
                 :class:`~nvsubquadratic.modules.attention.Attention`,
                 :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND`, and
-                :class:`~nvsubquadratic.modules.mamba_nd.MambaNd`.
+                :class:`~nvsubquadratic.modules.mamba_nd.Mamba`.
             qkv_bias: If ``True``, adds a learnable bias to the combined QKV
                 projection.  The bias is zero-initialised when
                 ``init_method_in`` is provided.  Defaults to ``False``.
@@ -137,12 +151,25 @@ class QKVSequenceMixer(torch.nn.Module):
                 the bias is zero-initialised.  Pass ``None`` to use PyTorch's
                 default (Kaiming uniform).
             init_method_out: Same as ``init_method_in`` but applied to
-                ``out_proj.weight.data``.  Typically a scaled initialiser (e.g.
-                ``1 / sqrt(num_layers)``) to control residual branch variance.
+                ``out_proj.weight.data``.  Typically a scaled initialiser that
+                controls residual-branch variance (GPT/Megatron style), e.g.::
+
+                    import math
+                    init_method_out = (
+                        lambda dim: lambda w: torch.nn.init.normal_(
+                            w, std=1 / math.sqrt(num_layers)
+                        )
+                    )
 
         Raises:
-            RuntimeError: Propagated from ``instantiate(mixer_cfg)`` if the
-                target class cannot be constructed (e.g. missing required args).
+            Exception: Propagated from
+                :func:`~nvsubquadratic.lazy_config.instantiate` if the target
+                class cannot be constructed (e.g. missing required arguments or
+                an invalid ``mixer_cfg``).  The exact exception type depends on
+                the ``LazyConfig`` backend (typically an
+                ``omegaconf.errors.InstantiationException`` or similar).
+                Check ``mixer_cfg._target_`` and its keyword arguments if this
+                is raised.
         """
         super().__init__()
 
@@ -165,7 +192,9 @@ class QKVSequenceMixer(torch.nn.Module):
 
         Uses the standard multiply-accumulate convention where one FLOP = one
         multiply + one add (i.e. the matrix-vector product ``y = Wx`` over
-        ``T`` tokens costs ``2 · T · in_dim · out_dim`` FLOPs).
+        ``T`` tokens costs ``2 · T · in_dim · out_dim`` FLOPs).  Bias
+        additions are excluded, following the standard ML FLOP-counting
+        convention.
 
         FLOPs breakdown (``D`` = ``hidden_dim``, ``T`` = ``prod(spatial_dims)``):
 
@@ -176,7 +205,7 @@ class QKVSequenceMixer(torch.nn.Module):
            For Hyena this is dominated by the FFT convolution
            ``O(T log T · D)``; for attention it is ``O(T² · D)``.
         3. **Output projection** ``Linear(D, D)``:
-           ``2 · T · D² ``
+           ``2 · T · D²``
 
         Total (excluding inner mixer): ``8 · T · D²``.
 
@@ -190,6 +219,10 @@ class QKVSequenceMixer(torch.nn.Module):
 
         Returns:
             Total FLOPs as a non-negative integer.
+
+        Raises:
+            AttributeError: If the inner mixer does not implement
+                ``flop_count``.
         """
         D = self.qkv_proj.in_features
         T = 1
@@ -206,7 +239,10 @@ class QKVSequenceMixer(torch.nn.Module):
         return flops
 
     def forward(
-        self, x: torch.Tensor, cp_group: torch.distributed.ProcessGroup = None, **mixer_kwargs
+        self,
+        x: torch.Tensor,
+        cp_group: torch.distributed.ProcessGroup | None = None,
+        **mixer_kwargs,
     ) -> torch.Tensor:
         """Run the QKV-project → mix → output-project forward pass.
 
@@ -223,13 +259,16 @@ class QKVSequenceMixer(torch.nn.Module):
                 ring-attention for :class:`~nvsubquadratic.modules.attention.Attention`).
                 Pass ``None`` (default) for single-GPU / non-distributed runs.
             **mixer_kwargs: Additional keyword arguments forwarded verbatim to
-                ``self.mixer.forward``.  Common keys:
+                ``self.mixer.forward``.  Mixers that do not recognise a key
+                must accept and ignore it via their own ``**kwargs``.  Common
+                keys:
 
                 * ``conditioning`` (:class:`torch.Tensor`, shape
-                  ``(B, cond_dim)``): FiLM conditioning signal used by
+                  ``(B, cond_dim)``): FiLM conditioning vector consumed by
                   :class:`~nvsubquadratic.modules.hyena_nd.Hyena` when a
-                  ``condition_mixer`` is attached.
-                * Any other mixer-specific arguments.
+                  ``condition_mixer`` is attached.  Ignored by mixers that do
+                  not have a ``condition_mixer`` (it passes through
+                  ``**mixer_kwargs`` and is discarded).
 
         Returns:
             Output tensor of shape ``(B, *spatial, C)`` — same layout as the
