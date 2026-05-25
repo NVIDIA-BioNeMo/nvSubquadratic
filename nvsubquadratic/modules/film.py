@@ -13,6 +13,11 @@ conditioning vector and ``⊙`` denotes elementwise multiplication.  The
 parameters ``γ`` and ``β`` are **not** fixed — they are the outputs of a
 small neural network (the *FiLM generator*) evaluated at runtime.
 
+In this codebase ``γ(c)`` and ``β(c)`` are vectors in ``ℝ^{kernel_hidden_dim}``
+applied pointwise to each SIREN hidden activation (no spatial axis); the standard
+spatial-feature-map interpretation from Perez et al. applies when the kernel
+network is evaluated independently at every spatial coordinate.
+
 *Reference*: Perez et al., "FiLM: Visual Reasoning with a General
 Conditioning Layer", arXiv:1709.07871 (2017).
 
@@ -28,30 +33,19 @@ Conditioning Layer", arXiv:1709.07871 (2017).
   generalise across equation parameters (viscosity, Reynolds number, etc.)
   by FiLM-conditioning the implicit neural operator kernel.
 * **SIREN kernel modulation** — within :mod:`nvsubquadratic.modules.kernels_nd`,
-  FiLM adjusts the hidden activations of each SIREN layer, effectively
+  FiLM adjusts the hidden activations of each SIREN layer (SIREN = Sinusoidal
+  Representation Network, Sitzmann et al. 2020, arXiv:2006.09661), effectively
   steering the learned convolution kernel per sample or per timestep.
 
-**Conditioning signal sources in this codebase**
+**Conditioning signal sources**
 
-The conditioning vector ``c ∈ ℝ^{cond_dim}`` typically originates from
-register tokens appended to the sequence.  Two encoder modules are provided:
-
-* :class:`RegisterPooling` — learnable softmax-weighted average over all
-  register tokens; produces a ``[B, C]`` summary vector.
-* :class:`RegisterCompressConcat` — compresses each register token with a
-  shared linear and concatenates; preserves per-register identity at the cost
-  of a larger ``cond_dim``.
-
-The encoded conditioning vector is then fed into :class:`KernelFiLMGenerator`
-which maps it to ``(γ, β)`` pairs — one pair per SIREN hidden layer.
-
-Provides:
-- KernelFiLMGenerator: MLP that maps a conditioning vector to per-layer (gamma, beta) pairs
-  for modulating SIREN hidden layers.
-- RegisterPooling: Learnable weighted average over register tokens to produce a single
-  conditioning vector per sample.
-- RegisterCompressConcat: Compress each register token via a shared linear layer and
-  concatenate, producing a conditioning vector that preserves per-register identity.
+The conditioning vector ``c ∈ ℝ^{cond_dim}`` can come from any source —
+a timestep MLP, class embedding lookup, or physics parameter encoder.
+In diffusion or class-conditioned settings any ``[B, cond_dim]`` tensor is
+accepted; within this codebase it typically originates from register tokens
+appended to the sequence.  See :class:`RegisterPooling` and
+:class:`RegisterCompressConcat` for the two register encoders provided here, and
+:class:`KernelFiLMGenerator` for the FiLM generator that consumes the result.
 """
 
 from __future__ import annotations
@@ -68,7 +62,9 @@ class KernelFiLMGenerator(nn.Module):
 
     Given a conditioning signal ``c ∈ ℝ^{cond_dim}`` (e.g. from register tokens
     processed by :class:`RegisterPooling` or :class:`RegisterCompressConcat`),
-    this module produces one ``(γ_l, β_l)`` pair per SIREN hidden layer ``l``:
+    this module produces one ``(γ_l, β_l)`` pair per SIREN hidden layer ``l``
+    (SIREN = Sinusoidal Representation Network, Sitzmann et al. 2020,
+    arXiv:2006.09661; see :mod:`nvsubquadratic.modules.kernels_nd`):
 
         h_l ← γ_l(c) ⊙ h_l + β_l(c)
 
@@ -95,7 +91,9 @@ class KernelFiLMGenerator(nn.Module):
     Attributes:
         num_film_layers (int): Number of ``(γ, β)`` pairs produced.
         kernel_hidden_dim (int): Feature dimension of each SIREN hidden layer.
-        mlp (nn.Sequential): Two-layer MLP (Linear → GELU → Linear).
+        mlp (nn.Sequential): Two-layer MLP mapping ``[*, cond_dim]`` →
+            ``[*, num_film_layers × 2 × kernel_hidden_dim]`` via a
+            ``film_hidden_dim``-dimensional bottleneck (Linear → GELU → Linear).
 
     Args:
         cond_dim: Dimensionality of the conditioning input ``c``.
@@ -131,6 +129,8 @@ class KernelFiLMGenerator(nn.Module):
         init_type: Literal["identity", "small_random"] = "identity",
         init_std: float = 1e-4,
     ):
+        if num_film_layers < 1:
+            raise ValueError(f"num_film_layers must be >= 1, got {num_film_layers}")
         super().__init__()
         self.num_film_layers = num_film_layers
         self.kernel_hidden_dim = kernel_hidden_dim
@@ -234,8 +234,9 @@ class KernelFiLMGenerator(nn.Module):
 
         Returns:
             A list of ``num_film_layers`` tuples ``(gamma, beta)``, where each
-            tensor has shape ``[B, kernel_hidden_dim]``.  Index ``l`` of the list
-            corresponds to SIREN hidden layer ``l``.
+            tensor has shape ``[B, kernel_hidden_dim]``.  Index ``0`` corresponds
+            to the first (shallowest) SIREN hidden layer and index
+            ``num_film_layers - 1`` to the deepest.
         """
         out = self.mlp(conditioning)  # [B, num_film_layers * 2 * kernel_hidden_dim]
         chunks = out.chunk(self.num_film_layers, dim=-1)  # num_film_layers x [B, 2 * kernel_hidden_dim]
@@ -306,7 +307,8 @@ class RegisterPooling(nn.Module):
             registers: Register token tensor of shape ``[B, num_registers, C]``,
                 where ``B`` is the batch size and ``C`` is the channel dimension.
                 The number of registers along axis 1 must equal ``num_registers``
-                passed to ``__init__``.
+                passed to ``__init__``; a mismatch will raise a ``RuntimeError``
+                from ``torch.einsum``.
 
         Returns:
             Pooled conditioning vector of shape ``[B, C]``.
@@ -341,6 +343,7 @@ class RegisterCompressConcat(nn.Module):
 
     Attributes:
         num_registers (int): Number of register tokens expected on the sequence axis.
+        hidden_dim (int): Input channel dimension of each register token.
         compressed_dim (int): Output channel dimension per register after compression.
         compress (nn.Linear): Shared weight-only (no bias) projection
             ``hidden_dim → compressed_dim`` applied independently to each register.
@@ -355,6 +358,7 @@ class RegisterCompressConcat(nn.Module):
     def __init__(self, num_registers: int, hidden_dim: int, compressed_dim: int):  # noqa: D107
         super().__init__()
         self.num_registers = num_registers
+        self.hidden_dim = hidden_dim
         self.compressed_dim = compressed_dim
         self.compress = nn.Linear(hidden_dim, compressed_dim, bias=False)
 
@@ -368,20 +372,21 @@ class RegisterCompressConcat(nn.Module):
         """
         return self.num_registers * self.compressed_dim
 
-    def flop_count(self, dim: int) -> int:
+    def flop_count(self, hidden_dim: int) -> int:
         """Count FLOPs for compress-and-concatenate (one sample).
 
-        Operations (R = num_registers, D_in = ``dim``, D_out = compressed_dim):
+        Operations (R = num_registers, D_in = ``hidden_dim``, D_out = compressed_dim):
           1. Shared linear applied R times:  R * 2 * D_in * D_out
           2. Concatenation is a view/copy, not a FLOP.
 
         Args:
-            dim: Channel dimension of the register tokens (should match ``hidden_dim``).
+            hidden_dim: Channel dimension of the register tokens; must equal the
+                ``hidden_dim`` argument passed to ``__init__``.
 
         Returns:
             Total FLOPs as an integer.
         """
-        return self.num_registers * 2 * dim * self.compressed_dim
+        return self.num_registers * 2 * hidden_dim * self.compressed_dim
 
     def forward(self, registers: torch.Tensor) -> torch.Tensor:
         """Compress each register token and concatenate into a flat conditioning vector.
@@ -404,4 +409,7 @@ class RegisterCompressConcat(nn.Module):
         return compressed.flatten(start_dim=1)  # [B, R * compressed_dim]
 
     def extra_repr(self) -> str:  # noqa: D102
-        return f"num_registers={self.num_registers}, compressed_dim={self.compressed_dim}, out_dim={self.out_dim}"
+        return (
+            f"num_registers={self.num_registers}, hidden_dim={self.hidden_dim}, "
+            f"compressed_dim={self.compressed_dim}, out_dim={self.out_dim}"
+        )

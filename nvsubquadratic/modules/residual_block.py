@@ -18,10 +18,13 @@
 This module provides the fundamental repeating unit of the nvsubquadratic
 architecture: a residual block that wraps a *sequence mixer* and an *MLP*
 with pre-norm and optional conditioning branches.  Stacking many such blocks
-forms the full depth of the network (``general_purpose_resnet`` /
-``classification_resnet``).
+forms the full depth of the network (see
+``nvsubquadratic.networks.general_purpose_resnet`` and
+``nvsubquadratic.networks.classification_resnet``).
 
-Two block variants are provided:
+Two block variants are provided.  They are **alternative** building blocks —
+a given network stage uses one *or* the other, never both nested together.
+Choosing between them is a top-level config decision:
 
 :class:`ResidualBlock`
     The standard pre-norm residual block used in most networks.  Each forward
@@ -35,16 +38,18 @@ Two block variants are provided:
     ``torch.nn.Identity``; the corresponding norm must also be Identity.
 
 :class:`AdaLNZeroResidualBlock`
-    A DiT-style block that replaces LayerNorm with *Adaptive LayerNorm-Zero*
-    (AdaLN-Zero) modulation.  A single zero-initialised linear layer maps the
-    conditioning vector to six affine parameters (shift + scale + gate for each
-    of the two branches), giving the conditioning signal fine-grained control
-    over both branches at initialisation-time stability (outputs ≈ 0).
+    A DiT-style block that replaces fixed LayerNorm with *Adaptive
+    LayerNorm-Zero* (AdaLN-Zero) modulation.  Unlike :class:`ResidualBlock`,
+    this block has **no separate cross-attention / condition-mixer branch**;
+    all conditioning is routed through a single zero-initialised projection
+    that produces shift + scale + gate parameters for both the sequence-mixer
+    and MLP branches.  This gives the conditioning signal fine-grained control
+    over both branches at initialisation-time stability (block outputs ≈ 0).
 
 All tensors follow **channels-last** layout: ``(B, *spatial_dims, C)``.
 """
 
-from typing import Union
+from typing import Optional, Union
 
 import torch
 
@@ -67,9 +72,21 @@ class ResidualBlock(torch.nn.Module):
     pure-sequence networks (condition branch disabled), cross-attention
     encoder-decoders (condition branch enabled), and MLP-only ablations.
 
+    The Identity constraint is **one-directional**: if a mixer/MLP config
+    targets ``Identity``, the corresponding norm config *must also* be
+    ``Identity`` (enforced by assertion at init).  The reverse — a norm set
+    to ``Identity`` while the mixer is active — is not checked and is the
+    caller's responsibility.
+
     All normalisation parameters (``input_norm``, ``condition_mixer_norm``,
     ``mlp_norm``) are tagged with ``_no_weight_decay = True`` so that the
     optimiser can exclude them from weight-decay groups.
+
+    See Also:
+        :class:`~nvsubquadratic.networks.general_purpose_resnet.GeneralPurposeResnet`
+        and
+        :class:`~nvsubquadratic.networks.classification_resnet.ClassificationResnet`
+        for the canonical consumers of this block.
 
     Attributes:
         sequence_mixer (torch.nn.Module): The instantiated sequence-mixing
@@ -81,6 +98,9 @@ class ResidualBlock(torch.nn.Module):
         condition_mixer (torch.nn.Module): Cross-attention or conditioning
             operator applied after the sequence mixer.  May be
             ``torch.nn.Identity`` to disable the conditioning branch entirely.
+            When not Identity, its ``forward(x, condition)`` signature must
+            accept the residual stream and a conditioning tensor whose channel
+            dimension matches ``C`` (the hidden channel dim of ``x``).
         condition_mixer_norm (torch.nn.Module): Pre-norm applied before
             ``condition_mixer``.  Must be ``torch.nn.Identity`` when
             ``condition_mixer`` is ``torch.nn.Identity``.
@@ -124,8 +144,12 @@ class ResidualBlock(torch.nn.Module):
             condition_mixer_cfg: LazyConfig for the conditioning / cross-
                 attention operator.  Pass ``torch.nn.Identity`` (the default
                 in most configs) to disable the conditioning branch.  When
-                active, the module's ``forward`` must accept
-                ``(x, condition)`` positional arguments.
+                active, the instantiated module's ``forward`` must accept
+                ``(x, condition)`` positional arguments where ``condition``
+                has the same channel dimension ``C`` as ``x``.  As of this
+                writing, ``torch.nn.Identity`` is effectively the only
+                production-ready value; a concrete cross-attention class is
+                planned but not yet part of the public API.
             condition_mixer_norm_cfg: LazyConfig for the pre-norm applied
                 before ``condition_mixer``.  **Must** be ``torch.nn.Identity``
                 when ``condition_mixer_cfg`` targets ``torch.nn.Identity``.
@@ -142,10 +166,10 @@ class ResidualBlock(torch.nn.Module):
                 ``torch.nn.Identity`` for no dropout.
 
         Raises:
-            AssertionError: If a norm config does not match its corresponding
-                module config — i.e. if a mixer/MLP config is ``Identity`` but
-                the corresponding norm config is not (or vice versa in the
-                forward-only direction).
+            AssertionError: If a mixer/MLP config targets ``torch.nn.Identity``
+                but the corresponding norm config does not.  The constraint is
+                one-directional: mixer=Identity ⟹ norm=Identity.  The reverse
+                (norm=Identity while mixer is active) is not checked.
         """
         if sequence_mixer_cfg.__target__ == torch.nn.Identity:
             assert sequence_mixer_norm_cfg.__target__ == torch.nn.Identity, (
@@ -186,7 +210,7 @@ class ResidualBlock(torch.nn.Module):
         # Instantiate dropout
         self.dropout = instantiate(dropout_cfg)
 
-    def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, condition: Optional[torch.Tensor]) -> torch.Tensor:
         """Apply the residual block to the input tensor.
 
         Executes up to three residual sub-branches in order: sequence mixer,
@@ -220,7 +244,8 @@ class ResidualBlock(torch.nn.Module):
             condition: Conditioning tensor used by ``condition_mixer``.  Its
                 shape depends on the conditioning operator — a common choice
                 is ``(B, *spatial_dims_condition, C)`` for cross-attention, or
-                ``(B, C)`` for a global conditioning vector.  This argument is
+                ``(B, C)`` for a global conditioning vector.  The channel
+                dimension ``C`` must match that of ``x``.  This argument is
                 **ignored** (and may safely be ``None``) when
                 ``condition_mixer`` is ``torch.nn.Identity``.
 
@@ -270,6 +295,19 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
     for each of the two branches — so that at initialisation the block outputs
     exactly zero (the residual stream is unchanged).
 
+    Unlike :class:`ResidualBlock`, this block has **no separate
+    cross-attention / condition-mixer branch**.  All conditioning is routed
+    through the AdaLN-Zero projection plus a ``conditioning`` kwarg forwarded
+    directly into the sequence mixer (e.g. for FiLM inside Hyena).  There are
+    therefore **two conditioning pathways** in a single forward pass:
+
+    1. **AdaLN-Zero affine modulation** — shift/scale/gate applied to the
+       pre-norm outputs of the sequence mixer and MLP branches.
+    2. **Inner-mixer conditioning** — the pooled conditioning vector ``cond``
+       is also passed as ``conditioning=cond`` to ``sequence_mixer.forward``,
+       allowing the inner operator (e.g. :class:`~nvsubquadratic.modules.hyena_nd.Hyena`
+       with FiLM kernel conditioning) to use it independently.
+
     **Forward computation** (one block):
 
     .. code-block:: text
@@ -281,7 +319,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         # Sequence mixer branch
         x_norm = sequence_norm(x)                         # pre-norm
         x_mod  = x_norm * (1 + scale_seq) + shift_seq    # AdaLN modulation
-        seq_out = sequence_mixer(x_mod, conditioning=cond)
+        seq_out = sequence_mixer(x_mod, conditioning=cond)  # cond also forwarded
         seq_out = dropout(seq_out) * gate_seq             # zero-init gate
         x = x + seq_out
 
@@ -296,10 +334,16 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
     scaling; at init they are zero (because ``condition_proj`` weights are
     zero-initialised), so the block is a skip connection.
 
+    See Also:
+        :class:`~nvsubquadratic.networks.general_purpose_resnet.GeneralPurposeResnet`
+        and
+        :class:`~nvsubquadratic.networks.classification_resnet.ClassificationResnet`
+        for the canonical consumers of this block.
+
     Attributes:
         sequence_mixer (torch.nn.Module): Instantiated sequence-mixing
             operator.  Its ``forward`` must accept a ``conditioning`` keyword
-            argument (forwarded from the pooled conditioning vector).
+            argument (forwarded from the pooled conditioning vector ``cond``).
         sequence_norm (torch.nn.Module): Pre-norm applied to ``x`` before
             AdaLN modulation in the sequence mixer branch.
         mlp (torch.nn.Module): Position-wise MLP instantiated from
@@ -336,7 +380,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
                 pooled conditioning vector ``cond`` of shape ``(B, C)``).
             sequence_mixer_norm_cfg: LazyConfig for the pre-norm applied
                 before the AdaLN modulation of the sequence mixer branch
-                (e.g. LayerNorm over ``hidden_dim``).
+                (e.g. ``LayerNorm(hidden_dim)``).
             mlp_cfg: LazyConfig for the position-wise MLP.
             mlp_norm_cfg: LazyConfig for the pre-norm applied before the
                 AdaLN modulation of the MLP branch.
@@ -347,7 +391,10 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
                 applied after each branch and before the gate multiply.
             hidden_dim: Channel dimension ``C`` shared by all sub-modules.
                 Used to size the ``condition_proj`` linear layer
-                (``Linear(C, 6*C)``).
+                (``Linear(C, 6*C)``).  **This value must match the channel
+                dimension baked into** ``sequence_mixer_cfg`` **and**
+                ``mlp_cfg`` — there is no runtime check, and a mismatch will
+                produce a shape error deep inside ``condition_proj``.
         """
         super().__init__()
 
@@ -384,6 +431,17 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         to six affine parameters.  These parameters modulate the pre-norm
         outputs of both branches via element-wise affine transforms, and gate
         each branch's output before the residual add.
+
+        There are **two conditioning pathways**:
+
+        1. **AdaLN-Zero** — shift/scale/gate parameters derived from
+           ``condition_proj(cond)`` are applied to the pre-norm outputs of
+           both the sequence-mixer and MLP branches.
+        2. **Inner-mixer conditioning** — the same pooled ``cond`` vector is
+           also forwarded as ``conditioning=cond`` into
+           ``self.sequence_mixer``, allowing operators such as
+           :class:`~nvsubquadratic.modules.hyena_nd.Hyena` to apply
+           additional FiLM modulation to their kernel networks.
 
         Args:
             x: Input feature tensor of shape ``(B, *spatial_dims, C)`` where
@@ -422,7 +480,12 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         )  # each (B, hidden_dim)
 
         def expand(param: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
-            """Broadcast a [B, hidden_dim] vector across ref's spatial axes."""
+            """Broadcast a [B, hidden_dim] vector across ref's spatial axes.
+
+            Defined as a local helper (rather than a method) to keep the
+            broadcast logic inline with the forward pass without allocating
+            a persistent buffer.
+            """
             while param.ndim < ref.ndim:
                 param = param.unsqueeze(1)  # add singleton dims for broadcasting
             return param.expand(*ref.shape[:-1], param.shape[-1])  # match ref spatial layout
@@ -432,6 +495,7 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
         seq_mod = seq_norm * (1.0 + expand(scale_seq, seq_norm)) + expand(
             shift_seq, seq_norm
         )  # (B, *spatial_dims, hidden_dim)
+        # cond is also forwarded to the inner mixer (e.g. for Hyena FiLM kernel conditioning).
         seq_out = self.sequence_mixer(seq_mod, conditioning=cond)  # (B, *spatial_dims, hidden_dim)
         seq_out = self.dropout(seq_out)  # (B, *spatial_dims, hidden_dim)
         seq_out = seq_out * expand(gate_seq, seq_out)  # (B, *spatial_dims, hidden_dim)
