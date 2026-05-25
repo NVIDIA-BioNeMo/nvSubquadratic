@@ -46,12 +46,12 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `hyena_nd.py`                      | \[x\]  | Hyena operator (ND) — two-gate sandwich, AllToAll CP, BC-aware convolution                  |
 | `ckconv_nd.py`                     | \[x\]  | CKConv (ND) — implicit kernel `k_θ(p) = MLP_θ(pos_enc(p))`, FFT domain, BC modes            |
 | `ckconv_multihead_nd.py`           | \[x\]  | Multi-head CKConv — H heads, dense d×d kernel per head, low-rank U·V factorisation          |
-| `mamba_nd.py`                      | \[ \]  | Mamba SSM (ND)                                                                              |
+| `mamba_nd.py`                      | \[x\]  | Mamba SSM (ND) — selective SSM, ZOH discretisation, raster-scan ND, bidirectional mode      |
 | `attention.py`                     | \[x\]  | Scaled dot-product attention — multi-head, RoPE, ND spatial, O(L²) FLOP formula             |
-| `vit5_attention.py`                | \[ \]  | ViT5 attention variant                                                                      |
-| `vit5_hyena_adapter.py`            | \[ \]  | Hyena adapter for ViT5                                                                      |
+| `vit5_attention.py`                | \[x\]  | ViT5 attention — register-aware 2D RoPE, QK-norm, CUDA-graph-safe buffers                   |
+| `vit5_hyena_adapter.py`            | \[x\]  | Hyena adapter for ViT5 — drop-in for vit5_attention, register-token + hierarchy support     |
 | `sequence_mixer.py`                | \[x\]  | Operator-agnostic dispatch layer (Hyena / Attention / CKConv / Mamba)                       |
-| `condition_mixer.py`               | \[ \]  | Conditioning mixer                                                                          |
+| `condition_mixer.py`               | \[x\]  | Cross-attention conditioning mixer — both global (B,C) and spatial (B,\*,C) signals         |
 | `residual_block.py`                | \[x\]  | Residual block — pre-norm + mixer + MLP, optional FiLM/AdaLN-Zero conditioning              |
 | `vit5_residual_block.py`           | \[x\]  | ViT5 residual block — LayerScale, register-token conditioning, no condition-mixer branch    |
 | `patchify.py`                      | \[x\]  | Patch embedding — strided conv, 1D/2D/3D, channels-last layout                              |
