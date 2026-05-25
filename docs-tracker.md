@@ -68,7 +68,7 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `subq_ops_causal_conv1d.py`        | \[x\]  | New (1D PR): `nn.Conv1d`-compatible depthwise wrapper around `subq_ops.causal_conv1d`       |
 | `schedulers.py`                    | \[x\]  | ResumableSequentialLR — PyTorch ≤2.10 bug fix, load_state_dict LR propagation               |
 | `distributed_depthwise_conv_nd.py` | \[x\]  | CP-aware 1D/2D/3D depthwise conv — group weight sharing, channel slicing, causal padding    |
-| `patch_merging.py`                 | \[ \]  | Pending (feat/patch-merging PR): Swin-style 2×2 patch merging with register-row passthrough |
+| `patch_merging.py`                 | \[x\]  | New (hierarchical PR): Swin-style 2×2 patch merging with optional register-row passthrough  |
 
 ### `nvsubquadratic/networks/` — Full architectures
 
@@ -77,7 +77,7 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `general_purpose_resnet.py`           | \[x\]  | ResidualNetwork — LazyConfig blocks, conditioning, readout crop, gradient checkpointing                                             |
 | `classification_resnet.py`            | \[x\]  | ClassificationResNet — GAP readout, resolution-agnostic, inherits ResidualNetwork                                                   |
 | `vit5_classification.py`              | \[x\]  | ViT5 classification — token layout, hybrid blocks, CLS/GAP/register_concat readouts, FLOP count                                     |
-| `vit5_hierarchical_classification.py` | \[ \]  | Pending (feat/patch-merging PR): Swin-style 4-stage hierarchical ViT-5 classifier with GAP readout and optional register-row layout |
+| `vit5_hierarchical_classification.py` | \[x\]  | New (hierarchical PR): Swin-style 4-stage hierarchical ViT-5 classifier with GAP readout and optional register-row layout |
 | `huggingface_diffusers.py`            | \[ \]  | HF diffusers integration                                                                                                            |
 | `jit.py` / `jit_utils.py`             | \[ \]  | TorchScript utilities                                                                                                               |
 
