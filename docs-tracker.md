@@ -45,17 +45,17 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `kernels_nd.py`                    | \[x\]  | Learned kernel parametrisation — RFF + SIREN, FiLM-conditioned variants                     |
 | `hyena_nd.py`                      | \[x\]  | Hyena operator (ND) — two-gate sandwich, AllToAll CP, BC-aware convolution                  |
 | `ckconv_nd.py`                     | \[x\]  | CKConv (ND) — implicit kernel `k_θ(p) = MLP_θ(pos_enc(p))`, FFT domain, BC modes            |
-| `ckconv_multihead_nd.py`           | \[ \]  | Multi-head CKConv                                                                           |
+| `ckconv_multihead_nd.py`           | \[x\]  | Multi-head CKConv — H heads, dense d×d kernel per head, low-rank U·V factorisation          |
 | `mamba_nd.py`                      | \[ \]  | Mamba SSM (ND)                                                                              |
-| `attention.py`                     | \[ \]  | Standard attention                                                                          |
+| `attention.py`                     | \[x\]  | Scaled dot-product attention — multi-head, RoPE, ND spatial, O(L²) FLOP formula             |
 | `vit5_attention.py`                | \[ \]  | ViT5 attention variant                                                                      |
 | `vit5_hyena_adapter.py`            | \[ \]  | Hyena adapter for ViT5                                                                      |
 | `sequence_mixer.py`                | \[x\]  | Operator-agnostic dispatch layer (Hyena / Attention / CKConv / Mamba)                       |
 | `condition_mixer.py`               | \[ \]  | Conditioning mixer                                                                          |
 | `residual_block.py`                | \[x\]  | Residual block — pre-norm + mixer + MLP, optional FiLM/AdaLN-Zero conditioning              |
-| `vit5_residual_block.py`           | \[ \]  | ViT5 residual block                                                                         |
+| `vit5_residual_block.py`           | \[x\]  | ViT5 residual block — LayerScale, register-token conditioning, no condition-mixer branch    |
 | `patchify.py`                      | \[x\]  | Patch embedding — strided conv, 1D/2D/3D, channels-last layout                              |
-| `position_encoding.py`             | \[ \]  | Position encodings                                                                          |
+| `position_encoding.py`             | \[x\]  | Axis-factorised learned PE — ND broadcast-expand, float32 output caveat                     |
 | `masks_nd.py`                      | \[ \]  | ND masking utils                                                                            |
 | `mlp.py`                           | \[ \]  | MLP block                                                                                   |
 | `film.py`                          | \[x\]  | FiLM conditioning — γ(c)⊙x + β(c), SIREN-based kernel generator                             |
