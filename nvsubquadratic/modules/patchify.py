@@ -27,9 +27,21 @@ All layers in this module use **channels-last** tensors externally::
     input  : [B, *spatial_dims, C_in]   e.g. [B, H, W, C_in]  for 2D
     output : [B, *patch_grid, C_embed]  e.g. [B, H/P, W/P, C_embed]
 
+The general output-size formula for each spatial axis ``s`` is::
+
+    out_s = floor((s - patch_size) / stride) + 1
+
+For the default non-overlapping case (``stride == patch_size``) this reduces to
+``s // patch_size`` when ``s`` is evenly divisible by ``patch_size``.
+
 Channels are reordered to channels-first only internally before the convolution
 and back to channels-last before returning, which matches the layout expected by
-``PositionEmbeddingND`` and the subsequent mixer blocks.
+``nvsubquadratic.modules.position_encoding.PositionEmbeddingND`` and the
+subsequent mixer blocks.
+
+See ``nvsubquadratic.modules.position_encoding.PositionEmbeddingND`` for the
+positional encoding layer that is typically applied immediately after
+``Patchify``.
 
 Supported dimensionalities
 --------------------------
@@ -69,8 +81,8 @@ class Patchify(torch.nn.Module):
     patches and linearly projects each patch into an embedding vector.  The
     operation is equivalent to:
 
-    1. Unfold every ``patch_size^data_dim`` pixel neighbourhood into a vector
-       of length ``C_in * patch_size^data_dim``.
+    1. Unfold every ``patch_size ** data_dim`` pixel neighbourhood into a vector
+       of length ``C_in * patch_size ** data_dim``.
     2. Apply a learned linear map from that vector to ``C_out`` dimensions.
 
     Because the unfold and linear projection can be fused into a single strided
@@ -82,8 +94,14 @@ class Patchify(torch.nn.Module):
         out_s = floor((s - patch_size) / stride) + 1
 
     For the default non-overlapping case (``stride == patch_size``) this
-    reduces to ``s / patch_size`` (assuming ``s`` is divisible by
+    reduces to ``s // patch_size`` (assuming ``s`` is divisible by
     ``patch_size``).
+
+    .. warning::
+        If ``spatial_dim % patch_size != 0``, the last pixels in that axis are
+        silently discarded (standard floor-division Conv semantics).  Callers
+        are responsible for ensuring spatial dimensions are divisible by
+        ``patch_size`` before calling this layer (e.g. by padding the input).
 
     **Layout convention** — inputs and outputs use *channels-last* ordering::
 
@@ -97,6 +115,25 @@ class Patchify(torch.nn.Module):
     **Overlapping patches** — setting ``stride < patch_size`` produces
     overlapping patches with the same formula above.  This is less common in
     ViT-style models but is supported.
+
+    Examples:
+        1D sequence (``data_dim=1``)::
+
+            layer = Patchify(in_features=64, out_features=128, data_dim=1, patch_size=4)
+            x = torch.randn(2, 256, 64)   # [B, L, C_in]
+            y = layer(x)                  # [B, L/4, 128] == [2, 64, 128]
+
+        2D image (``data_dim=2``) — see the ``__main__`` block for a runnable demo::
+
+            layer = Patchify(in_features=3, out_features=768, data_dim=2, patch_size=16)
+            x = torch.randn(8, 224, 224, 3)    # [B, H, W, C_in]
+            y = layer(x)                        # [B, 14, 14, 768]
+
+        3D volume (``data_dim=3``)::
+
+            layer = Patchify(in_features=1, out_features=256, data_dim=3, patch_size=8)
+            x = torch.randn(2, 64, 64, 64, 1)  # [B, D, H, W, C_in]
+            y = layer(x)                         # [B, 8, 8, 8, 256]
 
     Attributes:
         data_dim (int): Spatial dimensionality (1, 2, or 3).
@@ -123,7 +160,8 @@ class Patchify(torch.nn.Module):
                 (sequences), 2 (images), or 3 (volumes).
             patch_size: Side length ``P`` of each patch.  The convolution uses
                 ``kernel_size = patch_size`` along every spatial axis, so each
-                patch covers ``P^data_dim`` input pixels.
+                patch covers ``P ** data_dim`` input pixels (``P × P`` for 2D
+                images, ``P × P × P`` voxels for 3D volumes).
             stride: Step size between consecutive patch origins along every
                 spatial axis.  Defaults to ``patch_size``, giving
                 non-overlapping ViT-style patches.  Set to a smaller value for
@@ -202,8 +240,13 @@ class Unpatchify(torch.nn.Module):
     transposed convolution is an exact spatial inverse: each output pixel is
     produced by exactly one input token.  When ``stride < patch_size``
     (overlapping), contributions from overlapping patches are *summed* by the
-    transposed convolution — this is the adjoint of the overlapping-patch
-    forward pass.
+    transposed convolution — this is the linear adjoint (backward map) of the
+    overlapping-patch forward pass, **not** a true inverse.  Pixel values are
+    accumulated rather than averaged, so ``Unpatchify(Patchify(x))`` does not
+    recover ``x`` exactly for overlapping patches; the output is a blurred,
+    scaled version of ``x``.  Only for non-overlapping patches
+    (``stride == patch_size``) does the round-trip preserve spatial alignment
+    (up to the learned weights).
 
     **Output shape formula** (each spatial axis ``s`` of the patch-grid input)::
 
@@ -218,10 +261,10 @@ class Unpatchify(torch.nn.Module):
         output : [B, *spatial_dims, C_out]    (e.g. [B, H, W, C_out])
 
     **Weight initialisation** — PyTorch's default kaiming_uniform for
-    ``ConvTranspose`` uses ``fan_out = out_features * patch_size^data_dim``.
+    ``ConvTranspose`` uses ``fan_out = out_features * patch_size ** data_dim``.
     This is incorrect for large embedding dimensions; ``weight_init="fan_in"``
     corrects this by using the true fan-in
-    ``in_features * patch_size^data_dim``.
+    ``in_features * patch_size ** data_dim``.
 
     Attributes:
         data_dim (int): Spatial dimensionality (1, 2, or 3).
@@ -260,11 +303,14 @@ class Unpatchify(torch.nn.Module):
             weight_init: Weight initialisation strategy for the deconv kernel.
                 ``"default"`` uses PyTorch's built-in ``kaiming_uniform``
                 (fan computed from ``out_features``; can cause output-variance
-                blow-up for large ``in_features``).  ``"zeros"`` zero-inits
-                weights and bias (DiT-style; output is exactly zero at
-                initialisation, safe for residual-stream entry).  ``"fan_in"``
-                applies Kaiming-uniform with the corrected fan-in
-                ``in_features * patch_size^data_dim``, giving output variance
+                blow-up for large ``in_features``; retained primarily for
+                loading pre-trained checkpoints whose weights were saved under
+                PyTorch's default init — prefer ``"fan_in"`` for new
+                architectures).  ``"zeros"`` zero-inits weights and bias
+                (DiT-style; output is exactly zero at initialisation, safe for
+                residual-stream entry).  ``"fan_in"`` applies Kaiming-uniform
+                with the corrected fan-in
+                ``in_features * patch_size ** data_dim``, giving output variance
                 O(1) regardless of embedding dimension.
 
         Raises:
@@ -313,14 +359,14 @@ class Unpatchify(torch.nn.Module):
                 ``[B, *patch_grid, C_embed]``, e.g.
                 ``[B, H/P, W/P, C_embed]`` for 2D.  The number of spatial
                 dimensions must equal ``data_dim``.
-            output_spatial_shape: Optional target spatial shape for the output.
-                When provided this is passed as ``output_size`` to the
-                transposed convolution, which resolves the output-size ambiguity
-                that arises when ``stride > 1`` (multiple input sizes can map to
-                the same output size via the floor in the forward formula).
-                Must have length ``data_dim``.  When ``None``, PyTorch infers
-                the output size (may differ from the original input spatial size
-                if ``spatial_dim % patch_size != 0``).
+            output_spatial_shape: When ``stride > 1``, multiple patch-grid
+                sizes map to the same output size (the floor in the forward
+                direction discards remainders).  Pass ``output_spatial_shape``
+                to resolve this ambiguity and guarantee recovery of the exact
+                original spatial dimensions.  Must have length ``data_dim``.
+                When ``None``, PyTorch infers the output size and it may not
+                match the original spatial size if
+                ``spatial_dim % patch_size != 0``.
 
         Returns:
             Reconstructed signal tensor in channels-last layout.  Shape:
