@@ -32,7 +32,10 @@ per-head dimension :math:`d_k` is dominated by the attention matrix products:
 
 (two matrix multiplications of shape :math:`[L, d_k] \times [d_k, L]` each for
 the logit computation and the value aggregation, summed over all heads and the
-batch dimension).  This is :math:`O(L^2)` in sequence length, which limits
+batch dimension; **attention kernel only** — QKV input/output projections in
+:class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer` add
+:math:`\sim 6 \cdot B \cdot L \cdot C^2` additional FLOPs).  This is
+:math:`O(L^2)` in sequence length, which limits
 scalability to long sequences — hence the availability of
 :class:`~nvsubquadratic.modules.hyena_nd.Hyena` and
 :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND` as :math:`O(L \log L)`
@@ -158,13 +161,11 @@ class Attention(torch.nn.Module):
 
     Context parallelism (CP)
     -------------------------
-    When ``cp_group`` is passed at forward time and has size > 1, the module
-    gathers the full spatial sequence via zigzag all-gather before attention and
-    splits it back afterwards.  **This approach is for illustration and
-    compatibility only** — it does not implement ring-attention and therefore
-    materialises the full sequence on every rank, causing memory pressure at
-    long context lengths.  For production long-context training, use PyTorch's
-    built-in context-parallel SDPA (e.g. torchtitan style).
+    **Not yet functional.**  Passing a ``cp_group`` with ``size() > 1`` to
+    ``forward`` immediately raises ``ValueError("Context parallelism must be
+    revisited.")``.  The zigzag all-gather/split code below the ``raise`` is
+    dead code retained as a sketch for a future ring-attention implementation.
+    Pass ``cp_group=None`` (the default) for all current use cases.
 
     Backend selection
     -----------------
@@ -189,6 +190,10 @@ class Attention(torch.nn.Module):
         attn_dropout (float): Dropout probability applied to attention weights
             during training.  Set to 0.0 automatically at inference regardless
             of this value.
+        _rope_ndim (int): Spatial rank for which RoPE was initialised (1, 2,
+            or 3).  Present only when ``use_rope=True``; not defined
+            otherwise.  Used in ``forward`` to dispatch to the correct RoPE
+            apply function.
 
     Args:
         hidden_dim (int): Total hidden-state dimension ``C``. Must be
@@ -210,6 +215,23 @@ class Attention(torch.nn.Module):
             Examples: ``(4096,)`` for 1D, ``(64, 64)`` for 2D,
             ``(8, 64, 64)`` for 3D.  Must match the spatial shape seen
             during ``forward``.
+
+    Example::
+
+        import torch
+        from nvsubquadratic.modules.attention import Attention
+
+        # 2D image attention with 8 heads, RoPE, and cosine-attention QK norm
+        attn = Attention(
+            hidden_dim=256,
+            num_heads=8,
+            apply_qk_norm=True,
+            use_rope=True,
+            rope_spatial_dims=(32, 32),
+        )
+        q = k = v = torch.randn(2, 32, 32, 256)  # [B, H, W, C]
+        out = attn(q, k, v)  # [B, H, W, C]
+        assert out.shape == q.shape
     """
 
     def __init__(
@@ -238,7 +260,12 @@ class Attention(torch.nn.Module):
             rope_base (float): RoPE base frequency. Defaults to ``10000.0``.
             rope_spatial_dims (tuple[int, ...] | None): Spatial grid shape
                 for RoPE table precomputation.  Required when
-                ``use_rope=True``.
+                ``use_rope=True``.  **Not stored** as an instance attribute;
+                the caller is responsible for tracking the spatial dims if they
+                need to recover them after construction (e.g. for serialisation
+                or ``extra_repr``).  The corresponding cos/sin buffers are
+                stored as non-persistent registered buffers (``rope_cos``,
+                ``rope_sin``, etc.).
 
         Raises:
             AssertionError: If ``hidden_dim % num_heads != 0``.
@@ -337,6 +364,12 @@ class Attention(torch.nn.Module):
             x (torch.Tensor): Input tensor of shape ``[B, *spatial_dims, C]``
                 where ``len(spatial_dims)`` is 1, 2, or 3.
 
+                .. note::
+
+                    In :meth:`forward`, this is called after the channel → head
+                    split, so the leading dimension is ``B * H`` (not ``B``) and
+                    ``C`` is ``d_k = head_dim`` (not the full ``hidden_dim``).
+
         Returns:
             tuple[torch.Tensor, tuple[int, ...]]:
                 - Flattened tensor of shape ``[B, L, C]`` with
@@ -362,17 +395,6 @@ class Attention(torch.nn.Module):
         tensor and the saved ``spatial_shape``, it reshapes the sequence axis back
         into the original spatial grid.
 
-        .. note::
-
-            For 3D inputs the einops rearrange uses axis binding
-            ``"b (h w d) c -> b h w d c"`` with
-            ``h=spatial_shape[0], w=spatial_shape[1], d=spatial_shape[2]``.
-            The canonical convention (consistent with :meth:`_flatten_spatial`)
-            is ``spatial_shape = (D, H, W)`` (depth-first), so the three
-            variables map as: ``h`` ↔ D, ``w`` ↔ H, ``d`` ↔ W.
-            Callers must always pass the ``spatial_shape`` returned verbatim
-            by :meth:`_flatten_spatial` — never a hand-constructed tuple.
-
         Args:
             x (torch.Tensor): Flat sequence tensor of shape ``[B, L, C]``
                 where ``L = prod(spatial_shape)``.
@@ -395,7 +417,7 @@ class Attention(torch.nn.Module):
         elif len(spatial_shape) == 2:
             return rearrange(x, "b (h w) c -> b h w c", h=spatial_shape[0], w=spatial_shape[1])
         else:
-            return rearrange(x, "b (h w d) c -> b h w d c", h=spatial_shape[0], w=spatial_shape[1], d=spatial_shape[2])
+            return rearrange(x, "b (d h w) c -> b d h w c", d=spatial_shape[0], h=spatial_shape[1], w=spatial_shape[2])
 
     def forward(
         self,
@@ -423,7 +445,8 @@ class Attention(torch.nn.Module):
 
         The forward pipeline is:
 
-        1. (Optional CP) Zigzag all-gather Q/K/V along the spatial axis.
+        1. (CP guard) Raises ``ValueError`` if ``cp_group.size() > 1``;
+           pass ``cp_group=None`` for all current use cases.
         2. Split channel dim into heads: ``[B, *spatial, C] → [B*H, *spatial, d_k]``.
         3. (Optional) Apply RoPE to Q and K.
         4. (Optional) L2-normalise Q and K per head.
