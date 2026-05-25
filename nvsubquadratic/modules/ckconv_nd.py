@@ -1,7 +1,109 @@
 # TODO: Add license header here
 
 
-"""CKConv (long-convolution) implementation for ND signals."""
+r"""Continuous Kernel Convolution (CKConv) for N-dimensional signals.
+
+Background
+----------
+CKConv (Romero et al., "CKConv: Continuous Kernel Convolution With Arbitrary
+Resolution", ICLR 2022, arXiv:2102.02611) is a long-range convolutional
+operator whose filter is **not** a learnable lookup table but instead an
+*implicit neural representation* of the kernel: a small MLP maps continuous
+spatial coordinates to kernel values on the fly.
+
+Formally, for a D-dimensional input signal x ∈ R^{C × *spatial}, the CKConv
+output is:
+
+.. code-block:: none
+
+    y = x * k_θ
+
+where ``*`` denotes (multi-dimensional) convolution, and the kernel
+
+.. code-block:: none
+
+    k_θ(p) = MLP_θ(pos_enc(p))
+
+is evaluated at every position p on a continuous spatial grid normalised to
+``[-1, 1]^D``.  Because the kernel is defined by a fixed-size MLP rather than
+an explicit filter bank, **the parameter count is independent of the signal
+length**, and the same model can be evaluated at any resolution without weight
+surgery (resolution-independence).  Long-range dependencies are captured
+because the MLP can, in principle, place non-zero weight at any relative
+offset spanning the full input — there is no fixed receptive field.
+
+The convolution itself is computed in the frequency domain via FFT:
+
+.. code-block:: none
+
+    y = IFFT( FFT(x) ⊙ FFT(k_θ) )
+
+which costs O(N log N) per channel rather than O(N·K) for a spatial
+convolution with kernel size K = N.  This is the same subquadratic trick that
+powers Hyena (see ``nvsubquadratic.modules.hyena_nd``).
+
+ND generalisation
+-----------------
+This module extends the original 1D CKConv formulation to **arbitrary spatial
+rank** (1D sequences, 2D images, 3D volumes) by routing the global convolution
+through the FFT primitives in ``nvsubquadratic.ops.fftconv``.  The kernel
+generator from ``nvsubquadratic.modules.kernels_nd`` evaluates the MLP on a
+D-dimensional coordinate grid; the resulting filter is passed directly to the
+FFT convolution ops.
+
+Boundary conditions
+-------------------
+Two boundary conditions are supported per spatial axis:
+
+* **Zero-padding** (``fft_padding="zero"``): standard linear convolution with
+  "same" output size.  The kernel size is ``2*N`` (double-grid), covering the
+  full receptive field without wrap-around.  Matches ``torch.nn.ConvNd(padding='same')``
+  semantics.
+
+* **Circular / periodic** (``fft_padding="circular"``): wrap-around convolution
+  for signals with periodic boundary conditions (e.g. longitude in climate
+  models, ARC grid problems).  The kernel size equals the input size
+  (single-grid, ``(N+1)//2`` grid points evaluated per axis).
+
+* **Per-axis mixed** (``fft_padding=["circular", "zero"]`` etc.): one mode
+  string per spatial axis.  Routes through ``nvsubquadratic.ops.mixed_fftconv``.
+  Used for datasets such as Well's ``rayleigh_benard`` and
+  ``viscoelastic_instability``, where some axes are periodic and others are
+  not.
+
+* **Causal** (``is_causal=True``, 1D only): output at position ``n`` only
+  depends on inputs at positions ``0, …, n``.  The kernel is evaluated on the
+  double-grid and then cropped to its causal (positive-lag) half before the
+  FFT convolution.
+
+Shortcut (skip connection)
+--------------------------
+Every forward pass adds a per-channel residual term:
+
+.. code-block:: none
+
+    y ← y + shortcut ⊙ x
+
+where ``shortcut`` is a learnable ``[hidden_dim]`` parameter vector.  This
+algebraic shortcut is fused into the FFT convolution op (no extra kernel
+launch) and matches the design used throughout Hyena-style operators.
+
+Related modules
+---------------
+* ``nvsubquadratic.modules.kernels_nd`` — implicit kernel parametrisation
+  (``SIRENKernelND``, ``RandomFourierKernelND``, FiLM-conditioned variants)
+* ``nvsubquadratic.ops.fftconv`` — FFT convolution primitives consumed here
+* ``nvsubquadratic.ops.mixed_fftconv`` — per-axis mixed-BC FFT convolution
+* ``nvsubquadratic.modules.hyena_nd`` — Hyena operator that wraps CKConvND
+  as its global conv
+
+References:
+----------
+* Romero et al. (2022). *CKConv: Continuous Kernel Convolution With Arbitrary
+  Resolution*. ICLR 2022. https://arxiv.org/abs/2102.02611
+* Sitzmann et al. (2020). *Implicit Neural Representations with Periodic
+  Activation Functions*. NeurIPS 2020. (SIREN kernel)
+"""
 
 import copy
 import inspect
@@ -203,7 +305,19 @@ _PADDING_MODE_TO_PERIODIC: dict[str, bool] = {"zero": False, "circular": True}
 
 
 def _parse_padding_mode(mode: str) -> bool:
-    """Map a single padding-mode string to its per-axis periodic flag."""
+    """Map a single padding-mode string to its per-axis periodic flag.
+
+    Args:
+        mode: A single padding-mode string, one of ``"zero"`` or ``"circular"``
+            (case-insensitive, whitespace-stripped).
+
+    Returns:
+        ``True`` if the mode is ``"circular"`` (periodic axis), ``False`` if
+        it is ``"zero"`` (zero-padded axis).
+
+    Raises:
+        ValueError: If ``mode`` is not one of the recognised padding modes.
+    """
     normalised = mode.strip().lower()
     if normalised not in _PADDING_MODE_TO_PERIODIC:
         valid = sorted(_PADDING_MODE_TO_PERIODIC)
@@ -241,6 +355,19 @@ def _resolve_periodic(
       form is unambiguous and reads the same in Python and OmegaConf, so
       we keep a single canonical per-axis form to avoid two ways of saying
       the same thing.
+
+    Args:
+        fft_padding: Boundary-condition specification, either a single mode
+            string (``"zero"`` / ``"circular"``) or a sequence of mode strings
+            of length ``data_dim`` (one per spatial axis).
+        data_dim: Number of spatial dimensions in the input signal.  Used to
+            validate the length of a sequence-form ``fft_padding`` and to
+            broadcast a scalar mode string.
+
+    Returns:
+        A tuple of ``data_dim`` booleans, one per spatial axis.  ``True``
+        means that axis uses circular (periodic) convolution; ``False`` means
+        zero-padded (linear) convolution.
 
     Raises:
         ValueError: on invalid mode strings, wrong number of axes, or
@@ -298,6 +425,18 @@ def _wrap_mixed_op(op_fn, periodic: tuple[bool, ...]):
     ``kernel`` and ``shortcut``. ``CKConvND.apply_convolution`` calls the FFT
     function as ``fn(x, kernel, shortcut)``; this wrapper binds ``periodic``
     so the rest of the module is unchanged from the legacy ops.
+
+    Args:
+        op_fn: A ``mixed_fftconv*`` function from
+            ``nvsubquadratic.ops.mixed_fftconv`` with signature
+            ``(x, kernel, periodic, shortcut)``.
+        periodic: Per-axis periodicity flags of length ``data_dim``.  ``True``
+            on an axis means circular (wrap-around) convolution; ``False``
+            means zero-padded (linear) convolution.
+
+    Returns:
+        A callable with signature ``(x, kernel, shortcut)`` that internally
+        forwards ``periodic`` to ``op_fn``.
     """
 
     def _wrapped(x, kernel, shortcut):
@@ -324,6 +463,17 @@ def _grid_is_single_per_axis(
       auto-derived as ``periodic[d]`` (periodic axis ⇒ single grid; non-
       periodic ⇒ double grid). This matches the recipe in
       :func:`nvsubquadratic.ops.mixed_fftconv._mixed_recipe`.
+
+    Args:
+        grid_type: Either ``"single"`` (kernel size == input size, for circular
+            conv), ``"double"`` (kernel size == 2 × input size, for zero-padded
+            conv), or ``None`` to auto-derive per axis from ``periodic``.
+        periodic: Per-axis periodicity flags of length ``data_dim``.
+
+    Returns:
+        A tuple of booleans of length ``len(periodic)``.  ``True`` on axis
+        ``d`` means that axis uses the single grid (kernel size == input size);
+        ``False`` means double grid (kernel size == 2 × input size).
     """
     if grid_type is None:
         return tuple(periodic)
@@ -331,7 +481,82 @@ def _grid_is_single_per_axis(
 
 
 class CKConvND(torch.nn.Module):
-    """CKConv (long-convolution) implementation for ND signals."""
+    """N-dimensional Continuous Kernel Convolution (CKConv) operator.
+
+    CKConvND implements the CKConv operator (Romero et al., arXiv:2102.02611)
+    generalised to arbitrary spatial rank D ∈ {1, 2, 3}.  The convolutional
+    kernel is **not** stored as an explicit lookup table; instead it is
+    produced on the fly by a small MLP evaluated on a continuous positional
+    grid:
+
+    .. code-block:: none
+
+        k_θ(p) = MLP_θ(pos_enc(p)),   p ∈ [-1, 1]^D
+
+    The convolution with the input signal x is then computed in the frequency
+    domain:
+
+    .. code-block:: none
+
+        y = IFFT( FFT(x) ⊙ FFT(k_θ) )  +  shortcut ⊙ x
+
+    at O(N log N) cost per channel, where N = prod(spatial_dims).
+
+    The MLP and its positional encoding are provided through ``kernel_cfg``
+    (typically a ``SIRENKernelND`` or ``RandomFourierKernelND`` lazy config
+    from ``nvsubquadratic.modules.kernels_nd``).  An optional attenuation mask
+    ``mask_cfg`` (e.g. ``GaussianModulationND``) is applied to the kernel
+    values after the MLP forward pass to restrict the effective receptive
+    field at initialisation.
+
+    **Boundary conditions** are controlled jointly by ``fft_padding`` and
+    ``grid_type``:
+
+    * ``fft_padding="zero", grid_type="double"``: standard linear convolution
+      with "same" output size.  The kernel spans the full input (double-grid:
+      ``2*N`` points) and is zero-padded before the FFT.
+    * ``fft_padding="circular", grid_type="single"``: periodic convolution,
+      kernel size == input size (single-grid: ``(N+1)//2`` grid points → kernel
+      of length N after the MLP).
+    * ``fft_padding=["circular", "zero"], grid_type=None``: per-axis mixed
+      boundary conditions; ``grid_type`` is auto-derived per axis.
+
+    **Context parallelism**: when ``cp_group`` is supplied in ``forward``, the
+    kernel is sliced along the channel dimension to match the local slice of
+    the input, and the ``shortcut`` parameter is sliced accordingly.  Causal
+    mode is not verified to be correct under CP.
+
+    Attributes:
+        data_dim (int): Spatial rank of the input (1 for sequences, 2 for
+            images, 3 for volumes).
+        hidden_dim (int): Number of channels C processed by this operator.
+        fft_padding (str or Sequence[str]): Boundary condition specification
+            as supplied by the caller.  The normalised per-axis representation
+            is in ``_periodic_per_axis``.
+        is_causal (bool): Whether the operator enforces causal (past-only)
+            convolution.  Only valid when ``data_dim=1``.
+        use_chunked_fftconv (bool): Whether to process channels in chunks to
+            reduce peak GPU memory.
+        use_fp16_fft (bool): Whether to use fp16 FFT convolution ops.
+        fft_backend (str): FFT backend identifier, ``"torch_fft"`` or
+            ``"subq_ops"``.
+        grid_type (str or None): Kernel grid size mode (``"single"``,
+            ``"double"``, or ``None`` for per-axis auto-derivation).
+        kernel (nn.Module): Implicit kernel generator (produces
+            ``(kernel_values, grid)`` on each forward call).
+        mask (nn.Module): Attenuation mask applied to kernel values after
+            generation.  ``nn.Identity`` when no mask is configured.
+        shortcut (nn.Parameter): Learnable per-channel skip-connection scale
+            of shape ``(hidden_dim,)``.  Fused into the FFT convolution op.
+        fftconv_fn (callable): Selected FFT convolution function for
+            channels-last (BLH) input with internal reshape.
+        fftconv_fn_bhl_input (callable): Selected FFT convolution function for
+            channels-first (BHL) input.
+        _periodic_per_axis (tuple[bool, ...]): Per-axis periodicity flags
+            of length ``data_dim``, derived from ``fft_padding``.
+        _is_tuple_mode (bool): ``True`` when ``fft_padding`` was supplied as
+            a sequence of mode strings (mixed-BC path).
+    """
 
     def __init__(
         self,
@@ -346,61 +571,106 @@ class CKConvND(torch.nn.Module):
         use_fp16_fft: bool = False,
         fft_backend: Literal["torch_fft", "subq_ops"] = "torch_fft",
     ):
-        """Initialize the CKConvND.
+        """Construct a CKConvND operator.
+
+        Validates the combination of ``fft_padding``, ``grid_type``,
+        ``is_causal``, ``use_fp16_fft``, and ``fft_backend``, normalises the
+        per-axis boundary-condition representation, adjusts ``kernel_cfg``
+        and ``mask_cfg`` to match the resolved kernel grid geometry, and
+        selects the appropriate FFT convolution function pair.
 
         Args:
-            data_dim: Dimension of input data (1D for sequences, 2D for images, 3D for videos, etc.).
-            hidden_dim: Hidden dimension.
-            kernel_cfg: LazyConfig for the kernel.
-            mask_cfg: LazyConfig for the mask.
-            grid_type: How the SIREN kernel grid relates to the input size.
-                ``"single"`` ⇒ kernel size == input size (paired with periodic
-                FFT convolution). ``"double"`` ⇒ kernel size == 2*input size
-                (paired with zero-padded FFT convolution).
-                **Must be ``None`` (or omitted)** when ``fft_padding`` is in
-                per-axis form — in that case the grid type is auto-derived per
-                axis (``"single"`` on periodic axes, ``"double"`` on non-periodic
-                axes). Required when ``fft_padding`` is a single mode string.
-            fft_padding: Boundary behavior of the FFT convolution. Accepts:
+            data_dim: Spatial rank of the input signal.  ``1`` for 1D
+                sequences, ``2`` for 2D images (H, W), ``3`` for 3D
+                volumes (D, H, W).
+            hidden_dim: Number of channels C.  Determines the size of the
+                learnable ``shortcut`` parameter and the channel dimension of
+                every intermediate tensor.
+            kernel_cfg: Lazy config (``LazyConfig``) that instantiates the
+                implicit kernel generator when resolved.  Typically points to
+                ``SIRENKernelND`` or ``RandomFourierKernelND``.  The
+                ``L_cache`` field, if present, is adjusted to match the
+                resolved kernel grid size (single or double grid) before
+                instantiation.
+            mask_cfg: Lazy config for the attenuation mask applied to the
+                generated kernel values.  Use ``torch.nn.Identity`` (or an
+                empty identity config) for no masking.  If the mask class
+                accepts a ``grid_size`` parameter, it is set automatically
+                based on the largest per-axis kernel size.
+            grid_type: Relationship between the SIREN coordinate grid and the
+                input spatial size on each axis.
 
-                - ``"zero"``     — every axis zero-padded ("same" linear conv).
-                - ``"circular"`` — every axis periodic (wrap-around conv).
-                - **List/tuple of mode strings** — one per spatial axis, in
-                  order, e.g. ``["circular", "zero"]`` for a 2D config that is
-                  periodic on x and zero-padded on y. Mode names are
-                  case-insensitive and whitespace-stripped.
+                * ``"single"``: grid spans ``(N+1)//2`` points → kernel size
+                  equals input size N (for periodic / circular conv).
+                * ``"double"``: grid spans ``N`` points → kernel size is
+                  ``2*N - 1 ≈ 2*N`` (for zero-padded conv).
+                * ``None``: **required** when ``fft_padding`` is a per-axis
+                  list.  The grid type is auto-derived per axis: ``"single"``
+                  on periodic axes, ``"double"`` on non-periodic axes.
 
-                Required for datasets with mixed periodic/non-periodic
-                boundary conditions (e.g. Well's ``rayleigh_benard``,
-                ``viscoelastic_instability``). When supplied as a per-axis
-                list, the ``grid_type`` argument must be ``None``.
+                Must not be ``None`` when ``fft_padding`` is a single mode
+                string (``"zero"`` or ``"circular"``).
+            fft_padding: Boundary-condition mode.  Accepted forms:
+
+                * ``"zero"``: all axes zero-padded (linear "same" conv).
+                * ``"circular"``: all axes periodic (wrap-around conv).
+                  Requires ``grid_type="single"`` and
+                  ``use_chunked_fftconv=False``.
+                * ``["circular", "zero"]`` (list/tuple of mode strings, one
+                  per spatial axis, length must equal ``data_dim``): per-axis
+                  mixed boundary conditions.  Requires ``grid_type=None`` and
+                  ``fft_backend="torch_fft"`` and ``use_fp16_fft=False``.
+                  Mode names are case-insensitive and whitespace-stripped.
+
                 Must be ``"zero"`` (or an all-``"zero"`` list) when
                 ``is_causal=True``.
-            is_causal: If True, use causal (left-only) convolution where output at position i
-                only depends on inputs at positions 0, 1, ..., i. Only supported for 1D data.
-            use_chunked_fftconv: If True, use memory-efficient chunked FFT convolutions.
-                Processes channels in chunks to reduce peak memory from complex FFT
-                intermediates. Typical savings: ~26% memory with ~11% compute overhead.
-                Useful for memory-constrained training with large spatial dimensions
-                in 2D/3D. Default is False.
-            use_fp16_fft: If True, use fp16 FFT convolutions. Uses ortho
-                normalization to prevent overflow. Saves ~36% peak memory per
-                convolution with ~0.8% mean relative error vs f32. For zero/causal
-                padding, sizes are auto-padded to power-of-2. For circular padding,
-                the input spatial dimensions must already be powers of 2 (a runtime
-                assertion will fire otherwise). Default is False.
-                Not supported with a per-axis ``fft_padding`` in v1 (the fp16
-                mixed op is a planned follow-up — see ``docs/ops/MIXED_BC_PLAN.md``).
-            fft_backend: FFT convolution backend to use. ``'torch_fft'`` (default)
-                uses the torch.fft-based implementations. ``'subq_ops'`` uses the
-                optimized CUDA kernels from ``subquadratic_ops_torch``. The subq_ops
-                backend currently supports:
-                  - 2D, zero-padded, non-causal convolutions
-                  - 1D causal convolutions (``data_dim=1`` + ``is_causal=True``)
-                It does not support fp16 FFT. It supports chunked convolutions via
-                channel-wise chunking.  Per-sample (FiLM) weights are supported on
-                the 2D path only; the 1D causal CUDA kernel does not accept batched
-                weights.
+            is_causal: If ``True``, enforce causal (past-only) convolution so
+                that the output at position ``n`` only depends on inputs at
+                positions ``0, …, n``.  Only valid for ``data_dim=1``.
+                Incompatible with periodic ``fft_padding`` and with the
+                per-axis list form of ``fft_padding``.  Default: ``False``.
+            use_chunked_fftconv: If ``True``, process channels in groups to
+                reduce peak GPU memory from complex FFT intermediates.
+                Typical savings: ~26% memory at ~11% compute overhead.
+                Not supported with ``fft_padding="circular"``.
+                Default: ``False``.
+            use_fp16_fft: If ``True``, use fp16 FFT convolution ops.
+                Uses ``norm="ortho"`` internally to prevent overflow.  Saves
+                ~36% peak memory per convolution at ~0.8% mean relative error
+                vs fp32.  For zero/causal padding, spatial dims are
+                auto-padded to the next power of two.  For circular padding,
+                the input dims must already be powers of two (a runtime
+                assertion fires otherwise).  Not supported with a per-axis
+                ``fft_padding`` list (see ``docs/ops/MIXED_BC_PLAN.md``).
+                Not supported with ``fft_backend="subq_ops"``.
+                Default: ``False``.
+            fft_backend: Which FFT convolution backend to use.
+
+                * ``"torch_fft"`` (default): torch.fft-based implementations
+                  in ``nvsubquadratic.ops.fftconv`` and related modules.
+                * ``"subq_ops"``: optimised CUDA kernels from
+                  ``subquadratic_ops_torch``.  Supported configurations:
+
+                  - ``data_dim=2``, ``is_causal=False``, ``fft_padding="zero"``
+                    (2D non-causal zero-padded conv).
+                  - ``data_dim=1``, ``is_causal=True`` (1D causal conv).
+
+                  Does not support fp16 FFT, per-axis ``fft_padding``, or
+                  ``data_dim=3``.
+
+        Raises:
+            AssertionError: If ``fft_backend`` is not one of the recognised
+                values, or if a constraint between ``grid_type``,
+                ``fft_padding``, ``is_causal``, ``use_fp16_fft``, and
+                ``fft_backend`` is violated.
+            ValueError: If ``fft_padding`` is invalid (wrong type, wrong
+                length, comma-separated string, boolean), if ``is_causal``
+                is combined with a per-axis padding list or periodic padding,
+                or if the resolved ``(fft_padding, data_dim)`` combination
+                has no registered FFT function.
+            NotImplementedError: If ``use_fp16_fft=True`` is requested
+                together with a per-axis ``fft_padding`` list (fp16 mixed
+                ops are not yet implemented).
         """
         assert fft_backend in ["torch_fft", "subq_ops"], (
             f"Invalid fft_backend: {fft_backend!r}. Must be 'torch_fft' or 'subq_ops'."
@@ -683,7 +953,15 @@ class CKConvND(torch.nn.Module):
         self.grid_type = grid_type
 
     def extra_repr(self) -> str:
-        """Return extra representation string for the module."""
+        """Return a concise summary string for ``print(module)`` and ``repr(module)``.
+
+        Returns:
+            A human-readable string listing the key hyperparameters:
+            ``data_dim``, ``hidden_dim``, ``fft_padding``,
+            ``periodic_per_axis`` (only when in per-axis list mode),
+            ``grid_type``, ``is_causal``, ``use_chunked_fftconv``,
+            ``use_fp16_fft``, and ``fft_backend``.
+        """
         bc_repr = f"fft_padding={self.fft_padding!r}"
         if self._is_tuple_mode:
             bc_repr += f", periodic_per_axis={self._periodic_per_axis}"
@@ -737,12 +1015,15 @@ class CKConvND(torch.nn.Module):
           Shortcut (skip connection): C * prod(spatial_dims)  (elementwise).
 
         Args:
-            spatial_dims: Spatial dimensions of the input signal, e.g. (H, W).
-            inference: If True and kernel has no FiLM, skip kernel generation
-                and kernel FFT (both are precomputable and cached).
+            spatial_dims: Spatial dimensions of the input signal, e.g.
+                ``(H, W)`` for a 2D image or ``(L,)`` for a 1D sequence.
+                Must have length equal to ``self.data_dim``.
+            inference: If ``True`` and the kernel has no FiLM conditioning,
+                skip the kernel generation and kernel FFT FLOPs (both can be
+                precomputed and cached at inference time).
 
         Returns:
-            Total FLOPs as an integer.
+            Total estimated FLOPs as an integer.
         """
         C = self.hidden_dim
         has_film = getattr(self.kernel, "film_generator", None) is not None
@@ -803,16 +1084,47 @@ class CKConvND(torch.nn.Module):
     def apply_convolution(
         self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
     ) -> torch.Tensor:
-        """Apply the convolution operation using the FFT-based convolution function.
+        """Apply the FFT-based depthwise convolution.
+
+        Dispatches to the pre-selected ``fftconv_fn`` or
+        ``fftconv_fn_bhl_input`` depending on the memory layout of ``x``.
+        When ``is_bhl_input=True`` the kernel is first transposed from
+        channels-last ``(B, *spatial, C)`` to channels-first ``(B, C, *spatial)``
+        to match the BHL-native FFT op.
+
+        The output y is computed as:
+
+        .. code-block:: none
+
+            y = IFFT( FFT(x) ⊙ FFT(conv_kernel) ) + shortcut ⊙ x
+
+        The ``shortcut`` term is fused inside the FFT op (no extra kernel
+        launch).
 
         Args:
-            x (torch.Tensor): Input tensor.
-            conv_kernel (torch.Tensor): Convolution kernel tensor.
-            shortcut (torch.Tensor): Shortcut tensor.
-            is_bhl_input (bool): Whether the input is in BHL format.
+            x: Input signal.
+
+                * BLH layout (``is_bhl_input=False``): shape
+                  ``(B, *spatial, C)`` where ``C = self.hidden_dim``.
+                * BHL layout (``is_bhl_input=True``): shape
+                  ``(B, C, *spatial)``.
+
+            conv_kernel: Kernel values produced by ``self.kernel`` and
+                optionally masked by ``self.mask``.  Always in channels-last
+                (BLH) format on entry: shape ``(1_or_B, *kernel_spatial, C)``.
+                Transposed internally when ``is_bhl_input=True``.
+            shortcut: Per-channel skip-connection scale, shape ``(C,)``.
+                Typically ``self.shortcut`` or a CP-sliced view thereof.
+            is_bhl_input: If ``True``, treat ``x`` as channels-first
+                ``(B, C, *spatial)`` and use ``self.fftconv_fn_bhl_input``.
+                If ``False``, treat ``x`` as channels-last ``(B, *spatial, C)``
+                and use ``self.fftconv_fn`` (which handles the reshape
+                internally).
 
         Returns:
-            torch.Tensor: Output tensor after applying convolution.
+            Output tensor in the same memory layout as the input ``x``:
+            ``(B, *spatial, C)`` when ``is_bhl_input=False``, or
+            ``(B, C, *spatial)`` when ``is_bhl_input=True``.
         """
         if is_bhl_input:
             conv_kernel = rearrange(
@@ -831,19 +1143,64 @@ class CKConvND(torch.nn.Module):
         cp_group: torch.distributed.ProcessGroup = None,
         **mixer_kwargs,
     ) -> torch.Tensor:
-        """Forward pass of the CKConvND.
+        """Run the CKConv forward pass.
+
+        Generates the implicit kernel from the positional grid, optionally
+        applies the attenuation mask, crops the kernel for causal mode,
+        handles context-parallel channel slicing, and applies the FFT
+        convolution with the shortcut term.
+
+        Computation (non-causal, no CP):
+
+        .. code-block:: none
+
+            grid_lens = [(s+1)//2  if single-grid axis  else  s  for s in spatial_dims]
+            k_θ, grid = self.kernel(grid_lens, conditioning=conditioning)  # (1, *grid_lens, C)
+            k_θ       = self.mask(grid=grid, x=k_θ)                        # attenuation
+            y         = IFFT(FFT(x) ⊙ FFT(k_θ)) + shortcut ⊙ x           # FFT conv
+
+        For causal mode (1D only), ``k_θ`` is cropped to its causal (positive-
+        lag) half before the FFT convolution:
+
+        .. code-block:: none
+
+            k_θ = k_θ[..., kernel_len // 2 :, :]   # keep second half
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, * spatial_dims, hidden_dim) or (batch_size, hidden_dim, * spatial_dims)
-            is_bhl_input (bool): Whether the input is in BHL format, i.e., (batch_size, hidden_dim, * spatial_dims).
-                Default is False.
-            cp_group (torch.distributed.ProcessGroup): Context parallel process group.
-                Default is None.
-            **mixer_kwargs: Additional keyword arguments forwarded to the kernel generator
-                (e.g. ``conditioning`` for FiLM-enabled SIRENKernelND).
+            x: Input signal tensor.  Two supported layouts:
+
+                * **Channels-last** (``is_bhl_input=False``, default):
+                  shape ``(B, *spatial, C)`` where ``C = self.hidden_dim``
+                  and ``spatial`` has length ``self.data_dim``.
+                * **Channels-first** (``is_bhl_input=True``):
+                  shape ``(B, C, *spatial)``.
+
+            is_bhl_input: If ``True``, ``x`` is in channels-first
+                ``(B, C, *spatial)`` layout.  Default: ``False`` (channels-last).
+            cp_group: Context-parallel process group.  When provided and
+                ``cp_group.size() > 1``, the kernel and shortcut are sliced
+                along the channel dimension to match the local channel slice
+                held by this rank.  The spatial slice of ``x`` is expected to
+                have already been distributed by the caller.  Causal mode is
+                not verified to be correct under CP.  Default: ``None``
+                (single-device / no CP).
+            **mixer_kwargs: Additional keyword arguments forwarded to the
+                kernel generator.  The following key is recognised:
+
+                * ``conditioning`` (``torch.Tensor``, shape ``(B, cond_dim)``):
+                  conditioning vector for FiLM-enabled kernels such as
+                  ``SIRENKernelND`` with a ``film_cfg``.  Ignored (no-op) when
+                  the kernel has no FiLM generator.
 
         Returns:
-            torch.Tensor: Output tensor of shape (batch_size, * spatial_dims, hidden_dim) or (batch_size, hidden_dim, * spatial_dims)
+            Output tensor in the same memory layout as ``x``:
+            ``(B, *spatial, C)`` when ``is_bhl_input=False``, or
+            ``(B, C, *spatial)`` when ``is_bhl_input=True``.
+
+        Raises:
+            ValueError: If ``cp_group`` is provided together with
+                ``is_causal=True`` (this combination has not been verified
+                and may produce incorrect results).
         """
         # Get the spatial dimensions from the input tensor
         if is_bhl_input:
