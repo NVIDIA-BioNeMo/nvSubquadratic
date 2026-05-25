@@ -59,8 +59,8 @@ The key ViT-5-specific design choices are described below.
   scaled dot-product attention, used via ``QKVSequenceMixer``.
 * :class:`~nvsubquadratic.modules.vit5_residual_block.ViT5ResidualBlock` —
   consumes :class:`ViT5Attention` directly as its ``sequence_mixer``.
-* :func:`_build_2d_rope_flat` — constructs the flattened 2D RoPE tables.
-* :func:`_rotate_half_per_axis` — split-half rotation operator used in ``forward``.
+* ``_build_2d_rope_flat`` — constructs the flattened 2D RoPE tables (module-private).
+* ``_rotate_half_per_axis`` — split-half rotation operator used in ``forward`` (module-private).
 """
 
 from typing import Callable, Optional
@@ -113,24 +113,31 @@ def _build_2d_rope_flat(
     frequency pairs.
 
     Note:
-        ``head_dim`` must be divisible by 4 (two halves of ``head_dim/2`` each,
-        further split into pairs of size ``head_dim/4`` for the repeat-interleave
-        step).  This constraint is enforced by the caller
-        (:class:`ViT5Attention.__init__`).
+        ``head_dim`` must be divisible by 2 so that ``dim_half = head_dim // 2``
+        is an integer and ``torch.arange(0, dim_half, 2)`` produces a valid
+        frequency vector.  The stricter divisibility-by-4 requirement belongs
+        to ``_rotate_half_per_axis``, which needs the quarter-split.
 
     Args:
         height: Number of patch rows ``H`` in the 2D grid.
         width: Number of patch columns ``W`` in the 2D grid.
-        head_dim: Per-head channel dimension ``d_k``.  Must be divisible by 4.
+        head_dim: Per-head channel dimension ``d_k``.  Must be divisible by 2.
         rope_base: Base frequency for the geometric frequency schedule.
             Typical values: ``10000.0`` for patch tokens, ``100.0`` for
-            register tokens (higher frequency = denser positional encoding).
+            register tokens (lower base → higher frequency → denser angular spacing).
 
     Returns:
         A tuple ``(cos, sin)`` where each tensor has shape
         ``[height * width, head_dim]``.  These are meant to be stored as
         non-persistent ``register_buffer`` entries and concatenated with the
         CLS and register entries in :class:`ViT5Attention.__init__`.
+
+        Note: this function is also called for the register-token RoPE grid with
+        ``height = reg_rope_h``, ``width = reg_rope_w``.  If ``num_registers`` is
+        not a perfect square, ``reg_rope_h * reg_rope_w < num_registers`` and the
+        returned table will have fewer rows than expected, causing a shape mismatch
+        in the subsequent ``torch.cat``.  The caller is responsible for ensuring
+        ``height * width`` equals the intended token count.
     """
     dim_half = head_dim // 2
     theta = 1.0 / (rope_base ** (torch.arange(0, dim_half, 2).float() / dim_half))
@@ -197,6 +204,12 @@ def _rotate_half_per_axis(x: torch.Tensor) -> torch.Tensor:
         torch.Tensor: Rotated tensor of the same shape as ``x``, representing
         the 90-degree rotation of each frequency pair within the Y and X
         channel halves.
+
+    Note:
+        The ``D % 4 == 0`` constraint is **not** checked at runtime.  Passing a
+        ``head_dim`` that is not divisible by 4 will cause silent integer
+        truncation in the quarter-splits, producing incorrect rotations.  The
+        caller (:class:`ViT5Attention`) is responsible for ensuring this holds.
     """
     d = x.shape[-1]
     d_half = d // 2
@@ -250,9 +263,11 @@ class ViT5Attention(nn.Module):
     * **CLS token** — identity rotation: cos=1, sin=0.  No positional bias is
       imposed on the class token.
     * **Register tokens** — 2D RoPE with base ``reg_rope_base`` (default 100),
-      treating the ``R`` registers as a ``sqrt(R) × sqrt(R)`` grid.  The higher
-      base frequency (lower theta) gives denser angular spacing, reflecting the
-      role of registers as global context carriers without fixed spatial meaning.
+      treating the ``R`` registers as a ``sqrt(R) × sqrt(R)`` grid.  A lower base
+      value (``reg_rope_base=100`` vs ``rope_base=10000``) yields higher rotation
+      frequencies (theta decays more slowly across head-dim pairs), giving denser
+      angular spacing for register positions.  This reflects their role as global
+      context carriers without fixed spatial meaning.
 
     All three tables are concatenated into a single buffer pair (``rope_cos``,
     ``rope_sin``) of shape ``[T, head_dim]`` and applied with a single broadcast
@@ -261,16 +276,20 @@ class ViT5Attention(nn.Module):
     **QK normalisation**
 
     When ``qk_norm`` is provided, two independent norm modules (``q_norm``,
-    ``k_norm``) are instantiated and applied to Q and K *after* the per-head
-    reshape but *before* RoPE.  The norm is expected to be a learnable RMSNorm
-    or equivalent.  Unlike the generic :class:`~nvsubquadratic.modules.attention.Attention`
-    module which uses a fixed L2 (cosine) normalisation, the learnable per-head
-    norm here allows the model to control the scale of the dot products.
+    ``k_norm``) are instantiated and applied to Q and K after ``qkv.unbind()``
+    produces tensors of shape ``[B, T, H, d_k]``, and *before* RoPE.  The norm
+    is expected to be a learnable RMSNorm or equivalent (accepting input of shape
+    ``[B, T, H, d_k]`` and normalising along the last axis).  Unlike the generic
+    :class:`~nvsubquadratic.modules.attention.Attention` module which uses a fixed
+    L2 (cosine) normalisation, the learnable per-head norm here allows the model
+    to control the scale of the dot products.
 
     Note:
-        Norm is applied before RoPE in this module (``q_norm → rope``), whereas
-        the generic :class:`Attention` applies RoPE before L2-norm.  The order
-        matters for checkpoint compatibility.
+        Norm is applied **before** RoPE in this module (order: ``unbind →
+        q_norm/k_norm → rope → SDPA``), whereas the generic :class:`Attention`
+        applies RoPE before L2-norm.  The order matters for checkpoint
+        compatibility — swapping the two will change the effective positional
+        encoding applied to normalised queries and keys.
 
     **Differences vs.** :class:`~nvsubquadratic.modules.attention.Attention`
 
@@ -321,9 +340,12 @@ class ViT5Attention(nn.Module):
         num_patches_w: Width of the patch grid (number of patch columns).
             Used to build the patch 2D RoPE table.
         num_registers: Number of register tokens ``R`` appended after the
-            (optional) CLS token.  Must be a perfect square when > 0 so that
-            the register RoPE grid is square (``sqrt(R) × sqrt(R)``).
-            Defaults to ``4``.
+            (optional) CLS token.  Should be a perfect square when > 0 so
+            that the register RoPE grid is exactly ``sqrt(R) × sqrt(R)``.
+            If ``R`` is not a perfect square, ``reg_rope_h = reg_rope_w =
+            int(R**0.5)`` silently truncates, producing only
+            ``reg_rope_h * reg_rope_w < R`` RoPE rows and causing a
+            ``torch.cat`` shape mismatch at init time.  Defaults to ``4``.
         has_cls: If ``True``, the token sequence contains one CLS token
             immediately after the patch tokens.  The CLS token receives
             identity RoPE (cos=1, sin=0).  Defaults to ``True``.
@@ -354,14 +376,15 @@ class ViT5Attention(nn.Module):
             present, is zero-initialised.  When ``None``, PyTorch's default
             initialisation is used.  Defaults to ``None``.
 
+    Raises:
+        AssertionError: If ``hidden_dim % num_heads != 0``.
+
     Example::
 
         import torch
         from nvsubquadratic.modules.vit5_attention import ViT5Attention
-        from nvsubquadratic.lazy_config import LazyConfig
-        import nvsubquadratic.modules.rms_norm as rms_norm_mod
 
-        # 2D patch grid of 14×14 with 4 register tokens and 1 CLS token
+        # 2D patch grid of 14x14 with 4 register tokens and 1 CLS token, no QK norm
         attn = ViT5Attention(
             hidden_dim=384,
             num_heads=6,
@@ -369,12 +392,13 @@ class ViT5Attention(nn.Module):
             num_patches_w=14,
             num_registers=4,
             has_cls=True,
-            qk_norm=LazyConfig(target=rms_norm_mod.RMSNorm, dim=64),
         )
         T = 14 * 14 + 1 + 4  # patches + CLS + registers = 201
         x = torch.randn(2, T, 384)  # [B, T, C]
         out = attn(x)               # [B, T, C]
         assert out.shape == x.shape
+        # To enable QK-norm, pass a LazyConfig targeting any norm module
+        # that accepts [B, T, H, d_k] tensors and normalises along the last axis.
     """
 
     def __init__(  # noqa: D107
@@ -397,7 +421,7 @@ class ViT5Attention(nn.Module):
         init_fn_out_proj: Optional[Callable[[torch.Tensor], None]] = None,
     ):
         super().__init__()
-        assert hidden_dim % num_heads == 0
+        assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
@@ -488,6 +512,9 @@ class ViT5Attention(nn.Module):
              Three projections packed into one:  2 * T * D * 3D.
           2. QK-Norm (2x RMSNorm on Q and K):      Delegated to self.q_norm / self.k_norm.
              Only counted when ``self.qk_norm`` is True; 0 otherwise.
+             Each norm module must expose ``flop_count(num_tokens: int) -> int``
+             returning the cost for a sequence of ``num_tokens`` tokens across
+             all heads (i.e. for the full ``[B, T, H, d_k]`` shaped input).
           3. RoPE on Q and K:                       4 * T * D
              Each of Q, K: x * cos + rotate(x) * sin = 2 elementwise
              multiplies per element, over T * D elements, for both Q and K.
@@ -581,7 +608,10 @@ class ViT5Attention(nn.Module):
 
         Raises:
             RuntimeError: If ``T`` does not match ``rope_cos.shape[0]``,
-                which would cause a shape mismatch in the broadcast multiply.
+                causing a shape mismatch in the broadcast multiply
+                ``q * cos``.  The expected value is
+                ``num_patches_h * num_patches_w + int(has_cls) + num_registers``
+                as set at construction time.
         """
         B, T, C = x.shape
 
@@ -623,11 +653,15 @@ class ViT5Attention(nn.Module):
     def extra_repr(self) -> str:
         """Return a concise string summary of this module's configuration.
 
+        Note:
+            ``has_cls`` and ``scale`` are consequential hyperparameters that
+            are **not** included in the output string.  Use
+            ``module.has_cls`` and ``module.scale`` to inspect them directly.
+
         Returns:
-            str: Comma-separated key=value pairs covering the most important
-            hyperparameters: ``hidden_dim``, ``num_heads``, ``qk_norm``,
-            ``num_registers``, patch grid size, ``rope_base``, and
-            ``reg_rope_base``.
+            str: Comma-separated key=value pairs covering ``hidden_dim``,
+            ``num_heads``, ``qk_norm``, ``num_registers``, patch grid size,
+            ``rope_base``, and ``reg_rope_base``.
         """
         return (
             f"hidden_dim={self.hidden_dim}, num_heads={self.num_heads}, "
