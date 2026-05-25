@@ -6,7 +6,8 @@ r"""Hyena-ND: gated global convolutional mixer for 1D/2D/3D signals.
 Background
 ----------
 The Hyena operator (Poli et al., "Hyena Hierarchy: Towards Larger Convolutional
-Language Models", ICML 2023) replaces the quadratic attention map with a
+Language Models", ICML 2023, arXiv:2302.10866) replaces the quadratic attention
+map with a
 **subquadratic gated convolution**: two multiplicative gates sandwich a
 long-range (global-kernel) depthwise convolution whose kernel is generated
 implicitly by a small neural network (see ``kernels_nd.py``).  The operator
@@ -57,13 +58,20 @@ This implementation extends the design to spatial data:
   Fourier Feature MLP (``kernels_nd.py``) and convolves it via
   ``fftconv{1,2,3}d`` from ``nvsubquadratic.ops.fftconv``.  For 2D/3D signals
   the convolution is non-causal by default; causal 1D mode is preserved.
+  By default the 2D/3D path uses zero-padded (linear) FFT convolution
+  (``fftconv2d`` / ``fftconv3d``), matching ``torch.nn.ConvNd(padding='same')``
+  semantics.  Set the ``circular`` flag on ``CKConvND`` to switch to periodic
+  boundary conditions, or use ``mixed_fftconv`` for per-axis mixed BCs
+  (see ``nvsubquadratic.ops.mixed_fftconv``).
 
 Context parallelism
 -------------------
 When ``cp_group`` is supplied in ``forward``, the module uses
-``AllToAllSingleFunction`` to shard the spatial dimension across devices
-while gathering channels, applies the short conv globally, and then shards
-back.  The global conv receives only the local spatial slice (it must be
+``AllToAllSingleFunction`` to shard along ``dim=2`` (the first spatial axis of
+the channels-first ``[B, C, *spatial]`` tensor) while gathering the channel dim.
+For 2D inputs ``[B, C, H, W]`` this means row-wise sharding (across H).  The
+short conv is applied globally after the gather, and the result is sharded back.
+The global conv receives only the local spatial slice (it must be
 context-parallel-aware itself).
 
 Related modules
@@ -113,12 +121,14 @@ class Hyena(torch.nn.Module):
     :math:`\sigma_2 = \mathrm{Sigmoid}` matches the gated attention formulation
     used in the original Hyena paper.
 
-    Paper reference
-    ---------------
-    Poli et al., "Hyena Hierarchy: Towards Larger Convolutional Language
-    Models", ICML 2023.  The two-gate structure corresponds to the H3-style
-    decomposition described in Section 3.  The ND extension replaces the
-    causal 1D FFT conv with a non-causal ND FFT conv (``CKConvND``).
+    Paper references
+    ----------------
+    The two-gate structure follows the H3 block (Fu et al., "Hungry Hungry
+    Hippos", ICLR 2023, arXiv:2212.14052, Section 3.2) and is generalised in
+    Hyena (Poli et al., "Hyena Hierarchy: Towards Larger Convolutional Language
+    Models", ICML 2023, arXiv:2302.10866, Section 3 "The Hyena Recurrence").
+    The ND extension replaces the causal 1D FFT conv with a non-causal ND FFT
+    conv (``CKConvND``).
 
     Optional components (each disabled by passing ``Identity`` or ``None``):
         - Short depthwise convolution on concatenated ``[Q, K, V]``
@@ -126,6 +136,27 @@ class Hyena(torch.nn.Module):
         - PixelHyena normalisation between first gate and global conv
         - Output normalisation after second gate
         - Context parallelism via AllToAll communication (``cp_group`` argument)
+
+    Example::
+
+        # Minimal 2D Hyena block (non-causal, no normalisation).
+        # In practice global_conv_cfg wraps a fully-configured CKConvND.
+        import torch
+        from nvsubquadratic.lazy_config import LazyConfig
+        from nvsubquadratic.modules.hyena_nd import Hyena
+
+        hyena = Hyena(
+            global_conv_cfg=...,          # LazyConfig wrapping CKConvND
+            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+                192, 192, 3, padding=1, groups=192
+            ),
+            gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
+            pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
+            qk_norm_cfg=None,
+        )
+        B, H, W, C = 2, 16, 16, 64
+        q = k = v = torch.randn(B, H, W, C)
+        y = hyena(q, k, v)  # [2, 16, 16, 64]
 
     Attributes:
         global_conv (torch.nn.Module): Long-range global convolution, typically
@@ -149,10 +180,11 @@ class Hyena(torch.nn.Module):
             from weight-decay.
         q_norm (torch.nn.Module | None): Per-channel normalisation for Q.
             ``None`` when ``qk_norm_cfg`` is ``None``.
-        k_norm (torch.nn.Module): Per-channel normalisation for K.
-            ``Identity`` when the gate is nonlinear (magnitude already bounded
-            by :math:`\sigma`); a fresh instance of ``qk_norm_cfg`` otherwise.
-            ``None`` when ``qk_norm_cfg`` is ``None``.
+        k_norm (torch.nn.Module | None): Per-channel normalisation for K.
+            ``None`` when ``qk_norm_cfg`` is ``None`` (QK-norm entirely
+            disabled).  ``torch.nn.Identity`` when the gate is nonlinear
+            (:math:`\sigma` already bounds K's magnitude); a fresh instance of
+            ``qk_norm_cfg`` when the gate is ``Identity`` (linear gating).
     """
 
     def __init__(
@@ -194,8 +226,10 @@ class Hyena(torch.nn.Module):
                 Q, one for K) so that stateful norms (e.g. ``RMSNorm`` with a
                 learnable scale) keep independent parameters.
             output_norm_cfg: ``LazyConfig`` for the normalisation applied after
-                the second gate.  Defaults to ``Identity`` (no normalisation).
-                Parameters receive ``_no_weight_decay = True``.
+                the second gate.  Defaults to a ``LazyConfig`` wrapping
+                ``torch.nn.Identity`` (no normalisation).  Do **not** pass an
+                already-instantiated module — pass a ``LazyConfig`` object that
+                wraps the class.  Parameters receive ``_no_weight_decay = True``.
             gate_nonlinear_2_cfg: ``LazyConfig`` for the second-gate activation
                 :math:`\sigma_2(V)`.  If ``None`` (default), both gates share
                 the same activation object (``self.gate_nonlinear``).
@@ -260,6 +294,9 @@ class Hyena(torch.nn.Module):
 
         Included fields:
             - ``q_norm`` / ``k_norm`` class names (or ``"None"``).
+              When QK-norm is disabled both are ``None``; the strings
+              ``"q_norm=None"`` and ``"k_norm=None"`` are still emitted so
+              the disabled state is explicit in ``repr(module)``.
             - ``gates=<σ>/<σ₂>`` when the two gate activations differ.
             - ``is_causal`` when the global conv exposes that attribute.
 
@@ -296,11 +333,18 @@ class Hyena(torch.nn.Module):
                2 \cdot \frac{in\_ch}{groups} \cdot out\_ch \cdot S \cdot k\_prod
 
            where :math:`k\_prod = \prod_d kernel\_size_d`.  Skipped when
-           ``short_conv`` is ``Identity``.
+           ``short_conv`` is ``Identity``.  For a pure depthwise conv
+           (``groups == in_ch == out_ch``) this simplifies to
+           ``2 · out_ch · S · k_prod``; the grouped formula is written here to
+           handle partially-grouped convolutions (e.g.
+           ``DistributedDepthwiseConvNd``).
 
         2. **QK-Norm** (when ``self.q_norm is not None``):
            ``3·C·S`` for Q; additional ``3·C·S`` for K only when
            ``gate_nonlinear`` is ``Identity`` (linear gating).
+           The factor of 3 assumes an RMSNorm-like norm (sum-of-squares +
+           rsqrt + elementwise scale).  Other norm types will differ; this is
+           an approximation.
 
         3. **First gate** :math:`z = Q \odot \sigma(K)`:
            ``C·S`` for the elementwise multiply, plus ``C·S`` for the
@@ -403,13 +447,24 @@ class Hyena(torch.nn.Module):
         AllToAll communications around the short conv so that each device sees
         the full spatial extent during the convolution:
 
-        1. Before short conv: ``split_to_full`` — gather spatial shards,
-           split along the channel dim.
+        1. Before short conv: ``split_to_full`` — gather spatial shards along
+           ``dim=2`` (the first spatial axis), split along ``dim=1`` (channels).
         2. After short conv: ``full_to_split`` — scatter spatial, gather
            channels back.
 
-        The global conv receives only the local spatial slice and is expected
-        to handle its own CP communication internally.
+        After step 1, each device holds the full spatial extent but only
+        ``C / cp_size`` channels.  After step 2, the original ``C`` channels
+        are restored and each device holds ``spatial_0 / cp_size`` positions
+        along the first spatial axis.  The global conv receives only the local
+        spatial slice and is expected to handle its own CP communication
+        internally.
+
+        Implementation note
+        -------------------
+        The ``query`` tensor is overwritten after the first gate to hold the
+        gated intermediate ``z = Q ⊙ σ(K)``; the original Q tensor is no
+        longer accessible after that point.  This is intentional to avoid an
+        extra allocation.
 
         Args:
             query: ``[B, *spatial, C]`` — query tensor, typically the output
