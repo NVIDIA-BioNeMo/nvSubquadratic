@@ -98,7 +98,8 @@ class KernelFiLMGenerator(nn.Module):
     Args:
         cond_dim: Dimensionality of the conditioning input ``c``.
         kernel_hidden_dim: Hidden dimension of the SIREN layers to modulate.
-        num_film_layers: Number of (gamma, beta) pairs to produce (one per SIREN hidden layer).
+        num_film_layers: Number of (gamma, beta) pairs to produce (one per SIREN
+            hidden layer).  Must be ≥ 1.
         film_hidden_dim: Hidden dimension of the FiLM generator MLP (bottleneck).
         no_weight_decay: Controls weight decay for FiLM **weight** parameters.
             All biases are always excluded from weight decay regardless of
