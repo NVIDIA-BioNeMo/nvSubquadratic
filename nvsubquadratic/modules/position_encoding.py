@@ -18,8 +18,8 @@ raw input of shape ``[B, *spatial, C_in]`` to a patch-token grid of shape
 coordinate-dependent bias of the same shape before the tokens are passed into
 the first mixer block.
 
-Variants
---------
+Implemented variants
+--------------------
 ``PositionEmbeddingND``
     **Fully-learned / lookup-table** encoding.  A separate ``nn.Embedding``
     table is trained for each spatial axis; the per-axis embeddings are
@@ -34,6 +34,15 @@ Variants
     resolution-generalisation use-cases, prefer a sinusoidal or RFF-based
     encoding (not yet included in this module).
 
+Planned variants (not yet implemented)
+---------------------------------------
+* **Sinusoidal** — fixed, non-learned encodings of the form
+  ``PE(pos, 2i) = sin(pos / 10000^(2i/d))``; resolution-independent and
+  require no additional parameters.
+* **Random Fourier Features (RFF)** — stochastic frequency sampling that
+  approximates an RBF kernel; a natural complement to the RFF-based implicit
+  kernel parametrisation in ``nvsubquadratic.modules.kernels_nd``.
+
 ND generalisation strategy
 --------------------------
 A naive learned positional encoding for an ND grid would store
@@ -42,10 +51,23 @@ A naive learned positional encoding for an ND grid would store
 separate embedding table of length ``max_dim_lengths[d]`` is kept for each
 spatial axis ``d``, and the per-axis embeddings of dimension
 ``embedding_dim // data_dim`` are concatenated to produce the final
-``embedding_dim``-dimensional token offset.  The total parameter count is
-therefore ``data_dim * max(max_dim_lengths) * (embedding_dim // data_dim) =
-embedding_dim * max(max_dim_lengths)`` — linear in the embedding dimension and
-the largest axis length.
+``embedding_dim``-dimensional token offset.  The total parameter count is::
+
+    sum(max_dim_lengths[d] * (embedding_dim // data_dim)
+        for d in range(data_dim))
+
+which is linear in both the embedding dimension and the sum of the axis
+lengths (not their product).  For the common square-grid case where all axes
+share the same maximum length ``M``, this simplifies to
+``embedding_dim * M``.
+
+Optimiser integration
+---------------------
+All embedding parameters in this module are tagged ``param._no_weight_decay =
+True`` immediately after construction.  Custom optimiser builders (e.g. those
+that split parameters into weight-decay and no-weight-decay groups) should
+inspect this attribute and exclude matching parameters from L2 regularisation,
+following standard ViT practice.
 
 Cross-references
 ----------------
@@ -72,9 +94,9 @@ class PositionEmbeddingND(nn.Module):
     ``(i_0, i_1, ..., i_{D-1})`` the encoding is formed by looking up the
     per-axis embeddings and *concatenating* them channel-wise::
 
-        PE(i_0, ..., i_{D-1}) = [E_0(i_0) ‖ E_1(i_1) ‖ ... ‖ E_{D-1}(i_{D-1})]
+        PE(i_0, ..., i_{D-1}) = concat(E_0(i_0), E_1(i_1), ..., E_{D-1}(i_{D-1}))
 
-    where ``‖`` denotes concatenation along the channel dimension and each
+    where ``concat`` denotes concatenation along the channel dimension and each
     ``E_d ∈ R^{max_dim_lengths[d] × (embedding_dim // data_dim)}`` is a
     learned embedding matrix.  The result has length ``embedding_dim``
     (requires ``embedding_dim % data_dim == 0``).
@@ -134,16 +156,20 @@ class PositionEmbeddingND(nn.Module):
                 will raise a ``ValueError`` in ``forward``.
 
         Raises:
-            AssertionError: If ``data_dim < 1``.
-            AssertionError: If ``len(max_dim_lengths) != data_dim``.
-            AssertionError: If ``data_dim > 3``.
-            AssertionError: If ``embedding_dim % data_dim != 0``.
+            ValueError: If ``data_dim < 1``.
+            ValueError: If ``data_dim > 3``.
+            ValueError: If ``len(max_dim_lengths) != data_dim``.
+            ValueError: If ``embedding_dim % data_dim != 0``.
         """
         super().__init__()
-        assert data_dim >= 1, "data_dim must be >= 1"
-        assert len(max_dim_lengths) == data_dim, "max_dim_lengths must have length data_dim"
-        assert data_dim <= 3, "data_dim must be <= 3"
-        assert embedding_dim % data_dim == 0, "embedding_dim must be divisible by data_dim"
+        if data_dim < 1:
+            raise ValueError(f"data_dim must be >= 1, got {data_dim}")
+        if data_dim > 3:
+            raise ValueError(f"data_dim must be <= 3, got {data_dim}")
+        if len(max_dim_lengths) != data_dim:
+            raise ValueError(f"max_dim_lengths must have length data_dim={data_dim}, got {len(max_dim_lengths)}")
+        if embedding_dim % data_dim != 0:
+            raise ValueError(f"embedding_dim={embedding_dim} must be divisible by data_dim={data_dim}")
 
         self.embedding_dim = embedding_dim
         self.per_dim_embedding_dim = embedding_dim // data_dim
@@ -192,13 +218,29 @@ class PositionEmbeddingND(nn.Module):
             concatenation of the per-axis embedding lookups::
 
                 out[b, i_0, ..., i_{D-1}, :] =
-                    [E_0(i_0) ‖ E_1(i_1) ‖ ... ‖ E_{D-1}(i_{D-1})]
+                    concat(E_0(i_0), E_1(i_1), ..., E_{D-1}(i_{D-1}))
+
+            Internally, for each axis ``d`` the 1-D embedding of shape
+            ``[L_d, per_dim_embedding_dim]`` is reshaped to
+            ``[1, ..., L_d, ..., 1, per_dim_embedding_dim]`` (singleton in all
+            axes except axis ``d``) and then broadcast-expanded to
+            ``[B, *spatial_dims, per_dim_embedding_dim]`` before the per-axis
+            tensors are concatenated along the last dimension.
+
+        Note:
+            The returned tensor has the same ``dtype`` as the embedding weight
+            parameters (typically ``torch.float32`` regardless of the input
+            dtype).  In mixed-precision training cast the result before adding
+            it to the token grid::
+
+                x = x + pos_enc(x).to(x.dtype)
 
         Raises:
             ValueError: If ``x.ndim != data_dim + 2`` (wrong number of
                 dimensions — expected batch + ``data_dim`` spatial + channel).
-            ValueError: If ``x.shape[-1] != embedding_dim`` (channel dimension
-                mismatch).
+            ValueError: If ``x.shape[-1] != self.embedding_dim`` (channel count
+                of the input does not match the ``embedding_dim`` passed at
+                construction time).
             ValueError: If any spatial dimension of ``x`` exceeds the
                 corresponding entry of ``max_dim_lengths``.
         """
