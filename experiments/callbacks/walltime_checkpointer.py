@@ -1,3 +1,24 @@
+"""Wall-time checkpointer callback for graceful SLURM preemption handling.
+
+SLURM jobs have a hard wall-time limit.  If training reaches the limit without
+saving, the job is killed and all progress since the last checkpoint is lost.
+:class:`WalltimeCheckpointer` solves this by monitoring elapsed time in
+``on_train_batch_end`` and triggering a checkpoint + ``trainer.should_stop``
+a configurable number of seconds before the deadline.
+
+**Usage in experiment configs**::
+
+    from experiments.callbacks.walltime_checkpointer import WalltimeCheckpointer
+    import time
+
+    cfg.train.run_start_time = time.time()
+    cfg.train.run_time_limit_hours = 23.5   # slightly under the SLURM limit
+
+The :func:`~experiments.trainer.construct_trainer` factory reads these two
+fields and wires up :class:`WalltimeCheckpointer` automatically — no manual
+callback construction is needed in most experiment configs.
+"""
+
 import datetime
 import time
 from pathlib import Path

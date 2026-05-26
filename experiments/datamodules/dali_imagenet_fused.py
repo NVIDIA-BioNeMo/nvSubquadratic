@@ -50,7 +50,22 @@ DEFAULT_IMAGENET_STD = [0.229, 0.224, 0.225]
 
 @dataclass
 class MixupConfig:
-    """Configuration for mixup."""
+    """Mixup / CutMix configuration for the DALI ImageNet pipeline.
+
+    Controls the ``timm.data.Mixup`` augmentation applied in
+    ``on_before_batch_transfer`` (after DALI decoding, since Mixup needs
+    labels).  Set both ``mixup=0`` and ``cutmix=0`` to disable entirely.
+
+    Attributes:
+        mixup: Alpha parameter for Mixup (Beta distribution).  ``0`` disables.
+        cutmix: Alpha parameter for CutMix.  ``0`` disables.
+        mixup_prob: Probability of applying either Mixup or CutMix per batch.
+        mixup_switch_prob: Probability of switching from Mixup to CutMix when
+            both are enabled.
+        mixup_mode: Granularity of the mix — ``"batch"`` (same λ per batch),
+            ``"pair"`` (per sample pair), or ``"elem"`` (per element).
+        smoothing: Label smoothing epsilon applied to one-hot targets.
+    """
 
     mixup: float = 0.0
     cutmix: float = 0.0
@@ -62,7 +77,27 @@ class MixupConfig:
 
 @dataclass
 class AugmentConfig:
-    """Configuration for augmentations."""
+    """Augmentation configuration for the DALI ImageNet pipeline.
+
+    All augmentations except Mixup/CutMix run inside the DALI pipeline on the
+    GPU, eliminating the serial CPU augmentation bottleneck.
+
+    Attributes:
+        use_three_augment: Apply ThreeAugment (grayscale, solarise, Gaussian
+            blur) from DeiT III instead of standard color jitter.
+        color_jitter: Strength of random color jitter (brightness, contrast,
+            saturation).  Ignored when ``use_three_augment=True``.
+        rand_augment: RandAugment spec string passed to
+            ``timm.data.auto_augment.rand_augment_transform``, e.g.
+            ``"rand-m9-mstd0.5-inc1"``.  ``None`` disables RandAugment.
+        random_erasing_prob: Probability of random erasing (occlusion
+            augmentation).  ``0.0`` disables.
+        random_erasing_mode: Fill mode for erased patches — ``"pixel"``
+            (random noise) or ``"const"`` (zero).
+        num_repeats: DeiT-style repeated augmentation factor.  Each image is
+            sampled ``num_repeats`` times per epoch with independent
+            augmentation seeds, effectively multiplying the dataset size.
+    """
 
     use_three_augment: bool = False
     color_jitter: float = 0.4
