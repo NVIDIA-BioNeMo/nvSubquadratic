@@ -61,10 +61,10 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `film.py`                          | \[x\]  | FiLM conditioning — γ(c)⊙x + β(c), SIREN-based kernel generator                             |
 | `grn.py`                           | \[x\]  | GRN — per-channel L2 norm, inter-channel competition, ConvNeXt V2 reference                 |
 | `layer_scale.py`                   | \[x\]  | LayerScale — per-channel λ⊙F(x), init_values guidance, \_no_weight_decay tag                |
-| `rms_norm.py`                      | \[ \]  | RMS normalisation                                                                           |
-| `rms_norm_channel_first.py`        | \[ \]  | Channel-first RMS norm                                                                      |
-| `drop_path.py`                     | \[ \]  | Stochastic depth                                                                            |
-| `causal_conv1d.py`                 | \[ \]  | Causal 1D conv                                                                              |
+| `rms_norm.py`                      | \[x\]  | RMSNorm + PerHeadRMSNorm — QuACK/PyTorch backends, math formula, QK-norm usage              |
+| `rms_norm_channel_first.py`        | \[x\]  | Channel-first RMSNorm — normalises dim=1, `channels_first` sentinel, Hyena usage            |
+| `drop_path.py`                     | \[x\]  | Stochastic depth — functional + Module, inverted-dropout scaling, causal vs training        |
+| `causal_conv1d.py`                 | \[x\]  | CausalConv1D — left-only pad formula, symmetric mode, Mamba usage context                   |
 | `subq_ops_causal_conv1d.py`        | \[x\]  | New (1D PR): `nn.Conv1d`-compatible depthwise wrapper around `subq_ops.causal_conv1d`       |
 | `schedulers.py`                    | \[ \]  | LR schedulers                                                                               |
 | `distributed_depthwise_conv_nd.py` | \[ \]  | Distributed depthwise conv                                                                  |
