@@ -55,7 +55,7 @@ class LayerScale(nn.Module):
 
     **Training dynamics**
 
-    The ``init_values`` argument controls the initial magnitude of every element
+    The ``init_value`` argument controls the initial magnitude of every element
     of ``γ``.  A small value (e.g. ``1e-4``) means the residual update is
     almost entirely suppressed at the start of training, which:
 
@@ -64,7 +64,7 @@ class LayerScale(nn.Module):
       the residual branches to activate gradually once they have learned useful
       features.
 
-    Using a larger ``init_values`` (e.g. ``1.0``) is appropriate when
+    Using a larger ``init_value`` (e.g. ``1.0``) is appropriate when
     fine-tuning from a checkpoint where the residual branches are already
     well-trained and suppressing them would slow convergence.
 
@@ -81,24 +81,24 @@ class LayerScale(nn.Module):
 
     Attributes:
         gamma (nn.Parameter): Learnable scale vector of shape ``(dim,)``,
-            initialised to ``init_values``.  Tagged ``_no_weight_decay = True``
+            initialised to ``init_value``.  Tagged ``_no_weight_decay = True``
             to exclude it from L2 weight-decay in the optimiser.
 
     Example::
 
-        ls = LayerScale(dim=768, init_values=1e-4)
+        ls = LayerScale(dim=768, init_value=1e-4)
         x = torch.randn(2, 196, 768)   # [B, T, C]
         out = ls(x)                    # [B, T, C], same shape as x
     """
 
-    def __init__(self, dim: int, init_values: float = 1e-4):
+    def __init__(self, dim: int, init_value: float = 1e-4):
         """Initialise the learnable scale vector.
 
         Args:
             dim: Channel dimension ``C``.  Determines the length of the
                 ``gamma`` parameter vector.  Must match the channel (last)
                 dimension of tensors passed to :meth:`forward`.
-            init_values: Initial value for every element of ``gamma``.
+            init_value: Initial value for every element of ``gamma``.
                 All elements are set to this scalar at construction time.
                 Typical choices:
 
@@ -110,7 +110,7 @@ class LayerScale(nn.Module):
                   useful when fine-tuning from a strong pre-trained checkpoint.
         """
         super().__init__()
-        self.gamma = nn.Parameter(init_values * torch.ones(dim))
+        self.gamma = nn.Parameter(init_value * torch.ones(dim))
         self.gamma._no_weight_decay = True
 
     def flop_count(self, num_tokens: int) -> int:
