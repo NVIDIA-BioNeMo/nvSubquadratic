@@ -1,4 +1,18 @@
-"""Profile one fwd+bwd step of ViT-5-Small to find time breakdown."""
+"""Per-phase profiling of a single ViT-5-Small forward+backward step.
+
+Instruments forward, attention/mixer, MLP, backward, and optimizer
+phases with CUDA-synced timers and reports their share of the step.
+Use this to diagnose a regression: if total step time goes up, this
+script shows which phase moved.
+
+Targets: H100 SXM 80GB, BF16, batch size 256.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/vit5_imagenet/bench_vit5_profile.py
+
+Output: stdout phase-breakdown table.
+"""
 
 import sys
 

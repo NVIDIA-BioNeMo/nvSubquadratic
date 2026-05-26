@@ -1,9 +1,9 @@
 """Streamlit app to visualize extracted SIREN kernels, masks, and masked kernels.
 
 Usage:
-    conda run -n nv-subq streamlit run scripts/visualize_kernels.py -- --data-dir tmp/kernel_data
+    conda run -n nv-subq streamlit run scripts/visualization/visualize_kernels.py -- --data-dir tmp/kernel_data
 
-Expects JSON files produced by ``scripts/extract_kernel_data.py`` in --data-dir.
+Expects JSON files produced by ``scripts/data/extract_kernel_data.py`` in --data-dir.
 """
 
 import argparse

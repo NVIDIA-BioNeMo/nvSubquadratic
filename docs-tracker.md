@@ -20,6 +20,12 @@
 Benchmarks) that wrap them.  Out of scope on this branch: rewriting the
 top-level README or `examples/overview_tracker.md` themselves — the
 docs narrative pages link to those sources rather than duplicating them.
+`benchmarks/`, `scripts/visualization/`, and `reports/` are in scope at
+a lighter bar — module-level docstrings (4-question format: what /
+hardware / how to invoke / where the output goes) and one README per
+subdirectory, no Sphinx API reference entry; per-topic `REPORT.md`
+files live under `reports/`.  The top-level `visualizations/` directory
+was retired into `reports/` by the repo-organization PR.
 
 ______________________________________________________________________
 
@@ -130,3 +136,58 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `utils/cli.py`                                 | \[x\]  | CLI helpers — load_config_from_file, apply_config_overrides, run name generation                           |
 | `utils/checkpointing.py`                       | \[x\]  | Already had good per-function docstrings; left as-is                                                       |
 | `callbacks/`                                   | \[x\]  | walltime_checkpointer (added module docstring); all others already had good docs                           |
+
+### `benchmarks/` — Throughput and profiling scripts
+
+Lighter bar: module-level docstring only (4-question format) plus one
+README per subdirectory.  No Sphinx API reference entry.
+
+| File                                    | Status | Notes                                                                                                      |
+| --------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------- |
+| `README.md`                             | \[x\]  | ViT-5-Small headline throughput tables; included into the Sphinx `Benchmarks` page                         |
+| `benchmark_imagenet_diffusion_gpu.py`   | \[x\]  | GPU memory/time benchmark for ImageNet diffusion at batch=1                                                |
+| `compare_flops.py`                      | \[x\]  | FLOP comparison across ViT-5-Small variants (Attention / Hyena / Hyena+FiLM); already had a good docstring |
+| `ops/README.md`                         | \[x\]  | Op-level benchmark overview (fftconv2d / mlp / subq_ops fftconv)                                           |
+| `ops/bench_fftconv2d.py`                | \[x\]  | Already had a full docstring                                                                               |
+| `ops/bench_mlp.py`                      | \[x\]  | torch vs QuACK MLP correctness + timing                                                                    |
+| `ops/bench_subquadratic_fftconv.py`     | \[x\]  | Sanity gate for the CUDA fft_causal_conv1d kernel                                                          |
+| `ops/FP16_FFTCONV_RESULTS.md`           | \[x\]  | FP16 FFT conv accuracy + throughput vs FP32 reference                                                      |
+| `vit5_imagenet/README.md`               | \[x\]  | Per-script overview + pointer to the historical profiling report                                           |
+| `vit5_imagenet/bench_vit5_baseline.py`  | \[x\]  | Baseline (eager, torchvision dataloader) throughput                                                        |
+| `vit5_imagenet/bench_vit5_compile.py`   | \[x\]  | `torch.compile` configuration sweep                                                                        |
+| `vit5_imagenet/bench_vit5_hyena.py`     | \[x\]  | Attention vs Hyena vs Hyena-FiLM throughput; already had a full docstring                                  |
+| `vit5_imagenet/bench_vit5_optimized.py` | \[x\]  | Production-optimised pipeline (BF16 + compile + DALI fused)                                                |
+| `vit5_imagenet/bench_vit5_profile.py`   | \[x\]  | Per-phase forward+backward profiling                                                                       |
+| `vit5_imagenet/verify_dali_fused.py`    | \[x\]  | DALI fused output sanity checks + visual comparison                                                        |
+| `vit5_imagenet/validate_checkpoint.py`  | \[x\]  | Loads a W&B "best" checkpoint and runs val/test on ImageNet-1k                                             |
+| `vit5_imagenet/scripts/bench_*.sh`      | \[x\]  | One-line SLURM-driver header explaining what each invokes                                                  |
+| `well/README.md`                        | \[x\]  | Per-script overview for the WELL benchmark suite                                                           |
+| `well/bench_ab_comparison.py`           | \[x\]  | A/B baseline-vs-optimised dataloader+training; already had a full docstring                                |
+| `well/bench_dataloader.py`              | \[x\]  | Isolated WELL dataloader throughput                                                                        |
+| `well/bench_training_step.py`           | \[x\]  | End-to-end WELL training-step throughput                                                                   |
+| `well/parse_bench.py`                   | \[x\]  | Parses the SLURM sweep driver's stdout into a summary table                                                |
+| `well/profile_timing.py`                | \[x\]  | Phase profiling on the Gray-Scott Hyena WELL config                                                        |
+| `well/profile_training_loop.py`         | \[x\]  | Diagnoses the gap between pure compute and PL-reported step time                                           |
+| `well/verify_vrmse.py`                  | \[x\]  | Cross-checks VRMSE implementation against manual computation                                               |
+
+### `scripts/visualization/` — Visualization tools
+
+| File                                 | Status | Notes                                                                           |
+| ------------------------------------ | ------ | ------------------------------------------------------------------------------- |
+| `README.md`                          | \[x\]  | Streamlit vs Gradio kernel-viewer divergence + when to reach for each           |
+| `visualize_kernels.py`               | \[x\]  | Streamlit kernel/mask viewer (consumes `.json`); usage paths corrected          |
+| `visualize_kernels_app.py`           | \[x\]  | Gradio kernel/mask viewer (consumes `.npz`, headless-friendly); paths corrected |
+| `visualize_repeated_aug.py`          | \[x\]  | DALI repeated-augmentation sanity check; already had a working docstring        |
+| `visualize_patch_size_throughput.py` | \[x\]  | Moved from `scripts/`; patch-size sweep throughput plot                         |
+
+### `reports/` — Topic-folder technical reports
+
+Each topic owns a `REPORT.md` plus the scripts and figures it cites.
+Index of topics lives in `reports/README.md`.
+
+| Topic                                 | Status | Notes                                                                                      |
+| ------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| `ckconv_block_diagonal_kernel/`       | \[x\]  | Block-diagonal multi-ω₀ SIREN + block-aligned Gaussian mask (existing topic)               |
+| `siren_omega0_dimensional_scaling/`   | \[x\]  | SIREN ω₀ dimensional scaling rule (existing topic)                                         |
+| `spatial_recall/`                     | \[x\]  | Qualitative target-vs-prediction snapshots for the 1D/2D/3D EMNIST spatial-recall suite    |
+| `vit5_imagenet_dataloader_profiling/` | \[x\]  | Feb-2026 ViT-5 ImageNet CPU-decode bottleneck investigation; motivated the DALI-fused move |

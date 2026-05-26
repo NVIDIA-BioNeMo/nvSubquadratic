@@ -43,6 +43,8 @@ Where to go next
   megatron-core story and the BHL/BLH naming conventions.
 - **Examples** — per-dataset training recipes under ``examples/``.
 - **Benchmarks** — ViT-5-Small throughput tables and FLOP scaling.
+- **Reports** — long-form technical reports backed by reproducible
+  scripts and figures.
 - **Ops Overview** — math primer and decision tree for the FFT
   convolution primitives.
 - **API Reference** — auto-generated reference for the curated public
@@ -74,5 +76,6 @@ CUDA kernels live in a separate library:
    Architecture <architecture>
    Examples <examples/index>
    Benchmarks <benchmarks>
+   Reports <reports>
    Ops Overview <ops/README>
    API Reference <api_reference/index>

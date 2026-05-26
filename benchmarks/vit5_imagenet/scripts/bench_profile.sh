@@ -1,4 +1,5 @@
 #!/bin/bash
+# Driver for `bench_vit5_profile.py` — submits to SLURM with the standard ViT-5-Small config.
 #SBATCH --job-name=vit5-prof2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
