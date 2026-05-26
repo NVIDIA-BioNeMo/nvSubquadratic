@@ -9,6 +9,10 @@ Low-level convolution primitives.  Pure-PyTorch reference implementations
 double as the spec the CUDA kernels must match; the
 ``subquadratic_ops_torch`` wrappers are the production path on GPU.
 
+The fp16 variants require power-of-2 spatial dims (cuFFT constraint) and
+use dual mean-centering for numerical stability — see
+:doc:`../ops/FP16_FFTCONV_DERIVATION` for the derivation.
+
 FFT convolutions (reference fp32)
 ---------------------------------
 
@@ -101,6 +105,45 @@ sequence axis in chunks.
    ~ops.fftconv_chunked.chunking_enabled
    ~ops.fftconv_chunked.set_default_chunk_size
    ~ops.fftconv_chunked.get_default_chunk_size
+
+FFT convolutions (fp16)
+-----------------------
+
+Half-precision linear-convolution variants.  Internal compute is fp16
+via cuFFT; output dtype matches the caller's input.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~ops.fftconv_fp16.fftconv1d_fp16_bhl
+   ~ops.fftconv_fp16.fftconv2d_fp16_bhl
+   ~ops.fftconv_fp16.fftconv3d_fp16_bhl
+   ~ops.fftconv_fp16.causal_fftconv1d_fp16_bhl
+   ~ops.fftconv_fp16.fftconv1d_fp16_bhl_w_reshape
+   ~ops.fftconv_fp16.fftconv2d_fp16_bhl_w_reshape
+   ~ops.fftconv_fp16.fftconv3d_fp16_bhl_w_reshape
+   ~ops.fftconv_fp16.causal_fftconv1d_fp16_bhl_w_reshape
+   ~ops.fftconv_fp16.fftconv1d_fp16_bhl_chunked
+   ~ops.fftconv_fp16.fftconv2d_fp16_bhl_chunked
+   ~ops.fftconv_fp16.fftconv3d_fp16_bhl_chunked
+   ~ops.fftconv_fp16.causal_fftconv1d_fp16_bhl_chunked
+
+Circular FFT convolutions (fp16)
+--------------------------------
+
+Periodic-boundary half-precision variants.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~ops.circular_fftconv_fp16.circular_fftconv1d_fp16_bhl
+   ~ops.circular_fftconv_fp16.circular_fftconv2d_fp16_bhl
+   ~ops.circular_fftconv_fp16.circular_fftconv3d_fp16_bhl
+   ~ops.circular_fftconv_fp16.circular_fftconv1d_fp16_bhl_w_reshape
+   ~ops.circular_fftconv_fp16.circular_fftconv2d_fp16_bhl_w_reshape
+   ~ops.circular_fftconv_fp16.circular_fftconv3d_fp16_bhl_w_reshape
 
 Mixed-precision FFT convolutions
 --------------------------------
