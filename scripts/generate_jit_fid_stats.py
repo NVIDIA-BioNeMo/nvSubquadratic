@@ -97,7 +97,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=str,
-        default="fid_stats/jit_in64_stats.npz",
+        default="examples/imagenet_diffusion/fid_stats/jit_in64_stats.npz",
         help="Output .npz path for mu/sigma statistics.",
     )
     args = parser.parse_args()

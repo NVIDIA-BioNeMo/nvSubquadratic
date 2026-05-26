@@ -235,7 +235,7 @@ def get_config() -> DiffusionExperimentConfig:
         cfg_interval_end=1.0,
         # Online FID
         fid_online_jit=True,
-        fid_stats_file="fid_stats/jit_in64_train_stats_full.npz",
+        fid_stats_file="examples/imagenet_diffusion/fid_stats/jit_in64_train_stats_full.npz",
         fid_interval=100,
         fid_num_samples=50_000,
         fid_batch_size=1024,
