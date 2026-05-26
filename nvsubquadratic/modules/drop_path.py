@@ -50,7 +50,9 @@ def drop_path(x: torch.Tensor, drop_prob: float, training: bool) -> torch.Tensor
         x: Input tensor of shape ``[B, *]`` — any layout; the drop mask has
            shape ``(B, 1, …, 1)`` and broadcasts over all non-batch dimensions.
         drop_prob: Probability of dropping a sample's contribution.
-            ``0.0`` disables dropping; ``1.0`` would zero every sample.
+            ``0.0`` disables dropping; ``1.0`` zeros every sample (safe —
+            the implementation guards against dividing by ``keep_prob`` when
+            it is zero, so no inf/NaN is produced).
         training: Whether the model is currently in training mode.
             Set to ``False`` (or call ``model.eval()``) to disable dropping.
 
