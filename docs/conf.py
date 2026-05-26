@@ -81,6 +81,7 @@ autodoc_mock_imports = [
     "megatron.core",
     "omegaconf",
     "cleanfid",
+    "diffusers",
     "pytorch_lightning",
     "lightning",
     "matplotlib",
