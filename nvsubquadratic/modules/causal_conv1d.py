@@ -18,13 +18,15 @@ The module also supports **symmetric** (non-causal) same-padding when
 ``is_causal=False``, making it a drop-in for standard convolutions in contexts
 that need a runtime-switchable causality flag.
 
-**Use inside Mamba / SSM blocks**
+**Use in Hyena short-conv configs**
 
-:class:`CausalConv1D` is used in :mod:`nvsubquadratic.modules.mamba_nd` as a
-depthwise filter applied along each spatial axis before the selective scan.
-The causal constraint along the time axis is essential for autoregressive
-generation; for spatial axes (height, width) the symmetric variant is used
-so the scan sees the full context.
+In this repository, :class:`CausalConv1D` is wired into Hyena operators as the
+short-conv component.  Concrete call sites include
+``examples/spatial_recall_v2/mixer_defaults.py`` and
+``examples/spatial_recall_1d/mixer_defaults.py``, which select
+:class:`CausalConv1D` (``is_causal=True``) for the time axis and the symmetric
+variant (``is_causal=False``) for spatial axes where the full context should be
+visible.
 
 **Difference from** ``subq_ops_causal_conv1d`` **/ ``causal_conv1d_custom``**
 
