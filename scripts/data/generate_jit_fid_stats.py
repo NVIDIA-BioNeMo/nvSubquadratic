@@ -1,3 +1,21 @@
+"""Generate cached FID reference statistics for the JiT ImageNet diffusion pipeline.
+
+Builds an ImageNet reference subset, feeds it through the
+``torch-fidelity`` Inception feature extractor, and saves the
+(mean, cov) pair as an ``.npz`` so subsequent FID evaluations can skip
+the per-run feature extraction.
+
+Targets: any CUDA GPU (H100 / A100 / Ampere+); ImageNet-1k on disk and
+``torch-fidelity`` installed.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        scripts/data/generate_jit_fid_stats.py --output-dir /path/to/fid_stats
+
+Output: ``.npz`` files under ``--output-dir`` (one per requested
+resolution / split).
+"""
+
 import argparse
 import os
 from pathlib import Path
