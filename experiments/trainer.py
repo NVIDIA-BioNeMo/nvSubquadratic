@@ -1,6 +1,34 @@
 # TODO: Add licence header
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
+
+"""PyTorch Lightning trainer factory for nvSubquadratic experiments.
+
+:func:`construct_trainer` is the single entry point for building a
+:class:`pytorch_lightning.Trainer` from an
+:class:`~experiments.default_cfg.ExperimentConfig`.  It:
+
+1. Resolves the checkpoint metric (``val/acc`` or ``val/loss``) from the
+   scheduler ``mode`` or an explicit override.
+2. Creates the checkpoint directory under ``runs/<run_name>/`` or a provided
+   ``experiment_dir``.
+3. Constructs a :class:`~pytorch_lightning.callbacks.ModelCheckpoint` callback
+   that saves the ``best`` and ``last`` checkpoints.
+4. Optionally attaches a
+   :class:`~experiments.callbacks.walltime_checkpointer.WalltimeCheckpointer`
+   (saves and exits when the SLURM wall-time limit is near).
+5. Optionally attaches a
+   :class:`~experiments.utils.checkpointing.WandbSelectiveCheckpointUploader`
+   (uploads best checkpoints per scheduler phase to W&B) and a
+   :class:`~experiments.callbacks.wandb_cache_cleanup.WandbCacheCleanupCallback`.
+6. Sets precision, determinism, and gradient-clip flags from config.
+7. Returns the fully configured :class:`pytorch_lightning.Trainer` together with
+   the :class:`~pytorch_lightning.callbacks.ModelCheckpoint` callback (so the
+   caller can inspect ``checkpoint_callback.best_model_path``).
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
+
 from pathlib import Path
 from typing import Optional
 

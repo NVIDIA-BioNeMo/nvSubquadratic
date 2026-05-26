@@ -1,6 +1,29 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Lightning wrappers for the Classification and Regression experiments."""
+"""Base PyTorch Lightning wrapper for all nvSubquadratic experiments.
+
+Provides :class:`LightningWrapperBase`, the shared superclass for all task-specific
+Lightning modules (classification, regression, diffusion, autoregressive, WELL,
+ARC).  It handles:
+
+- **Optimizer construction**: parameter-group splitting (weight-decay, per-param
+  LR scale via ``_lr_scale``), dispatching to :func:`_build_optimizer`.
+- **Scheduler construction**: warmup + main schedule chaining via
+  :class:`~nvsubquadratic.modules.schedulers.ResumableSequentialLR`.
+- **Checkpoint resume**: key-remapping for compiled vs. non-compiled state dicts
+  via :func:`align_compiled_keys`.
+- **Timing profiling**: optional CUDA-event-based forward/backward profiling
+  logged to W&B.
+- **Gradient norm tracking**: optional per-layer or global grad-norm logging.
+- **FLOPs accounting**: calls ``network.flop_count()`` if available and logs
+  the result as a W&B summary metric.
+
+Task-specific forward passes, losses, and metrics live in the subclasses
+(:class:`~experiments.lightning_wrappers.classification_wrapper.ClassificationWrapper`,
+:class:`~experiments.lightning_wrappers.regression_wrapper.RegressionWrapper`, etc.).
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 import warnings
 
@@ -286,18 +309,52 @@ def construct_scheduler(
 
 
 class LightningWrapperBase(pl.LightningModule):
-    """Base Lightning wrapper class."""
+    """Base PyTorch Lightning module shared by all nvSubquadratic task wrappers.
+
+    Handles everything that is common across tasks: optimizer/scheduler
+    construction, checkpoint resume key alignment, optional CUDA profiling,
+    gradient norm tracking, and FLOP logging.  Subclasses implement:
+
+    - ``training_step`` / ``validation_step`` / ``test_step``
+    - Task-specific loss computation and metric logging
+
+    **Parameter grouping** (see :func:`_build_param_groups`):
+
+    Parameters tagged ``_no_weight_decay = True`` are placed in a zero-decay
+    group.  Parameters tagged ``_lr_scale = <float>`` receive a per-parameter
+    LR multiplier applied by scaling the base LR before passing the group to
+    the optimizer.
+
+    **Scheduler**
+
+    :func:`_build_lr_scheduler` chains a linear-warmup
+    ``LinearLR`` with the main schedule (cosine, WSD, constant) via
+    :class:`~nvsubquadratic.modules.schedulers.ResumableSequentialLR`,
+    which fixes the PyTorch ≤ 2.10 checkpoint-resume LR bug.
+
+    Attributes:
+        network (torch.nn.Module): The wrapped model.
+        optimizer_cfg: Optimizer config from :class:`~experiments.default_cfg.ExperimentConfig`.
+        scheduler_cfg: Scheduler config from :class:`~experiments.default_cfg.ExperimentConfig`.
+        distributed (bool): ``True`` when more than one GPU is visible.
+
+    Args:
+        network: The neural network to train.
+        cfg: Full experiment configuration.
+    """
 
     def __init__(
         self,
         network: torch.nn.Module,
         cfg: ExperimentConfig,
     ):
-        """Initialize the LightningWrapperBase.
+        """Initialise the wrapper and log parameter count and FLOPs.
 
         Args:
-            network: Network to wrap.
-            cfg: Configuration.
+            network: The neural network to train.
+            cfg: Full experiment configuration; ``cfg.optimizer`` and
+                ``cfg.scheduler`` are stored for later use in
+                :meth:`configure_optimizers`.
         """
         super().__init__()
         # Define network

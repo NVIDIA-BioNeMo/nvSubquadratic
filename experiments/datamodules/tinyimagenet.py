@@ -1,3 +1,16 @@
+"""TinyImageNet / ImageNet datamodule backed by Hugging Face Datasets.
+
+Provides :class:`TinyImageNetDataModule`, a :class:`pytorch_lightning.LightningDataModule`
+that loads TinyImageNet (or any ImageNet-style HF dataset) via
+``datasets.load_dataset``.  Supports:
+
+- Standard and advanced augmentation pipelines (RandAugment, ThreeAugment,
+  Mixup, CutMix) via :mod:`timm` and the ``dali_imagenet_fused`` helpers.
+- Configurable resolution, crop ratio, and interpolation mode.
+- HF token-authenticated access for gated datasets (e.g. full ImageNet on HF).
+- Optional label dropping (unsupervised pre-training).
+"""
+
 from pathlib import Path
 from typing import Literal, Optional, Tuple
 
