@@ -16,7 +16,7 @@
 ## Scope
 
 `nvsubquadratic/` and `experiments/` inline docstrings, plus the
-`docs/` narrative pages (Getting Started, Architecture, Package
+`docs/` narrative pages (Getting Started, Architecture, Repository
 Overview, Examples, Benchmarks, Reports) that wrap them.  Out of
 scope on this branch: rewriting the top-level README or
 `examples/overview_tracker.md` themselves — the docs narrative pages

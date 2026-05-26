@@ -76,7 +76,7 @@ CUDA kernels live in a separate library:
 
    Getting Started <getting_started>
    Architecture <architecture>
-   Package Overview <package_overview>
+   Repository Overview <repository_overview>
    Examples <examples/index>
    Benchmarks <benchmarks>
    Reports <reports>
