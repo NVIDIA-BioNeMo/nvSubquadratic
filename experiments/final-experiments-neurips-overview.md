@@ -41,15 +41,15 @@ ______________________________________________________________________
 
 GFLOPs shown in parentheses.
 
-| Model                     | p=16           | p=8            | p=4           | p=2           |
-| ------------------------- | -------------- | -------------- | ------------- | ------------- |
-| Attention                 | 81.8 ✅ (9.4)  | 84.3 ✅ (45.5) | 85.1 ✅ (317) | 85.1 ✅ (3,443.9)| 
-| HyenaND-S (pure)          | 81.5 ✅ (10.0) | 83.7 ✅ (39.0) | 84.0 ✅ (155) | 84.0 ✅ (623.0)         | 
-| HyenaND-S (pure) + FiLM   | 📝             | 📝             | 📝            |❌️             |
-| HyenaND-S (HA)×6          | 82.1 ✅ (9.7)  | 84.2 ✅ (42.3) | 85.0 ✅ (236) |85.2 ✅ (2033.5)|
-| HyenaND-S (HA)×6 + FiLM   | 📝             | 📝             | 📝            |❌️           |
-| HyenaND-S (HHHA)×3        | 82.0 ✅ (9.8)  | 84.0 ✅ (40.7) | 84.4 ✅ (196) |84.6 ✅ (1328.2)|
-| HyenaND-S (HHHA)×3 + FiLM | 📝             | 📝             | 📝            |❌️           |
+| Model                     | p=16           | p=8            | p=4           | p=2               |
+| ------------------------- | -------------- | -------------- | ------------- | ----------------- |
+| Attention                 | 81.8 ✅ (9.4)  | 84.3 ✅ (45.5) | 85.1 ✅ (317) | 85.1 ✅ (3,443.9) |
+| HyenaND-S (pure)          | 81.5 ✅ (10.0) | 83.7 ✅ (39.0) | 84.0 ✅ (155) | 84.0 ✅ (623.0)   |
+| HyenaND-S (pure) + FiLM   | 📝             | 📝             | 📝            | ❌️                |
+| HyenaND-S (HA)×6          | 82.1 ✅ (9.7)  | 84.2 ✅ (42.3) | 85.0 ✅ (236) | 85.2 ✅ (2033.5)  |
+| HyenaND-S (HA)×6 + FiLM   | 📝             | 📝             | 📝            | ❌️                |
+| HyenaND-S (HHHA)×3        | 82.0 ✅ (9.8)  | 84.0 ✅ (40.7) | 84.4 ✅ (196) | 84.6 ✅ (1328.2)  |
+| HyenaND-S (HHHA)×3 + FiLM | 📝             | 📝             | 📝            | ❌️                |
 
 > FiLM GFLOPs ≈ same as non-FiLM (small SIREN-MLP overhead, negligible vs attention savings).
 > v5_patch configs for Hyena+FiLM at all patch sizes are set up and ready in [examples/vit5_imagenet/v5_patch/](examples/vit5_imagenet/v5_patch/). Hybrid+FiLM configs are in [examples/vit5_imagenet/vit5_hybrid/](examples/vit5_imagenet/vit5_hybrid/).
@@ -83,6 +83,9 @@ Bold = best per (dataset, patch-size) column. 5 datasets in paper ✅; 9 dataset
 | MHD_64                        | 3D 64³         | CNextU-net | N/A           | N/A           | N/A           | **0.2108** ✅ |
 | MHD_64                        | 3D 64³         | Attention  | 0.3044 ✅     | 0.2164 ✅     | 0.3037 ✅     | —             |
 | MHD_64                        | 3D 64³         | HyenaND    | 0.2810 ✅     | **0.1088** ✅ | **0.0543** ✅ | —             |
+| MHD_256                       | 3D 256³        | CNextU-net | N/A           | N/A           | N/A           | —             |
+| MHD_256                       | 3D 256³        | Attention  | 📝            | 📝            | 📝            | —             |
+| MHD_256                       | 3D 256³        | HyenaND    | 📝            | 📝            | 📝            | —             |
 | rayleigh_benard               | 2D 512×128     | CNextU-net | N/A           | N/A           | N/A           | 📝            |
 | rayleigh_benard               | 2D 512×128     | Attention  | 📝            | 📝            | 📝            | —             |
 | rayleigh_benard               | 2D 512×128     | HyenaND    | 📝            | 📝            | 📝            | —             |
@@ -109,24 +112,21 @@ Bold = best per (dataset, patch-size) column. 5 datasets in paper ✅; 9 dataset
 | viscoelastic_instability      | 2D 512²        | HyenaND    | 📝            | 📝            | 📝            | —             |
 
 **In paper (✅, 5 datasets):** acoustic_scattering_maze, active_matter, gray_scott_reaction_diffusion, MHD_64, supernova_explosion_64.
-**Still to run (📝, 9 datasets):** euler_multi_quadrants, helmholtz_staircase, rayleigh_benard, rayleigh_taylor_instability, shear_flow, turbulence_gravity_cooling, turbulent_radiative_layer_2D, turbulent_radiative_layer_3D, viscoelastic_instability.
+**Still to run (📝, 10 datasets):** euler_multi_quadrants, helmholtz_staircase, MHD_256, rayleigh_benard, rayleigh_taylor_instability, shear_flow, turbulence_gravity_cooling, turbulent_radiative_layer_2D, turbulent_radiative_layer_3D, viscoelastic_instability.
 
-> Excluded from this table (non-Cartesian, per the v2 tracker): `convective_envelope_rsg`, `planetswe`, `post_neutron_star_merger`, `MHD_256`. Per-dataset LRs and trajectory counts: see T1–T14 in [examples/well/v2/TRACKER.md](examples/well/v2/TRACKER.md).
+> Excluded from this table (non-Cartesian, per the v2 tracker): `convective_envelope_rsg`, `planetswe`, `post_neutron_star_merger`. Per-dataset LRs and trajectory counts: see T1–T14 in [examples/well/v2/TRACKER.md](examples/well/v2/TRACKER.md).
 
 ### 4. - The Well non-cartesian
 
 ### Table 15 — Full-table view across all non-Cartesian Well datasets (val VRMSE, single H100, 24h / 110k iters)
 
-Bold = best per (dataset, patch-size) column. 0 datasets in paper ✅; 4 datasets 📝 still to run. These were excluded from the v2 Cartesian scope; CNextU-net values are paper baselines (The Well, Ohana et al. 2024).
+Bold = best per (dataset, patch-size) column. 0 datasets in paper ✅; 3 datasets 📝 still to run. These were excluded from the v2 Cartesian scope; CNextU-net values are paper baselines (The Well, Ohana et al. 2024).
 
 | Dataset                  | Res            | Grid          | Model      | p=8 | p=4 | p=2 | full res  |
 | ------------------------ | -------------- | ------------- | ---------- | --- | --- | --- | --------- |
 | convective_envelope_rsg  | 3D 256×128×256 | Spherical     | CNextU-net | N/A | N/A | N/A | 0.0799 ✅ |
 | convective_envelope_rsg  | 3D 256×128×256 | Spherical     | Attention  | 📝  | 📝  | 📝  | —         |
 | convective_envelope_rsg  | 3D 256×128×256 | Spherical     | HyenaND    | 📝  | 📝  | 📝  | —         |
-| MHD_256                  | 3D 256³        | Cartesian     | CNextU-net | N/A | N/A | N/A | —         |
-| MHD_256                  | 3D 256³        | Cartesian     | Attention  | 📝  | 📝  | 📝  | —         |
-| MHD_256                  | 3D 256³        | Cartesian     | HyenaND    | 📝  | 📝  | 📝  | —         |
 | planetswe                | 2D 256×512     | Equiangular   | CNextU-net | N/A | N/A | N/A | 0.3724 ✅ |
 | planetswe                | 2D 256×512     | Equiangular   | Attention  | 📝  | 📝  | 📝  | —         |
 | planetswe                | 2D 256×512     | Equiangular   | HyenaND    | 📝  | 📝  | 📝  | —         |
@@ -135,8 +135,8 @@ Bold = best per (dataset, patch-size) column. 0 datasets in paper ✅; 4 dataset
 | post_neutron_star_merger | 3D 192×128×66  | Log-spherical | HyenaND    | 📝  | 📝  | 📝  | —         |
 
 **In paper (✅, 0 datasets):** none.
-**Still to run (📝, 4 datasets):** convective_envelope_rsg, MHD_256, planetswe, post_neutron_star_merger.
+**Still to run (📝, 3 datasets):** convective_envelope_rsg, planetswe, post_neutron_star_merger.
 
-> CNextU-net baselines (FNO/TFNO/U-net/CNextU-net column) from [examples/well/BASELINES.md](examples/well/BASELINES.md). `MHD_256` and `post_neutron_star_merger` U-net/CNextU-net entries were not reported in the original paper (likely OOM on 256³ / incomplete runs).
+> CNextU-net baselines (FNO/TFNO/U-net/CNextU-net column) from [examples/well/BASELINES.md](examples/well/BASELINES.md). `post_neutron_star_merger` U-net/CNextU-net entry was not reported in the original paper (likely OOM / incomplete run).
 > Non-Cartesian geometries require coordinate-aware mixers; HyenaND/Attention at full resolution likely OOMs at these sizes — patch-based variants are the realistic targets.
 > Scope rationale: these were explicitly excluded from the v2 Cartesian scope (see [examples/well/v2/TRACKER.md](examples/well/v2/TRACKER.md)) because spherical / equiangular / log-spherical grids break the implicit Cartesian assumption in our positional encodings and FFT kernels.
