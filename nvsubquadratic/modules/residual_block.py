@@ -83,9 +83,9 @@ class ResidualBlock(torch.nn.Module):
     optimiser can exclude them from weight-decay groups.
 
     See Also:
-        :class:`~nvsubquadratic.networks.general_purpose_resnet.GeneralPurposeResnet`
+        :class:`~nvsubquadratic.networks.general_purpose_resnet.ResidualNetwork`
         and
-        :class:`~nvsubquadratic.networks.classification_resnet.ClassificationResnet`
+        :class:`~nvsubquadratic.networks.classification_resnet.ClassificationResNet`
         for the canonical consumers of this block.
 
     Attributes:
@@ -335,9 +335,9 @@ class AdaLNZeroResidualBlock(torch.nn.Module):
     zero-initialised), so the block is a skip connection.
 
     See Also:
-        :class:`~nvsubquadratic.networks.general_purpose_resnet.GeneralPurposeResnet`
+        :class:`~nvsubquadratic.networks.general_purpose_resnet.ResidualNetwork`
         and
-        :class:`~nvsubquadratic.networks.classification_resnet.ClassificationResnet`
+        :class:`~nvsubquadratic.networks.classification_resnet.ClassificationResNet`
         for the canonical consumers of this block.
 
     Attributes:

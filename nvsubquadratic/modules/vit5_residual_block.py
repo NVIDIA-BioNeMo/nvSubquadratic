@@ -31,8 +31,11 @@ ViT-5-specific design choices:
 
 5. **Sequence layout** — Input is always ``[B, T, C]`` (batch, tokens,
    channels); the token axis *T* concatenates patch tokens, an optional CLS
-   token, and register tokens in the order ``[patches, (CLS,) registers]``.
-   The generic block operates on arbitrary ``(B, *spatial_dims, C)`` tensors.
+   token, register tokens, and optional zero-padding in the order
+   ``[patches, (CLS,) registers, (padding,)]``.  Attention blocks receive the
+   sequence with padding stripped; Hyena / subquadratic blocks receive the full
+   padded sequence so that ``T % grid_w == 0``.  The generic block operates on
+   arbitrary ``(B, *spatial_dims, C)`` tensors.
 
 For the generic pre-norm residual block (Hyena / Attention / CKConv / Mamba
 with optional cross-attention conditioning), see
@@ -298,9 +301,11 @@ class ViT5ResidualBlock(nn.Module):
         Args:
             x: Input token sequence of shape ``[B, T, C]``, where:
                 - ``B`` — batch size,
-                - ``T = num_patches + (1 if has_cls else 0) + num_registers``
-                  — total token count following the ViT-5 layout
-                  ``[patches, (CLS,) registers]``,
+                - ``T = num_patches + (1 if has_cls else 0) + num_registers
+                  (+ pad_size for Hyena blocks)`` — total token count following
+                  the ViT-5 layout ``[patches, (CLS,) registers, (padding,)]``.
+                  Attention blocks receive the unpadded sequence; Hyena blocks
+                  receive the zero-padded sequence so ``T % grid_w == 0``,
                 - ``C`` — channel (hidden) dimension.
             condition: Accepted for API compatibility with
                 :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`
