@@ -40,7 +40,8 @@ Where to go next
 - **Ops Overview** — a math primer and decision tree for the FFT
   convolution primitives at the bottom of the stack.
 - **API Reference** — auto-generated reference for the curated public
-  surface (ops + mixer modules).
+  surface organised by package (ops, modules, networks, parallel, core,
+  experiments).
 
 Related projects
 ----------------
@@ -64,4 +65,4 @@ CUDA kernels live in a separate library:
    :maxdepth: 2
 
    Ops Overview <ops/README>
-   API Reference <api>
+   API Reference <api_reference/index>

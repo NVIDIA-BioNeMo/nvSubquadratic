@@ -26,13 +26,15 @@ from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapp
 class AutoregressiveWrapper(LightningWrapperBase):
     """Lightning wrapper for autoregressive (next-token prediction) tasks.
 
-    .. todo:: Resume support (see ClassificationWrapper for reference)
-        - Add ``on_save_checkpoint`` / ``on_load_checkpoint`` to persist
-          ``best_train_loss`` and ``best_val_loss`` across job resumes.
-          Without this, best-metric tracking silently resets to ``inf``
-          after every SLURM preemption or manual resume.
-        - Add corresponding tests in ``tests/test_checkpoint_resume.py``
-          (see ``TestBestMetricsPersistence`` for the classification pattern).
+    .. todo::
+
+       Resume support (see :class:`ClassificationWrapper` for the reference
+       pattern).  Add ``on_save_checkpoint`` / ``on_load_checkpoint`` hooks
+       that persist ``best_train_loss`` and ``best_val_loss`` across job
+       resumes — without them, best-metric tracking silently resets to
+       ``inf`` after every SLURM preemption or manual resume.  Add
+       corresponding tests in ``tests/test_checkpoint_resume.py`` (see
+       ``TestBestMetricsPersistence`` for the classification pattern).
 
     Args:
         network: Network to wrap. Should output logits of shape [B, L, vocab_size] for

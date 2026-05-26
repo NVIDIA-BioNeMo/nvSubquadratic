@@ -72,8 +72,9 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/
 docs/generated/
-docs/api/generated/
+docs/api_reference/generated/
 
 # PyBuilder
 .pybuilder/
@@ -327,6 +328,7 @@ datasets/
 # Memory dumps
 *.dmp
 core.*
+!docs/api_reference/core.*
 
 # Backup files
 *.bak
