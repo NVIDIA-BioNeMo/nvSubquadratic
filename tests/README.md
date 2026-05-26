@@ -27,6 +27,8 @@ tests/
 │   ├── test_diffusion_wrapper.py        # DiffusionWrapper tests
 │   ├── test_diffusion_fid.py            # Diffusion FID evaluation
 │   └── test_hf_diffusers_wrapper.py     # HuggingFace diffusers wrapper
+├── parallel/                            # Tests for nvsubquadratic/parallel/
+│   └── test_a2a_comms.py                # Zigzag-splitting helpers for AllToAllSingle
 ├── test_basic.py                        # Basic import/sanity checks
 ├── test_autoregressive_wrapper.py       # Autoregressive wrapper
 ├── test_checkpoint_resume.py            # Checkpoint save/resume

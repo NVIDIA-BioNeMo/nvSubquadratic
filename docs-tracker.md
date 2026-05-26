@@ -95,11 +95,11 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/parallel/` — Distributed primitives
 
-| File                | Status | Notes                                                                                                                                                                 |
-| ------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a2a_comms.py`      | \[x\]  | AllToAllSingle — CP sequence↔channel redistribution, zigzag splitting, autograd backward                                                                              |
-| `utils.py`          | \[x\]  | CP utilities — `init_parallel_state`, zigzag split/gather across ranks, rank-0 logging routing                                                                        |
-| `test_a2a_comms.py` | \[x\]  | Unit tests for the zigzag-splitting helpers.  Lives next to `a2a_comms.py` so the test imports stay one hop from the implementation; mirror in `tests/` not required. |
+| File                | Status | Notes                                                                                                                                |
+| ------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `a2a_comms.py`      | \[x\]  | AllToAllSingle — CP sequence↔channel redistribution, zigzag splitting, autograd backward                                             |
+| `utils.py`          | \[x\]  | CP utilities — `init_parallel_state`, zigzag split/gather across ranks, rank-0 logging routing                                       |
+| `test_a2a_comms.py` | \[x\]  | Moved to `tests/parallel/test_a2a_comms.py` so tests live under the canonical `tests/` tree; see [tests/README.md](tests/README.md). |
 
 ### `nvsubquadratic/` — Top-level
 
