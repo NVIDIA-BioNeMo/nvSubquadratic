@@ -113,9 +113,9 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `datamodules/arc.py`                           | \[ \]  | (untracked new file — out of scope until merged)                                 |
 | `datamodules/mnist.py`                         | \[x\]  | MNIST/EMNIST datamodule — channels-last reshape, train/val split                 |
 | `datamodules/tinyimagenet.py`                  | \[x\]  | TinyImageNet HF-backed datamodule — RandAugment, Mixup/CutMix, token access      |
-| `datamodules/ucf101.py`                        | \[ \]  | Video classification datamodule                                                  |
-| `datamodules/dali_imagenet_fused.py`           | \[ \]  | DALI ImageNet pipeline                                                           |
+| `datamodules/ucf101.py`                        | \[x\]  | UCF101 — video/sequence modes, frames_per_clip, deterministic workers            |
+| `datamodules/dali_imagenet_fused.py`           | \[x\]  | DALI ImageNet — fused GPU augmentation, MixupConfig/AugmentConfig, repeated aug  |
 | `datamodules/spatial_recall_dataset.py`        | \[x\]  | Already had comprehensive module + class docstrings; left as-is                  |
 | `utils/cli.py`                                 | \[x\]  | CLI helpers — load_config_from_file, apply_config_overrides, run name generation |
 | `utils/checkpointing.py`                       | \[x\]  | Already had good per-function docstrings; left as-is                             |
-| `callbacks/`                                   | \[ \]  | Walltime checkpointer, W&B cache cleanup                                         |
+| `callbacks/`                                   | \[x\]  | walltime_checkpointer (added module docstring); all others already had good docs |
