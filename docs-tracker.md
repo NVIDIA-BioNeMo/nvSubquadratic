@@ -40,46 +40,46 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/modules/` — Building blocks
 
-| File                               | Status | Notes                                                                                       |
-| ---------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
-| `kernels_nd.py`                    | \[x\]  | Learned kernel parametrisation — RFF + SIREN, FiLM-conditioned variants                     |
-| `hyena_nd.py`                      | \[x\]  | Hyena operator (ND) — two-gate sandwich, AllToAll CP, BC-aware convolution                  |
-| `ckconv_nd.py`                     | \[x\]  | CKConv (ND) — implicit kernel `k_θ(p) = MLP_θ(pos_enc(p))`, FFT domain, BC modes            |
-| `ckconv_multihead_nd.py`           | \[x\]  | Multi-head CKConv — H heads, dense d×d kernel per head, low-rank U·V factorisation          |
-| `mamba_nd.py`                      | \[x\]  | Mamba SSM (ND) — selective SSM, ZOH discretisation, raster-scan ND, bidirectional mode      |
-| `attention.py`                     | \[x\]  | Scaled dot-product attention — multi-head, RoPE, ND spatial, O(L²) FLOP formula             |
-| `vit5_attention.py`                | \[x\]  | ViT5 attention — register-aware 2D RoPE, QK-norm, CUDA-graph-safe buffers                   |
-| `vit5_hyena_adapter.py`            | \[x\]  | Hyena adapter for ViT5 — drop-in for vit5_attention, register-token + hierarchy support     |
-| `sequence_mixer.py`                | \[x\]  | Operator-agnostic dispatch layer (Hyena / Attention / CKConv / Mamba)                       |
-| `condition_mixer.py`               | \[x\]  | Cross-attention conditioning mixer — both global (B,C) and spatial (B,\*,C) signals         |
-| `residual_block.py`                | \[x\]  | Residual block — pre-norm + mixer + MLP, optional FiLM/AdaLN-Zero conditioning              |
-| `vit5_residual_block.py`           | \[x\]  | ViT5 residual block — LayerScale, register-token conditioning, no condition-mixer branch    |
-| `patchify.py`                      | \[x\]  | Patch embedding — strided conv, 1D/2D/3D, channels-last layout                              |
-| `position_encoding.py`             | \[x\]  | Axis-factorised learned PE — ND broadcast-expand, float32 output caveat                     |
-| `masks_nd.py`                      | \[x\]  | Exponential + Gaussian receptive-field windows; mask convention 1=included, 0=excluded      |
-| `mlp.py`                           | \[x\]  | Two-layer MLP — GELU/SwiGLU/GLU variants, expansion-ratio math, QuACK backend noted         |
-| `film.py`                          | \[x\]  | FiLM conditioning — γ(c)⊙x + β(c), SIREN-based kernel generator                             |
-| `grn.py`                           | \[x\]  | GRN — per-channel L2 norm, inter-channel competition, ConvNeXt V2 reference                 |
-| `layer_scale.py`                   | \[x\]  | LayerScale — per-channel λ⊙F(x), init_values guidance, \_no_weight_decay tag                |
-| `rms_norm.py`                      | \[x\]  | RMSNorm + PerHeadRMSNorm — QuACK/PyTorch backends, math formula, QK-norm usage              |
-| `rms_norm_channel_first.py`        | \[x\]  | Channel-first RMSNorm — normalises dim=1, `channels_first` sentinel, Hyena usage            |
-| `drop_path.py`                     | \[x\]  | Stochastic depth — functional + Module, inverted-dropout scaling, causal vs training        |
-| `causal_conv1d.py`                 | \[x\]  | CausalConv1D — left-only pad formula, symmetric mode, Mamba usage context                   |
-| `subq_ops_causal_conv1d.py`        | \[x\]  | New (1D PR): `nn.Conv1d`-compatible depthwise wrapper around `subq_ops.causal_conv1d`       |
-| `schedulers.py`                    | \[x\]  | ResumableSequentialLR — PyTorch ≤2.10 bug fix, load_state_dict LR propagation               |
-| `distributed_depthwise_conv_nd.py` | \[x\]  | CP-aware 1D/2D/3D depthwise conv — group weight sharing, channel slicing, causal padding    |
-| `patch_merging.py`                 | \[x\]  | New (hierarchical PR): Swin-style 2×2 patch merging with optional register-row passthrough  |
+| File                               | Status | Notes                                                                                      |
+| ---------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| `kernels_nd.py`                    | \[x\]  | Learned kernel parametrisation — RFF + SIREN, FiLM-conditioned variants                    |
+| `hyena_nd.py`                      | \[x\]  | Hyena operator (ND) — two-gate sandwich, AllToAll CP, BC-aware convolution                 |
+| `ckconv_nd.py`                     | \[x\]  | CKConv (ND) — implicit kernel `k_θ(p) = MLP_θ(pos_enc(p))`, FFT domain, BC modes           |
+| `ckconv_multihead_nd.py`           | \[x\]  | Multi-head CKConv — H heads, dense d×d kernel per head, low-rank U·V factorisation         |
+| `mamba_nd.py`                      | \[x\]  | Mamba SSM (ND) — selective SSM, ZOH discretisation, raster-scan ND, bidirectional mode     |
+| `attention.py`                     | \[x\]  | Scaled dot-product attention — multi-head, RoPE, ND spatial, O(L²) FLOP formula            |
+| `vit5_attention.py`                | \[x\]  | ViT5 attention — register-aware 2D RoPE, QK-norm, CUDA-graph-safe buffers                  |
+| `vit5_hyena_adapter.py`            | \[x\]  | Hyena adapter for ViT5 — drop-in for vit5_attention, register-token + hierarchy support    |
+| `sequence_mixer.py`                | \[x\]  | Operator-agnostic dispatch layer (Hyena / Attention / CKConv / Mamba)                      |
+| `condition_mixer.py`               | \[x\]  | Cross-attention conditioning mixer — both global (B,C) and spatial (B,\*,C) signals        |
+| `residual_block.py`                | \[x\]  | Residual block — pre-norm + mixer + MLP, optional FiLM/AdaLN-Zero conditioning             |
+| `vit5_residual_block.py`           | \[x\]  | ViT5 residual block — LayerScale, register-token conditioning, no condition-mixer branch   |
+| `patchify.py`                      | \[x\]  | Patch embedding — strided conv, 1D/2D/3D, channels-last layout                             |
+| `position_encoding.py`             | \[x\]  | Axis-factorised learned PE — ND broadcast-expand, float32 output caveat                    |
+| `masks_nd.py`                      | \[x\]  | Exponential + Gaussian receptive-field windows; mask convention 1=included, 0=excluded     |
+| `mlp.py`                           | \[x\]  | Two-layer MLP — GELU/SwiGLU/GLU variants, expansion-ratio math, QuACK backend noted        |
+| `film.py`                          | \[x\]  | FiLM conditioning — γ(c)⊙x + β(c), SIREN-based kernel generator                            |
+| `grn.py`                           | \[x\]  | GRN — per-channel L2 norm, inter-channel competition, ConvNeXt V2 reference                |
+| `layer_scale.py`                   | \[x\]  | LayerScale — per-channel λ⊙F(x), init_values guidance, \_no_weight_decay tag               |
+| `rms_norm.py`                      | \[x\]  | RMSNorm + PerHeadRMSNorm — QuACK/PyTorch backends, math formula, QK-norm usage             |
+| `rms_norm_channel_first.py`        | \[x\]  | Channel-first RMSNorm — normalises dim=1, `channels_first` sentinel, Hyena usage           |
+| `drop_path.py`                     | \[x\]  | Stochastic depth — functional + Module, inverted-dropout scaling, causal vs training       |
+| `causal_conv1d.py`                 | \[x\]  | CausalConv1D — left-only pad formula, symmetric mode, Mamba usage context                  |
+| `subq_ops_causal_conv1d.py`        | \[x\]  | New (1D PR): `nn.Conv1d`-compatible depthwise wrapper around `subq_ops.causal_conv1d`      |
+| `schedulers.py`                    | \[x\]  | ResumableSequentialLR — PyTorch ≤2.10 bug fix, load_state_dict LR propagation              |
+| `distributed_depthwise_conv_nd.py` | \[x\]  | CP-aware 1D/2D/3D depthwise conv — group weight sharing, channel slicing, causal padding   |
+| `patch_merging.py`                 | \[x\]  | New (hierarchical PR): Swin-style 2×2 patch merging with optional register-row passthrough |
 
 ### `nvsubquadratic/networks/` — Full architectures
 
-| File                                  | Status | Notes                                                                                                                               |
-| ------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `general_purpose_resnet.py`           | \[x\]  | ResidualNetwork — LazyConfig blocks, conditioning, readout crop, gradient checkpointing                                             |
-| `classification_resnet.py`            | \[x\]  | ClassificationResNet — GAP readout, resolution-agnostic, inherits ResidualNetwork                                                   |
-| `vit5_classification.py`              | \[x\]  | ViT5 classification — token layout, hybrid blocks, CLS/GAP/register_concat readouts, FLOP count                                     |
+| File                                  | Status | Notes                                                                                                                     |
+| ------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `general_purpose_resnet.py`           | \[x\]  | ResidualNetwork — LazyConfig blocks, conditioning, readout crop, gradient checkpointing                                   |
+| `classification_resnet.py`            | \[x\]  | ClassificationResNet — GAP readout, resolution-agnostic, inherits ResidualNetwork                                         |
+| `vit5_classification.py`              | \[x\]  | ViT5 classification — token layout, hybrid blocks, CLS/GAP/register_concat readouts, FLOP count                           |
 | `vit5_hierarchical_classification.py` | \[x\]  | New (hierarchical PR): Swin-style 4-stage hierarchical ViT-5 classifier with GAP readout and optional register-row layout |
-| `huggingface_diffusers.py`            | \[ \]  | HF diffusers integration                                                                                                            |
-| `jit.py` / `jit_utils.py`             | \[ \]  | TorchScript utilities                                                                                                               |
+| `huggingface_diffusers.py`            | \[ \]  | HF diffusers integration                                                                                                  |
+| `jit.py` / `jit_utils.py`             | \[ \]  | TorchScript utilities                                                                                                     |
 
 ### `nvsubquadratic/parallel/` — Distributed primitives
 
