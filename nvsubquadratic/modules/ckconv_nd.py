@@ -994,44 +994,43 @@ class CKConvND(torch.nn.Module):
     def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
         """Count FLOPs for CKConv: kernel generation + FFT convolution.
 
-        Two phases:
+        Two phases.
 
-        Phase 1 - Kernel generation (via SIREN MLP):
-            Delegated to ``self.kernel.flop_count(grid_lens, inference)``.
-            At ``inference=True`` without FiLM, the kernel is input-independent
-            and can be precomputed, so this returns 0.
+        **Phase 1 — kernel generation (via SIREN MLP).**  Delegated to
+        ``self.kernel.flop_count(grid_lens, inference)``.  At
+        ``inference=True`` without FiLM, the kernel is input-independent and
+        can be precomputed, so this phase returns 0.
 
-        Phase 2 - FFT-based depthwise convolution (C = ``self.hidden_dim``):
-          The convolution is computed in the frequency domain.  Padded signal
-          sizes Np_i depend on the padding mode:
-            - ``"zero"`` non-causal ("same"-mode):
-                Np_i = min(s_i + (k_i + 1) // 2,  2 * s_i)
-              Only half the kernel width of extra padding is needed beyond
-              the input size, because the output is cropped back to input
-              size (centered crop).  Matches ``fftconv.py`` line 624-628.
-            - ``"zero"`` causal (1D only):
-                Np_i = min(s_i + k_i,  2 * s_i)
-              Full linear convolution length; output is tail-cropped.
-            - ``"circular"``: Np_i = s_i  (wrap-around, no extra padding)
+        **Phase 2 — FFT-based depthwise convolution** with ``C =
+        self.hidden_dim``.  The convolution runs in the frequency domain.
+        Padded signal sizes ``Np_i`` depend on the padding mode:
 
-          A separable N-D FFT on a grid of size (Np_1, ..., Np_d) costs:
-            5 * prod(Np) * sum(log2(Np_i))  real FLOPs per channel,
-          based on the radix-2 Cooley-Tukey decomposition where each butterfly
-          operation costs ~5 real FLOPs (1 complex multiply ≈ 4 real muls +
-          2 real adds, minus shared twiddle-factor optimizations → ~5 ops).
-          Note: the implementation uses ``rfft`` (real-to-complex), which is
-          ~2x cheaper than a full complex FFT; the 5N log N formula is a
-          conservative (upper-bound) estimate consistent with standard
-          vision-paper conventions.
+        - ``"zero"`` non-causal ("same" mode):
+          ``Np_i = min(s_i + (k_i + 1) // 2, 2 * s_i)``.  Only half the
+          kernel width of extra padding is needed because the output is
+          centre-cropped back to the input size.  Matches ``fftconv.py``
+          lines 624-628.
+        - ``"zero"`` causal (1D only): ``Np_i = min(s_i + k_i, 2 * s_i)``.
+          Full linear convolution length; the output is tail-cropped.
+        - ``"circular"``: ``Np_i = s_i``.  Wrap-around, no extra padding.
 
-          Three FFTs are needed: forward FFT of input, forward FFT of kernel,
-          and inverse FFT of the product.  At ``inference=True`` without FiLM,
-          the kernel FFT is precomputed and cached, reducing to 2 FFTs.
+        A separable N-D FFT on a grid of size ``(Np_1, ..., Np_d)`` costs
+        ``5 * prod(Np) * sum(log2(Np_i))`` real FLOPs per channel, from the
+        radix-2 Cooley-Tukey decomposition (each butterfly ≈ 5 real FLOPs:
+        1 complex multiply = 4 real muls + 2 real adds, minus shared
+        twiddle-factor optimisations).  The implementation uses ``rfft``
+        (real-to-complex), which is ~2x cheaper than a full complex FFT;
+        the ``5N log N`` formula is a conservative upper bound consistent
+        with vision-paper conventions.
 
-          Pointwise complex multiply in the frequency domain:
-            6 * C * prod(Np)  (4 real muls + 2 real adds for (a+bi)(c+di)).
+        Three FFTs are needed (forward of input, forward of kernel, inverse
+        of the product).  At ``inference=True`` without FiLM the kernel FFT
+        is precomputed and cached, reducing to two FFTs.
 
-          Shortcut (skip connection): C * prod(spatial_dims)  (elementwise).
+        Pointwise complex multiply in the frequency domain costs
+        ``6 * C * prod(Np)`` (4 real muls + 2 real adds for ``(a + bi)(c + di)``).
+        The shortcut (skip connection) costs ``C * prod(spatial_dims)``
+        elementwise multiplies.
 
         Args:
             spatial_dims: Spatial dimensions of the input signal, e.g.

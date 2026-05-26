@@ -299,14 +299,14 @@ class ViT5ResidualBlock(nn.Module):
         modulation (e.g. scaling SIREN kernel features).
 
         Args:
-            x: Input token sequence of shape ``[B, T, C]``, where:
-                - ``B`` — batch size,
-                - ``T = num_patches + (1 if has_cls else 0) + num_registers
-                  (+ pad_size for Hyena blocks)`` — total token count following
-                  the ViT-5 layout ``[patches, (CLS,) registers, (padding,)]``.
-                  Attention blocks receive the unpadded sequence; Hyena blocks
-                  receive the zero-padded sequence so ``T % grid_w == 0``,
-                - ``C`` — channel (hidden) dimension.
+            x: Input token sequence of shape ``[B, T, C]``.  ``B`` is the
+                batch size and ``C`` is the channel (hidden) dimension.
+                ``T = num_patches + (1 if has_cls else 0) + num_registers
+                (+ pad_size for Hyena blocks)`` is the total token count
+                following the ViT-5 layout
+                ``[patches, (CLS,) registers, (padding,)]``.  Attention
+                blocks receive the unpadded sequence; Hyena blocks receive
+                the zero-padded sequence so ``T % grid_w == 0``.
             condition: Accepted for API compatibility with
                 :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`
                 but **always ignored** in this class.  ViT-5 conditioning is

@@ -82,8 +82,6 @@ class RMSNormChannelFirst(nn.Module):
     an ``isinstance`` check.
 
     Attributes:
-        channels_first (bool): Always ``True``; used by callers to detect
-            channel-first norm modules at construction time.
         weight (nn.Parameter): Learnable scale ``γ`` of shape ``(C,)``,
             ones-initialised.  Tagged ``_no_weight_decay = True``.
         eps (float): Stability constant added inside the square root.

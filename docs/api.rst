@@ -105,6 +105,28 @@ sequence axis in chunks.
    ~ops.fftconv_chunked.set_default_chunk_size
    ~ops.fftconv_chunked.get_default_chunk_size
 
+Ops — Mixed-precision FFT convolutions
+--------------------------------------
+
+FFT convolutions that switch internal precision per-axis (e.g. fp16 on
+power-of-2 dims, fp32 on others).  See the
+`FP16 Circular FFT Convolution: Derivation <ops/FP16_FFTCONV_DERIVATION.html>`_
+for the numerical-stability background.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~ops.mixed_fftconv.mixed_fftconv1d_fp32_bhl
+   ~ops.mixed_fftconv.mixed_fftconv2d_fp32_bhl
+   ~ops.mixed_fftconv.mixed_fftconv3d_fp32_bhl
+   ~ops.mixed_fftconv.mixed_fftconv1d_fp32_bhl_w_reshape
+   ~ops.mixed_fftconv.mixed_fftconv2d_fp32_bhl_w_reshape
+   ~ops.mixed_fftconv.mixed_fftconv3d_fp32_bhl_w_reshape
+   ~ops.mixed_fftconv.mixed_fftconv1d_fp32_bhl_chunked
+   ~ops.mixed_fftconv.mixed_fftconv2d_fp32_bhl_chunked
+   ~ops.mixed_fftconv.mixed_fftconv3d_fp32_bhl_chunked
+
 Modules — Mixers
 ----------------
 
@@ -117,9 +139,15 @@ High-level PyTorch ``nn.Module`` sequence/spatial mixers.
    ~modules.hyena_nd.Hyena
    ~modules.mamba_nd.Mamba
    ~modules.attention.Attention
+   ~modules.vit5_attention.ViT5Attention
+   ~modules.vit5_hyena_adapter.ViT5HyenaAdapter
+   ~modules.sequence_mixer.QKVSequenceMixer
 
 Modules — Convolutions
 ----------------------
+
+Depthwise, multi-head, and continuous-kernel convolutions plus their
+context-parallel counterparts.
 
 .. autosummary::
    :toctree: generated/
@@ -127,3 +155,171 @@ Modules — Convolutions
 
    ~modules.causal_conv1d.CausalConv1D
    ~modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d
+   ~modules.ckconv_nd.CKConvND
+   ~modules.ckconv_multihead_nd.CKConvMultiheadND
+   ~modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv1d
+   ~modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv2d
+   ~modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d
+
+Modules — Kernels & filters
+---------------------------
+
+Learned kernel parametrisations (SIREN, random Fourier features) and
+masks that produce the filters consumed by the FFT ops above.
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~modules.kernels_nd.SIRENKernelND
+   ~modules.kernels_nd.SIRENPositionalEmbeddingND
+   ~modules.kernels_nd.MultiOmegaSIRENKernelND
+   ~modules.kernels_nd.MultiOmegaSIRENPositionalEmbeddingND
+   ~modules.kernels_nd.BlockDiagonalMultiOmegaSIRENKernelND
+   ~modules.kernels_nd.LearnableOmegaSIRENKernelND
+   ~modules.kernels_nd.LearnableOmegaSIRENPositionalEmbeddingND
+   ~modules.kernels_nd.BlockDiagonalLearnableOmegaSIRENKernelND
+   ~modules.kernels_nd.RandomFourierKernelND
+   ~modules.kernels_nd.RandomFourierPositionalEmbeddingND
+   ~modules.kernels_nd.Sine
+   ~modules.masks_nd.ExponentialModulationND
+   ~modules.masks_nd.GaussianModulationND
+   ~modules.masks_nd.BlockAlignedGaussianModulationND
+
+Modules — Normalization
+-----------------------
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~modules.rms_norm.RMSNorm
+   ~modules.rms_norm.PerHeadRMSNorm
+   ~modules.rms_norm_channel_first.RMSNormChannelFirst
+   ~modules.grn.GlobalResponseNorm
+   ~modules.layer_scale.LayerScale
+
+Modules — Position encoding & patching
+--------------------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~modules.position_encoding.PositionEmbeddingND
+   ~modules.patchify.Patchify
+   ~modules.patchify.Unpatchify
+   ~modules.mlp.MLP
+
+Modules — Gating & conditioning
+-------------------------------
+
+Drop-path, FiLM-style conditioning, and the QKV conditioning mixer that
+feeds Hyena's per-sample kernels.
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~modules.drop_path.DropPath
+   ~modules.condition_mixer.QKVConditionMixer
+   ~modules.film.KernelFiLMGenerator
+   ~modules.film.RegisterPooling
+   ~modules.film.RegisterCompressConcat
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~modules.drop_path.drop_path
+
+Modules — Residual blocks
+-------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~modules.residual_block.ResidualBlock
+   ~modules.residual_block.AdaLNZeroResidualBlock
+   ~modules.vit5_residual_block.ViT5ResidualBlock
+
+Modules — Schedulers
+--------------------
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~modules.schedulers.ResumableSequentialLR
+
+Networks
+--------
+
+End-to-end classification / general-purpose networks composing the
+modules above.
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~networks.classification_resnet.ClassificationResNet
+   ~networks.general_purpose_resnet.ResidualNetwork
+   ~networks.vit5_classification.ViT5ClassificationNet
+
+Parallel
+--------
+
+Context-parallel communication primitives (zigzag splits / all-to-all).
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~parallel.utils.init_parallel_state
+   ~parallel.utils.zigzag_split_across_group_ranks
+   ~parallel.utils.zigzag_gather_from_group_ranks
+   ~parallel.utils.setup_rank0_logging
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~parallel.a2a_comms.AllToAllSingleFunction
+
+Utilities
+---------
+
+QK normalization, rotary position embeddings, and weight-init helpers
+shared across mixers.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~utils.qk_norm.apply_qk_norm
+   ~utils.quack_utils.cuda_supports_quack
+   ~utils.rope.apply_rope_1d_bhl
+   ~utils.rope.apply_rope_2d_bhl
+   ~utils.rope.apply_rope_3d_bhl
+   ~utils.rope.apply_rope_1d_blh
+   ~utils.rope.apply_rope_2d_blh
+   ~utils.rope.apply_rope_3d_blh
+   ~utils.rope.construct_rope_1d_cache_bhl
+   ~utils.rope.construct_rope_2d_cache_bhl
+   ~utils.rope.construct_rope_3d_cache_bhl
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~utils.qk_norm.L2Norm
+
+Metrics
+-------
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~metrics.cleanfid.compute_folder_fid
