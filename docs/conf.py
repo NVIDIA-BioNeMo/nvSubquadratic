@@ -4,6 +4,8 @@
 # Configuration file for the Sphinx documentation builder.
 # See https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+"""Sphinx configuration for the nvsubquadratic API reference."""
+
 import os
 import re as _re
 import sys

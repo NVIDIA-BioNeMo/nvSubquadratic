@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""JiT-B baseline config for class-conditional ImageNet 64×64 flow-matching diffusion."""
+
 import os
 
 import torch
