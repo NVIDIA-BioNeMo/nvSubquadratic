@@ -146,6 +146,9 @@ html_theme_options = {
     "pygments_light_style": "tango",
     "pygments_dark_style": "monokai",
     "footer_links": {},
+    "navigation_depth": 2,
+    "show_nav_level": 1,
+    "show_toc_level": 2,
 }
 
 
