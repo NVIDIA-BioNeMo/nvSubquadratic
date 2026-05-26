@@ -162,7 +162,7 @@ README per subdirectory.  No Sphinx API reference entry.
 | `vit5_imagenet/benchmark_imagenet_throughput.py` | \[x\]  | Moved from `scripts/`; inference-only ImageNet-1k throughput across four ViT-5 architectures               |
 | `vit5_imagenet/verify_dali_fused.py`             | \[x\]  | DALI fused output sanity checks + visual comparison                                                        |
 | `vit5_imagenet/validate_checkpoint.py`           | \[x\]  | Loads a W&B "best" checkpoint and runs val/test on ImageNet-1k                                             |
-| `vit5_imagenet/scripts/bench_*.sh`               | \[x\]  | One-line SLURM-driver header explaining what each invokes                                                  |
+| `vit5_imagenet/bench_*.sh`                       | \[x\]  | One-line SLURM-driver header explaining what each invokes (co-located with the `.py` benchmarks)           |
 | `well/README.md`                                 | \[x\]  | Per-script overview for the WELL benchmark suite                                                           |
 | `well/bench_ab_comparison.py`                    | \[x\]  | A/B baseline-vs-optimised dataloader+training; already had a full docstring                                |
 | `well/bench_dataloader.py`                       | \[x\]  | Isolated WELL dataloader throughput                                                                        |

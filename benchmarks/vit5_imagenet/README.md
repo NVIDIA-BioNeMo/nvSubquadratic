@@ -82,8 +82,9 @@ PYTHONPATH=. conda run -n nv-subq python benchmarks/vit5_imagenet/benchmark_imag
 
 ## SLURM submit scripts
 
-`scripts/` holds the SLURM drivers that invoke the `bench_vit5_*.py`
-scripts with the standard ViT-5-Small configuration.
+`bench_compile.sh`, `bench_optimized.sh`, and `bench_profile.sh` are
+SLURM drivers that invoke the matching `bench_vit5_*.py` scripts with
+the standard ViT-5-Small configuration.
 
 ## Historical profiling
 
