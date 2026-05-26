@@ -16,10 +16,11 @@
 ## Scope
 
 `nvsubquadratic/` and `experiments/` inline docstrings, plus the
-`docs/` narrative pages (Getting Started, Architecture, Examples,
-Benchmarks) that wrap them.  Out of scope on this branch: rewriting the
-top-level README or `examples/overview_tracker.md` themselves — the
-docs narrative pages link to those sources rather than duplicating them.
+`docs/` narrative pages (Getting Started, Architecture, Package
+Overview, Examples, Benchmarks, Reports) that wrap them.  Out of
+scope on this branch: rewriting the top-level README or
+`examples/overview_tracker.md` themselves — the docs narrative pages
+link to those sources rather than duplicating them.
 `benchmarks/`, `scripts/visualization/`, and `reports/` are in scope at
 a lighter bar — module-level docstrings (4-question format: what /
 hardware / how to invoke / where the output goes) and one README per
@@ -95,11 +96,14 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/parallel/` — Distributed primitives
 
-| File                | Status | Notes                                                                                                                                |
-| ------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `a2a_comms.py`      | \[x\]  | AllToAllSingle — CP sequence↔channel redistribution, zigzag splitting, autograd backward                                             |
-| `utils.py`          | \[x\]  | CP utilities — `init_parallel_state`, zigzag split/gather across ranks, rank-0 logging routing                                       |
-| `test_a2a_comms.py` | \[x\]  | Moved to `tests/parallel/test_a2a_comms.py` so tests live under the canonical `tests/` tree; see [tests/README.md](tests/README.md). |
+| File           | Status | Notes                                                                                          |
+| -------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| `a2a_comms.py` | \[x\]  | AllToAllSingle — CP sequence↔channel redistribution, zigzag splitting, autograd backward       |
+| `utils.py`     | \[x\]  | CP utilities — `init_parallel_state`, zigzag split/gather across ranks, rank-0 logging routing |
+
+(Unit tests for the zigzag helpers now live at
+[tests/parallel/test_a2a_comms.py](tests/parallel/test_a2a_comms.py);
+the `tests/` tree is out of scope for this tracker.)
 
 ### `nvsubquadratic/` — Top-level
 
