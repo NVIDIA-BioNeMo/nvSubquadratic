@@ -72,6 +72,7 @@ autodoc_mock_imports = [
     "megatron",
     "megatron.core",
     "omegaconf",
+    "cleanfid",
 ]
 
 add_module_names = False
