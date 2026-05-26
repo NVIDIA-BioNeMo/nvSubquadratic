@@ -56,11 +56,11 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `vit5_residual_block.py`           | \[x\]  | ViT5 residual block — LayerScale, register-token conditioning, no condition-mixer branch    |
 | `patchify.py`                      | \[x\]  | Patch embedding — strided conv, 1D/2D/3D, channels-last layout                              |
 | `position_encoding.py`             | \[x\]  | Axis-factorised learned PE — ND broadcast-expand, float32 output caveat                     |
-| `masks_nd.py`                      | \[ \]  | ND masking utils                                                                            |
-| `mlp.py`                           | \[ \]  | MLP block                                                                                   |
+| `masks_nd.py`                      | \[x\]  | Exponential + Gaussian receptive-field windows; mask convention 1=included, 0=excluded      |
+| `mlp.py`                           | \[x\]  | Two-layer MLP — GELU/SwiGLU/GLU variants, expansion-ratio math, QuACK backend noted         |
 | `film.py`                          | \[x\]  | FiLM conditioning — γ(c)⊙x + β(c), SIREN-based kernel generator                             |
-| `grn.py`                           | \[ \]  | GRN normalisation                                                                           |
-| `layer_scale.py`                   | \[ \]  | LayerScale                                                                                  |
+| `grn.py`                           | \[x\]  | GRN — per-channel L2 norm, inter-channel competition, ConvNeXt V2 reference                 |
+| `layer_scale.py`                   | \[x\]  | LayerScale — per-channel λ⊙F(x), init_values guidance, \_no_weight_decay tag                |
 | `rms_norm.py`                      | \[ \]  | RMS normalisation                                                                           |
 | `rms_norm_channel_first.py`        | \[ \]  | Channel-first RMS norm                                                                      |
 | `drop_path.py`                     | \[ \]  | Stochastic depth                                                                            |
