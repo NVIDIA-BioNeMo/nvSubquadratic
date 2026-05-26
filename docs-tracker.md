@@ -76,46 +76,46 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | ------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `general_purpose_resnet.py`           | \[x\]  | ResidualNetwork — LazyConfig blocks, conditioning, readout crop, gradient checkpointing                                             |
 | `classification_resnet.py`            | \[x\]  | ClassificationResNet — GAP readout, resolution-agnostic, inherits ResidualNetwork                                                   |
-| `vit5_classification.py`              | \[ \]  | ViT5 classification head                                                                                                            |
+| `vit5_classification.py`              | \[x\]  | ViT5 classification — token layout, hybrid blocks, CLS/GAP/register_concat readouts, FLOP count                                     |
 | `vit5_hierarchical_classification.py` | \[ \]  | Pending (feat/patch-merging PR): Swin-style 4-stage hierarchical ViT-5 classifier with GAP readout and optional register-row layout |
 | `huggingface_diffusers.py`            | \[ \]  | HF diffusers integration                                                                                                            |
 | `jit.py` / `jit_utils.py`             | \[ \]  | TorchScript utilities                                                                                                               |
 
 ### `nvsubquadratic/parallel/` — Distributed primitives
 
-| File           | Status | Notes            |
-| -------------- | ------ | ---------------- |
-| `a2a_comms.py` | \[ \]  | All-to-all comms |
+| File           | Status | Notes                                                                                    |
+| -------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `a2a_comms.py` | \[x\]  | AllToAllSingle — CP sequence↔channel redistribution, zigzag splitting, autograd backward |
 
 ### `nvsubquadratic/` — Top-level
 
-| File             | Status | Notes              |
-| ---------------- | ------ | ------------------ |
-| `lazy_config.py` | \[ \]  | Lazy config system |
-| `metrics/`       | \[ \]  | Metric utilities   |
-| `utils/`         | \[ \]  | General utilities  |
-| `testing/`       | \[ \]  | Testing utilities  |
+| File             | Status | Notes                                                                                 |
+| ---------------- | ------ | ------------------------------------------------------------------------------------- |
+| `lazy_config.py` | \[x\]  | LazyConfig + instantiate — deferred instantiation, nested configs, arithmetic strings |
+| `metrics/`       | \[x\]  | cleanfid.py — CleanFID wrapper, FID formula, usage context                            |
+| `utils/`         | \[x\]  | init.py (weight init factories), qk_norm.py (QK-norm, L2Norm module), quack_utils.py  |
+| `testing/`       | \[x\]  | utils.py — compute_relative_error, TTrace reference, already had good docstrings      |
 
 ### `experiments/` — Training infrastructure
 
-| File                                           | Status | Notes          |
-| ---------------------------------------------- | ------ | -------------- |
-| `run.py`                                       | \[ \]  | Entry point    |
-| `trainer.py`                                   | \[ \]  | Training loop  |
-| `default_cfg.py`                               | \[ \]  | Default config |
-| `lightning_wrappers/base_lightning_wrapper.py` | \[ \]  | Base wrapper   |
-| `lightning_wrappers/classification_wrapper.py` | \[ \]  |                |
-| `lightning_wrappers/regression_wrapper.py`     | \[ \]  |                |
-| `lightning_wrappers/diffusion_wrapper.py`      | \[ \]  |                |
-| `lightning_wrappers/autoregressive_wrapper.py` | \[ \]  |                |
-| `lightning_wrappers/arc_wrapper.py`            | \[ \]  |                |
-| `lightning_wrappers/well_lightning_wrapper.py` | \[ \]  |                |
-| `datamodules/arc.py`                           | \[ \]  |                |
-| `datamodules/mnist.py`                         | \[ \]  |                |
-| `datamodules/tinyimagenet.py`                  | \[ \]  |                |
-| `datamodules/ucf101.py`                        | \[ \]  |                |
-| `datamodules/dali_imagenet_fused.py`           | \[ \]  |                |
-| `datamodules/spatial_recall_dataset.py`        | \[ \]  |                |
-| `utils/cli.py`                                 | \[ \]  |                |
-| `utils/checkpointing.py`                       | \[ \]  |                |
-| `callbacks/`                                   | \[ \]  |                |
+| File                                           | Status | Notes                                                                            |
+| ---------------------------------------------- | ------ | -------------------------------------------------------------------------------- |
+| `run.py`                                       | \[x\]  | Entry point — CLI parse, W&B init, network + wrapper instantiation, Trainer.fit  |
+| `trainer.py`                                   | \[x\]  | construct_trainer — checkpoint callbacks, precision, wall-time, W&B upload       |
+| `default_cfg.py`                               | \[x\]  | Typed dataclass configs — Train/Trainer/Scheduler/Wandb/Optimizer/AutoResume     |
+| `lightning_wrappers/base_lightning_wrapper.py` | \[x\]  | LightningWrapperBase — param groups, scheduler, checkpoint resume, profiling     |
+| `lightning_wrappers/classification_wrapper.py` | \[x\]  | ClassificationWrapper — cross_entropy / soft_target_ce / bce loss modes          |
+| `lightning_wrappers/regression_wrapper.py`     | \[x\]  | RegressionWrapper — MAE/MSE loss, base for WELLRegressionWrapper                 |
+| `lightning_wrappers/diffusion_wrapper.py`      | \[x\]  | DiffusionWrapper — JiT continuous-time diffusion, ODE sampler                    |
+| `lightning_wrappers/autoregressive_wrapper.py` | \[x\]  | Already had good module + class docstrings; left as-is                           |
+| `lightning_wrappers/arc_wrapper.py`            | \[ \]  | (untracked new file — out of scope until merged)                                 |
+| `lightning_wrappers/well_lightning_wrapper.py` | \[x\]  | Already had good class docstring; left as-is                                     |
+| `datamodules/arc.py`                           | \[ \]  | (untracked new file — out of scope until merged)                                 |
+| `datamodules/mnist.py`                         | \[x\]  | MNIST/EMNIST datamodule — channels-last reshape, train/val split                 |
+| `datamodules/tinyimagenet.py`                  | \[x\]  | TinyImageNet HF-backed datamodule — RandAugment, Mixup/CutMix, token access      |
+| `datamodules/ucf101.py`                        | \[ \]  | Video classification datamodule                                                  |
+| `datamodules/dali_imagenet_fused.py`           | \[ \]  | DALI ImageNet pipeline                                                           |
+| `datamodules/spatial_recall_dataset.py`        | \[x\]  | Already had comprehensive module + class docstrings; left as-is                  |
+| `utils/cli.py`                                 | \[x\]  | CLI helpers — load_config_from_file, apply_config_overrides, run name generation |
+| `utils/checkpointing.py`                       | \[x\]  | Already had good per-function docstrings; left as-is                             |
+| `callbacks/`                                   | \[ \]  | Walltime checkpointer, W&B cache cleanup                                         |
