@@ -66,16 +66,16 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `drop_path.py`                     | \[x\]  | Stochastic depth — functional + Module, inverted-dropout scaling, causal vs training        |
 | `causal_conv1d.py`                 | \[x\]  | CausalConv1D — left-only pad formula, symmetric mode, Mamba usage context                   |
 | `subq_ops_causal_conv1d.py`        | \[x\]  | New (1D PR): `nn.Conv1d`-compatible depthwise wrapper around `subq_ops.causal_conv1d`       |
-| `schedulers.py`                    | \[ \]  | LR schedulers                                                                               |
-| `distributed_depthwise_conv_nd.py` | \[ \]  | Distributed depthwise conv                                                                  |
+| `schedulers.py`                    | \[x\]  | ResumableSequentialLR — PyTorch ≤2.10 bug fix, load_state_dict LR propagation               |
+| `distributed_depthwise_conv_nd.py` | \[x\]  | CP-aware 1D/2D/3D depthwise conv — group weight sharing, channel slicing, causal padding    |
 | `patch_merging.py`                 | \[ \]  | Pending (feat/patch-merging PR): Swin-style 2×2 patch merging with register-row passthrough |
 
 ### `nvsubquadratic/networks/` — Full architectures
 
 | File                                  | Status | Notes                                                                                                                               |
 | ------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `general_purpose_resnet.py`           | \[ \]  |                                                                                                                                     |
-| `classification_resnet.py`            | \[ \]  |                                                                                                                                     |
+| `general_purpose_resnet.py`           | \[x\]  | ResidualNetwork — LazyConfig blocks, conditioning, readout crop, gradient checkpointing                                             |
+| `classification_resnet.py`            | \[x\]  | ClassificationResNet — GAP readout, resolution-agnostic, inherits ResidualNetwork                                                   |
 | `vit5_classification.py`              | \[ \]  | ViT5 classification head                                                                                                            |
 | `vit5_hierarchical_classification.py` | \[ \]  | Pending (feat/patch-merging PR): Swin-style 4-stage hierarchical ViT-5 classifier with GAP readout and optional register-row layout |
 | `huggingface_diffusers.py`            | \[ \]  | HF diffusers integration                                                                                                            |
