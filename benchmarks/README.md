@@ -113,9 +113,9 @@ ViT-5-Small per-sample FLOPs (12 blocks, dim 384, 6 heads, 201 tokens):
 Submit via SLURM (from the repo root):
 
 ```bash
-sbatch benchmarks/vit5_imagenet/scripts/bench_optimized.sh
-sbatch benchmarks/vit5_imagenet/scripts/bench_compile.sh
-sbatch benchmarks/vit5_imagenet/scripts/bench_profile.sh
+sbatch benchmarks/vit5_imagenet/bench_optimized.sh
+sbatch benchmarks/vit5_imagenet/bench_compile.sh
+sbatch benchmarks/vit5_imagenet/bench_profile.sh
 ```
 
 Logs go to `logs/`.

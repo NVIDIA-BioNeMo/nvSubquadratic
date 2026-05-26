@@ -1,4 +1,19 @@
-"""Profile + test optimizations for ViT-5-Small."""
+"""Probe ``torch.compile`` configurations on top of ViT-5-Small.
+
+Sweeps eager / ``torch.compile`` (default) / ``max-autotune`` plus
+selective per-component compilation, all on the baseline ViT-5-Small
+chassis.  Identifies which compile recipe produces the best speedup
+for this model before any dataloader / dtype optimisations are layered
+on.
+
+Targets: H100 SXM 80GB, BF16, batch size 256.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/vit5_imagenet/bench_vit5_compile.py
+
+Output: stdout summary table.
+"""
 
 import sys
 import time

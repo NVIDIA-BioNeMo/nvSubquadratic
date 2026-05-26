@@ -1,7 +1,15 @@
-"""Parse bench_sequential.sh output and summarize results.
+"""Parse the output of the WELL benchmark sweep driver.
+
+Takes the stdout log of ``submit_bench_ivi.sh`` (or a manual sweep
+that drives ``bench_training_step.py`` and friends) and emits a
+summary table — runs, configs, iter/s, and any failures.
+
+Targets: any machine (pure CPU log parsing; no GPU required).
 
 Usage:
-    python scripts/parse_bench.py logs/bench-sweep_JOBID.out
+    python benchmarks/well/parse_bench.py logs/bench-sweep_JOBID.out
+
+Output: stdout summary table.
 """
 
 import re

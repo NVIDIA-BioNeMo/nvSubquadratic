@@ -1,4 +1,17 @@
-"""Benchmark ViT-5-Small forward+backward throughput."""
+"""Benchmark ViT-5-Small forward+backward throughput (baseline pipeline).
+
+Measures pure-model throughput (samples/sec, ms/step) of unoptimised
+ViT-5-Small — eager mode, torchvision dataloader, no compile.  Serves
+as the reference baseline for every later optimisation in this folder.
+
+Targets: H100 SXM 80GB, BF16, batch size 256.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/vit5_imagenet/bench_vit5_baseline.py
+
+Output: stdout summary table.
+"""
 
 import sys
 import time

@@ -41,13 +41,25 @@ Where to go next
   Hyena" forward pass.
 - **Architecture** — the three-layer nvSubquadratic / subquadratic-ops /
   megatron-core story and the BHL/BLH naming conventions.
+- **Package Overview** — bottom-up tour of what's inside
+  ``nvsubquadratic/`` (ops / modules / networks / parallel / utils).
 - **Examples** — per-dataset training recipes under ``examples/``.
 - **Benchmarks** — ViT-5-Small throughput tables and FLOP scaling.
+- **Reports** — long-form technical reports backed by reproducible
+  scripts and figures.
 - **Ops Overview** — math primer and decision tree for the FFT
   convolution primitives.
 - **API Reference** — auto-generated reference for the curated public
   surface organised by package (ops, modules, networks, parallel, core,
   experiments).
+
+Contributor docs
+----------------
+
+- `CONVENTIONS.md <https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private/blob/main/CONVENTIONS.md>`_ —
+  Google-style docstring guide and PR checklist (lives at the repo root).
+- `docs-tracker.md <https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private/blob/main/docs-tracker.md>`_ —
+  documentation coverage status per file.
 
 Related projects
 ----------------
@@ -72,7 +84,9 @@ CUDA kernels live in a separate library:
 
    Getting Started <getting_started>
    Architecture <architecture>
+   Repository Overview <repository_overview>
    Examples <examples/index>
    Benchmarks <benchmarks>
+   Reports <reports>
    Ops Overview <ops/README>
    API Reference <api_reference/index>

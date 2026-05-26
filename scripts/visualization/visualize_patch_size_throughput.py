@@ -8,7 +8,7 @@ log-spaced sequence-length ticks, circle/square markers).
 
 Usage::
 
-    python scripts/visualize_patch_size_throughput.py \
+    python scripts/visualization/visualize_patch_size_throughput.py \
         --out throughput_benchmark/results/patch_size_step_time.png
 """
 
