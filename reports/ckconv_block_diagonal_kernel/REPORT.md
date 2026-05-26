@@ -482,9 +482,9 @@ config (`_base_config.py`) is **untouched**.
 ### 7.1 Submitting
 
 ```bash
-sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha_blockdiag.py
-sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha_blockdiag.py
-sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_hyena_blockdiag.py
+sbatch scripts/slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha_blockdiag.py
+sbatch scripts/slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha_blockdiag.py
+sbatch scripts/slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_hyena_blockdiag.py
 ```
 
 ### 7.2 Apply the scaling rule from CLI
@@ -493,7 +493,7 @@ When changing `patch_size`, override the schedule on the same line. Example
 for `m=2` (`patch_size: 16 → 8`, hence `ω₀_max ← 24`, `ω₀_min ← 2`):
 
 ```bash
-sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha_blockdiag.py \
+sbatch scripts/slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha_blockdiag.py \
   net.patch_size=8 \
   +net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.kernel_cfg.omega_0_max=24.0 \
   +net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.kernel_cfg.omega_0_min=2.0

@@ -71,7 +71,7 @@ In the classification setup, FiLM conditioning comes from register tokens pooled
 
 ```bash
 # Snellius (SLURM)
-sbatch slurm/diffusion/ccnn_jit_128_snellius.sh
+sbatch scripts/slurm/diffusion/ccnn_jit_128_snellius.sh
 
 # Local / interactive (single node, 4 GPUs)
 PYTHONPATH=. python experiments/run.py \
@@ -87,6 +87,6 @@ PYTHONPATH=. python experiments/run.py \
 
 ## SLURM scripts
 
-- `slurm/diffusion/ccnn_jit_128_snellius.sh` — template for 128px on Snellius H100 nodes. Copy and edit `CONFIG_FILE` / `EXPERIMENT_NAME` for other configs.
-- `slurm/diffusion/ccnn_jit_diff_baseline_snellius.sh` — existing 64px CCNN baseline.
-- `slurm/diffusion/jit_diff_baseline_snellius.sh` — existing 64px JiT transformer baseline.
+- `scripts/slurm/diffusion/ccnn_jit_128_snellius.sh` — template for 128px on Snellius H100 nodes. Copy and edit `CONFIG_FILE` / `EXPERIMENT_NAME` for other configs.
+- `scripts/slurm/diffusion/ccnn_jit_diff_baseline_snellius.sh` — existing 64px CCNN baseline.
+- `scripts/slurm/diffusion/jit_diff_baseline_snellius.sh` — existing 64px JiT transformer baseline.

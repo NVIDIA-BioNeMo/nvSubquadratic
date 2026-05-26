@@ -66,14 +66,14 @@ docker build \
 
 ### Enroot (SLURM clusters)
 
-For SLURM deployments that use enroot/pyxis, [`slurm/enroot/build_sqsh.sh`](slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
+For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.sh`](scripts/slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
 
 ```bash
 # H100 (x86-64, default)
-slurm/enroot/build_sqsh.sh
+scripts/slurm/enroot/build_sqsh.sh
 
 # GB200 (ARM64) — uses qemu emulation on an x86 build host
-PLATFORM=arm64 slurm/enroot/build_sqsh.sh
+PLATFORM=arm64 scripts/slurm/enroot/build_sqsh.sh
 ```
 
 ### Apptainer
