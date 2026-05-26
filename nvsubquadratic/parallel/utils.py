@@ -1,5 +1,24 @@
 # TODO: Add license header here
 
+"""Distributed-training utility helpers for context-parallel (CP) workloads.
+
+Provides three categories of utilities:
+
+1. **Process-group initialisation** — :func:`init_parallel_state` wires up NCCL
+   and Megatron's parallel state (tensor / pipeline / context parallelism).
+
+2. **Zigzag sequence splitting** — :func:`zigzag_split_across_group_ranks` and
+   :func:`zigzag_gather_from_group_ranks` implement the zigzag collective that
+   distributes a sequence of length ``L`` evenly across ``CP`` ranks while
+   keeping each rank's two chunks at opposite ends of the sequence.  This
+   balances causal-attention load (each rank sees one chunk of "early" tokens
+   and one chunk of "late" tokens).
+
+3. **Rank-0 logging** — :func:`setup_rank0_logging` routes console output only
+   from rank 0 while writing all ranks' logs to per-rank files, preventing
+   duplicate console noise in multi-GPU runs.
+"""
+
 import logging
 import os
 from datetime import timedelta

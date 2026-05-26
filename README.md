@@ -155,7 +155,17 @@ source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
 
 ### Documentation
 
-The API reference is built with Sphinx. Sources live under [`docs/`](docs/) and the rendered site is published to the `gh-pages` branch on every push to `main` via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
+All public classes and functions carry **Google-style docstrings** with math
+context, shape annotations, and paper references.  See [`CONVENTIONS.md`](CONVENTIONS.md)
+for the style guide and PR checklist.
+
+#### Viewing the docs
+
+**Sphinx HTML (full API reference)**
+
+The API reference is built with Sphinx. Sources live under [`docs/`](docs/) and
+the rendered site is published to the `gh-pages` branch on every push to `main`
+via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
 
 Build and preview locally:
 
@@ -166,7 +176,31 @@ make -C docs html SPHINXBUILD="python -m sphinx"
 python -m http.server 8000 --directory docs/_build/html
 ```
 
-Open <http://localhost:8000> to browse. The autosummary stubs in `docs/generated/` are regenerated on every build (gitignored).
+Open <http://localhost:8000> to browse.  The autosummary stubs in
+`docs/generated/` are regenerated on every build (gitignored).
+
+**Inline — IDE hover / `help()`**
+
+Because all documentation lives directly in the docstrings, you can also:
+
+- Hover over any symbol in VS Code / PyCharm to see the rendered docstring.
+- Run `help(SomeClass)` in a Python REPL for an immediate plain-text view.
+- Use `python -m pydoc nvsubquadratic.modules.hyena_nd` for a terminal-friendly
+  per-module dump.
+
+**`pdoc` (quick zero-config HTML)**
+
+For a fast, dependency-light alternative to Sphinx that renders the docstrings
+as-is:
+
+```bash
+pip install pdoc
+pdoc nvsubquadratic --output-dir /tmp/pdoc-out
+python -m http.server 8000 --directory /tmp/pdoc-out
+```
+
+This does not require a `docs/conf.py` and picks up the Google-style sections
+automatically.
 
 ### CI
 

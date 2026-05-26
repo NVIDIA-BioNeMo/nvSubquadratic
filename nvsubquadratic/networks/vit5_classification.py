@@ -131,7 +131,48 @@ class ViT5ClassificationNet(nn.Module):
         max_drop_path_rate: float = 0.0,
         drop_path_schedule: Literal["constant", "linear"] = "constant",
     ):
-        """Initialize ViT-5 classification network."""
+        """Construct patch embedding, positional embeddings, token buffers, and transformer blocks.
+
+        Validates ``readout`` / ``layer_pattern`` constraints, computes the
+        zero-padding size so ``T % grid_w == 0``, builds the per-layer
+        ``_block_needs_padding`` flag list, instantiates each block via
+        :func:`~nvsubquadratic.lazy_config.instantiate` with per-layer
+        ``drop_path_rate`` and ``register_start_idx`` injected, and initialises
+        all parameters with truncated-normal (std 0.02).
+
+        Args:
+            in_channels: Input image channels (3 for RGB).
+            num_classes: Number of output logits / classes.
+            hidden_dim: Transformer hidden width ``D``.
+            num_blocks: Number of transformer blocks ``N``.
+            patch_size: Non-overlapping patch stride ``P``; patches are ``P×P``.
+            image_size: Square input resolution ``H = W``.  Produces
+                ``(H/P)²`` patch tokens.
+            num_registers: Number of learnable register tokens ``R`` appended
+                after the CLS token.
+            norm_cfg: LazyConfig for the output normalisation layer.
+            readout: Token aggregation strategy — ``"cls"``, ``"gap"``, or
+                ``"register_concat"`` (see class docstring).
+            block_cfg: Single LazyConfig replicated ``N`` times (homogeneous
+                mode).  Mutually exclusive with ``layer_pattern``.
+            dropout_rate: Dropout probability applied between the norm and the
+                classification head.  ``0.0`` disables dropout.
+            neck_compression_ratio: Compression factor for ``register_concat``
+                readout; ``neck_dim = hidden_dim // neck_compression_ratio``.
+                Required when ``readout="register_concat"``.
+            reg_init: Register-token initialisation — ``"trunc_normal"``
+                (std 0.02, default) or ``"zeros"``.
+            layer_pattern: Per-layer type string of length ``num_blocks``
+                (hybrid mode).  Each character maps to a key in ``layer_types``.
+            layer_types: Dict mapping pattern characters to block LazyConfigs.
+                Required when ``layer_pattern`` is set.
+            padding_types: Set of pattern characters whose blocks receive the
+                full padded sequence.  Default ``{"H"}`` (Hyena blocks).
+            max_drop_path_rate: Peak stochastic depth probability distributed
+                across blocks according to ``drop_path_schedule``.
+            drop_path_schedule: ``"constant"`` (uniform) or ``"linear"``
+                (ramp 0 → ``max_drop_path_rate`` with depth).
+        """
         super().__init__()
         self._reg_init = reg_init
         self.hidden_dim = hidden_dim

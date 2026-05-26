@@ -1,7 +1,47 @@
 # TODO: Add license header here
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Lazy configuration class for lazy object instantiation."""
+"""Lazy configuration system for deferred object instantiation.
+
+This module provides a lightweight alternative to Hydra/detectron2-style lazy
+configs, designed to let the entire network architecture be specified as a
+plain Python or OmegaConf config dict that can be serialised, diffed, and
+instantiated on demand — without importing heavy framework dependencies.
+
+**Core concept**
+
+A :class:`LazyConfig` holds a reference to a target class or callable together
+with its keyword arguments.  Calling the object produces an
+:class:`~omegaconf.DictConfig` with a ``__target__`` key:
+
+.. code-block:: python
+
+    cfg = LazyConfig(torch.nn.LayerNorm)(normalized_shape=768, eps=1e-6)
+    # cfg == DictConfig({"__target__": "torch.nn.LayerNorm",
+    #                     "normalized_shape": 768, "eps": 1e-6})
+
+    norm = instantiate(cfg)      # → LayerNorm(768, eps=1e-6)
+
+:func:`instantiate` resolves ``__target__`` via :func:`importlib.import_module`,
+merges any ``**kwargs`` overrides (useful for injecting per-block arguments like
+``drop_path_rate``), recursively instantiates nested configs, and evaluates
+simple arithmetic strings (e.g. ``"160 * 3"`` → ``480``) found in values.
+
+**Placeholder values**
+
+:data:`PLACEHOLDER` is a singleton sentinel that marks fields whose values are
+not yet known at config-construction time (e.g. a hidden dimension resolved
+later by OmegaConf interpolation).  :func:`_contains_placeholder` prevents
+premature instantiation of configs that still hold placeholders.
+
+**Config I/O**
+
+:func:`save_config` / :func:`load_config` serialise configs to YAML via
+OmegaConf.  :func:`to_config` reverse-engineers a ``__target__`` dict from an
+already-instantiated object (best-effort; works for simple cases).
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 import ast
 import copy
@@ -38,32 +78,70 @@ PLACEHOLDER = _Placeholder()
 
 
 class LazyConfig:
-    """A lazy configuration class that stores a class/callable reference and its arguments to be instantiated later with an instantiate function.
+    """Deferred-instantiation config builder.
 
-    Example:
-        >>> config = LazyConfig(torch.nn.Dropout)(p=0.5, inplace=True)
-        >>> module = instantiate(config)
-        >>> isinstance(module, torch.nn.Dropout)
-        True
+    A :class:`LazyConfig` stores a reference to a target class or callable.
+    Calling the instance with keyword arguments produces an OmegaConf
+    :class:`~omegaconf.DictConfig` that encodes the target and its arguments
+    under the ``__target__`` key — the standard format consumed by
+    :func:`instantiate`.
+
+    **Two-step usage**::
+
+        # Step 1: declare the config (no import of the target needed at this point)
+        cfg = LazyConfig(torch.nn.Dropout)(p=0.5, inplace=True)
+
+        # Step 2: create the object when ready
+        dropout = instantiate(cfg)
+        isinstance(dropout, torch.nn.Dropout)  # True
+
+    **Nesting**
+
+    LazyConfigs can be nested: passing a ``LazyConfig`` result as a keyword
+    argument to another ``LazyConfig`` call is supported.  :func:`instantiate`
+    resolves nested configs recursively when ``recursive_instantiate=True``.
+
+    **String targets**
+
+    The ``target`` may be a dotted-path string (e.g.
+    ``"torch.nn.LayerNorm"``), a class, or any callable that has
+    ``__module__`` and ``__name__`` attributes.
+
+    Args:
+        target: The class, callable, or fully-qualified dotted string that
+            will be used as ``__target__`` in the resulting config dict.
+
+    Example::
+
+        cfg = LazyConfig(torch.nn.Dropout)(p=0.5, inplace=True)
+        module = instantiate(cfg)
+        isinstance(module, torch.nn.Dropout)  # True
     """
 
     def __init__(self, target: Union[Type, Callable, str]):
-        """Initialize a LazyConfig object with a target class or function.
+        """Store the target class or callable reference.
 
         Args:
-            target: A class, callable, or string path to a class/function
+            target: A class, callable, or fully-qualified dotted-path string.
         """
         self.target = target
 
     def __call__(self, **kwargs) -> Union[Dict[str, Any], DictConfig]:
-        """Create a configuration dictionary with __target__ and arguments.
+        """Produce a config dict containing ``__target__`` and all keyword args.
+
+        Converts ``target`` to a dotted string (``module.ClassName``) and
+        creates an OmegaConf :class:`~omegaconf.DictConfig` so the result
+        supports attribute access and OmegaConf interpolation.
 
         Args:
-            **kwargs: Arguments to pass to the target when instantiated
+            **kwargs: Arguments to forward to the target at instantiation time.
+                Values may themselves be :class:`LazyConfig` results (nested
+                configs), plain scalars, or any OmegaConf-compatible type.
 
         Returns:
-            An OmegaConf DictConfig with __target__ and all kwargs,
-            supporting dot notation access
+            OmegaConf DictConfig with ``__target__`` set to the resolved
+            dotted-path string and one key per kwarg.  Falls back to a plain
+            ``dict`` if OmegaConf validation fails (a warning is printed).
         """
         # Convert target to a string if it's a class or function
         if isinstance(self.target, str):
@@ -226,17 +304,50 @@ def instantiate(
     recursive_instantiate: bool = False,
     **kwargs,
 ) -> Any:
-    """Instantiate an object from a configuration dictionary.
+    """Instantiate an object from a :class:`LazyConfig` or ``__target__`` dict.
+
+    **Resolution pipeline**
+
+    1. If ``config`` is a :class:`LazyConfig`, call it with any ``**kwargs``
+       to produce a :class:`~omegaconf.DictConfig`.
+    2. If the config has no ``__target__`` key, recursively instantiate each
+       value and return a :class:`~omegaconf.DictConfig` (useful for nested
+       non-lazy sub-configs).
+    3. Resolve ``__target__`` to the actual class/callable via
+       :func:`importlib.import_module`.
+    4. Deep-copy, resolve OmegaConf interpolations, merge ``**kwargs``
+       overrides, recursively instantiate nested configs, and evaluate
+       arithmetic strings (e.g. ``"128 * 4"`` → ``512``).
+    5. Call ``target(**processed_args)`` and return the result.
+
+    **Placeholder handling**
+
+    Nested configs that still contain :data:`PLACEHOLDER` values are left
+    as config dicts rather than instantiated.
 
     Args:
-        config: A dictionary, DictConfig, or LazyConfig object with target and arguments
-        recursive_instantiate: Whether to instantiate the config recursively.
-            If True, the config will be instantiated recursively.
-            If False, the config will be returned as is.
-        **kwargs: Additional kwargs to override those in config
+        config: A :class:`LazyConfig` instance, an OmegaConf
+            :class:`~omegaconf.DictConfig`, or a plain ``dict`` containing at
+            least a ``"__target__"`` key.
+        recursive_instantiate: If ``True``, recursively instantiate all nested
+            configs found in argument values.  If ``False`` (default), nested
+            configs are left as :class:`~omegaconf.DictConfig` objects.
+        **kwargs: Extra keyword arguments merged into (and overriding) the
+            config's stored arguments before instantiation.  Commonly used to
+            inject per-block arguments such as ``drop_path_rate``.
 
     Returns:
-        The instantiated object
+        The instantiated object (result of calling the resolved ``__target__``
+        with the processed arguments).
+
+    Raises:
+        TypeError: If ``target(**processed_args)`` fails; re-raised with the
+            target's signature in the error message for easier debugging.
+
+    Example::
+
+        cfg = LazyConfig(torch.nn.LayerNorm)(normalized_shape=768)
+        norm = instantiate(cfg, eps=1e-5)   # override default eps
     """
     _cfg = copy.deepcopy(config)
     # If it's a LazyConfig object, convert it to a config dict first

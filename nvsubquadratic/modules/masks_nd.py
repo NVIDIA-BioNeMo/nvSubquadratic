@@ -1,9 +1,60 @@
 # TODO: Add license header here
 
 
-"""Modulation masks for N-dimensional data.
+r"""Learnable spatial modulation masks for N-dimensional convolution kernels.
 
-These masks are used to modulate the input features of a convolutional kernel.
+Background
+----------
+Long-range convolutional operators such as :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND`
+and :class:`~nvsubquadratic.modules.hyena_nd.Hyena` use implicit kernel networks that
+produce a dense kernel defined over the full coordinate grid.  Left unconstrained,
+these kernels couple every spatial position to every other one — including pairs
+that are spatially very distant — which can hurt both optimisation and
+generalisation.
+
+The modules in this file implement **soft receptive-field windows**: differentiable
+spatial masks :math:`m \in [0, 1]^{*\text{spatial} \times C}` that are multiplied
+element-wise into the implicit kernel values *before* the FFT convolution step.
+After masking, the effective kernel decays towards zero beyond a characteristic
+spatial radius, concentrating each channel's receptive field.
+
+There are two families:
+
+* **Exponential** (:class:`ExponentialModulationND`) — fixed, non-learnable
+  decay rates initialised on a log-uniform ramp from slow to fast; used to
+  enforce a hard inductive bias without any gradient signal changing the
+  bandwidth.
+
+* **Gaussian** (:class:`GaussianModulationND`,
+  :class:`BlockAlignedGaussianModulationND`) — learnable standard-deviation
+  parameters per spatial axis and channel; the mask is a factorised product of
+  Gaussians, one per axis.  During training the bandwidth can grow or shrink,
+  subject to ``[min_std, max_std]`` clamp bounds.
+
+How masks interact with the FFT convolution operators
+------------------------------------------------------
+:class:`~nvsubquadratic.modules.ckconv_nd.CKConvND` evaluates its implicit
+kernel network on a coordinate grid to obtain a dense kernel tensor
+``k ∈ R^{* spatial × C}``.  The modulation mask ``m`` is applied in coordinate
+space *before* the FFT:
+
+.. code-block:: none
+
+    k_masked = modulation(grid, k)   # element-wise, coordinate space
+    output   = fftconvNd(x, k_masked)
+
+Because the FFT convolution operates on the windowed kernel ``k_masked``,
+the effective receptive field of the operator is bounded by the support of
+the mask.  Narrow masks (small std / fast decay) correspond to local
+operators; wide masks (large std / slow decay) approach global convolutions.
+
+The convention used throughout this module is:
+
+* The coordinate grid has values in **[−1, 1]** along each axis (center = 0).
+* Mask values are in **[0, 1]** where **1 = fully included** (center of the
+  kernel, near zero displacement) and **0 = fully excluded** (large
+  displacement, far from the center of the convolution kernel).  Masking thus
+  *suppresses* the kernel at large displacements, not at zero displacement.
 
 For testing:
     PYTHONPATH=. python nvsubquadratic/modules/masks_nd.py
@@ -31,6 +82,21 @@ def _normalize_init_extent(init_extent: float | Sequence[float] | None, data_dim
     axis.  The clamp ``[min_std, max_std]`` enforces feasibility, so very
     large values simply saturate the entire ramp at ``max_std`` (= "this
     axis is essentially unmasked at init").
+
+    Args:
+        init_extent: A positive float (broadcast to all axes), a sequence of
+            ``data_dim`` positive floats (one per axis), or ``None`` (treated
+            as ``1.0`` on every axis).
+        data_dim: Number of spatial/temporal dimensions.  Determines the
+            expected length of a sequence ``init_extent``.
+
+    Returns:
+        A tuple of ``data_dim`` positive finite floats.
+
+    Raises:
+        TypeError: If ``init_extent`` is a bool, or not a float or sequence.
+        ValueError: If ``init_extent`` is a sequence with length != ``data_dim``,
+            or if any element is non-positive or non-finite.
     """
     if init_extent is None:
         init_extent = 1.0
@@ -51,16 +117,53 @@ def _normalize_init_extent(init_extent: float | Sequence[float] | None, data_dim
 
 
 class ExponentialModulationND(torch.nn.Module):
-    """Applies exponential decay modulation to input features.
+    r"""Fixed exponential-decay spatial window applied to implicit convolutional kernels.
 
-    This module modulates input features by applying an exponential decay function on each dimension of an N-dimensional input.
-    The decay rates are parameterized by a set of learned decay rates.
+    Geometry
+    --------
+    Given a coordinate grid normalised to ``[−1, 1]`` (center = 0) and a
+    set of per-axis, per-channel decay rates ``w_{d,c} > 0``, the mask at
+    spatial position :math:`p = (p_0, \ldots, p_{D-1})` for channel ``c`` is:
+
+    .. math::
+
+        m_c(p) = \prod_{d=0}^{D-1} \exp\!\bigl(-\lvert p_d \rvert \cdot \lvert w_{d,c} \rvert\bigr)
+
+    All values lie in ``(0, 1]``.  The mask equals **1** at the origin
+    (displacement 0) and decays towards **0** as any coordinate moves away from
+    the center.  Channels with large ``w`` decay quickly (narrow receptive
+    field); channels with small ``w`` decay slowly (broad receptive field).
+
+    The ND generalisation follows automatically from the product structure:
+    for a 2D image grid the mask is a 2D tent surface; for a 3D volume it
+    is a 3D "tent" shaped object.
+
+    Decay rates are **not learnable** (they are registered as a parameter so
+    they travel with the module and appear in ``state_dict``, but they are
+    marked ``_no_weight_decay = True`` and are not updated by the optimizer).
+    The rates are initialised on a linear ramp from ``slow_decay_pct`` to
+    ``fast_decay_pct``, divided by ``data_dim`` so that the product across
+    axes has a consistent magnitude regardless of the number of dimensions.
+
+    Role in CKConvND
+    ----------------
+    :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND` optionally passes the
+    output of its implicit kernel network through this module before the FFT
+    convolution step.  The resulting masked kernel is then convolved with the
+    input signal via ``fftconvNd``.
 
     Args:
-        data_dim (int): Dimension of input data (1D for sequences, 2D for images, 3D for videos, etc.).
-        num_channels (int): Number of input channels to be modulated.
-        fast_decay_pct (float, optional): Percentage for the fastest decay rate. Default is 13.81.
-        slow_decay_pct (float, optional): Percentage for the slowest decay rate. Default is 2.3.
+        data_dim: Number of spatial/temporal dimensions (1 for sequences, 2 for
+            images, 3 for videos).
+        num_channels: Number of feature channels ``C``.  Each channel receives
+            a distinct decay rate.
+        fast_decay_pct: Upper end of the decay-rate ramp (fastest / narrowest
+            channel).  Default ``13.81`` (≈ :math:`\ln(10^6)`, so the
+            narrowest channel decays to near zero within a small fraction of
+            the grid).
+        slow_decay_pct: Lower end of the decay-rate ramp (slowest / broadest
+            channel).  Default ``2.3`` (≈ :math:`\ln(10)`, so the broadest
+            channel retains ≈ 10 % of its value at the grid boundary).
     """
 
     def __init__(
@@ -70,13 +173,13 @@ class ExponentialModulationND(torch.nn.Module):
         fast_decay_pct: float = 13.81,
         slow_decay_pct: float = 2.3,
     ):
-        """Initialize the ExponentialModulationND class.
+        """Initialise the exponential modulation module.
 
         Args:
-            data_dim: Dimension of input data.
-            num_channels: Number of input channels to be modulated.
-            fast_decay_pct: Percentage for the fastest decay rate.
-            slow_decay_pct: Percentage for the slowest decay rate.
+            data_dim: Number of spatial/temporal dimensions.
+            num_channels: Number of feature channels to modulate.
+            fast_decay_pct: Upper end of the per-channel decay-rate ramp (fastest channel).
+            slow_decay_pct: Lower end of the per-channel decay-rate ramp (slowest channel).
         """
         super().__init__()
         self.data_dim = data_dim
@@ -99,18 +202,33 @@ class ExponentialModulationND(torch.nn.Module):
         return f"data_dim={self.data_dim}, num_channels={self.num_channels}, fast_decay_pct={self.fast_decay_pct}, slow_decay_pct={self.slow_decay_pct}"
 
     def forward(self, grid: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """Applies exponential modulation to the input tensor `x` based on the coordinates in `grid`.
+        r"""Apply exponential decay modulation element-wise to kernel features.
+
+        For each spatial position :math:`p` and channel :math:`c` computes:
+
+        .. math::
+
+            \text{out}[\ldots, c] = x[\ldots, c] \cdot
+                \prod_{d} \exp\!\bigl(-\lvert p_d \rvert \cdot \lvert w_{d,c} \rvert\bigr)
+
+        The product is over all ``data_dim`` spatial axes.  The mask value is
+        **1** at the origin and decreases monotonically towards 0 as the
+        displacement from the origin grows.
 
         Args:
-            grid (torch.Tensor): A tensor representing grid values (shape: [1, * spatial_dims, data_dim]).
-                Must have dtype `torch.float32`.
-            x (torch.Tensor): Input features to be modulated (shape: [batch_size, * spatial_dims, num_channels]).
+            grid: Coordinate grid of shape ``[1, *spatial_dims, data_dim]`` with
+                values in ``[−1, 1]``.  Each entry ``grid[..., d]`` contains the
+                normalised coordinate along axis ``d``.  Must be ``torch.float32``
+                (lower precision collapses nearby coordinates together).
+            x: Kernel feature tensor of shape ``[B, *spatial_dims, num_channels]``
+                to be modulated.  ``B`` is the batch size; ``*spatial_dims`` must
+                match the spatial shape of ``grid``.
 
         Returns:
-            torch.Tensor: The modulated input features (same shape as `x`).
+            torch.Tensor: Modulated features with the same shape and dtype as ``x``.
 
         Raises:
-            AssertionError: If `grid` is not of type `torch.float32`.
+            AssertionError: If ``grid.dtype`` is not ``torch.float32``.
         """
         # Ensure the grid tensor has the correct data type
         assert grid.dtype == torch.float32, (
@@ -134,10 +252,26 @@ def _std_from_attenuation(attenuation: float, position: float, data_dim: int) ->
         mask = exp(-0.5 * data_dim * (position / σ)²) = attenuation
         ⟹  σ = position * sqrt( -data_dim / (2 * ln(attenuation)) )
 
+    This helper is used during initialisation of :class:`GaussianModulationND`
+    to derive ``min_std`` and ``max_std`` from user-specified attenuation targets.
+    All calls from that class pass ``data_dim=1`` because the attenuation targets
+    are defined as **single-axis** (1D) measurements; the product structure of
+    the full ND mask then gives an ND corner value of ``attenuation ** data_dim``.
+
     Args:
-        attenuation: Desired mask value (0 < attenuation < 1).
-        position: Absolute grid coordinate (> 0).
-        data_dim: Number of spatial dimensions.
+        attenuation: Desired mask value at ``position`` (must be in ``(0, 1)``).
+        position: Absolute normalised grid coordinate at which the attenuation
+            target is measured (must be ``> 0``).
+        data_dim: Number of spatial dimensions assumed in the formula.  Pass
+            ``1`` for single-axis targets (the typical case in this module).
+
+    Returns:
+        float: The standard deviation ``σ > 0`` such that the Gaussian mask
+        equals ``attenuation`` at the given ``position``.
+
+    Raises:
+        AssertionError: If ``attenuation`` is not in ``(0, 1)`` or ``position``
+            is not ``> 0``.
     """
     assert 0.0 < attenuation < 1.0, f"attenuation must be in (0, 1), got {attenuation}"
     assert position > 0.0, f"position must be > 0, got {position}"
@@ -145,76 +279,104 @@ def _std_from_attenuation(attenuation: float, position: float, data_dim: int) ->
 
 
 class GaussianModulationND(torch.nn.Module):
-    """Gaussian decay modulation across N spatial/temporal dimensions.
+    r"""Learnable Gaussian-window spatial mask for ND convolutional kernels.
 
-    For each data dimension d and channel c we learn a (positive) standard deviation sigma_{d,c}.
-    Given a coordinate grid (centered around 0) we apply:
+    Geometry
+    --------
+    For a coordinate grid normalised to ``[−1, 1]`` (center = 0) and
+    per-axis, per-channel standard deviations :math:`\sigma_{d,c} > 0`, the
+    mask value at position :math:`p = (p_0, \ldots, p_{D-1})` for channel
+    ``c`` is the product of per-axis Gaussians:
 
-        mask_{..., c} = Π_d exp( - 0.5 * (grid_d / sigma_{d,c})^2 )
+    .. math::
 
-    which is then multiplied elementwise with the input features.
+        m_c(p) = \prod_{d=0}^{D-1}
+                 \exp\!\Bigl(-\tfrac{1}{2}\bigl(p_d / \sigma_{d,c}\bigr)^2\Bigr)
 
-    Mean is fixed (no learnable shift) so modulation remains symmetric around zero.
+    All values lie in ``(0, 1]``.  The mask equals **1** at the origin
+    and decays symmetrically in all directions; the level set at value ``v``
+    is an axis-aligned ellipsoid with semi-axes :math:`\sigma_{d,c}\sqrt{-2\ln v}`.
 
-    **Initialization** — pass ``min_attenuation_at_step`` and
-    ``max_attenuation_at_limit`` (plus ``grid_size``, auto-injected by
-    CKConvND).  These define the **clamp bounds** — the narrowest any
-    channel can get (``min_std``) and the widest (``max_std``).  Optionally
-    pass ``init_extent`` to control the initial bandwidth scale **per
-    axis**.
+    **1 = fully included, 0 = fully excluded.**  A narrow Gaussian (small
+    ``σ``) concentrates the effective kernel around the origin, making the
+    operator local; a wide Gaussian (large ``σ``) lets the full grid
+    contribute, approaching a global convolution.
 
-    All attenuation values are **single-axis** (1D) measurements.  Since
-    the mask is a product of per-dimension Gaussians, the 2D corner value
-    is ``attenuation ** 2``, and the 3D corner is ``attenuation ** 3``,
-    etc.
+    ND generalisation
+    -----------------
+    The mask factorises over axes.  In 2D the mask surface looks like a 2D
+    Gaussian bell (not a sphere — each axis has an independent ``σ``).  In
+    3D it is a trivariate axis-aligned Gaussian.  Because the mask is a
+    *product*, the corner value at position ``(position, position, …,
+    position)`` is the product of the individual per-axis Gaussian values,
+    which equals ``single_axis_mask_value ** data_dim``.  The attenuation
+    parameters (``min_attenuation_at_step``, ``max_attenuation_at_limit``)
+    are therefore defined as **single-axis (1D) measurements** — the
+    effective ND attenuation at the grid corner is stricter by a factor of
+    ``data_dim`` in the exponent.
 
-    - ``min_attenuation_at_step`` — 1D mask value at the first grid step
-      from center for the narrowest *possible* channel.  Sets ``min_std``
-      and the **reference** ``init_std_low`` (narrowest channel starts at
-      the clamp bound when ``init_extent = 1``).
-    - ``max_attenuation_at_limit`` — 1D mask value at the grid boundary
-      (position 1) for the widest *possible* channel.  Sets ``max_std``.
-    - ``init_extent`` — per-axis bandwidth scale that multiplicatively
-      scales **both** ends of the per-axis logspace ramp:
-      ``init_std_low[d]  = clamp(min_std            * extent[d], min_std, max_std)``
-      ``init_std_high[d] = clamp(init_std_high_unit * extent[d], min_std, max_std)``
-      where ``init_std_high_unit ≈ 0.4724`` is the std at which a 1D
-      Gaussian reaches ``0.1`` at position 1.  Pass a float (broadcast to
-      all axes) or a sequence of length ``data_dim``.  Values must be
-      strictly ``> 0``; defaults to ``1.0`` on every axis (recovers the
-      reference ramp ``[min_std, init_std_high_unit]``).
+    Parametrisation and clamping
+    ----------------------------
+    The learned parameter ``std_param`` of shape ``[data_dim, num_channels]``
+    stores raw values that are mapped to strictly-positive std values via
+    ``parametrization``:
 
-      Examples on an anisotropic ``L_cache=(8, 64, 64)`` cube cache
-      (mask grid_size = 127):
+    * ``'direct'`` — ``std_param`` IS the std; a ``register_forward_pre_hook``
+      clamps it into ``[min_std, max_std]`` in-place (``torch.no_grad``), so
+      gradients at the boundary are preserved through the activation.
+    * ``'log'`` — ``std = exp(std_param)``; hard clamp applied after (breaks
+      boundary gradients — see inline warning).
+    * ``'softplus'`` — ``std = softplus(std_param)``; hard clamp applied after.
 
-      * ``init_extent = 1.0`` — all axes use the reference ramp from
-        ``min_std ≈ 0.0075`` to ``init_std_high ≈ 0.4724``.  On the
-        depth axis the bottom of the ramp is unusably narrow (mask ≈ 0
-        across depth for early channels).
-      * ``init_extent = (1.0, 0.25, 0.25)`` — depth uses the reference
-        ramp; H/W are 4× narrower at both ends (extreme localization).
-      * ``init_extent = (max_std/min_std, 1.0, 1.0)`` (≈ ``(416, 1, 1)``
-        at defaults) — depth ramp saturates at ``max_std`` end-to-end;
-        every depth channel is initialised at the widest possible
-        Gaussian, i.e. depth axis is essentially unmasked at init.
-        Useful when ``L_cache_d`` is short and depth-axis frequency
-        content is naturally bounded by the small kernel grid.
+    Initialisation
+    --------------
+    ``min_attenuation_at_step`` and ``max_attenuation_at_limit`` define the
+    **clamp bounds** ``[min_std, max_std]``.  The initial ``std_param`` is a
+    logspace ramp from ``min_std`` to ``init_std_high_unit`` on every axis,
+    scaled per-axis by ``init_extent``:
 
-    Only **initialization** is per-axis — ``min_std`` and ``max_std``
-    (clamp bounds) remain scalar and shared across axes.
+    * ``init_std_low[d]  = clamp(min_std            * extent[d], min_std, max_std)``
+    * ``init_std_high[d] = clamp(init_std_high_unit * extent[d], min_std, max_std)``
+
+    where ``init_std_high_unit ≈ 0.4724`` is the std at which a 1D Gaussian
+    reaches ``0.1`` at position 1.  See ``init_extent`` below.
+
+    All attenuation values are **single-axis (1D)** measurements; see the ND
+    generalisation note above.
 
     Args:
-        data_dim: Number of spatial/temporal dimensions.
-        num_channels: Number of feature channels to modulate.
-        min_attenuation_at_step: 1D mask value at first grid step (sets clamp
-            lower bound and the reference init lower bound).
-        max_attenuation_at_limit: 1D mask value at grid boundary (sets clamp
-            upper bound).
+        data_dim: Number of spatial/temporal dimensions (1 for sequences, 2
+            for images, 3 for volumes).
+        num_channels: Number of feature channels ``C`` to modulate.
+        grid_size: Number of grid points per spatial dimension.  Used to
+            compute the size of the smallest grid step
+            (``min_step = 2 / (grid_size - 1)``), which sets ``min_std``.
+            Auto-injected by :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND`.
+        min_attenuation_at_step: Target 1D mask value at the first grid step
+            from the origin for the **narrowest** channel.  Smaller values
+            → narrower minimum std → more local minimum channel.  Default
+            ``0.1``.
+        max_attenuation_at_limit: Target 1D mask value at the grid boundary
+            (``position = 1``) for the **widest** channel.  Larger values
+            → wider maximum std → less attenuation at the boundary.  Default
+            ``0.95``.
         init_extent: Scalar or per-axis sequence controlling the initial
-            bandwidth scale on each axis.  Strictly ``> 0``; default
-            ``1.0`` (reference ramp on every axis).
-        grid_size: Kernel grid points per dimension.  Auto-injected by CKConvND.
-        parametrization: ``'log'``, ``'softplus'``, or ``'direct'``.
+            bandwidth scale on each axis.  Must be strictly ``> 0``; defaults
+            to ``1.0`` on every axis (reference ramp on every axis).
+
+            Examples for an anisotropic ``L_cache = (8, 64, 64)`` cache
+            with ``grid_size = 127``:
+
+            * ``init_extent = 1.0`` — all axes use the reference ramp.  On a
+              short depth axis the bottom of the ramp can be unusably narrow.
+            * ``init_extent = (max_std/min_std, 1.0, 1.0)`` — depth ramp
+              saturates at ``max_std`` (axis effectively unmasked at init).
+            * ``init_extent = (1.0, 0.25, 0.25)`` — H/W are 4× narrower than
+              the reference (extreme localisation on spatial axes).
+
+        parametrization: One of ``'direct'``, ``'log'``, ``'softplus'``.
+            Controls the mapping from ``std_param`` to std values.  Default
+            ``'direct'``.
     """
 
     def __init__(
@@ -227,7 +389,21 @@ class GaussianModulationND(torch.nn.Module):
         init_extent: float | Sequence[float] = 1.0,
         parametrization: str = "direct",
     ):
-        """Initialize the GaussianModulationND class."""
+        """Initialise the Gaussian modulation module.
+
+        Args:
+            data_dim: Number of spatial/temporal dimensions.
+            num_channels: Number of feature channels to modulate.
+            grid_size: Number of grid points per spatial dimension.
+            min_attenuation_at_step: 1D mask value at the first grid step from
+                the origin for the narrowest channel (sets ``min_std``).
+            max_attenuation_at_limit: 1D mask value at the grid boundary for the
+                widest channel (sets ``max_std``).
+            init_extent: Per-axis bandwidth scale for initialisation (> 0).
+                Pass a float to broadcast, or a sequence of length ``data_dim``.
+            parametrization: Mapping from ``std_param`` to std values.
+                One of ``'direct'``, ``'log'``, ``'softplus'``.
+        """
         super().__init__()
         assert parametrization in {"log", "softplus", "direct"}, (
             "parametrization must be 'log' or 'softplus' or 'direct'"
@@ -300,10 +476,18 @@ class GaussianModulationND(torch.nn.Module):
             self.std_param.data.clamp_(min=self.min_std, max=self.max_std)
 
     def _compute_std(self) -> torch.Tensor:
-        """Computes the standard deviation for each channel based on the learned weights.
+        """Map the raw ``std_param`` to strictly-positive standard deviations.
+
+        Applies the parametrization-specific mapping and clamps to
+        ``[min_std, max_std]``.  For the ``'direct'`` parametrization the
+        clamp is applied by a pre-hook, so gradients at the boundary are
+        preserved; for ``'log'`` and ``'softplus'`` the clamp is applied
+        here (which zeros gradients at the boundary).
 
         Returns:
-            torch.Tensor: The standard deviation for each channel (shape: [data_dim, num_channels]).
+            torch.Tensor: Standard deviations of shape ``[data_dim, num_channels]``
+            in ``float32``.  Values are guaranteed to lie in
+            ``[min_std, max_std]``.
         """
         std = self.std_param.float()  # [data_dim, num_channels]
         if self.parametrization == "direct":
@@ -322,7 +506,16 @@ class GaussianModulationND(torch.nn.Module):
 
     @staticmethod
     def _mask_value(std: float, position: float) -> float:
-        """1D Gaussian mask value: exp(-0.5 * (position / std)^2)."""
+        """1D Gaussian mask value: exp(-0.5 * (position / std)^2).
+
+        Args:
+            std: Standard deviation of the Gaussian (> 0).
+            position: Absolute normalised grid coordinate at which to evaluate
+                the mask.
+
+        Returns:
+            float: Mask value in ``(0, 1]``.
+        """
         return math.exp(-0.5 * (position / std) ** 2)
 
     def extra_repr(self):
@@ -349,18 +542,34 @@ class GaussianModulationND(torch.nn.Module):
         )
 
     def forward(self, grid: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """Applies Gaussian modulation to the input tensor `x` based on the coordinates in `grid`.
+        r"""Apply Gaussian spatial modulation element-wise to kernel features.
+
+        For each spatial position :math:`p` and channel :math:`c` computes:
+
+        .. math::
+
+            \text{out}[\ldots, c] = x[\ldots, c] \cdot
+                \exp\!\Bigl(-\tfrac{1}{2} \sum_{d} \bigl(p_d / \sigma_{d,c}\bigr)^2\Bigr)
+
+        The exponent is computed as a single einsum (sum over axes) for
+        efficiency, avoiding the intermediate ``prod(exp)`` formulation.
+
+        Mask convention: **1 = fully included** (origin), **0 = fully
+        excluded** (large displacement).
 
         Args:
-            grid (torch.Tensor): A tensor representing grid values (shape: [1, * spatial_dims, data_dim]).
-                Must have dtype `torch.float32`.
-            x (torch.Tensor): Input features to be modulated (shape: [batch_size, * spatial_dims, num_channels]).
+            grid: Coordinate grid of shape ``[1, *spatial_dims, data_dim]`` with
+                values in ``[−1, 1]``.  Must be ``torch.float32``.
+            x: Kernel feature tensor of shape ``[B, *spatial_dims, num_channels]``.
+                ``*spatial_dims`` must match the spatial shape of ``grid``.
 
         Returns:
-            torch.Tensor: The modulated input features (same shape as `x`).
+            torch.Tensor: Modulated features with the same shape and dtype as
+            ``x``.  The internal Gaussian computation is always done in
+            ``float32`` and then cast to ``x.dtype``.
 
         Raises:
-            AssertionError: If `grid` is not of type `torch.float32`.
+            AssertionError: If ``grid.dtype`` is not ``torch.float32``.
         """
         # Ensure the grid tensor has the correct data type
         assert grid.dtype == torch.float32, f"grid must be float32. Current dtype: {grid.dtype}"
@@ -379,28 +588,51 @@ class GaussianModulationND(torch.nn.Module):
 
 
 class BlockAlignedGaussianModulationND(GaussianModulationND):
-    """Gaussian modulation with channel-reversed std_param for block-structured SIRENs.
+    r"""Gaussian modulation with channel-reversed std ordering for block-structured SIRENs.
 
-    The parent :class:`GaussianModulationND` initializes ``std_param`` so that
-    channel 0 has the narrowest Gaussian (``min_std``) and the last channel has
-    the widest (``init_std_high``).  That ordering assumes the *narrow* mask
-    (short spatial support → broad spectral support) should be applied to
-    channels that carry high-frequency content.
+    Motivation
+    ----------
+    :class:`GaussianModulationND` initialises ``std_param`` so that channel 0
+    has the **narrowest** Gaussian (smallest ``σ``, shortest spatial support,
+    broadest spectral support) and the last channel has the **widest** Gaussian.
+    This ordering is natural when channel index 0 carries high-frequency content,
+    which should be localised in space.
 
     Block-structured SIRENs such as
     :class:`~nvsubquadratic.modules.kernels_nd.BlockDiagonalMultiOmegaSIRENKernelND`
-    with a ``linear`` or ``log`` schedule put the *lowest* ω₀ (low-frequency
-    content) on the first block, so the natural alignment is the opposite:
-    widest Gaussian on channel 0, narrowest on the last channel.
+    with a ``'linear'`` or ``'log'`` frequency schedule assign the **lowest**
+    :math:`\omega_0` (low-frequency content) to the **first** block.  Low
+    frequencies have long spatial support, so the natural alignment is the
+    opposite: **widest** Gaussian on channel 0 (lowest :math:`\omega_0`),
+    **narrowest** on the last channel (highest :math:`\omega_0`).
 
-    This subclass just reverses ``std_param`` along the channel axis after the
-    parent's initialization — no other behaviour changes (forward pass,
-    clamping, parametrization, grad flow are all inherited unchanged).
+    Implementation
+    --------------
+    This subclass reverses ``std_param`` along the channel axis (``dim=-1``)
+    immediately after the parent's ``__init__``.  All other behaviour —
+    forward pass, pre-hook clamping, parametrisation, gradient flow — is
+    inherited unchanged from :class:`GaussianModulationND`.
+
+    The channel ordering after reversal:
+
+    * Channel 0: widest Gaussian (largest ``σ``), longest spatial support,
+      lowest effective frequency → matched to the lowest-:math:`\omega_0` block.
+    * Channel ``C-1``: narrowest Gaussian (smallest ``σ``), shortest spatial
+      support, highest effective frequency → matched to the highest-:math:`\omega_0`
+      block.
 
     Args:
-        data_dim, num_channels, grid_size, min_attenuation_at_step,
-        max_attenuation_at_limit, init_extent, parametrization:
-            Passed straight through to :class:`GaussianModulationND`.
+        data_dim: Number of spatial/temporal dimensions.
+        num_channels: Number of feature channels ``C`` to modulate.
+        grid_size: Number of grid points per spatial dimension.
+        min_attenuation_at_step: 1D mask value at the first grid step (sets
+            ``min_std`` clamp bound).  Default ``0.1``.
+        max_attenuation_at_limit: 1D mask value at the grid boundary (sets
+            ``max_std`` clamp bound).  Default ``0.95``.
+        init_extent: Per-axis bandwidth scale for initialisation (> 0).
+            Default ``1.0``.
+        parametrization: One of ``'direct'``, ``'log'``, ``'softplus'``.
+            Default ``'direct'``.
     """
 
     def __init__(
@@ -413,7 +645,7 @@ class BlockAlignedGaussianModulationND(GaussianModulationND):
         init_extent: float = 1.0,
         parametrization: str = "direct",
     ):
-        """Initialize the block-aligned Gaussian mask; see the class docstring for argument semantics."""
+        """Initialise the block-aligned Gaussian mask; see the class docstring for argument semantics."""
         super().__init__(
             data_dim=data_dim,
             num_channels=num_channels,

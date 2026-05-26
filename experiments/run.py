@@ -2,11 +2,38 @@
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Entry point to run experiments.
+r"""Main entry point for launching nvSubquadratic training runs.
 
-Usage:
-    # MNIST classification
-    PYTHONPATH=. python nvsubquadratic/examples/run.py --config examples/mnist_classification/experiments/mnist_classification_ccnn_4_160_hyena_rope_qknorm.py
+**Usage**::
+
+    PYTHONPATH=. python experiments/run.py \\
+        --config experiments/mnist_classification/mnist_classification_ccnn_4_160.py \\
+        dataset.batch_size=64 optimizer.lr=3e-4
+
+Command-line interface:
+
+- ``--config <path>`` (required): path to a Python config file that defines a
+  top-level ``cfg`` variable of type
+  :class:`~experiments.default_cfg.ExperimentConfig`.
+- ``<key>=<value>`` (zero or more positional overrides): dotted key-value pairs
+  that override fields in ``cfg`` after the file is loaded.  OmegaConf
+  interpolators (``${...}``) are respected.
+
+**What the script does**
+
+1. Parses ``--config`` and ``overrides`` via :func:`parse_args`.
+2. Loads the config file with :func:`~experiments.utils.cli.load_config_from_file`
+   and applies overrides via :func:`~experiments.utils.cli.apply_config_overrides`.
+3. Initialises a W&B run (or resumes one) and constructs a
+   :class:`pytorch_lightning.loggers.WandbLogger`.
+4. Instantiates the network from ``cfg.net_cfg`` via
+   :func:`~nvsubquadratic.lazy_config.instantiate`.
+5. Optionally loads a pre-trained checkpoint (partial or full).
+6. Instantiates the Lightning wrapper from ``cfg.lightning_wrapper_cfg``.
+7. Calls :func:`~experiments.trainer.construct_trainer` and
+   :meth:`pytorch_lightning.Trainer.fit`.
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 import argparse

@@ -1,37 +1,56 @@
 # TODO: Add license header here
 
-"""Distributed depthwise convolution wrappers for Context Parallelism.
+"""Distributed depthwise convolution wrappers for Context Parallelism (CP).
 
-This module provides distributed depthwise-only convolution wrappers that handle:
+This module provides 1-D, 2-D, and 3-D *depthwise* convolution layers that work
+transparently under **Context Parallelism** (CP), where the channel dimension is
+split across ``cp_world_size`` ranks.
 
-1. **Context Parallel (CP) Communication**: Handles CP-aware communication patterns
-   with direct channel slicing.
+**Context Parallelism and channel slicing**
 
-2. **Depthwise-only Design**: Distributed weight management where:
-   - Weight shape: [num_groups, kernel_size...] (no extra dimension)
-   - Direct repeat_interleave for weight expansion
-   - in_channels == out_channels (depthwise property)
+In the Hyena / sequence-mixer CP setup each rank holds a contiguous slice of the
+channel axis: rank ``r`` processes channels ``[r·C/P, (r+1)·C/P)`` where ``C`` is
+the total hidden dimension and ``P`` is the CP world size.  The depthwise
+convolution weight needs to match — if ``cp_group`` is provided, :meth:`forward`
+expands the full weight tensor then slices the appropriate channel range before
+calling ``F.convNd``.  No inter-rank communication is required.
 
-Key Features:
-- Depthwise convolutions only (no standard grouped convolutions)
-- Group-based parameter sharing to reduce memory usage
-- Distributed CP slicing logic
+**Group-based weight sharing**
 
-Example Usage:
-    # 1D depthwise convolution with 128 groups for weight sharing
-    conv1d = DistributedDepthwiseConv1d(
-        hidden_dim=384, kernel_size=3, num_groups=128, causal=True
-    )
+To reduce the parameter count, weights are stored for ``num_groups`` prototypes
+and expanded to ``hidden_dim`` channels via ``repeat_interleave`` along the
+channel axis at each forward pass:
 
-    # 2D depthwise convolution
-    conv2d = DistributedDepthwiseConv2d(
-        hidden_dim=384, kernel_size=3, num_groups=128
-    )
+.. code-block:: text
 
-    # 3D depthwise convolution
-    conv3d = DistributedDepthwiseConv3d(
-        hidden_dim=1024, kernel_size=3, num_groups=None  # None = no weight sharing
-    )
+    weight: [G, *kernel]            G = num_groups ≤ C
+    expanded: [C, *kernel]          via repeat_interleave(C//G, dim=0)
+
+Setting ``num_groups=None`` (or ``num_groups=hidden_dim``) gives each channel its
+own independent filter (standard depthwise convolution).  Smaller ``num_groups``
+reduces memory at the cost of expressivity.
+
+**Initialisation**
+
+Weights and biases are drawn from ``Uniform(-b, b)`` where
+``b = 1 / sqrt(prod(kernel_size))``, matching the default ``nn.Conv*`` scheme.
+
+Classes:
+    DistributedDepthwiseConv1d: 1-D variant; supports ``causal=True`` for left-only
+        padding (autoregressive / time-axis use).
+    DistributedDepthwiseConv2d: 2-D variant; always uses ``padding="same"``.
+    DistributedDepthwiseConv3d: 3-D variant; always uses ``padding="same"``.
+
+Example::
+
+    # 1-D causal depthwise conv with 128 weight groups on 384 channels
+    conv1d = DistributedDepthwiseConv1d(hidden_dim=384, kernel_size=3, num_groups=128, causal=True)
+
+    # 2-D depthwise conv
+    conv2d = DistributedDepthwiseConv2d(hidden_dim=384, kernel_size=3, num_groups=128)
+
+    # 3-D depthwise conv, no weight sharing
+    conv3d = DistributedDepthwiseConv3d(hidden_dim=1024, kernel_size=3, num_groups=None)
 """
 
 import math
@@ -44,18 +63,39 @@ from einops import rearrange
 
 
 class DistributedDepthwiseConv1d(nn.Module):
-    """1D depthwise convolution for CP parallelism.
+    """1-D depthwise convolution with CP-aware channel slicing and weight sharing.
 
-    This implements a depthwise convolution where:
-    - in_channels == out_channels (depthwise property)
-    - Weights are shared across groups via num_groups parameter
-    - Context Parallel slicing is done directly on the channel dimension
+    Stores a compact weight of shape ``[G, K]`` (``G`` groups, kernel size ``K``)
+    and expands it to ``[C, K]`` at each forward pass via ``repeat_interleave``.
+    When ``cp_group`` is provided, an additional slice ``[r·(C/P) : (r+1)·(C/P)]``
+    is taken before calling ``F.conv1d``, so each CP rank only processes its
+    local channel shard.
+
+    Supports two padding modes:
+
+    - ``causal=True``: left-only pad of ``(K-1)`` before the conv; output length
+      equals input length with no future dependency.
+    - ``causal=False`` (default): ``padding="same"`` (symmetric); suitable for
+      spatial axes in multi-dimensional Hyena.
 
     Attributes:
-        hidden_dim (int): Number of input/output channels
-        kernel_size (int): Size of the convolution kernel
-        num_groups (int): Number of groups for weight sharing (reduces parameters)
-        group_dim (int): Channels per group (hidden_dim // num_groups)
+        hidden_dim (int): Total number of input/output channels ``C``.
+        kernel_size (int): Convolution kernel size ``K``.
+        causal (bool): Whether left-only (causal) padding is used.
+        num_groups (int): Number of weight prototype groups ``G``.
+        group_dim (int): Channels per group ``C // G``.
+        weight (nn.Parameter): Filter weights of shape ``[G, K]``.
+        bias (nn.Parameter | None): Optional bias of shape ``[G]``.
+
+    Args:
+        hidden_dim: Total number of input/output channels ``C``.
+        kernel_size: Convolution kernel size ``K``.
+        causal: Apply left-only padding.  Default ``False``.
+        num_groups: Weight prototype groups ``G``.  ``None`` → ``G = C``
+            (standard depthwise, no sharing).
+        bias: Include a learnable bias.  Default ``False``.
+        dtype: Parameter dtype.  Default ``torch.float32``.
+        device: Parameter device.  Defaults to ``cuda:current`` if available.
     """
 
     def __init__(
@@ -68,16 +108,16 @@ class DistributedDepthwiseConv1d(nn.Module):
         dtype: Optional[torch.dtype] = None,
         device: Optional[torch.device] = None,
     ):
-        """Initialize DistributedDepthwiseConv1d.
+        """Initialise DistributedDepthwiseConv1d.
 
         Args:
-            hidden_dim: Number of input and output channels
-            kernel_size: Size of the convolving kernel
-            causal: If True, applies causal padding
-            num_groups: Number of groups for weight sharing (if None, uses hidden_dim - no sharing)
-            bias: If True, adds a learnable bias
-            dtype: Data type for parameters
-            device: Device for parameters
+            hidden_dim: Total number of input/output channels ``C``.
+            kernel_size: Convolution kernel size ``K``.
+            causal: Apply left-only causal padding.  Default ``False``.
+            num_groups: Weight prototype groups ``G ≤ C``.  ``None`` → ``G = C``.
+            bias: Include a learnable bias.  Default ``False``.
+            dtype: Parameter dtype.  Default ``torch.float32``.
+            device: Parameter device.  Defaults to current CUDA device.
         """
         super().__init__()
 
@@ -121,16 +161,29 @@ class DistributedDepthwiseConv1d(nn.Module):
             torch.nn.init.uniform_(self.bias, a=-bounds, b=bounds)
 
     def forward(self, x: torch.Tensor, cp_group: Optional[torch.distributed.ProcessGroup] = None) -> torch.Tensor:
-        """Forward pass with optional context parallelism.
+        """Apply 1-D depthwise convolution with optional CP channel slicing.
+
+        The full weight ``[G, K]`` is expanded to ``[C, K]`` via
+        ``repeat_interleave``.  If ``cp_group`` is given, only the slice
+        for the current rank is retained before calling ``F.conv1d``.
 
         Args:
-            x: Input tensor of shape [batch, channels, length]
-               - Without CP: channels = hidden_dim
-               - With CP: channels = hidden_dim // cp_world_size
-            cp_group: Context parallel process group (None for no CP)
+            x: Input tensor of shape ``[B, C_local, L]`` where
+
+               * ``C_local = hidden_dim`` when not using CP, or
+               * ``C_local = hidden_dim // cp_world_size`` on CP rank ``r``.
+
+            cp_group: Context-parallel process group.  ``None`` → single-device
+                mode (no slicing).
 
         Returns:
-            Output tensor of same shape as input
+            torch.Tensor: Output of shape ``[B, C_local, L]``; same length as
+            input for stride=1.
+
+        Raises:
+            AssertionError: If ``x.ndim != 3``.
+            RuntimeError: If ``x.shape[1]`` does not match the expected local
+                channel count after CP slicing.
         """
         assert x.ndim == 3, f"Input must be 3D [batch, channels, length], got {x.ndim}D"
 
@@ -188,12 +241,30 @@ class DistributedDepthwiseConv1d(nn.Module):
 
 
 class DistributedDepthwiseConv2d(nn.Module):
-    """2D depthwise convolution for CP parallelism.
+    """2-D depthwise convolution with CP-aware channel slicing and weight sharing.
 
-    This implements a depthwise convolution where:
-    - in_channels == out_channels (depthwise property)
-    - Weights are shared across groups via num_groups parameter
-    - Context Parallel slicing is done directly on the channel dimension
+    Stores weights of shape ``[G, Kh, Kw]`` and expands to ``[C, Kh, Kw]`` at
+    runtime via ``repeat_interleave``.  When ``cp_group`` is provided, the
+    appropriate channel slice for the current rank is extracted before calling
+    ``F.conv2d(padding="same")``.
+
+    Expects input in **channel-first** layout: ``[B, C_local, H, W]``.
+
+    Attributes:
+        hidden_dim (int): Total number of channels ``C``.
+        kernel_size (Tuple[int, int]): 2-D kernel dimensions ``(Kh, Kw)``.
+        num_groups (int): Weight prototype groups ``G``.
+        group_dim (int): Channels per group ``C // G``.
+        weight (nn.Parameter): Shape ``[G, Kh, Kw]``.
+        bias (nn.Parameter | None): Shape ``[G]`` or ``None``.
+
+    Args:
+        hidden_dim: Total number of channels ``C``.
+        kernel_size: Kernel size; ``int`` → ``(K, K)``.
+        num_groups: Weight prototype groups ``G``.  ``None`` → ``G = C``.
+        bias: Include a learnable bias.  Default ``False``.
+        dtype: Parameter dtype.  Default ``torch.float32``.
+        device: Parameter device.  Defaults to current CUDA device.
     """
 
     def __init__(
@@ -205,15 +276,15 @@ class DistributedDepthwiseConv2d(nn.Module):
         dtype: Optional[torch.dtype] = None,
         device: Optional[torch.device] = None,
     ):
-        """Initialize DistributedDepthwiseConv2d.
+        """Initialise DistributedDepthwiseConv2d.
 
         Args:
-            hidden_dim: Number of input and output channels
-            kernel_size: Size of the convolving kernel
-            num_groups: Number of groups for weight sharing (if None, uses hidden_dim)
-            bias: If True, adds a learnable bias
-            dtype: Data type for parameters
-            device: Device for parameters
+            hidden_dim: Total number of input/output channels ``C``.
+            kernel_size: Kernel size; ``int`` is broadcast to ``(K, K)``.
+            num_groups: Weight prototype groups ``G ≤ C``.  ``None`` → ``G = C``.
+            bias: Include a learnable bias.  Default ``False``.
+            dtype: Parameter dtype.  Default ``torch.float32``.
+            device: Parameter device.  Defaults to current CUDA device.
         """
         super().__init__()
 
@@ -254,14 +325,20 @@ class DistributedDepthwiseConv2d(nn.Module):
             torch.nn.init.uniform_(self.bias, a=-bounds, b=bounds)
 
     def forward(self, x: torch.Tensor, cp_group: Optional[torch.distributed.ProcessGroup] = None) -> torch.Tensor:
-        """Forward pass with optional context parallelism.
+        """Apply 2-D depthwise convolution with optional CP channel slicing.
 
         Args:
-            x: Input tensor of shape [batch, channels, height, width]
-            cp_group: Context parallel process group (None for no CP)
+            x: Input tensor of shape ``[B, C_local, H, W]``.
+            cp_group: Context-parallel process group.  ``None`` → single-device.
 
         Returns:
-            Output tensor of same shape as input
+            torch.Tensor: Output of shape ``[B, C_local, H, W]`` (same spatial
+            size because ``padding="same"``).
+
+        Raises:
+            AssertionError: If ``x.ndim != 4``.
+            RuntimeError: If ``x.shape[1]`` does not match the expected local
+                channel count after CP slicing.
         """
         assert x.ndim == 4, f"Input must be 4D [batch, channels, height, width], got {x.ndim}D"
 
@@ -302,12 +379,29 @@ class DistributedDepthwiseConv2d(nn.Module):
 
 
 class DistributedDepthwiseConv3d(nn.Module):
-    """3D depthwise convolution for CP parallelism.
+    """3-D depthwise convolution with CP-aware channel slicing and weight sharing.
 
-    This implements a depthwise convolution where:
-    - in_channels == out_channels (depthwise property)
-    - Weights are shared across groups via num_groups parameter
-    - Context Parallel slicing is done directly on the channel dimension
+    Stores weights of shape ``[G, Kd, Kh, Kw]`` and expands to ``[C, Kd, Kh, Kw]``
+    at runtime via ``repeat_interleave``.  When ``cp_group`` is provided, only
+    the current rank's channel slice is passed to ``F.conv3d(padding="same")``.
+
+    Expects input in **channel-first** layout: ``[B, C_local, D, H, W]``.
+
+    Attributes:
+        hidden_dim (int): Total number of channels ``C``.
+        kernel_size (Tuple[int, int, int]): 3-D kernel dimensions ``(Kd, Kh, Kw)``.
+        num_groups (int): Weight prototype groups ``G``.
+        group_dim (int): Channels per group ``C // G``.
+        weight (nn.Parameter): Shape ``[G, Kd, Kh, Kw]``.
+        bias (nn.Parameter | None): Shape ``[G]`` or ``None``.
+
+    Args:
+        hidden_dim: Total number of channels ``C``.
+        kernel_size: Kernel size; ``int`` → ``(K, K, K)``.
+        num_groups: Weight prototype groups ``G``.  ``None`` → ``G = C``.
+        bias: Include a learnable bias.  Default ``False``.
+        dtype: Parameter dtype.  Default ``torch.float32``.
+        device: Parameter device.  Defaults to current CUDA device.
     """
 
     def __init__(
@@ -319,15 +413,15 @@ class DistributedDepthwiseConv3d(nn.Module):
         dtype: Optional[torch.dtype] = None,
         device: Optional[torch.device] = None,
     ):
-        """Initialize DistributedDepthwiseConv3d.
+        """Initialise DistributedDepthwiseConv3d.
 
         Args:
-            hidden_dim: Number of input and output channels
-            kernel_size: Size of the convolving kernel
-            num_groups: Number of groups for weight sharing (if None, uses hidden_dim)
-            bias: If True, adds a learnable bias
-            dtype: Data type for parameters
-            device: Device for parameters
+            hidden_dim: Total number of input/output channels ``C``.
+            kernel_size: Kernel size; ``int`` is broadcast to ``(K, K, K)``.
+            num_groups: Weight prototype groups ``G ≤ C``.  ``None`` → ``G = C``.
+            bias: Include a learnable bias.  Default ``False``.
+            dtype: Parameter dtype.  Default ``torch.float32``.
+            device: Parameter device.  Defaults to current CUDA device.
         """
         super().__init__()
 
@@ -368,14 +462,20 @@ class DistributedDepthwiseConv3d(nn.Module):
             torch.nn.init.uniform_(self.bias, a=-bounds, b=bounds)
 
     def forward(self, x: torch.Tensor, cp_group: Optional[torch.distributed.ProcessGroup] = None) -> torch.Tensor:
-        """Forward pass with optional context parallelism.
+        """Apply 3-D depthwise convolution with optional CP channel slicing.
 
         Args:
-            x: Input tensor of shape [batch, channels, depth, height, width]
-            cp_group: Context parallel process group (None for no CP)
+            x: Input tensor of shape ``[B, C_local, D, H, W]``.
+            cp_group: Context-parallel process group.  ``None`` → single-device.
 
         Returns:
-            Output tensor of same shape as input
+            torch.Tensor: Output of shape ``[B, C_local, D, H, W]`` (same
+            spatial size because ``padding="same"``).
+
+        Raises:
+            AssertionError: If ``x.ndim != 5``.
+            RuntimeError: If ``x.shape[1]`` does not match the expected local
+                channel count after CP slicing.
         """
         assert x.ndim == 5, f"Input must be 5D [batch, channels, depth, height, width], got {x.ndim}D"
 

@@ -1,7 +1,26 @@
 # TODO: Add license header here
 
 
-"""Utility functions for the MNIST classification experiment."""
+"""CLI and config-loading utilities for nvSubquadratic experiments.
+
+Provides helpers used by ``experiments/run.py`` to load Python config files,
+apply command-line overrides, generate deterministic W&B run names, and render
+config trees via Rich.
+
+Key functions:
+
+- :func:`load_config_from_file` — import a ``.py`` config file and return its
+  ``cfg`` variable as an :class:`~experiments.default_cfg.ExperimentConfig`.
+- :func:`apply_config_overrides` — parse ``key=value`` CLI overrides and set
+  the corresponding fields on the config dataclass (supports nested dotted
+  paths and OmegaConf interpolation strings).
+- :func:`get_deterministic_run_name` — derive a human-readable W&B run name
+  from the config filename, timestamp, and any CLI overrides.
+- :func:`config_to_dict` / :func:`add_to_tree` — serialise the config to a
+  dict and render it as a :class:`rich.tree.Tree` for console display.
+- :func:`verify_no_interpolator_overwrites` — sanity-check that CLI overrides
+  do not silently clobber OmegaConf ``${...}`` interpolations.
+"""
 
 import dataclasses
 import datetime
