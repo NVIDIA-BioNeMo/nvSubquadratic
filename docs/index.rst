@@ -37,8 +37,14 @@ Requirements
 Where to go next
 ----------------
 
-- **Ops Overview** — a math primer and decision tree for the FFT
-  convolution primitives at the bottom of the stack.
+- **Getting Started** — install, requirements, and a minimal "Hello,
+  Hyena" forward pass.
+- **Architecture** — the three-layer nvSubquadratic / subquadratic-ops /
+  megatron-core story and the BHL/BLH naming conventions.
+- **Examples** — per-dataset training recipes under ``examples/``.
+- **Benchmarks** — ViT-5-Small throughput tables and FLOP scaling.
+- **Ops Overview** — math primer and decision tree for the FFT
+  convolution primitives.
 - **API Reference** — auto-generated reference for the curated public
   surface organised by package (ops, modules, networks, parallel, core,
   experiments).
@@ -64,5 +70,9 @@ CUDA kernels live in a separate library:
 .. toctree::
    :maxdepth: 2
 
+   Getting Started <getting_started>
+   Architecture <architecture>
+   Examples <examples/index>
+   Benchmarks <benchmarks>
    Ops Overview <ops/README>
    API Reference <api_reference/index>

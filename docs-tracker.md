@@ -15,7 +15,11 @@
 
 ## Scope
 
-`nvsubquadratic/` and `experiments/` only. README and experiment-overview.md are out of scope for this branch.
+`nvsubquadratic/` and `experiments/` inline docstrings, plus the
+`docs/` narrative pages (Getting Started, Architecture, Examples,
+Benchmarks) that wrap them.  Out of scope on this branch: rewriting the
+top-level README or `examples/overview_tracker.md` themselves — the
+docs narrative pages link to those sources rather than duplicating them.
 
 ______________________________________________________________________
 
