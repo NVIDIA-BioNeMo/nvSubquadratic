@@ -53,6 +53,14 @@ Where to go next
   surface organised by package (ops, modules, networks, parallel, core,
   experiments).
 
+Contributor docs
+----------------
+
+- `CONVENTIONS.md <https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private/blob/main/CONVENTIONS.md>`_ —
+  Google-style docstring guide and PR checklist (lives at the repo root).
+- `docs-tracker.md <https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private/blob/main/docs-tracker.md>`_ —
+  documentation coverage status per file.
+
 Related projects
 ----------------
 
