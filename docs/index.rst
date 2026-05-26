@@ -41,6 +41,8 @@ Where to go next
   Hyena" forward pass.
 - **Architecture** — the three-layer nvSubquadratic / subquadratic-ops /
   megatron-core story and the BHL/BLH naming conventions.
+- **Package Overview** — bottom-up tour of what's inside
+  ``nvsubquadratic/`` (ops / modules / networks / parallel / utils).
 - **Examples** — per-dataset training recipes under ``examples/``.
 - **Benchmarks** — ViT-5-Small throughput tables and FLOP scaling.
 - **Reports** — long-form technical reports backed by reproducible
@@ -74,6 +76,7 @@ CUDA kernels live in a separate library:
 
    Getting Started <getting_started>
    Architecture <architecture>
+   Package Overview <package_overview>
    Examples <examples/index>
    Benchmarks <benchmarks>
    Reports <reports>
