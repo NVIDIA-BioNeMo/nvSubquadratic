@@ -53,6 +53,9 @@ PYTHONPATH=. conda run -n nv-subq python benchmarks/well/bench_training_step.py 
 - `profile_training_loop.py` — diagnoses the gap between pure compute
   and PyTorch-Lightning-reported iteration time (DataLoader,
   preprocessing, overhead).
+- `profile_batch_size.py` — finds the max batch size that fits in
+  80 GB for each `supernova_explosion_64` model.  Sweeps batch
+  sizes with synthetic inputs and reports peak GPU memory.
 
 ## Verification
 

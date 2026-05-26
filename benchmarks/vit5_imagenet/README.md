@@ -59,6 +59,18 @@ diagnosing where any new regression came from.
 PYTHONPATH=. conda run -n nv-subq python benchmarks/vit5_imagenet/bench_vit5_profile.py
 ```
 
+### `benchmark_imagenet_throughput.py`
+
+Inference-only throughput benchmark for ImageNet-1k ViT-5 configs —
+images/sec on a single GPU, comparable to the VMamba Table 1 numbers.
+Builds the network directly from `nvsubquadratic` modules without
+loading the full training-side config (avoids apex / DALI / Lightning),
+so it runs on a vanilla setup.
+
+```bash
+PYTHONPATH=. conda run -n nv-subq python benchmarks/vit5_imagenet/benchmark_imagenet_throughput.py
+```
+
 ## Verification scripts
 
 - `verify_dali_fused.py` — sanity-checks output shapes/dtypes, value

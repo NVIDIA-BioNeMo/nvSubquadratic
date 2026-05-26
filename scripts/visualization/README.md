@@ -43,4 +43,4 @@ formats).
   augmented views per source image.
 - `visualize_patch_size_throughput.py` — patch-size sweep throughput
   plot (consumes `.jsonl` output of
-  [`scripts/benchmark_patch_size_2d.py`](../benchmark_patch_size_2d.py)).
+  [`benchmarks/benchmark_patch_size_2d.py`](../../benchmarks/benchmark_patch_size_2d.py)).

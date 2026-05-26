@@ -1,7 +1,15 @@
-"""Find max batch size that fits in 80 GB for each supernova_explosion_64 model.
+"""Find the max batch size that fits in 80 GB for each supernova_explosion_64 model.
 
-Runs a forward + backward pass with synthetic data at increasing batch sizes
-and reports peak GPU memory.  Stops when peak exceeds the budget.
+Runs a forward + backward pass on synthetic ``[B, C, *spatial]`` inputs
+at increasing batch sizes and reports peak GPU memory.  Stops when peak
+exceeds the configured budget (default 80 GB).
+
+Targets: H100 SXM 80GB or any Ampere+ 80 GB GPU.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python benchmarks/well/profile_batch_size.py
+
+Output: stdout summary table (peak GiB / batch size for each model).
 """
 
 import gc
