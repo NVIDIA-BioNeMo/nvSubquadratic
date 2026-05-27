@@ -4,68 +4,23 @@
 
 import copy
 import math
-import warnings
+import os
+import shutil
 from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 import wandb
-from diffusers import DDIMScheduler
-from torchmetrics.image.fid import FrechetInceptionDistance
-from torchvision.utils import make_grid
+from torchvision.utils import make_grid, save_image
+from tqdm.auto import tqdm
 
 from experiments.default_cfg import DiffusionExperimentConfig
 from experiments.lightning_wrappers.base_lightning_wrapper import LightningWrapperBase
 
 
-class _FallbackFIDMetric:
-    """Minimal FID metric replacement that keeps tests runnable without torch-fidelity."""
-
-    def __init__(self) -> None:
-        self._device = torch.device("cpu")
-        self.reset()
-
-    def to(self, device: torch.device) -> "_FallbackFIDMetric":
-        self._device = torch.device(device)
-        return self
-
-    def reset(self) -> None:
-        self._reals: list[torch.Tensor] = []
-        self._fakes: list[torch.Tensor] = []
-
-    def update(self, images: torch.Tensor, *, real: bool) -> None:
-        data = images.detach().to("cpu", dtype=torch.float32)
-        if real:
-            self._reals.append(data)
-        else:
-            self._fakes.append(data)
-
-    def compute(self) -> torch.Tensor:
-        if not self._reals or not self._fakes:
-            return torch.tensor(float("nan"), device=self._device)
-        real = torch.cat(self._reals, dim=0)
-        fake = torch.cat(self._fakes, dim=0)
-        value = torch.linalg.norm(real.mean(dim=0) - fake.mean(dim=0))
-        return value.to(self._device)
-
-
 class DiffusionWrapper(LightningWrapperBase):
-    """Lightning module for DDPM/DDIM-style training with CKConv backbones.
-
-    .. TODO(@dmknigge): Resume support (critical for long diffusion runs)
-        - The manual EMA model (``self._ema_model``) is NOT saved or restored
-          in checkpoints. On resume, the EMA shadow copy is re-initialized
-          from ``deepcopy(self.network)`` (i.e., the *resumed* weights), losing
-          all accumulated averaging. Add ``on_save_checkpoint`` /
-          ``on_load_checkpoint`` hooks to serialize ``_ema_model.state_dict()``
-          and ``_ema_has_been_updated`` into the checkpoint.
-          Alternatively, migrate to the ``LabeledEMAWeightAveraging`` callback
-          used by the classification pipeline, which handles this correctly.
-        - Persist ``example_input_shape`` so that sampling works immediately
-          after resume without waiting for the first training batch.
-        - Add corresponding tests in ``tests/test_checkpoint_resume.py``.
-    """
+    """Lightning module for JiT-style continuous-time diffusion."""
 
     def __init__(
         self,
@@ -86,42 +41,13 @@ class DiffusionWrapper(LightningWrapperBase):
         if diffusion_cfg is None:
             raise ValueError("DiffusionWrapper requires cfg.diffusion to be provided.")
 
-        # Store diffusion hyper-parameters from the configuration so that we can reuse them
-        # across training and sampling without constantly reaching outside the module.
+        # JiT continuous-time diffusion setup.
         self.num_train_timesteps = int(diffusion_cfg.num_train_timesteps)
-        self.beta_schedule = diffusion_cfg.beta_schedule
-        self.beta_start = float(diffusion_cfg.beta_start)
-        self.beta_end = float(diffusion_cfg.beta_end)
-
-        # Set the prediction type and validate it.
-        assert diffusion_cfg.prediction_type in ["epsilon", "sample", "v_prediction"]
-        self.prediction_type = diffusion_cfg.prediction_type
-
-        trained_betas = None
-        beta_schedule = self.beta_schedule
-        if self.beta_schedule == "cosine_interpolated":
-            trained_betas = self._build_cosine_interpolated_betas(
-                num_steps=self.num_train_timesteps,
-                logsnr_min=diffusion_cfg.cosine_schedule_logsnr_min,
-                logsnr_max=diffusion_cfg.cosine_schedule_logsnr_max,
-                image_resolution=diffusion_cfg.cosine_schedule_image_resolution,
-                noise_res_low=diffusion_cfg.cosine_schedule_noise_res_low,
-                noise_res_high=diffusion_cfg.cosine_schedule_noise_res_high,
-            )
-            beta_schedule = "linear"  # unused when trained_betas is provided
-
-        # Instantiate the diffusers scheduler, delegating all diffusion math (alphas, betas, posteriors, etc.)
-        # to a single well-tested implementation rather than maintaining our own copy here.
-        self.scheduler = DDIMScheduler(
-            num_train_timesteps=self.num_train_timesteps,
-            beta_start=self.beta_start,
-            beta_end=self.beta_end,
-            beta_schedule=beta_schedule,
-            prediction_type=self.prediction_type,
-            clip_sample=False,
-            set_alpha_to_one=False,
-            trained_betas=trained_betas,
-        )
+        self.noise_scale = float(diffusion_cfg.noise_scale)
+        self.p_mean = float(diffusion_cfg.p_mean)
+        self.p_std = float(diffusion_cfg.p_std)
+        self.cfg_interval_start = float(diffusion_cfg.cfg_interval_start)
+        self.cfg_interval_end = float(diffusion_cfg.cfg_interval_end)
 
         hidden_dim = getattr(network, "hidden_dim", None)
         if hidden_dim is None:
@@ -142,44 +68,30 @@ class DiffusionWrapper(LightningWrapperBase):
             torch.nn.Linear(hidden_dim * 2, hidden_dim),
         )
 
-        # We keep the objective expressed as a simple mean-squared error; the scheduler decides which
-        # target we compare against (noise, clean sample, or velocity) and we simply follow along.
-        self.loss_fn = torch.nn.MSELoss()
-
-        # Book-keeping for sampling and logging.
+        # Sampling and logging configuration.
         self.example_input_shape: Optional[torch.Size] = None
         self.default_inference_steps = int(diffusion_cfg.num_inference_steps)
         self.log_samples = bool(diffusion_cfg.log_samples)
         self.num_generated_samples = int(diffusion_cfg.num_samples)
-        self.ddim_eta = float(diffusion_cfg.ddim_eta)
-        self.use_sigmoid_loss_weighting = bool(diffusion_cfg.use_sigmoid_loss_weighting)
-        self.sigmoid_loss_bias = float(diffusion_cfg.sigmoid_loss_bias)
 
-        # Optional online FID evaluation.
-        self.fid_max_batches = max(int(getattr(diffusion_cfg, "fid_num_batches", 0) or 0), 0)
-        self.fid_enabled = bool(getattr(diffusion_cfg, "fid_enabled", False)) and self.fid_max_batches > 0
+        # Optional online FID evaluation (JiT Style).
+        self.fid_online_jit = bool(getattr(diffusion_cfg, "fid_online_jit", False))
+        self.fid_stats_file = getattr(diffusion_cfg, "fid_stats_file", None)
+        self.fid_num_samples = int(getattr(diffusion_cfg, "fid_num_samples", 50000))
+        self.fid_interval = int(getattr(diffusion_cfg, "fid_interval", 50))
+        self.fid_batch_size = int(getattr(diffusion_cfg, "fid_batch_size", 64))
         fid_steps_cfg = getattr(diffusion_cfg, "fid_num_inference_steps", None)
         self.fid_num_inference_steps = (
             int(fid_steps_cfg) if fid_steps_cfg is not None else self.default_inference_steps
         )
-        self.fid_metric: Optional[FrechetInceptionDistance | _FallbackFIDMetric] = self._build_fid_metric()
-        self._fid_batches_seen = 0
-        if self.fid_metric is None:
-            self.fid_enabled = False
 
-        # Classifier-free guidance (CFG) specific settings ---------------------------------------------------------
-        # We make the behaviour completely configurable so the same wrapper can serve
-        # both unconditional and class-conditional runs without branching out to a
-        # dedicated LightningModule. The goal is to keep the training loop readable
-        # while still exposing the knobs that practitioners expect.
+        # Classifier-free guidance (CFG) settings.
+        # Configurable to support both conditional and unconditional training within the same wrapper.
         self.class_conditioning = diffusion_cfg.num_classes is not None
-        # Guidance is only meaningful when we have a class embedding to steer the
-        # model. If the user forgets to specify a class count we fall back to the
-        # unconditional path and later raise a helpful error when guidance is used.
         self.cfg_enabled = bool(diffusion_cfg.use_classifier_free_guidance) and self.class_conditioning
         self.guidance_scale = float(diffusion_cfg.guidance_scale)
-        # During training we optionally drop the conditioning signal at random so the
-        # network learns an unconditional branch that we can later reuse at inference.
+
+        # Dropout probability for the conditioning signal during training.
         self.condition_dropout_prob = float(diffusion_cfg.condition_dropout_prob) if self.class_conditioning else 0.0
         self.num_classes: Optional[int] = (
             int(diffusion_cfg.num_classes) if diffusion_cfg.num_classes is not None else None
@@ -193,23 +105,19 @@ class DiffusionWrapper(LightningWrapperBase):
         if self.class_conditioning:
             if self.num_classes is None or self.num_classes <= 0:
                 raise ValueError("diffusion.num_classes must be a positive integer when enabling class conditioning.")
-            # We dedicate one additional embedding slot to represent the unconditional
-            # branch. Using a learnable parameter keeps the code flexible (e.g. if we
-            # later decide to fine-tune the unconditional vector instead of keeping it
-            # at zero).
+            # We dedicate one additional embedding slot to represent the unconditional branch.
+            # This embedding is learned during training (initialized to zero).
             self.null_label_index = self.num_classes
             self.label_embed = torch.nn.Embedding(self.num_classes + 1, hidden_dim)
             torch.nn.init.normal_(self.label_embed.weight, mean=0.0, std=0.02)
             with torch.no_grad():
-                # Starting from an explicit zero vector gives the unconditional branch a
-                # deterministic meaning: it simply relies on the time embedding.
+                # Initialize the unconditional embedding to zero.
                 self.label_embed.weight[self.null_label_index].zero_()
         else:
             self.null_label_index = None
             self.label_embed = None
 
-        # Exponential moving average (EMA) tracking mirrors the previous implementation; we only
-        # modernise the diffusion math, not the stabilisation tricks that already work well.
+        # Exponential Moving Average (EMA) tracking.
         self.ema_enabled = bool(diffusion_cfg.ema_enabled)
         self.ema_decay = float(diffusion_cfg.ema_decay)
         self.ema_update_every = int(diffusion_cfg.ema_update_every)
@@ -217,8 +125,7 @@ class DiffusionWrapper(LightningWrapperBase):
         self._ema_model: Optional[torch.nn.Module] = None
         self._ema_has_been_updated = False
         if self.ema_enabled:
-            # Create an EMA shadow copy that never receives gradients so we can use it for evaluation
-            # time sampling without polluting the main optimiser state.
+            # Create a shadow copy of the network that does not receive gradients.
             self._ema_model = copy.deepcopy(self.network)
             for p in self._ema_model.parameters():
                 p.detach_()
@@ -231,110 +138,13 @@ class DiffusionWrapper(LightningWrapperBase):
 
     @staticmethod
     def _channels_last_to_first(tensor: torch.Tensor) -> torch.Tensor:
-        """Diffusers schedulers operate on channels-first tensors, so we convert on the fly."""
+        """Convert an image tensor from channels-last to channels-first layout."""
         return torch.moveaxis(tensor, -1, 1).contiguous()
 
     @staticmethod
     def _channels_first_to_last(tensor: torch.Tensor) -> torch.Tensor:
-        """Convert back to channels-last so the backbone can keep using its preferred convention."""
+        """Convert an image tensor from channels-first to channels-last layout."""
         return torch.moveaxis(tensor, 1, -1).contiguous()
-
-    def _compute_training_target(
-        self,
-        clean_images_bchw: torch.Tensor,
-        noise_bchw: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
-        """Let the scheduler tell us which training target corresponds to the configured objective."""
-        prediction_type = self.scheduler.config.prediction_type
-        if prediction_type == "epsilon":
-            target = noise_bchw
-        elif prediction_type == "sample":
-            target = clean_images_bchw
-        elif prediction_type == "v_prediction":
-            target = self.scheduler.get_velocity(clean_images_bchw, noise_bchw, timesteps)
-        else:  # pragma: no cover - guarded by configuration validation
-            raise ValueError(f"Unsupported prediction type: {prediction_type}")
-        return target
-
-    def _sigmoid_weighted_mse(
-        self,
-        prediction: torch.Tensor,
-        target: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
-        """Apply SiD2-style sigmoid loss weighting based on the per-sample log SNR."""
-        if not hasattr(self.scheduler, "alphas_cumprod"):
-            raise AttributeError("Current scheduler does not expose 'alphas_cumprod' required for log-SNR weighting.")
-
-        alphas_cumprod = self.scheduler.alphas_cumprod.to(device=prediction.device, dtype=prediction.dtype)
-        alphas = alphas_cumprod[timesteps]
-        eps = torch.finfo(alphas.dtype).eps
-        alphas = alphas.clamp(min=eps, max=1.0 - eps)
-        log_snr = torch.log(alphas / (1.0 - alphas))
-
-        weights = torch.sigmoid(log_snr - self.sigmoid_loss_bias).to(dtype=prediction.dtype)
-        squared_error = (prediction - target) ** 2
-        view_shape = (weights.shape[0],) + (1,) * (squared_error.ndim - 1)
-        weighted_error = weights.view(view_shape) * squared_error
-        return weighted_error.mean()
-
-    @staticmethod
-    def _cosine_interpolated_logsnr(
-        t: torch.Tensor,
-        *,
-        logsnr_min: float,
-        logsnr_max: float,
-        image_resolution: int,
-        noise_res_low: int,
-        noise_res_high: int,
-    ) -> torch.Tensor:
-        """Return the cosine-interpolated log-SNR schedule from SiD2 Appendix B."""
-        if noise_res_high <= 0 or noise_res_low <= 0:
-            raise ValueError("Noise resolutions for cosine schedule must be positive.")
-
-        log_change_high = math.log(float(image_resolution)) - math.log(float(noise_res_high))
-        log_change_low = math.log(float(image_resolution)) - math.log(float(noise_res_low))
-        b = math.atan(math.exp(-0.5 * logsnr_max))
-        a = math.atan(math.exp(-0.5 * logsnr_min)) - b
-        logsnr_cosine = -2.0 * torch.log(torch.tan(a * t + b))
-        logsnr_high = logsnr_cosine + log_change_high
-        logsnr_low = logsnr_cosine + log_change_low
-        return (1.0 - t) * logsnr_high + t * logsnr_low
-
-    def _build_cosine_interpolated_betas(
-        self,
-        *,
-        num_steps: int,
-        logsnr_min: float,
-        logsnr_max: float,
-        image_resolution: int,
-        noise_res_low: int,
-        noise_res_high: int,
-    ) -> np.ndarray:
-        """Generate a beta schedule that matches the cosine-interpolated log-SNR used in SiD2."""
-        if num_steps <= 0:
-            raise ValueError("Number of diffusion steps must be positive.")
-
-        device = torch.device("cpu")
-        t = torch.linspace(0.0, 1.0, steps=num_steps, dtype=torch.float64, device=device)
-        logsnr = self._cosine_interpolated_logsnr(
-            t,
-            logsnr_min=logsnr_min,
-            logsnr_max=logsnr_max,
-            image_resolution=image_resolution,
-            noise_res_low=noise_res_low,
-            noise_res_high=noise_res_high,
-        )
-        alphas_cumprod = torch.sigmoid(logsnr)
-        alphas_cumprod = torch.clamp(alphas_cumprod, min=1e-7, max=1.0)
-        alphas_cumprod_prev = torch.cat(
-            [torch.ones(1, dtype=alphas_cumprod.dtype, device=device), alphas_cumprod[:-1]]
-        )
-        alphas = alphas_cumprod / alphas_cumprod_prev
-        betas = 1.0 - alphas
-        betas = torch.clamp(betas, min=1e-8, max=0.999)
-        return betas.cpu().numpy().astype(np.float32)
 
     def _timestep_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
         """Create sinusoidal timestep embeddings.
@@ -364,18 +174,11 @@ class DiffusionWrapper(LightningWrapperBase):
         return embedding
 
     def _noiselevel_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
-        """Embed diffusion steps via their log-SNR rather than raw indices."""
-        alphas_cumprod = getattr(self.scheduler, "alphas_cumprod", None)
-        if alphas_cumprod is None:
-            raise RuntimeError("Scheduler does not have precomputed alphas_cumprod for noise-level embedding.")
-        alphas_cumprod = alphas_cumprod.to(timesteps.device)
-        indices = timesteps.to(torch.long)
-        indices = torch.clamp(indices, min=0, max=alphas_cumprod.shape[0] - 1)
-        alpha = alphas_cumprod[indices].clamp_(1e-7, 1.0 - 1e-7)
-        logsnr = torch.log(alpha) - torch.log1p(-alpha)
-        target_dtype = self.time_mlp[0].weight.dtype if hasattr(self.time_mlp[0], "weight") else logsnr.dtype
-        logsnr = logsnr.to(dtype=target_dtype)
-        return self.time_mlp(self._timestep_embedding(logsnr))
+        """Embed continuous timesteps t ∈ [0, 1] into the model hidden dimension."""
+        target_dtype = self.time_mlp[0].weight.dtype
+        # Scale t into the sinusoidal range expected by time_mlp (matching JiT continuous-time).
+        scaled_t = timesteps.to(target_dtype).clamp_(0.0, 1.0) * float(self.num_train_timesteps)
+        return self.time_mlp(self._timestep_embedding(scaled_t))
 
     def _condition_from_timesteps(
         self,
@@ -384,8 +187,13 @@ class DiffusionWrapper(LightningWrapperBase):
         labels: Optional[torch.Tensor] = None,
         unconditional: bool = False,
         dropout_mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """Return the conditioning vector for a batch of timesteps (and optional class labels).
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Return the conditioning vector and raw label embedding for a batch of timesteps.
+
+        Returns a tuple ``(combined_condition, label_emb)`` where ``label_emb`` is the raw class
+        embedding before adding the time embedding. Pass ``label_emb`` to the network as
+        ``"class_emb"`` so that in-context tokens receive a pure class signal (no time information),
+        matching the JiT reference. ``label_emb`` is ``None`` when class conditioning is disabled.
 
         Args:
             timesteps: Diffusion timestep indices sampled for each element in the batch.
@@ -401,7 +209,7 @@ class DiffusionWrapper(LightningWrapperBase):
 
         # Without class conditioning the timestep embedding is the entire conditioning signal.
         if self.label_embed is None:
-            return time_emb
+            return time_emb, None
 
         # If we do expect labels, make sure the caller provided them.
         if labels is None:
@@ -434,10 +242,7 @@ class DiffusionWrapper(LightningWrapperBase):
             raise ValueError("Label index out of range for classifier-free guidance.")
 
         label_emb = self.label_embed(labels_to_embed)
-        # We simply add the two embeddings together so the backbone receives a single
-        # conditioning vector. This mirrors the standard DDPM/DiT approach and keeps the
-        # interface consistent with the time-only case.
-        return time_emb + label_emb
+        return time_emb + label_emb, label_emb
 
     def _shared_step(
         self,
@@ -467,20 +272,6 @@ class DiffusionWrapper(LightningWrapperBase):
         images_bchw = self._channels_last_to_first(images)
         batch_size = images_bchw.shape[0]
 
-        # Sample an independent diffusion timestep for each element in the batch.
-        timesteps = torch.randint(
-            0,
-            self.scheduler.config.num_train_timesteps,
-            (batch_size,),
-            device=images_bchw.device,
-            dtype=torch.long,
-        )
-
-        # Draw standard Gaussian noise and let diffusers corrupt the clean image for us.
-        noise_bchw = torch.randn_like(images_bchw)
-        noisy_images_bchw = self.scheduler.add_noise(images_bchw, noise_bchw, timesteps)
-        noisy_images = self._channels_first_to_last(noisy_images_bchw)
-
         labels_tensor: Optional[torch.Tensor] = None
         if self.class_conditioning:
             # Retrieve labels if the datamodule provided them. For class-conditioned runs the labels are
@@ -492,34 +283,39 @@ class DiffusionWrapper(LightningWrapperBase):
                 )
             labels_tensor = batch["label"].to(self.device, non_blocking=True).long().view(-1)
 
-            # Bernoulli mask indicating which samples should use the unconditional branch so the model
-            # learns to ignore class information part of the time. This is the core of classifier-free guidance.
-            dropout_mask = None
-            if self.condition_dropout_prob > 0.0:
-                dropout_mask = torch.rand(batch_size, device=self.device) < self.condition_dropout_prob
-            condition = self._condition_from_timesteps(
-                timesteps,
-                labels=labels_tensor,
-                dropout_mask=dropout_mask,
-            )
-        else:
-            # Purely time-conditioned diffusion behaves exactly as before.
-            condition = self._condition_from_timesteps(timesteps)
+        # 1. Sample timestep t in [0, 1] from the JiT logit-normal distribution.
+        t_logit = torch.randn(batch_size, device=self.device) * self.p_std + self.p_mean
+        timesteps = torch.sigmoid(t_logit)
 
-        # The denoiser returns all of its outputs in a dict; training only needs the raw logits tensor.
-        prediction = self.network({"input": noisy_images, "condition": condition})["logits"]
+        # 2. Sample noise scaled by the configured noise_scale (matches JiT denoiser.py).
+        eps_bchw = torch.randn_like(images_bchw) * self.noise_scale
 
-        # Convert prediction to channels-first for loss computation.
+        # 3. Mix clean image and noise to get z_t.
+        t_b = timesteps.view(batch_size, 1, 1, 1)
+        z_bchw = t_b * images_bchw + (1.0 - t_b) * eps_bchw
+        target_v = images_bchw - eps_bchw
+
+        # 4. Predict x from z_t and conditioning.
+        z_cl = self._channels_first_to_last(z_bchw)
+        dropout_mask = None
+        if self.class_conditioning and self.condition_dropout_prob > 0.0:
+            dropout_mask = torch.rand(batch_size, device=self.device) < self.condition_dropout_prob
+
+        condition, class_emb = self._condition_from_timesteps(
+            timesteps,
+            labels=labels_tensor,
+            dropout_mask=dropout_mask,
+        )
+        net_input = {"input": z_cl, "condition": condition}
+        if class_emb is not None:
+            net_input["class_emb"] = class_emb
+        prediction = self.network(net_input)["logits"]
         prediction_bchw = self._channels_last_to_first(prediction)
 
-        # Compute the appropriate training target and return the MSE loss.
-        target = self._compute_training_target(images_bchw, noise_bchw, timesteps)
-
-        # Optionally use the sigmoid-weighted loss from SiD2 instead of plain MSE.
-        if self.use_sigmoid_loss_weighting:
-            loss = self._sigmoid_weighted_mse(prediction_bchw, target, timesteps)
-        else:
-            loss = self.loss_fn(prediction_bchw, target)
+        # 5. JiT objective: network predicts x, loss is applied in v-space.
+        denominator = torch.clamp(1.0 - t_b, min=0.05)
+        predicted_v = (prediction_bchw - z_bchw) / denominator
+        loss = F.mse_loss(predicted_v, target_v)
 
         if return_clean_images:
             aux = {
@@ -534,77 +330,21 @@ class DiffusionWrapper(LightningWrapperBase):
         """Run one training step and log the loss."""
         loss = self._shared_step(batch)
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
+        self.log(
+            "global_step", float(self.trainer.global_step), on_step=True, on_epoch=False, prog_bar=True, logger=False
+        )
+        self.log("current_step", float(self.trainer.global_step), on_step=True, on_epoch=False, prog_bar=False)
         return loss
 
     def on_validation_epoch_start(self) -> None:
-        """Reset FID metrics at the start of validation."""
+        """Reset validation metrics."""
         super().on_validation_epoch_start()
-        if self.fid_metric is not None:
-            self.fid_metric.reset()
-            self._fid_batches_seen = 0
 
     def validation_step(self, batch, batch_idx):
-        """Compute validation loss and optionally accumulate FID statistics."""
-        collect_images = self._should_collect_fid()
-        shared = self._shared_step(batch, return_clean_images=collect_images)
-        if collect_images:
-            assert isinstance(shared, tuple)
-            loss, aux = shared
-            self._update_fid_metrics(aux["clean_images_bchw"], aux["labels"])
-        else:
-            assert isinstance(shared, torch.Tensor)
-            loss = shared
+        """Compute validation loss."""
+        loss = self._shared_step(batch)
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=self.distributed)
         return loss
-
-    def _should_collect_fid(self) -> bool:
-        return self.fid_metric is not None and self._fid_batches_seen < self.fid_max_batches
-
-    def _build_fid_metric(self):
-        if not self.fid_enabled:
-            return None
-        try:
-            return FrechetInceptionDistance(feature=2048, normalize=True)
-        except ModuleNotFoundError:
-            warnings.warn(
-                "Torch-fidelity is not installed; using a lightweight FID metric for tests. "
-                "Install `torchmetrics[image]` for the full metric.",
-                stacklevel=2,
-            )
-            return _FallbackFIDMetric()
-
-    def _prepare_images_for_fid(self, images_bchw: torch.Tensor) -> torch.Tensor:
-        images = images_bchw.detach()
-        if images.dtype != torch.float32:
-            images = images.float()
-        images = torch.clamp((images + 1.0) / 2.0, 0.0, 1.0)
-        if images.shape[1] == 1:
-            images = images.repeat(1, 3, 1, 1)
-        return images
-
-    def _update_fid_metrics(self, clean_images_bchw: torch.Tensor, labels: Optional[torch.Tensor]) -> None:
-        if not self._should_collect_fid() or self.example_input_shape is None:
-            return
-        assert self.fid_metric is not None
-        fid_metric = self.fid_metric.to(self.device)
-
-        real = self._prepare_images_for_fid(clean_images_bchw)
-        fid_metric.update(real, real=True)
-
-        with torch.no_grad():
-            sample_kwargs = {}
-            if self.class_conditioning and labels is not None:
-                sample_kwargs["labels"] = labels.to(self.device)
-            generated = self.sample(
-                num_samples=real.shape[0],
-                num_inference_steps=self.fid_num_inference_steps,
-                **sample_kwargs,
-            )
-            generated_bchw = self._channels_last_to_first(generated)
-            fake = self._prepare_images_for_fid(generated_bchw)
-            fid_metric.update(fake, real=False)
-
-        self._fid_batches_seen += 1
 
     def test_step(self, batch, batch_idx):
         """Lightning test loop placeholder (no dedicated metric)."""
@@ -618,93 +358,8 @@ class DiffusionWrapper(LightningWrapperBase):
         num_inference_steps: Optional[int] = None,
         labels: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Generate samples using the current diffusion model (EMA if available)."""
-        if self.example_input_shape is None:
-            raise RuntimeError("Cannot sample before observing at least one training batch.")
-
-        num_inference_steps = num_inference_steps or self.default_inference_steps
-        device = self.device
-        height, width, channels = self.example_input_shape
-
-        # When class conditioning is active we need a label for each generated sample. If the caller did not
-        # specify one we default to a simple deterministic pattern (cycling through classes) so logged grids
-        # stay easy to interpret.
-        labels_tensor: Optional[torch.Tensor]
-        if self.class_conditioning:
-            if labels is None:
-                # Random fallback when no labels were provided.
-                labels_tensor = torch.randint(0, self.num_classes, (num_samples,), device=device, dtype=torch.long)
-            else:
-                labels_tensor = torch.as_tensor(labels, device=device, dtype=torch.long).view(-1)
-                if labels_tensor.numel() == 1 and num_samples > 1:
-                    labels_tensor = labels_tensor.expand(num_samples)
-                if labels_tensor.shape[0] != num_samples:
-                    raise ValueError("labels must either be a scalar or have the same length as num_samples.")
-            if (labels_tensor < 0).any():
-                raise ValueError("labels must contain non-negative class indices.")
-        else:
-            if labels is not None:
-                raise ValueError("labels were provided but the model was configured without class conditioning.")
-            labels_tensor = None
-
-        # Start from pure Gaussian noise in channels-first format because that's what the scheduler expects.
-        sample_bchw = torch.randn((num_samples, channels, height, width), device=device)
-
-        # Prepare the scheduler timesteps on the current device - this mirrors the standard diffusers pipeline.
-        self.scheduler.set_timesteps(num_inference_steps, device=device)
-
-        use_ema = self.ema_enabled and self._ema_model is not None and self._ema_has_been_updated
-        inference_model = self._ema_model if use_ema else self.network
-        was_training = inference_model.training
-        inference_model.eval()
-        inference_model = inference_model.to(device)
-
-        for timestep in self.scheduler.timesteps:
-            # Broadcast the scalar timestep to a batch so we can embed it and feed the denoiser.
-            t_batch = torch.full((num_samples,), timestep.item(), device=device, dtype=torch.long)
-
-            # Convert the working sample back to channels-last before asking the network for a prediction.
-            model_input = self._channels_first_to_last(sample_bchw)
-
-            if self.cfg_enabled:
-                # Run the denoiser twice: once on the unconditional branch and once with the actual labels.
-                cond_uncond = self._condition_from_timesteps(
-                    t_batch,
-                    labels=labels_tensor,
-                    unconditional=True,
-                )
-                cond_cond = self._condition_from_timesteps(
-                    t_batch,
-                    labels=labels_tensor,
-                )
-                outputs_uncond = inference_model({"input": model_input, "condition": cond_uncond})["logits"]
-                outputs_cond = inference_model({"input": model_input, "condition": cond_cond})["logits"]
-                pred_uncond = self._channels_last_to_first(outputs_uncond)
-                pred_cond = self._channels_last_to_first(outputs_cond)
-                # Linear interpolation between unconditional and conditional predictions as described in
-                # Ho & Salimans (2022). guidance_scale=1 leaves the result unchanged, larger values push
-                # generations closer to the conditional manifold.
-                model_output_bchw = pred_uncond + self.guidance_scale * (pred_cond - pred_uncond)
-            else:
-                condition = self._condition_from_timesteps(t_batch, labels=labels_tensor)
-                outputs = inference_model({"input": model_input, "condition": condition})["logits"]
-                model_output_bchw = self._channels_last_to_first(outputs)
-
-            # One DDIM step brings us closer to the clean sample; eta tunes deterministic vs. stochastic paths.
-            scheduler_output = self.scheduler.step(
-                model_output_bchw,
-                timestep,
-                sample_bchw,
-                eta=self.ddim_eta,
-                return_dict=True,
-            )
-            sample_bchw = scheduler_output.prev_sample
-
-        if was_training:
-            inference_model.train()
-
-        sample_hwc = self._channels_first_to_last(sample_bchw)
-        return torch.clamp(sample_hwc, -1.0, 1.0)
+        """Generate samples with the JiT continuous-time sampler."""
+        return self._sample_continuous(num_samples, num_inference_steps, labels)
 
     def on_fit_start(self) -> None:
         """Move EMA weights to device before training begins."""
@@ -738,19 +393,10 @@ class DiffusionWrapper(LightningWrapperBase):
         if self.trainer.sanity_checking:
             return
 
-        if self.fid_metric is not None and self._fid_batches_seen > 0:
-            fid_value = self.fid_metric.compute()
-            self.log("metrics/fid", fid_value, prog_bar=False, sync_dist=self.distributed)
-            if self.logger is not None and hasattr(self.logger, "experiment"):
-                try:
-                    self.logger.experiment.log(
-                        {
-                            "metrics/fid": float(fid_value.item()),
-                            "global_step": self.global_step,
-                        }
-                    )
-                except Exception:
-                    pass
+        if self.fid_online_jit and self.current_epoch % self.fid_interval == 0:
+            if self.global_rank == 0:
+                print(f"Starting FID evaluation for epoch {self.current_epoch}...")
+            self._run_jit_online_eval()
 
         if not self.log_samples:
             return
@@ -804,3 +450,281 @@ class DiffusionWrapper(LightningWrapperBase):
                 "global_step": self.global_step,
             }
         )
+
+    # -------------------------------------------------------------------------
+    # Continuous Time / Flow Matching Logic (JiT Port)
+    # -------------------------------------------------------------------------
+
+    def _sample_continuous(
+        self,
+        num_samples: int,
+        num_inference_steps: Optional[int] = None,
+        labels: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Sampling loop for continuous time flow matching."""
+        if self.example_input_shape is None:
+            raise RuntimeError("Cannot sample before observing at least one training batch.")
+
+        num_inference_steps = num_inference_steps or self.default_inference_steps
+        device = self.device
+        height, width, channels = self.example_input_shape
+
+        # Prepare labels
+        labels_tensor: Optional[torch.Tensor]
+        if self.class_conditioning:
+            if labels is None:
+                labels_tensor = torch.randint(0, self.num_classes, (num_samples,), device=device, dtype=torch.long)
+            else:
+                labels_tensor = torch.as_tensor(labels, device=device, dtype=torch.long).view(-1)
+                if labels_tensor.numel() == 1 and num_samples > 1:
+                    labels_tensor = labels_tensor.expand(num_samples)
+                if labels_tensor.shape[0] != num_samples:
+                    raise ValueError("labels must either be a scalar or have the same length as num_samples.")
+                if (labels_tensor < 0).any():
+                    raise ValueError("labels must contain non-negative class indices.")
+        else:
+            if labels is not None:
+                raise ValueError("labels were provided but the model was configured without class conditioning.")
+            labels_tensor = None
+
+        # 1. Initialize with noise scaled by the configured noise_scale (matches JiT denoiser.py).
+        z = torch.randn((num_samples, channels, height, width), device=device) * self.noise_scale
+
+        # 2. Integrate from t=0 (noise) to t=1 (data) using a Heun solver.
+        dt = 1.0 / num_inference_steps
+
+        # Use EMA model if enabled
+        use_ema = self.ema_enabled and self._ema_model is not None and self._ema_has_been_updated
+        inference_model = self._ema_model if use_ema else self.network
+        was_training = inference_model.training
+        inference_model.eval()
+        inference_model = inference_model.to(device)
+
+        for i in range(num_inference_steps - 1):
+            t = i * dt
+            z = self._heun_step(inference_model, z, t, dt, labels_tensor)
+
+        # Last step: Euler only (matches JiT reference — avoids an extra model call at t≈1
+        # where the ODE denominator is near its minimum clamp value).
+        t_last = (num_inference_steps - 1) * dt
+        v_last = self._model_forward_continuous(inference_model, z, t_last, labels_tensor)
+        z = z + v_last * dt
+
+        if was_training:
+            inference_model.train()
+
+        return torch.clamp(self._channels_first_to_last(z), -1.0, 1.0)
+
+    def _model_forward_continuous(self, model, x, t_scalar, labels):
+        # Broadcast t
+        t_batch = torch.full((x.shape[0],), t_scalar, device=x.device, dtype=torch.float32)
+
+        # 1. Condition
+        do_cfg = self.cfg_enabled and (
+            min(self.cfg_interval_start, self.cfg_interval_end)
+            <= t_scalar
+            <= max(self.cfg_interval_start, self.cfg_interval_end)
+        )
+
+        pred_bchw = None
+
+        if do_cfg:
+            # CFG
+            cond_uncond, class_emb_uncond = self._condition_from_timesteps(
+                t_batch,
+                labels=labels,
+                unconditional=True,
+            )
+            cond_cond, class_emb_cond = self._condition_from_timesteps(
+                t_batch,
+                labels=labels,
+            )
+
+            # Note: Model expects channels-last in 'input'
+            x_cl = self._channels_first_to_last(x)
+
+            inp_uncond = {"input": x_cl, "condition": cond_uncond}
+            if class_emb_uncond is not None:
+                inp_uncond["class_emb"] = class_emb_uncond
+            inp_cond = {"input": x_cl, "condition": cond_cond}
+            if class_emb_cond is not None:
+                inp_cond["class_emb"] = class_emb_cond
+
+            out_uncond = model(inp_uncond)["logits"]
+            out_cond = model(inp_cond)["logits"]
+
+            pred_uncond = self._channels_last_to_first(out_uncond)
+            pred_cond = self._channels_last_to_first(out_cond)
+
+            pred_bchw = pred_uncond + self.guidance_scale * (pred_cond - pred_uncond)
+        else:
+            # Standard forward
+            condition, class_emb = self._condition_from_timesteps(t_batch, labels=labels)
+            x_cl = self._channels_first_to_last(x)
+            inp = {"input": x_cl, "condition": condition}
+            if class_emb is not None:
+                inp["class_emb"] = class_emb
+            out = model(inp)["logits"]
+            pred_bchw = self._channels_last_to_first(out)
+
+        # JiT mode predicts x and converts to velocity with denominator clipping.
+        denominator = max(1.0 - t_scalar, 0.05)
+        return (pred_bchw - x) / denominator
+
+    def _heun_step(self, model, x, t, dt, labels):
+        v = self._model_forward_continuous(model, x, t, labels)
+        x_euler = x + v * dt
+        v_next = self._model_forward_continuous(model, x_euler, t + dt, labels)
+        x_next = x + 0.5 * dt * (v + v_next)
+        return x_next
+
+    def _run_jit_online_eval(self) -> None:
+        """Run standard FID evaluation matching the JiT repository's methodology."""
+        if self.fid_stats_file is None:
+            if self.global_rank == 0:
+                print("FID stats file not configured. Skipping online evaluation.")
+            return
+
+        if not os.path.exists(self.fid_stats_file) and not os.environ.get("SKIP_FID_STATS_CHECK"):
+            if self.global_rank == 0:
+                print(f"FID stats file {self.fid_stats_file} not found. Skipping online evaluation.")
+            return
+
+        fid_run_dir = os.path.join(self.trainer.default_root_dir, f"fid_eval_{self.global_step}")
+
+        if self.global_rank == 0:
+            os.makedirs(fid_run_dir, exist_ok=True)
+
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
+        world_size = self.trainer.world_size
+        global_rank = self.global_rank
+
+        total_samples = self.fid_num_samples
+        base_samples = total_samples // world_size
+        remainder = total_samples % world_size
+
+        # Non-overlapping slice [start_idx, start_idx + my_count) for this rank.
+        start_idx = base_samples * global_rank + min(global_rank, remainder)
+        my_count = base_samples + (1 if global_rank < remainder else 0)
+
+        if self.num_classes is not None:
+            samples_per_class = total_samples // self.num_classes
+            remainder_classes = total_samples % self.num_classes
+
+            class_labels = np.arange(self.num_classes).repeat(samples_per_class)
+
+            if remainder_classes > 0:
+                class_labels = np.concatenate([class_labels, np.zeros(remainder_classes, dtype=int)])
+
+            end_idx = start_idx + my_count
+            my_labels = class_labels[start_idx:end_idx]
+            my_labels = torch.tensor(my_labels, device=self.device, dtype=torch.long)
+
+        else:
+            my_labels = None
+
+        batches = (
+            math.ceil(len(my_labels) / self.fid_batch_size)
+            if my_labels is not None
+            else math.ceil(my_count / self.fid_batch_size)
+        )
+
+        self.eval()
+
+        samples_generated = 0
+        batch_iterator = range(batches)
+        if global_rank == 0:
+            batch_iterator = tqdm(batch_iterator, total=batches, desc="FID sample generation", leave=True)
+
+        for i in batch_iterator:
+            current_batch_size = (
+                min(self.fid_batch_size, len(my_labels) - samples_generated)
+                if my_labels is not None
+                else min(self.fid_batch_size, my_count - samples_generated)
+            )
+
+            batch_labels = (
+                my_labels[samples_generated : samples_generated + current_batch_size]
+                if my_labels is not None
+                else None
+            )
+
+            with torch.no_grad():
+                samples = self.sample(
+                    num_samples=current_batch_size,
+                    num_inference_steps=self.fid_num_inference_steps,
+                    labels=batch_labels,
+                )
+                # sample() returns (B, H, W, C), but save_image expects (C, H, W).
+                samples = samples.permute(0, 3, 1, 2)  # (B, C, H, W)
+
+            # Denormalize
+            samples = (samples + 1.0) / 2.0
+            samples = torch.clamp(samples, 0.0, 1.0)
+
+            for b in range(current_batch_size):
+                filename = f"sample_{start_idx + samples_generated + b:08d}.png"
+                save_path = os.path.join(fid_run_dir, filename)
+                save_image(samples[b], save_path)
+
+            samples_generated += current_batch_size
+
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
+        if global_rank == 0:
+            try:
+                from torch_fidelity.metric_fid import fid_featuresdict_to_statistics, fid_statistics_to_metric
+                from torch_fidelity.metric_isc import isc_featuresdict_to_metric
+                from torch_fidelity.utils import (
+                    create_feature_extractor,
+                    extract_featuresdict_from_input_id,
+                    resolve_feature_layer_for_metric,
+                )
+
+                feat_layer_fid = resolve_feature_layer_for_metric("fid", fid=True)
+                feat_layer_isc = resolve_feature_layer_for_metric("isc", isc=True)
+                feat_layers = list({feat_layer_fid, feat_layer_isc})
+
+                feat_extractor = create_feature_extractor("inception-v3-compat", feat_layers, cuda=True, verbose=False)
+
+                featuresdict = extract_featuresdict_from_input_id(
+                    input_id=1, feat_extractor=feat_extractor, input1=fid_run_dir, cuda=True, verbose=False
+                )
+
+                stats_1 = fid_featuresdict_to_statistics(featuresdict, feat_layer_fid)
+                f = np.load(self.fid_stats_file)
+                stats_2 = {"mu": f["mu"], "sigma": f["sigma"]}
+                f.close()
+
+                stats_1["mu"] = stats_1["mu"].astype(np.float64)
+                stats_1["sigma"] = stats_1["sigma"].astype(np.float64)
+                stats_2["mu"] = stats_2["mu"].astype(np.float64)
+                stats_2["sigma"] = stats_2["sigma"].astype(np.float64)
+
+                metrics_fid = fid_statistics_to_metric(stats_1, stats_2, verbose=False)
+                metrics_isc = isc_featuresdict_to_metric(featuresdict, feat_layer_isc, isc_splits=10)
+
+                fid = metrics_fid["frechet_inception_distance"]
+                isc = metrics_isc["inception_score_mean"]
+
+                print(f"FID: {fid:.4f}, IS: {isc:.4f}")
+
+                self.log("metrics/fid_online", fid, sync_dist=False)
+                self.log("metrics/is_online", isc, sync_dist=False)
+
+                if self.logger is not None and hasattr(self.logger, "experiment"):
+                    self.logger.experiment.log(
+                        {"metrics/fid_online": fid, "metrics/is_online": isc, "global_step": self.global_step}
+                    )
+
+            except Exception as e:
+                print(f"Error calculating FID: {e}")
+            finally:
+                print(f"Removing temporary FID directory: {fid_run_dir}")
+                shutil.rmtree(fid_run_dir, ignore_errors=True)
+
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()

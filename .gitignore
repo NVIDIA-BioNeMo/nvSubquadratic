@@ -72,6 +72,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/generated/
 
 # PyBuilder
 .pybuilder/
@@ -285,6 +286,7 @@ logs/
 *.temp
 temp/
 tmp/
+_tmp/
 
 # Secrets and sensitive files
 *.key
@@ -331,6 +333,7 @@ core.*
 *~
 
 # Local configuration
+scripts/slurm/cluster.env
 .env.local
 .env.development.local
 .env.test.local

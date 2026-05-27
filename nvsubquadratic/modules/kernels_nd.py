@@ -19,6 +19,41 @@ from einops import rearrange
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
+def _normalize_l_cache(L_cache: int | Sequence[int], data_dim: int) -> tuple[int, ...]:
+    """Broadcast ``L_cache`` to a per-axis tuple of positive ints (>= 2).
+
+    Accepts a single int (broadcast to all axes) or a sequence of ints of
+    length ``data_dim``.  Used by the kernel and positional-embedding
+    classes so each spatial axis can have its own grid resolution
+    (anisotropic kernel grid).  Booleans are explicitly rejected because
+    ``True``/``False`` would silently broadcast to ``(1,)*data_dim``,
+    which would then fail the lower-bound check below.
+
+    Args:
+        L_cache: Scalar cache extent or per-axis sequence.
+        data_dim: Number of spatial dimensions.
+
+    Returns:
+        Tuple of length ``data_dim`` with one positive int per axis.
+    """
+    if isinstance(L_cache, bool):
+        raise TypeError("L_cache must be an int or a sequence of ints, got bool")
+    if isinstance(L_cache, int):
+        per_axis: tuple[int, ...] = (int(L_cache),) * data_dim
+    elif isinstance(L_cache, Sequence) and not isinstance(L_cache, (str, bytes)):
+        per_axis = tuple(int(v) for v in L_cache)
+        if len(per_axis) != data_dim:
+            raise ValueError(f"L_cache sequence must have length data_dim={data_dim}, got length {len(per_axis)}")
+    else:
+        raise TypeError(f"L_cache must be an int or a sequence of ints, got {type(L_cache).__name__}")
+    for L in per_axis:
+        # L must be >= 2 because step_size = 1/(L-1) and the cache uses
+        # ``linspace(-1, 1, 2*L - 1)`` (which needs >= 3 points).
+        if L < 2:
+            raise ValueError(f"L_cache values must be >= 2, got {L}")
+    return per_axis
+
+
 class RandomFourierPositionalEmbeddingND(torch.nn.Module):
     """Implements a N-dimensional positional embedding using Random Fourier Features.
 
@@ -31,7 +66,7 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         self,
         data_dim: int,
         embedding_dim: int,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         omega_0: float,
         use_bias: bool = True,
     ):
@@ -40,7 +75,11 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         Args:
             data_dim: Dimension of input data.
             embedding_dim: Dimensionality of the positional embedding. Must be even.
-            L_cache: Number of cached time steps for the input positions.
+            L_cache: Number of cached time steps per axis. Either a scalar int
+                (broadcast to every axis, isotropic grid) or a sequence of
+                length ``data_dim`` (one extent per spatial axis, anisotropic
+                grid).  The cached grid then has shape
+                ``(1, 2*L_0 - 1, ..., 2*L_{d-1} - 1, data_dim)``.
             omega_0: Frequency scaling factor for the Fourier features.
             use_bias: Whether to use a bias term in the linear layer.
 
@@ -53,6 +92,9 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         super().__init__()
         self.data_dim = data_dim
         self.embedding_dim = embedding_dim
+        # Canonical per-axis form; ``L_cache`` is preserved as the input
+        # value for diagnostics / external read-back.
+        self.L_cache_per_axis = _normalize_l_cache(L_cache, data_dim)
         self.L_cache = L_cache
         self.omega_0 = omega_0
         self.use_bias = use_bias
@@ -66,22 +108,67 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         if self.linear.bias is not None:
             torch.nn.init.constant_(self.linear.bias, 0.0)
 
-        # Construct grid cache (cube) of size 2 * L_cache - 1.
+        # Construct grid cache: per-axis ``linspace(-1, 1, 2*L - 1)`` so each
+        # axis spans its own resolution at full [-1, 1] extent.
         # TODO(@dwromero): We must make sure that the grid_cache is kept in float32.
         with torch.inference_mode(False):
             with torch.no_grad():
-                t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
-                grid_cache = rearrange(
-                    torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-                )
+                grid_cache = self._build_grid_cache(self.L_cache_per_axis)
         self.register_buffer("grid_cache", grid_cache, persistent=False)
 
-        # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
-        self.step_size = 1.0 / (L_cache - 1)
+        # Per-axis step size: kept frozen at the *original* L_cache so that
+        # subsequent runtime cache extensions preserve the spacing they were
+        # built with (a longer sequence still uses the same step).
+        self.step_sizes = tuple(1.0 / (L - 1) for L in self.L_cache_per_axis)
 
         # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
             param._no_weight_decay = True
+
+    @staticmethod
+    def _build_grid_cache(
+        L_per_axis: Sequence[int],
+        max_limits: Sequence[float] | None = None,
+        device: torch.device | None = None,
+    ) -> torch.Tensor:
+        """Build the cached coordinate grid for the given per-axis lengths.
+
+        Each axis spans ``[-max_limit_i, +max_limit_i]`` sampled at
+        ``2 * L_i - 1`` points (default ``max_limit_i = 1.0`` at construction,
+        possibly larger after a runtime extension to keep step size constant).
+        """
+        if max_limits is None:
+            max_limits = (1.0,) * len(L_per_axis)
+        ts = [
+            torch.linspace(-float(m), float(m), 2 * L - 1, device=device, dtype=torch.float32)
+            for L, m in zip(L_per_axis, max_limits)
+        ]
+        return rearrange(torch.stack(torch.meshgrid(*ts, indexing="ij"), dim=-1), "... -> 1 ...")
+
+    def _maybe_extend_grid_cache(self, seq_lens: tuple[int, ...]) -> None:
+        """Grow ``grid_cache`` per axis whenever any axis exceeds its cache.
+
+        Each axis is extended independently while preserving its original
+        step size: along an extended axis the new range becomes
+        ``[-max_limit, +max_limit]`` with
+        ``max_limit = 1.0 + step_size * (seq_len - L_cache_orig)``.  Axes
+        that are not extended are rebuilt at their existing extent so the
+        cache remains a single rectangular tensor.
+        """
+        if all(L >= sl for L, sl in zip(self.L_cache_per_axis, seq_lens)):
+            return
+        new_L_per_axis = tuple(max(L, sl) for L, sl in zip(self.L_cache_per_axis, seq_lens))
+        max_limits = tuple(
+            1.0 + step * (new_L - L) for L, new_L, step in zip(self.L_cache_per_axis, new_L_per_axis, self.step_sizes)
+        )
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                self.grid_cache = self._build_grid_cache(
+                    new_L_per_axis,
+                    max_limits=max_limits,
+                    device=self.grid_cache.device,
+                )
+        self.L_cache_per_axis = new_L_per_axis
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the positional embeddings for a sequence of the given length.
@@ -103,31 +190,18 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
             f"seq_lens must be of length {self.data_dim}. Current length: {len(seq_lens)}"
         )
 
-        # Get the maximum sequence length.
-        seq_len = max(seq_lens)
-
-        # If the sequence is longer than the cache, create a new grid cache.
-        if self.L_cache < seq_len:
-            with torch.inference_mode(False):
-                with torch.no_grad():
-                    max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
-                    t = torch.linspace(
-                        -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
-                    )
-                    self.grid_cache = rearrange(
-                        torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-                    )
-                    self.L_cache = seq_len
+        # Per-axis cache extension: any axis whose runtime seq_len exceeds
+        # its current cache triggers a rebuild that grows that axis only.
+        self._maybe_extend_grid_cache(tuple(seq_lens))
 
         # Ensure that the cached positions tensor has the correct data type.
         assert self.grid_cache.dtype == torch.float32, (
             f"grid_cache must be float32. At lower precision, indexes will be merged together. Current dtype: {self.grid_cache.dtype}"
         )
 
-        # Calculate the offsets for the grid cache.
-        offsets = [
-            self.L_cache - seq_len for seq_len in seq_lens
-        ]  # Values from which to start indexing the grid cache.
+        # Per-axis offsets: each axis is centered, so the slice picks the
+        # central ``2 * seq_len - 1`` points of that axis's cache.
+        offsets = [L - sl for L, sl in zip(self.L_cache_per_axis, seq_lens)]
 
         # Construct slice objects to index the grid cache.
         slices = [slice(offset, offset + (seq_len * 2) - 1) for offset, seq_len in zip(offsets, seq_lens)]
@@ -163,7 +237,7 @@ class RandomFourierKernelND(torch.nn.Module):
         num_layers: int,
         embedding_dim: int,
         omega_0: float,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         use_bias: bool,
         nonlinear_cfg: LazyConfig,
         init_method: (Callable[[int], Callable[[torch.Tensor], torch.Tensor]] | None) = None,
@@ -177,7 +251,12 @@ class RandomFourierKernelND(torch.nn.Module):
             num_layers: Total number of layers including the first and hidden layers (>= 2).
             embedding_dim: Dimensionality of the positional embeddings.
             omega_0: Frequency scaling factor for the positional embeddings.
-            L_cache: Number of cached time steps for the input positions.
+            L_cache: Per-axis cache extents.  Either a scalar int (broadcast
+                to every axis, isotropic grid of size ``L_cache**data_dim``)
+                or a sequence of length ``data_dim`` (anisotropic grid of
+                size ``prod(L_cache)``).  The Wang init below uses the
+                product of per-axis extents so it stays correct in both
+                cases.
             use_bias: Whether to use bias in the network and embedding layers.
             nonlinear_cfg: Configuration for the nonlinear activation function.
             init_method: Optional initialization method for the kernel network.
@@ -190,6 +269,9 @@ class RandomFourierKernelND(torch.nn.Module):
         self.num_layers = num_layers
         self.embedding_dim = embedding_dim
         self.omega_0 = omega_0
+        # Canonical per-axis form drives the Wang init below; keep the
+        # original input on ``self.L_cache`` for diagnostics.
+        self.L_cache_per_axis = _normalize_l_cache(L_cache, data_dim)
         self.L_cache = L_cache
 
         # Construct positional embedding
@@ -221,9 +303,11 @@ class RandomFourierKernelND(torch.nn.Module):
         if init_method is not None:
             init_method(out_dim)(self.out_linear.weight)
         # Add Wang initialization to the output layer (to account for the fact that the output is used as a convolutional kernel)
-        # This boils down to modulating the weight of the output layer by the expected kernel size.
+        # This boils down to modulating the weight of the output layer by the expected kernel size, which is the
+        # product of the per-axis cache extents (degenerates to ``L_cache**data_dim`` for an isotropic grid).
         with torch.no_grad():
-            self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))
+            kernel_volume = math.prod(self.L_cache_per_axis)
+            self.out_linear.weight.data *= math.sqrt(1.0 / kernel_volume)
 
     def forward(self, seq_lens: tuple[int, ...], conditioning: torch.Tensor | None = None) -> torch.Tensor:
         """Computes the random Fourier kernel for a given grid of spatial dimensions.
@@ -286,7 +370,7 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         self,
         data_dim: int,
         embedding_dim: int,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         omega_0: float,
         use_bias: bool = True,
     ):
@@ -295,13 +379,21 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         Args:
             data_dim: Dimension of input data.
             embedding_dim: Dimensionality of the positional embedding.
-            L_cache: Number of cached time steps for the input positions.
+            L_cache: Per-axis cache extents.  Either a scalar int (broadcast
+                to every axis, isotropic grid) or a sequence of length
+                ``data_dim`` (one extent per spatial axis, anisotropic grid).
+                The cached grid then has shape
+                ``(1, 2*L_0 - 1, ..., 2*L_{d-1} - 1, data_dim)`` and each axis
+                spans ``[-1, 1]`` at its own resolution.
             omega_0: Frequency scaling factor for the Fourier features.
             use_bias: Whether to use a bias term in the linear layer.
         """
         super().__init__()
         self.data_dim = data_dim
         self.embedding_dim = embedding_dim
+        # Canonical per-axis form; ``self.L_cache`` retains the input value
+        # so external callers (e.g. CKConv) can read back what was passed.
+        self.L_cache_per_axis = _normalize_l_cache(L_cache, data_dim)
         self.L_cache = L_cache
         self.omega_0 = omega_0
         self.use_bias = use_bias
@@ -312,21 +404,66 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         # Initialize linear projection following SIREN initialization.
         _init_siren_weights(self.linear, is_first_layer=True, w0=self.omega_0)
 
-        # Construct grid cache (cube) of size 2 * L_cache - 1.
+        # Construct grid cache: per-axis ``linspace(-1, 1, 2*L_i - 1)`` so that
+        # every axis spans the full [-1, 1] range at its own resolution.
         with torch.inference_mode(False):
             with torch.no_grad():
-                t = torch.linspace(-1, 1, 2 * self.L_cache - 1, dtype=torch.float32)
-                grid_cache = rearrange(
-                    torch.stack(torch.meshgrid(*[t] * data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-                )
+                grid_cache = self._build_grid_cache(self.L_cache_per_axis)
         self.register_buffer("grid_cache", grid_cache, persistent=False)
 
-        # Save the step size for the cache, so that subsequent calls keep equal distances between the elements of the cache grid.
-        self.step_size = 1.0 / (L_cache - 1)
+        # Per-axis step size: kept frozen at the *original* L_cache so a
+        # later runtime extension preserves the spacing it was built with.
+        self.step_sizes = tuple(1.0 / (L - 1) for L in self.L_cache_per_axis)
 
         # Add ._no_weight_decay flag to all parameters to avoid weight decay
         for param in self.parameters():
             param._no_weight_decay = True
+
+    @staticmethod
+    def _build_grid_cache(
+        L_per_axis: Sequence[int],
+        max_limits: Sequence[float] | None = None,
+        device: torch.device | None = None,
+    ) -> torch.Tensor:
+        """Build the cached coordinate grid for the given per-axis lengths.
+
+        Each axis spans ``[-max_limit_i, +max_limit_i]`` sampled at
+        ``2 * L_i - 1`` points.  At construction every ``max_limit_i`` is
+        ``1.0``; runtime extensions can pass per-axis values larger than 1
+        to preserve the original step size on extended axes.
+        """
+        if max_limits is None:
+            max_limits = (1.0,) * len(L_per_axis)
+        ts = [
+            torch.linspace(-float(m), float(m), 2 * L - 1, device=device, dtype=torch.float32)
+            for L, m in zip(L_per_axis, max_limits)
+        ]
+        return rearrange(torch.stack(torch.meshgrid(*ts, indexing="ij"), dim=-1), "... -> 1 ...")
+
+    def _maybe_extend_grid_cache(self, seq_lens: tuple[int, ...]) -> None:
+        """Grow ``grid_cache`` per axis whenever any axis exceeds its cache.
+
+        Each axis is extended independently while preserving its original
+        step size: along an extended axis the new range becomes
+        ``[-max_limit, +max_limit]`` with
+        ``max_limit = 1.0 + step_size * (seq_len - L_cache_orig)``.  Axes
+        that already cover their requested ``seq_len`` are rebuilt at their
+        existing extent so the cache stays a single rectangular tensor.
+        """
+        if all(L >= sl for L, sl in zip(self.L_cache_per_axis, seq_lens)):
+            return
+        new_L_per_axis = tuple(max(L, sl) for L, sl in zip(self.L_cache_per_axis, seq_lens))
+        max_limits = tuple(
+            1.0 + step * (new_L - L) for L, new_L, step in zip(self.L_cache_per_axis, new_L_per_axis, self.step_sizes)
+        )
+        with torch.inference_mode(False):
+            with torch.no_grad():
+                self.grid_cache = self._build_grid_cache(
+                    new_L_per_axis,
+                    max_limits=max_limits,
+                    device=self.grid_cache.device,
+                )
+        self.L_cache_per_axis = new_L_per_axis
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the positional embeddings for a sequence of the given length.
@@ -348,32 +485,18 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
             f"seq_lens must be of length {self.data_dim}. Current length: {len(seq_lens)}"
         )
 
-        # Get the maximum sequence length.
-        seq_len = max(seq_lens)
-
-        # If the sequence is longer than the cache, create a new grid cache.
-        if self.L_cache < seq_len:
-            with torch.inference_mode(False):
-                with torch.no_grad():
-                    max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
-                    t = torch.linspace(
-                        -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
-                    )
-
-                    self.grid_cache = rearrange(
-                        torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-                    )
-                    self.L_cache = seq_len
+        # Per-axis cache extension: any axis whose runtime seq_len exceeds
+        # its current cache triggers a rebuild that grows that axis only.
+        self._maybe_extend_grid_cache(tuple(seq_lens))
 
         # Ensure that the cached positions tensor has the correct data type.
         assert self.grid_cache.dtype == torch.float32, (
             f"grid_cache must be float32. At lower precision, indexes will be merged together. Current dtype: {self.grid_cache.dtype}"
         )
 
-        # Calculate the offsets for the grid cache.
-        offsets = [
-            self.L_cache - seq_len for seq_len in seq_lens
-        ]  # Values from which to start indexing the grid cache.
+        # Per-axis offsets: each axis is centered, so the slice picks the
+        # central ``2 * seq_len - 1`` points of that axis's cache.
+        offsets = [L - sl for L, sl in zip(self.L_cache_per_axis, seq_lens)]
 
         # Construct slice objects to index the grid cache.
         slices = [slice(offset, offset + (seq_len * 2) - 1) for offset, seq_len in zip(offsets, seq_lens)]
@@ -429,7 +552,7 @@ class SIRENKernelND(torch.nn.Module):
         num_layers: int,
         embedding_dim: int,
         omega_0: float,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         use_bias: bool,
         hidden_omega_0: float = 1.0,
         film_cfg: LazyConfig | None = None,
@@ -452,6 +575,9 @@ class SIRENKernelND(torch.nn.Module):
         self.embedding_dim = embedding_dim
         self.omega_0 = float(omega_0)
         self.hidden_omega_0 = float(hidden_omega_0)
+        # Canonical per-axis form drives the Wang init below; ``self.L_cache``
+        # retains the input value for diagnostics / external callers.
+        self.L_cache_per_axis = _normalize_l_cache(L_cache, data_dim)
         self.L_cache = L_cache
 
         # Construct positional embedding
@@ -481,9 +607,12 @@ class SIRENKernelND(torch.nn.Module):
         for linear in self.hidden_linears:
             _init_siren_weights(linear, is_first_layer=False, w0=self.hidden_omega_0)
         _init_siren_weights(self.out_linear, is_first_layer=False, w0=self.hidden_omega_0)
-        # Add Wang initialization to the output layer (to account for the fact that the output is used as a convolutional kernel)
+        # Add Wang initialization to the output layer (to account for the fact that the output is used as a
+        # convolutional kernel).  The expected kernel size is the *product* of per-axis cache extents, which
+        # collapses to ``L_cache**data_dim`` for an isotropic grid and stays correct for anisotropic ones.
         with torch.no_grad():
-            self.out_linear.weight.data *= math.sqrt(1.0 / (L_cache**data_dim))  # Modulation by expected kernel size.
+            kernel_volume = math.prod(self.L_cache_per_axis)
+            self.out_linear.weight.data *= math.sqrt(1.0 / kernel_volume)
 
         # Add ._no_weight_decay flag to all parameters to avoid weight decay (except for self.out_linear weights)
         # Note that the positional embedding is already excluded from weight decay by the _no_weight_decay flag.
@@ -716,7 +845,7 @@ class MultiOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
         self,
         data_dim: int,
         embedding_dim: int,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         omega_0_per_row: Sequence[float] | torch.Tensor,
         use_bias: bool = True,
     ):
@@ -785,7 +914,7 @@ class MultiOmegaSIRENKernelND(SIRENKernelND):
         num_layers: int,
         embedding_dim: int,
         omega_0_per_row: Sequence[float] | torch.Tensor,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         use_bias: bool,
         hidden_omega_0: float = 1.0,
         film_cfg: LazyConfig | None = None,
@@ -901,7 +1030,7 @@ class BlockDiagonalMultiOmegaSIRENKernelND(MultiOmegaSIRENKernelND):
         mlp_hidden_dim: int,
         num_layers: int,
         embedding_dim: int,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         use_bias: bool,
         num_blocks: int = 8,
         omega_0_min: float = 1.0,
@@ -1084,7 +1213,7 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
         self,
         data_dim: int,
         embedding_dim: int,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         omega_0: float,
         omega_0_scale_init: float | Sequence[float] | torch.Tensor = 1.0,
         omega_0_scale_min: float = 1e-2,
@@ -1198,27 +1327,16 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
             f"seq_lens must be of length {self.data_dim}. Current length: {len(seq_lens)}"
         )
 
-        # Re-build the cached coordinate grid if the requested sequence is longer
-        # than the cache (mirrors the parent's behaviour exactly).
-        seq_len = max(seq_lens)
-        if self.L_cache < seq_len:
-            with torch.inference_mode(False):
-                with torch.no_grad():
-                    max_limit = 1.0 + self.step_size * (seq_len - self.L_cache)
-                    t = torch.linspace(
-                        -max_limit, max_limit, 2 * seq_len - 1, device=self.grid_cache.device, dtype=torch.float32
-                    )
-                    self.grid_cache = rearrange(
-                        torch.stack(torch.meshgrid(*[t] * self.data_dim, indexing="ij"), dim=-1), "... -> 1 ..."
-                    )
-                    self.L_cache = seq_len
+        # Per-axis cache extension: shared with the parent, grows each axis
+        # independently while preserving its original step size.
+        self._maybe_extend_grid_cache(tuple(seq_lens))
 
         assert self.grid_cache.dtype == torch.float32, (
             f"grid_cache must be float32 (got {self.grid_cache.dtype}) — see the parent class for the rationale."
         )
 
         # Slice the cached grid to the requested per-axis lengths.
-        offsets = [self.L_cache - sl for sl in seq_lens]
+        offsets = [L - sl for L, sl in zip(self.L_cache_per_axis, seq_lens)]
         slices = [slice(off, off + (sl * 2) - 1) for off, sl in zip(offsets, seq_lens)]
         grid = self.grid_cache[:, *slices]  # type: ignore
 
@@ -1298,7 +1416,7 @@ class LearnableOmegaSIRENKernelND(SIRENKernelND):
         num_layers: int,
         embedding_dim: int,
         omega_0: float,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         use_bias: bool,
         omega_0_scale_init: float | Sequence[float] | torch.Tensor = 1.0,
         omega_0_scale_min: float = 1e-2,
@@ -1413,7 +1531,7 @@ class BlockDiagonalLearnableOmegaSIRENKernelND(LearnableOmegaSIRENKernelND):
         mlp_hidden_dim: int,
         num_layers: int,
         embedding_dim: int,
-        L_cache: int,
+        L_cache: int | Sequence[int],
         use_bias: bool,
         num_blocks: int = 8,
         omega_0_min: float = 1.0,
@@ -1621,3 +1739,35 @@ if __name__ == "__main__":
                 block = w[i * rows_per_block : (i + 1) * rows_per_block, j * rows_per_block : (j + 1) * rows_per_block]
                 assert block.abs().max().item() == 0.0, f"off-block ({i},{j}) nonzero with off_block_scale=0"
     print("BlockDiag SIREN off=0.0 strictly block-diagonal: OK")
+
+    # --- Anisotropic L_cache sanity checks (per-axis kernel grid) ---
+    # 3D SIREN kernel with grid (8, 64, 64) → cache shape (1, 15, 127, 127, 16)
+    aniso_kernel = SIRENKernelND(
+        out_dim=4,
+        data_dim=3,
+        mlp_hidden_dim=8,
+        num_layers=2,
+        embedding_dim=8,
+        omega_0=10.0,
+        L_cache=(8, 64, 64),
+        use_bias=True,
+    )
+    aniso_out, aniso_grid = aniso_kernel(seq_lens=(8, 64, 64))
+    assert aniso_out.shape == (1, 15, 127, 127, 4), aniso_out.shape
+    assert aniso_grid.shape == (1, 15, 127, 127, 3), aniso_grid.shape
+    print("Anisotropic SIREN kernel L_cache=(8,64,64): kernel shape", aniso_out.shape)
+
+    # Slicing for a smaller seq_lens uses the per-axis cached extents.
+    aniso_small_out, aniso_small_grid = aniso_kernel(seq_lens=(4, 32, 32))
+    assert aniso_small_out.shape == (1, 7, 63, 63, 4), aniso_small_out.shape
+    print("Anisotropic SIREN kernel sliced for (4,32,32): kernel shape", aniso_small_out.shape)
+
+    # Per-axis cache extension grows only the axis that needs growing.
+    aniso_kernel(seq_lens=(16, 64, 64))
+    assert aniso_kernel.positional_embedding.L_cache_per_axis == (16, 64, 64), (
+        aniso_kernel.positional_embedding.L_cache_per_axis
+    )
+    print(
+        "Anisotropic SIREN kernel after seq_lens=(16,64,64): L_cache_per_axis =",
+        aniso_kernel.positional_embedding.L_cache_per_axis,
+    )

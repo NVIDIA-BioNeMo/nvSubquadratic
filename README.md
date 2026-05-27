@@ -53,6 +53,29 @@ docker build -t nvsubquadratic:dev .
 docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic:dev
 ```
 
+The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Two build-args let you tune the compile:
+
+- `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4).
+- `MAX_JOBS` — number of parallel nvcc jobs. Defaults to unconstrained. Set to a small number (e.g. `2`) if the build OOMs (typical under qemu emulation).
+
+```bash
+docker build \
+    --build-arg TORCH_CUDA_ARCH_LIST="9.0" \
+    -t nvsubquadratic:dev .
+```
+
+### Enroot (SLURM clusters)
+
+For SLURM deployments that use enroot/pyxis, [`slurm/enroot/build_sqsh.sh`](slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
+
+```bash
+# H100 (x86-64, default)
+slurm/enroot/build_sqsh.sh
+
+# GB200 (ARM64) — uses qemu emulation on an x86 build host
+PLATFORM=arm64 slurm/enroot/build_sqsh.sh
+```
+
 ### Apptainer
 
 ```bash
@@ -129,6 +152,21 @@ PYTHONPATH=. python -m pytest tests/ -m "not nightly" -v -o addopts=""
 # Nightly validation (requires GPU, DALI, ImageNet, wandb)
 source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
 ```
+
+### Documentation
+
+The API reference is built with Sphinx. Sources live under [`docs/`](docs/) and the rendered site is published to the `gh-pages` branch on every push to `main` via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
+
+Build and preview locally:
+
+```bash
+pip install -r docs/requirements.txt
+pip install -e . --no-deps
+make -C docs html SPHINXBUILD="python -m sphinx"
+python -m http.server 8000 --directory docs/_build/html
+```
+
+Open <http://localhost:8000> to browse. The autosummary stubs in `docs/generated/` are regenerated on every build (gitignored).
 
 ### CI
 
