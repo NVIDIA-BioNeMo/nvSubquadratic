@@ -69,7 +69,7 @@ PRs don't pay for skill evals.
 
 | Layer                                                                                              | Cost                            | When to run                                                 | Tool                                                  |
 | -------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
-| **Trigger eval** — does the skill description cause Claude to load the skill for the eval prompts? | ~5 sec, ~$0.001 per query       | Every PR touching the skill                                 | skill-creator's `run_eval.py` (already exists; reuse) |
+| **Trigger eval** — does the skill description cause Claude to load the skill for the eval prompts? | ~5 sec, ~\$0.001 per query      | Every PR touching the skill                                 | skill-creator's `run_eval.py` (already exists; reuse) |
 | **Full eval** — does the agent produce a file that passes the asserts?                             | ~1-5 min, ~$0.05-$0.20 per eval | `pull_request` to main and `workflow_dispatch`; weekly cron | Custom harness, see sketch below                      |
 
 Trigger eval is cheap enough to run on every skill PR. Full eval is reserved
@@ -108,7 +108,7 @@ deliberately tolerant of surface-level variation (`data_dim\s*=\s*3`, not
    `ANTHROPIC_API_KEY` in GitHub Actions secrets? If not, the full-eval layer
    is dead in the water and only trigger evals (which can run via the local
    `claude` CLI configured with a personal token) are viable.
-1. **Cost budget.** At ~$1/full-run × N PRs/week + cron, is the budget
+1. **Cost budget.** At ~\$1/full-run × N PRs/week + cron, is the budget
    acceptable? If not, drop the per-PR trigger and run only on
    `workflow_dispatch` + weekly cron.
 1. **Blocking vs advisory.** Should a failing eval block a PR merge?
