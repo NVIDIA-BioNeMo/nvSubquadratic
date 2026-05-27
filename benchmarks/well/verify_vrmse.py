@@ -1,7 +1,18 @@
-"""Verify VRMSE computation by comparing our pipeline vs manual computation.
+"""Cross-check the VRMSE metric implementation against manual computation.
 
 Loads a checkpoint, runs inference on test data, and computes VRMSE
-using multiple independent methods to check for discrepancies.
+via multiple independent paths (Lightning callback, manual numpy,
+per-channel reduction) to detect implementation drift.  Run after any
+change to the WELL regression wrapper or its loss / metric code.
+
+Targets: H100 SXM 80GB (or any Ampere+ GPU); needs the matching WELL
+dataset on disk.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/well/verify_vrmse.py --checkpoint <path>
+
+Output: stdout (per-method VRMSE values + per-channel diffs).
 """
 
 import argparse

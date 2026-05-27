@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """Quick correctness and forward-speed check for the CUDA fft_causal_conv1d kernel.
 
-Example:
-    PYTHONPATH=. python scripts/bench_subquadratic_fftconv.py --device cuda
+Compares ``subquadratic_ops_torch.fft_causal_conv1d`` against the
+reference ``torch.fft``-based implementation across a few realistic
+1D Hyena workloads, then prints absolute / relative errors and forward
+throughput.  Intended as a fast sanity gate after kernel changes.
+
+Targets: any Ampere+ GPU with the ``subquadratic_ops_torch`` wheel
+installed (requires CUDA toolkit 12).
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/ops/bench_subquadratic_fftconv.py --device cuda
+
+Output: stdout (correctness summary + throughput table).
 """
 
 from __future__ import annotations

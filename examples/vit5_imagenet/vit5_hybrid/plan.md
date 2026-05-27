@@ -10,9 +10,9 @@ ______________________________________________________________________
 
 ## Files Created/Modified
 
-### 1. Created `slurm/submit_hybrid.sh` (new file)
+### 1. Created `scripts/slurm/submit_hybrid.sh` (new file)
 
-Based on `slurm/submit_in1k_cls.sh` with these changes:
+Based on `scripts/slurm/submit_in1k_cls.sh` with these changes:
 
 | What                    | Old value                                             | New value                                                                  |
 | ----------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -25,7 +25,7 @@ Based on `slurm/submit_in1k_cls.sh` with these changes:
 
 **Security**: Uses `export WANDB_API_KEY="${WANDB_API_KEY:-}"` (safe fallback). No hardcoded secrets.
 
-### 2. Fixed `slurm/queue.sh` (line 45) — config override passthrough bug
+### 2. Fixed `scripts/slurm/queue.sh` (line 45) — config override passthrough bug
 
 **Problem**: Extra args (like `net.patch_size=8`) were placed BEFORE the script name in the `sbatch` call, so sbatch tried to parse them as sbatch options and failed.
 
@@ -53,16 +53,16 @@ From `/lustre/fsw/healthcareeng_bionemo/amoradzadeh/hyena/vit5_nvsubq/`:
 
 ```bash
 # Patch 16 (default batch=256, no grad accum, ~12 chained 4h jobs)
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_attention.py
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py
-bash slurm/queue.sh slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_hyena.py
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_attention.py
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 12 examples/vit5_imagenet/vit5_hybrid/full_hyena.py
 
 # Patch 8 (batch=64, accum=4 to maintain effective batch 2048, ~20 chained jobs)
-bash slurm/queue.sh slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
-bash slurm/queue.sh slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
-bash slurm/queue.sh slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
-bash slurm/queue.sh slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid.sh 20 examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
 ```
 
 **Batch size rationale for patch 8**: 784 tokens/image (vs 196 for patch 16). Default batch=256 will OOM on H100 80GB. The v5_patch experiments use batch=64 + accum=4 for patch 8, maintaining effective batch = 8 GPUs x 64 x 4 = 2048.
@@ -88,7 +88,7 @@ ______________________________________________________________________
 Single patch-8 test job submitted as validation before full launch:
 
 ```bash
-sbatch slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
+sbatch scripts/slurm/submit_hybrid.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py \
     net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=4
 ```
 
@@ -120,7 +120,7 @@ ______________________________________________________________________
 
 ## Phase 2: Patch 4, 2, 1 (4-node / 32 GPU)
 
-Created `slurm/submit_hybrid_4node.sh` — identical to `submit_hybrid.sh` but with `--nodes=4`.
+Created `scripts/slurm/submit_hybrid_4node.sh` — identical to `submit_hybrid.sh` but with `--nodes=4`.
 
 Batch config (4 nodes = 32 GPUs, effective batch = 2048):
 
@@ -134,22 +134,22 @@ Batch config (4 nodes = 32 GPUs, effective batch = 2048):
 
 ```bash
 # Patch 4
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=4 dataset.batch_size=16 train.accumulate_grad_steps=4
 
 # Patch 2
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=2 dataset.batch_size=4 train.accumulate_grad_steps=16
 
 # Patch 1
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
-sbatch slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_attention.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
+sbatch scripts/slurm/submit_hybrid_4node.sh examples/vit5_imagenet/vit5_hybrid/full_hyena.py net.patch_size=1 dataset.batch_size=1 train.accumulate_grad_steps=64
 ```
 
 ### Account Assignment
@@ -210,17 +210,17 @@ Existing configs (`full_hyena.py`, `hybrid_hhha.py`, `hybrid_ha.py`) are unmodif
 OMEGA_OVR='net.layer_types.H.sequence_mixer_cfg.inner_mixer_cfg.mixer_cfg.global_conv_cfg.kernel_cfg.omega_0=20.0'
 
 # full_hyena p8 omega=20.0
-bash slurm/queue.sh slurm/submit_hybrid_4node.sh 7 \
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid_4node.sh 7 \
     examples/vit5_imagenet/vit5_hybrid/full_hyena.py \
     net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1 $OMEGA_OVR
 
 # hybrid_hhha p8 omega=20.0
-bash slurm/queue.sh slurm/submit_hybrid_4node.sh 7 \
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid_4node.sh 7 \
     examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py \
     net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1 $OMEGA_OVR
 
 # hybrid_ha p8 omega=20.0
-bash slurm/queue.sh slurm/submit_hybrid_4node.sh 7 \
+bash scripts/slurm/queue.sh scripts/slurm/submit_hybrid_4node.sh 7 \
     examples/vit5_imagenet/vit5_hybrid/hybrid_ha.py \
     net.patch_size=8 dataset.batch_size=64 train.accumulate_grad_steps=1 $OMEGA_OVR
 ```

@@ -1,8 +1,12 @@
 # TODO: Add license header here
 
-"""JiT utility functions.
+"""Helpers used by :mod:`nvsubquadratic.networks.jit`.
 
-Ported from https://github.com/LTH14/JiT.
+Ported from the reference JiT implementation at
+https://github.com/LTH14/JiT.  Contains the rotary-embedding primitives
+(:class:`VisionRotaryEmbedding`, :class:`VisionRotaryEmbeddingFast`),
+the local :class:`RMSNorm`, and the 1D/2D sin-cos positional-embedding
+helpers used to seed the patch tokens.
 """
 
 from math import pi

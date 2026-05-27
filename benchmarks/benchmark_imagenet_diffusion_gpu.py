@@ -1,5 +1,17 @@
 #!/usr/bin/env python
-"""Benchmark GPU memory/time for the ImageNet diffusion model (batch size = 1)."""
+"""Benchmark GPU memory/time for the ImageNet diffusion model (batch size = 1).
+
+Targets: H100 SXM 80GB or any Ampere+ GPU.  Runs a single
+forward+backward step at ``batch_size=1`` and reports peak memory and
+wall-clock time, used to compare attention vs Hyena vs JiT diffusion
+backbones at parity.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/benchmark_imagenet_diffusion_gpu.py --config <config-path>
+
+Output: stdout summary table; no files written.
+"""
 
 from __future__ import annotations
 

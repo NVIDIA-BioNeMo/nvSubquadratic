@@ -3,43 +3,76 @@
 
 r"""Mixed boundary-condition FFT-based convolution operators (fp32).
 
-This module implements N-D depthwise FFT convolutions that allow each
-spatial axis to independently use either:
+What mixed boundary conditions mean
+------------------------------------
+Many PDE datasets have boundaries that are **periodic on some spatial axes
+and non-periodic (wall or open) on others**. For example, a Rayleigh-Bénard
+simulation is typically periodic in the horizontal (x) direction and bounded
+by no-slip walls in the vertical (y) direction. The standard FFT convolution
+operators in :mod:`nvsubquadratic.ops.fftconv` (linear / zero-padded) and
+:mod:`nvsubquadratic.ops.circular_fftconv` (circular / periodic) each apply a
+**global** boundary mode that is wrong for at least one axis in these mixed
+cases.
 
-- **Periodic** (circular) boundary conditions  → frequency-domain phase
-  ramp, no padding, no crop on that axis.
-- **Non-periodic** (zero-padded "same") boundary conditions  → FFT length
-  is padded up so wrap-around cancels out, centered crop on that axis.
+This module is the fix: it lets each spatial axis independently use either
 
-The choice is made per axis via a ``periodic: tuple[bool, ...]`` argument
-of length equal to the number of spatial dimensions.
+- **Periodic** (circular) boundary conditions — no padding on that axis, the
+  convolution wraps around, and the "same"-alignment is achieved by a
+  frequency-domain phase ramp ``exp(-i 2π f_d s_d)`` with integer shift
+  ``s_d = -((K_d - 1) // 2)``.
+- **Non-periodic** (zero-padded "same") boundary conditions — the FFT length
+  is padded so that wrap-around cancels out, and the output is aligned by a
+  centered crop rather than a phase ramp.
 
-Why this op?
-------------
-Many PDE datasets (e.g. Well's ``rayleigh_benard``,
-``viscoelastic_instability``, ``turbulent_radiative_layer``,
-``rayleigh_taylor_instability``) have boundaries that are **periodic on
-some axes and non-periodic on others**. A single global ``"zero"`` or
-``"circular"`` mode is incorrect for all of these: zero-padding leaks
-the wall/open boundary into periodic axes, and circular wraps the
-non-periodic ones. This module is the FFT-conv-side fix.
+The choice is expressed per axis via ``periodic: Sequence[bool]`` of length
+equal to the number of spatial dimensions:
 
-Relation to existing ops
-------------------------
-- All ``periodic = False`` → bit-equivalent to
-  :mod:`nvsubquadratic.ops.fftconv` (linear / zero-padded "same").
-- All ``periodic = True`` → bit-equivalent to
-  :mod:`nvsubquadratic.ops.circular_fftconv` (circular / periodic).
-- Mixed → new per-axis recipe (see :func:`_mixed_recipe`).
+.. code-block:: python
 
-The op routes the all-False / all-True cases through the existing
-non-mixed paths automatically, so adopters pay no overhead for the
-legacy modes.
+    # 2-D: x-axis periodic, y-axis zero-padded
+    y = mixed_fftconv2d_fp32_bhl(x, kernel, periodic=(True, False))
+
+    # 3-D: x and y periodic, z zero-padded  (e.g. turbulent_radiative_layer_3D)
+    y = mixed_fftconv3d_fp32_bhl(x, kernel, periodic=(True, True, False))
+
+When to use this vs. ``fftconv.py`` or ``circular_fftconv.py``
+--------------------------------------------------------------
+Use this module when **different spatial axes require different boundary
+treatments**. For the all-same cases, prefer the dedicated modules:
+
+- All axes non-periodic → :mod:`nvsubquadratic.ops.fftconv`.
+- All axes periodic     → :mod:`nvsubquadratic.ops.circular_fftconv`.
+
+Both degenerate cases are **automatically routed** through the legacy ops
+at runtime (zero overhead), so it is safe to use this module as a single
+entry point even when ``periodic`` happens to be uniform.
+
+Note: ``CKConvND`` accepts ``fft_padding=["circular", "zero"]`` (string form)
+and internally converts this to the boolean ``periodic`` tuple via
+``_resolve_periodic`` before calling these ops. The bool-tuple is the
+*internal* normalised form used here; YAML configs should always use the
+string list form.
+
+See ``docs/ops/MIXED_BC_PLAN.md`` for the per-axis algorithm, dataset
+motivation table, and deferred work (fp16, multi-head, per-face BCs).
+
+Algorithm overview
+------------------
+The N-D mixed FFT convolution is computed in **one** ``rfftn`` / ``irfftn``
+call. The per-axis variation is encoded entirely in the arguments:
+
+1. ``s=fft_shape`` — per-axis FFT lengths: ``N_d`` (periodic, no padding) or
+   ``min(N_d + (K_d+1)//2, 2*N_d)`` (non-periodic, zero-pad headroom).
+2. Post-IFFT crop — per-axis slice: ``[0, N_d)`` (periodic) or
+   ``[K_d//2, K_d//2 + N_d)`` (non-periodic centered crop).
+3. Phase ramp — applied to ``fft_k`` before the frequency-domain product:
+   ``exp(-i 2π f_d s_d)`` on periodic axes; no ramp (``s_d = 0``) on
+   non-periodic axes (alignment is handled by the crop).
 
 Layouts and shapes
 ------------------
-- **BHL** (channels-first, the fast path): ``[B, H, * spatial_dims]``;
-  kernel ``[1|B, H, * K_dims]``; output ``[B, H, * spatial_dims]``.
+- **BHL** (channels-first, the fast path): ``[B, H, *spatial_dims]``;
+  kernel ``[1|B, H, *K_dims]``; output ``[B, H, *spatial_dims]``.
 - **BLH** wrappers (``*_w_reshape``) transparently reshape BLH → BHL → BLH.
 
 The leading kernel dimension may be ``1`` (kernel shared across the batch)
@@ -53,23 +86,27 @@ to the convolution output:
 .. math::
     y \leftarrow y + \text{shortcut} \odot x
 
-Phase ramps
------------
-On each periodic axis we align the output to "same" convolution by an
-integer pixel shift of :math:`s_d = -\lfloor (K_d - 1) / 2 \rfloor`,
-implemented as a frequency-domain phase ramp
-:math:`\exp(-i 2\pi f_d s_d)`. Non-periodic axes use ``s_d = 0`` (the
-alignment is absorbed into the centered crop). When
-``use_phase_shift=False`` we instead apply ``torch.roll`` along the
-periodic axes after the inverse transform.
+This is not a generic skip connection — it fuses a specific algebraic
+shortcut from Hyena-style gating to avoid a separate kernel launch.
+
+Phase ramps and the ``use_phase_shift`` flag
+--------------------------------------------
+On each periodic axis, "same" alignment requires shifting the output by
+``s_d = -((K_d - 1) // 2)`` samples. This can be done two ways:
+
+- ``use_phase_shift=True`` (default): multiply ``fft_k`` by the complex
+  ramp ``exp(-i 2π f_d s_d)`` before the IFFT. One fused frequency-domain
+  op, no data movement after the IFFT.
+- ``use_phase_shift=False``: apply :func:`torch.roll` along the periodic
+  axes *after* the IFFT. Mathematically identical; useful as a reference
+  or when torch.compile cannot handle complex ops.
 
 Caching
 -------
-Per-axis 1-D phase ramps are cached in a small module-level LRU
-(``_MIXED_PHASE_RAMP_1D_CACHE``). The N-D ramp is constructed by
-broadcasted multiplication of the relevant 1-D ramps on demand — no
-N-D ramp is materialised in the cache. Axes with shift 0 contribute
-nothing (they are skipped entirely).
+Per-axis 1-D phase ramps are cached in a module-level LRU
+(``_MIXED_PHASE_RAMP_1D_CACHE``). The N-D ramp is constructed on demand by
+broadcasted multiplication of the relevant 1-D ramps — no N-D tensor is
+stored in the cache. Axes with shift 0 contribute nothing (skipped).
 """
 
 from __future__ import annotations
@@ -106,17 +143,43 @@ import nvsubquadratic.ops.fftconv as _fftconv_module
 
 
 class _MixedPhaseRamp1DCache:
-    """LRU cache of 1-D frequency-domain phase ramps used by mixed FFT conv.
+    r"""LRU cache of 1-D frequency-domain phase ramps used by mixed FFT conv.
 
-    Each cached entry is a complex tensor of shape ``[F]`` (regular FFT axis)
-    or ``[F // 2 + 1]`` (rfft last axis) that encodes
-    ``exp(-i 2π f · s)`` for the given size ``F`` and integer shift ``s``.
+    On each **periodic** axis we need to shift the convolution output by
+    ``s_d = -((K_d - 1) // 2)`` samples to obtain "same"-aligned output.
+    In the frequency domain this shift corresponds to multiplying ``fft_k``
+    by the complex exponential
 
-    The N-D ramp is built lazily by broadcasting the relevant 1-D ramps;
-    no N-D tensor is stored in the cache.
+    .. math::
+        R_d[f] = \exp\!\left(-i\, 2\pi \frac{f}{F_d}\, s_d\right)
+
+    where ``f`` ranges over the DFT frequencies for an FFT of length ``F_d``
+    and ``s_d`` is the integer pixel shift. Non-periodic axes use ``s_d = 0``
+    and contribute no ramp — their "same" alignment is handled entirely by the
+    centered crop ``[K_d // 2, K_d // 2 + N_d)`` applied to the IFFT output.
+
+    This cache stores the 1-D ramps keyed by ``(F, s, is_rfft_axis, device,
+    dtype)`` in an ordered-dict LRU so that repeated forward passes with the
+    same spatial shape reuse the cached tensor without recomputation.
+
+    The N-D ramp is **not** cached here — it is assembled by broadcasting the
+    relevant 1-D ramps in :func:`_build_nd_phase_ramp` so that each 1-D entry
+    is shared across all spatial configurations that share an axis.
+
+    Attributes:
+        maxsize: Maximum number of entries before the LRU evicts the oldest.
+        _cache: Ordered dict mapping cache keys to complex ramp tensors.
     """
 
     def __init__(self, maxsize: int = 256):
+        """Initialise the cache.
+
+        Args:
+            maxsize: Maximum number of (F, s, axis, device, dtype) entries to
+                keep. Once exceeded, the least-recently-used entry is evicted.
+                Default 256 covers many typical spatial / kernel size combos
+                without meaningful memory cost (each 1-D ramp is small).
+        """
         self.maxsize = maxsize
         self._cache: "OrderedDict[tuple, torch.Tensor]" = OrderedDict()
 
@@ -128,6 +191,23 @@ class _MixedPhaseRamp1DCache:
         device: torch.device,
         real_dtype: torch.dtype,
     ) -> tuple:
+        """Build a hashable cache key for a 1-D phase ramp.
+
+        The key encodes every parameter that affects the ramp tensor so that
+        ramps from different devices or dtypes are never confused.
+
+        Args:
+            F: FFT length along this axis.
+            s: Integer pixel shift encoded by the ramp.
+            is_rfft_axis: True when this is the last axis (rfft frequencies,
+                length ``F // 2 + 1``); False for intermediate axes (full DFT
+                frequencies, length ``F``).
+            device: Target device.
+            real_dtype: Real-valued input dtype (``float32`` or ``float64``).
+
+        Returns:
+            A hashable tuple suitable as a dict key.
+        """
         complex_dtype = torch.complex64 if real_dtype == torch.float32 else torch.complex128
         dev_type = device.type
         dev_idx = device.index if device.index is not None else -1
@@ -141,20 +221,36 @@ class _MixedPhaseRamp1DCache:
         device: torch.device,
         real_dtype: torch.dtype,
     ) -> torch.Tensor:
-        """Return the 1-D phase ramp for the given (FFT length, shift) on this axis.
+        r"""Return the 1-D phase ramp for the given (FFT length, shift) on this axis.
+
+        Computes (or retrieves from the LRU cache) the complex tensor
+
+        .. math::
+            R[f] = \cos(-2\pi f s) + i\,\sin(-2\pi f s)
+
+        where ``f`` iterates over ``torch.fft.rfftfreq(F)`` (if
+        ``is_rfft_axis``) or ``torch.fft.fftfreq(F)`` (otherwise). The ramp
+        is computed under ``torch.no_grad()`` and ``torch.inference_mode``
+        so it does not pollute the autograd graph.
 
         Args:
             F: FFT length along this axis (padded length for non-periodic,
                 input length for periodic — caller decides which).
-            s: Integer pixel shift to apply via the ramp. ``s == 0`` callers
-                are expected to skip the multiply entirely; this method
-                still supports ``s == 0`` (returns all-ones for completeness).
+            s: Integer pixel shift to apply via the ramp. In practice
+                ``_build_nd_phase_ramp`` skips axes where ``s == 0`` before
+                calling this method, so ``s == 0`` is not an expected input.
             is_rfft_axis: If True, this is the last spatial axis where the
-                rfft is taken; we build a ramp of length ``F // 2 + 1`` using
-                :func:`torch.fft.rfftfreq`. Otherwise we build a length-``F``
-                ramp using :func:`torch.fft.fftfreq`.
-            device: Target device.
-            real_dtype: Real-valued dtype of the inputs (float32 or float64).
+                rfft is taken; a ramp of length ``F // 2 + 1`` is built
+                using :func:`torch.fft.rfftfreq`. Otherwise a full ramp of
+                length ``F`` is built using :func:`torch.fft.fftfreq`.
+            device: Target device for the ramp tensor.
+            real_dtype: Real-valued dtype of the inputs (``float32`` or
+                ``float64``); the ramp is stored in the corresponding complex
+                dtype (``complex64`` or ``complex128``).
+
+        Returns:
+            1-D complex tensor of shape ``[F // 2 + 1]`` (rfft axis) or
+            ``[F]`` (non-rfft axis) on ``device``.
         """
         key = self._key(F, s, is_rfft_axis, device, real_dtype)
         cached = self._cache.get(key)
@@ -199,11 +295,14 @@ def _mixed_recipe(
     - If ``periodic[d]`` is False (zero-padded "same"):
       ``F_d = min(N_d + (K_d + 1) // 2, 2 * N_d)``, crop
       ``[K_d // 2, K_d // 2 + N_d)``, shift ``s_d = 0`` (alignment is
-      handled by the centered crop).
+      handled by the centered crop). For even ``K_d``, floor division gives
+      a left-biased crop (one extra sample on the right), matching the
+      convention of ``torch.nn.ConvNd(padding='same')``.  Tests verify this
+      against the spatial reference.
 
     Args:
         spatial: Input spatial dims ``(N_0, ..., N_{D-1})``.
-        kshape:  Kernel spatial dims ``(K_0, ..., K_{D-1})``.
+        kshape: Kernel spatial dims ``(K_0, ..., K_{D-1})``.
         periodic: Per-axis periodicity flags.
 
     Returns:
@@ -237,19 +336,45 @@ def _build_nd_phase_ramp(
     device: torch.device,
     real_dtype: torch.dtype,
 ) -> torch.Tensor | None:
-    """Build (or fetch from cache) the broadcast N-D phase-ramp tensor.
+    r"""Build (or fetch from cache) the broadcast N-D phase-ramp tensor.
 
-    The returned tensor has rfft-style shape
-    ``(F_0, F_1, ..., F_{D-2}, F_{D-1} // 2 + 1)`` with complex dtype,
-    suitable to be multiplied with ``torch.fft.rfftn(..., s=fft_shape)``.
+    Assembles the N-D phase ramp
 
-    Axes with ``shift == 0`` contribute a length-1 broadcast factor (no
-    multiply along that axis). If every shift is zero, this function
-    returns ``None`` — callers should skip the multiply entirely.
+    .. math::
+        R[f_0, \ldots, f_{D-1}] =
+            \prod_{d:\, s_d \ne 0}
+            \exp\!\left(-i\, 2\pi \frac{f_d}{F_d}\, s_d\right)
 
-    The N-D ramp itself is not cached; only the 1-D per-axis ramps are.
-    The product of 1-D ramps over broadcasted dims is materialised here
-    so that the downstream multiply with ``fft_x`` is a single op.
+    by broadcasting individual 1-D ramps fetched from
+    ``_MIXED_PHASE_RAMP_1D_CACHE``. The result has rfft-style shape
+    ``(F_0, F_1, ..., F_{D-2}, F_{D-1} // 2 + 1)`` and complex dtype,
+    so it can be multiplied directly with
+    ``torch.fft.rfftn(x, s=fft_shape)``.
+
+    Axes with ``shift == 0`` (non-periodic axes, and periodic axes where the
+    kernel has size 1) contribute no ramp — they are skipped entirely rather
+    than adding a length-1 all-ones factor. If **all** shifts are zero the
+    function returns ``None`` so callers can skip the multiply with a single
+    branch.
+
+    The N-D ramp itself is not cached. The loop multiplies broadcast 1-D views
+    together, producing a compact tensor (not a full ``(F_0, ..., F_{D-1})``
+    allocation) that covers only the periodic axes with non-zero shifts, so
+    that the downstream multiply with ``fft_x`` is a single fused op.
+
+    Args:
+        fft_shape: Per-axis FFT lengths ``(F_0, ..., F_{D-1})``, as returned
+            by :func:`_mixed_recipe`.
+        shifts: Per-axis integer pixel shifts ``(s_0, ..., s_{D-1})``.
+            Negative values shift left (the typical case for periodic axes).
+        device: Device on which to materialise the ramp.
+        real_dtype: Real dtype of the input (determines the complex dtype of
+            the ramp: ``float32`` → ``complex64``, ``float64`` → ``complex128``).
+
+    Returns:
+        Broadcast-ready complex tensor of shape
+        ``(F_0, ..., F_{D-2}, F_{D-1} // 2 + 1)``, or ``None`` if every
+        shift is zero.
     """
     if all(s == 0 for s in shifts):
         return None
@@ -281,7 +406,23 @@ def _build_nd_phase_ramp(
 
 
 def _normalize_periodic(periodic: Sequence[bool] | tuple[bool, ...], data_dim: int) -> tuple[bool, ...]:
-    """Normalise the ``periodic`` argument to a length-``data_dim`` tuple of bools."""
+    """Normalise the ``periodic`` argument to a length-``data_dim`` tuple of bools.
+
+    Accepts any sequence (list, tuple, generator) of truthy/falsy values and
+    returns a typed tuple of Python ``bool`` values, validating that the
+    length matches ``data_dim``.
+
+    Args:
+        periodic: Per-axis periodicity flags. Length must equal ``data_dim``.
+            Any truthy value is treated as ``True`` (periodic).
+        data_dim: Expected number of spatial dimensions (1, 2, or 3).
+
+    Returns:
+        A ``tuple[bool, ...]`` of length ``data_dim``.
+
+    Raises:
+        AssertionError: If ``len(periodic) != data_dim``.
+    """
     periodic_t = tuple(bool(p) for p in periodic)
     assert len(periodic_t) == data_dim, (
         f"periodic must have length {data_dim} (data_dim), got length {len(periodic_t)}"
@@ -299,11 +440,29 @@ def _dispatch_legacy_if_uniform(
 ) -> torch.Tensor | None:
     """If ``periodic`` is uniformly all-True or all-False, route to the existing op.
 
-    Returns the output tensor if the call was dispatched, or ``None`` to
-    indicate the caller should run the mixed path itself.
+    This ensures the all-False and all-True degenerate cases produce
+    bit-identical results to :mod:`nvsubquadratic.ops.fftconv` and
+    :mod:`nvsubquadratic.ops.circular_fftconv` respectively, and incur no
+    overhead from the mixed-axis logic.
 
-    The legacy linear ops do not take ``use_phase_shift`` (it does not
-    apply there); we always dispatch when periodic is all-False.
+    - ``all(periodic) == True`` → dispatches to the corresponding
+      ``circular_fftconv{1,2,3}d_fp32_bhl`` function, forwarding
+      ``use_phase_shift``.
+    - ``not any(periodic)`` (all False) → dispatches to the corresponding
+      ``fftconv{1,2,3}d_fp32_bhl`` function. The ``use_phase_shift`` flag
+      is not forwarded (it does not apply to zero-padded linear conv).
+
+    Args:
+        periodic: Normalised per-axis periodicity tuple (length ``data_dim``).
+        data_dim: Number of spatial dimensions (1, 2, or 3).
+        x: Input tensor (BHL layout).
+        kernel: Kernel tensor (BHL layout).
+        shortcut: Optional per-channel residual scale ``[H]``.
+        use_phase_shift: Forwarded to the circular op when dispatching.
+
+    Returns:
+        Output tensor if the call was dispatched to a legacy op, or ``None``
+        if ``periodic`` is mixed and the caller must run the mixed path.
     """
     if all(periodic):
         from nvsubquadratic.ops import circular_fftconv as _circ
@@ -341,8 +500,48 @@ def _mixed_fftconv_nd_fp32_bhl(
     """Shared N-D mixed-BC FFT conv body (BHL, fp32).
 
     The 1D/2D/3D public entry points delegate here after shape validation.
-    All padding/cropping/phase-ramp logic is per axis according to
-    :func:`_mixed_recipe`.
+    Implements the following steps:
+
+    1. Validate shapes (ndim, batch dim, hidden dim, per-axis kernel-size
+       limits).
+    2. Dispatch to the legacy linear / circular op if ``periodic`` is uniform
+       (via :func:`_dispatch_legacy_if_uniform`).
+    3. Cast ``x`` and ``kernel`` to fp32, compute the per-axis FFT parameters
+       via :func:`_mixed_recipe`, and take ``rfftn`` over all spatial dims in
+       one call.
+    4. Optionally apply the N-D phase ramp to ``fft_k`` (if
+       ``use_phase_shift=True``).
+    5. Multiply ``fft_x * fft_k`` and apply the inverse ``irfftn``.
+    6. If ``use_phase_shift=False``, apply ``torch.roll`` on periodic axes
+       that have a non-zero shift (``s_d != 0``); size-1 periodic kernels
+       (shift 0) are skipped.
+    7. Crop the IFFT output to the input spatial shape via the per-axis
+       crop windows from :func:`_mixed_recipe`.
+    8. Cast back to the original dtype of ``x`` and add the optional
+       shortcut term ``y += shortcut * x``.
+
+    Args:
+        x: Input tensor of shape ``[B, H, *spatial_dims]`` (any dtype).
+        kernel: Kernel tensor of shape ``[1|B, H, *K_dims]`` (any dtype).
+        periodic: Normalised per-axis periodicity tuple, length ``data_dim``.
+        shortcut: Optional per-channel residual scale ``[H]``. Must have the
+            same dtype as ``x``.
+        use_phase_shift: If True, apply the "same" shift in the frequency
+            domain (faster). If False, use ``torch.roll`` after the IFFT
+            (useful as a reference implementation).
+        data_dim: Number of spatial dimensions (1, 2, or 3).
+
+    Returns:
+        Output tensor of shape ``[B, H, *spatial_dims]`` in the original
+        dtype of ``x``.
+
+    Raises:
+        AssertionError: On shape mismatches or out-of-range kernel sizes.
+            Specifically: ``K_d > N_d`` on a periodic axis (the circular FFT
+            length is ``N_d``, so the kernel must fit within it); or
+            ``K_d > 2 * N_d`` on a non-periodic axis (the padded FFT length
+            is at most ``2 * N_d``, which accommodates the standard
+            "double-grid" SIREN kernel size of ``2 * N_d - 1``).
     """
     x_shape = x.shape
     assert x.ndim == 2 + data_dim, f"Expected {2 + data_dim}D input, got {x.ndim}D"
@@ -434,9 +633,13 @@ def mixed_fftconv1d_fp32_bhl(
         kernel: Kernel tensor of shape ``[1|B, H, K]`` (any dtype, cast to fp32).
         periodic: Length-1 sequence of bools. ``periodic[0] == True`` ⇒ circular.
         shortcut: Optional per-channel scale ``[H]`` added as ``y += shortcut * x``.
-        use_phase_shift: If True, align periodic axes via frequency-domain phase
-            ramps. If False, align via :func:`torch.roll` on periodic axes after
-            the inverse transform. The output is mathematically equivalent.
+        use_phase_shift: If True (default), align periodic axes via
+            frequency-domain phase ramps — the shift is fused into the
+            frequency-domain multiply with no extra data movement, making
+            this the faster path. If False, align via :func:`torch.roll`
+            on periodic axes after the inverse transform. The output is
+            mathematically equivalent; use ``False`` only as a reference or
+            when ``torch.compile`` cannot handle complex ops.
 
     Returns:
         Tensor of shape ``[B, H, L]`` in the original dtype of ``x``.
@@ -466,6 +669,17 @@ def mixed_fftconv2d_fp32_bhl(
 
     Returns:
         Tensor of shape ``[B, H, X, Y]`` in the original dtype of ``x``.
+
+    Example:
+        >>> import torch
+        >>> from nvsubquadratic.ops.mixed_fftconv import mixed_fftconv2d_fp32_bhl
+        >>> B, H, X, Y, Kx, Ky = 2, 64, 32, 64, 63, 127
+        >>> x = torch.randn(B, H, X, Y)
+        >>> kernel = torch.randn(1, H, Kx, Ky)
+        >>> # x-axis periodic, y-axis zero-padded
+        >>> y = mixed_fftconv2d_fp32_bhl(x, kernel, periodic=(True, False))
+        >>> y.shape
+        torch.Size([2, 64, 32, 64])
     """
     periodic_t = _normalize_periodic(periodic, data_dim=2)
     return _mixed_fftconv_nd_fp32_bhl(x, kernel, periodic_t, shortcut, use_phase_shift, data_dim=2)
@@ -511,8 +725,21 @@ def mixed_fftconv1d_fp32_bhl_w_reshape(
 ) -> torch.Tensor:
     """1D mixed-BC FFT conv wrapper for BLH layout (batch, length, hidden).
 
-    Reshapes BLH ↔ BHL around :func:`mixed_fftconv1d_fp32_bhl`. See that
-    function for argument semantics.
+    Reshapes BLH ↔ BHL around :func:`mixed_fftconv1d_fp32_bhl`. Prefer this
+    wrapper over operating in BLH natively — internally the FFT runs on
+    contiguous spatial axes (BHL), so the reshape cost is negligible compared
+    to the FFT itself.
+
+    Args:
+        x: Input tensor of shape ``[B, L, H]`` (BLH, channels-last).
+        kernel: Kernel tensor of shape ``[1|B, K, H]`` (BLH). Leading dim 1
+            for a shared kernel, ``B`` for per-sample kernels.
+        periodic: Length-1 sequence of bools.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+
+    Returns:
+        Tensor of shape ``[B, L, H]`` in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     k_bhl = rearrange(kernel, "b k h -> b h k")
@@ -529,7 +756,20 @@ def mixed_fftconv2d_fp32_bhl_w_reshape(
 ) -> torch.Tensor:
     """2D mixed-BC FFT conv wrapper for BLH layout (batch, X, Y, hidden).
 
-    Reshapes BLH ↔ BHL around :func:`mixed_fftconv2d_fp32_bhl`.
+    Reshapes BLH ↔ BHL around :func:`mixed_fftconv2d_fp32_bhl`. Prefer this
+    over operating in BLH natively — the FFT runs faster on contiguous spatial
+    axes (BHL).
+
+    Args:
+        x: Input tensor of shape ``[B, X, Y, H]`` (BLH, channels-last).
+        kernel: Kernel tensor of shape ``[1|B, K_x, K_y, H]`` (BLH). Leading
+            dim 1 for a shared kernel, ``B`` for per-sample kernels.
+        periodic: Length-2 sequence ``(periodic_x, periodic_y)``.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+
+    Returns:
+        Tensor of shape ``[B, X, Y, H]`` in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     k_bhl = rearrange(kernel, "b kx ky h -> b h kx ky")
@@ -546,7 +786,19 @@ def mixed_fftconv3d_fp32_bhl_w_reshape(
 ) -> torch.Tensor:
     """3D mixed-BC FFT conv wrapper for BLH layout (batch, X, Y, Z, hidden).
 
-    Reshapes BLH ↔ BHL around :func:`mixed_fftconv3d_fp32_bhl`.
+    Reshapes BLH ↔ BHL around :func:`mixed_fftconv3d_fp32_bhl`. Prefer this
+    over operating in BLH natively.
+
+    Args:
+        x: Input tensor of shape ``[B, X, Y, Z, H]`` (BLH, channels-last).
+        kernel: Kernel tensor of shape ``[1|B, K_x, K_y, K_z, H]`` (BLH).
+            Leading dim 1 for a shared kernel, ``B`` for per-sample kernels.
+        periodic: Length-3 sequence ``(periodic_x, periodic_y, periodic_z)``.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+
+    Returns:
+        Tensor of shape ``[B, X, Y, Z, H]`` in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y z h -> b h x y z")
     k_bhl = rearrange(kernel, "b kx ky kz h -> b h kx ky kz")
@@ -559,6 +811,10 @@ def mixed_fftconv3d_fp32_bhl_w_reshape(
 # =============================================================================
 
 
+# Default channel chunk size for the memory-efficient variants.
+# A chunk of 128 channels typically gives ~26% peak-memory savings with ~11%
+# throughput overhead relative to the non-chunked path (measured on H100; see
+# fftconv_chunked.py for profiling details).
 _DEFAULT_MIXED_CHUNK_SIZE = 128
 
 
@@ -569,7 +825,27 @@ def _chunked_along_channels(
     chunk_size: int,
     core_fn,
 ) -> torch.Tensor:
-    """Apply ``core_fn`` to ``[x, kernel, shortcut]`` slices of size ``chunk_size`` along H."""
+    """Apply ``core_fn`` to ``[x, kernel, shortcut]`` slices of size ``chunk_size`` along H.
+
+    Reduces peak GPU memory by avoiding materialising the full FFT-intermediate
+    tensors (of size ``[B, H, *fft_shape]``) for all channels at once.  When
+    ``H <= chunk_size`` the call is a pass-through with no slicing overhead.
+
+    Args:
+        x: Input tensor of shape ``[B, H, *spatial_dims]`` (BHL layout).
+        kernel: Kernel tensor of shape ``[1|B, H, *K_dims]``. The leading dim
+            is expected to be either 1 (shared kernel) or ``B``; slicing along
+            dim 1 is applied uniformly regardless.
+        shortcut: Optional per-channel residual scale ``[H]``, sliced to
+            match each chunk. ``None`` is forwarded unchanged.
+        chunk_size: Maximum number of channels to process per chunk.
+        core_fn: Callable with signature ``(x_chunk, k_chunk, sc_chunk) ->
+            Tensor`` that performs the actual convolution on a channel slice.
+
+    Returns:
+        Output tensor of shape ``[B, H, *spatial_dims]`` reassembled from
+        chunk outputs concatenated along the channel dimension (dim 1).
+    """
     H = x.shape[1]
     if H <= chunk_size:
         return core_fn(x, kernel, shortcut)
@@ -596,9 +872,21 @@ def mixed_fftconv1d_fp32_bhl_chunked(
 ) -> torch.Tensor:
     """Memory-efficient 1D mixed-BC FFT conv (BHL) via channel chunking.
 
-    See :func:`mixed_fftconv1d_fp32_bhl` for the core semantics. The work is
-    identical, but it is performed on at most ``chunk_size`` channels at a
-    time, lowering peak FFT-intermediate memory.
+    Produces the same output as :func:`mixed_fftconv1d_fp32_bhl` but processes
+    at most ``chunk_size`` channels at a time, lowering peak FFT-intermediate
+    memory at the cost of multiple kernel launches.
+
+    Args:
+        x: Input tensor of shape ``[B, H, L]`` (any dtype, cast to fp32).
+        kernel: Kernel tensor of shape ``[1|B, H, K]``.
+        periodic: Length-1 sequence of bools. ``periodic[0] == True`` → circular.
+        shortcut: Optional per-channel scale ``[H]`` added as ``y += shortcut * x``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+        chunk_size: Number of channels per chunk. Defaults to
+            ``_DEFAULT_MIXED_CHUNK_SIZE`` (128). Pass ``None`` to use the default.
+
+    Returns:
+        Tensor of shape ``[B, H, L]`` in the original dtype of ``x``.
     """
     chunk = chunk_size if chunk_size is not None else _DEFAULT_MIXED_CHUNK_SIZE
     periodic_t = _normalize_periodic(periodic, data_dim=1)
@@ -621,7 +909,19 @@ def mixed_fftconv2d_fp32_bhl_chunked(
 ) -> torch.Tensor:
     """Memory-efficient 2D mixed-BC FFT conv (BHL) via channel chunking.
 
-    See :func:`mixed_fftconv2d_fp32_bhl` for semantics.
+    Produces the same output as :func:`mixed_fftconv2d_fp32_bhl` but processes
+    at most ``chunk_size`` channels at a time to limit peak memory.
+
+    Args:
+        x: Input tensor of shape ``[B, H, X, Y]`` (any dtype, cast to fp32).
+        kernel: Kernel tensor of shape ``[1|B, H, K_x, K_y]``.
+        periodic: Length-2 sequence ``(periodic_x, periodic_y)``.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+        chunk_size: Channels per chunk. Defaults to 128.
+
+    Returns:
+        Tensor of shape ``[B, H, X, Y]`` in the original dtype of ``x``.
     """
     chunk = chunk_size if chunk_size is not None else _DEFAULT_MIXED_CHUNK_SIZE
     periodic_t = _normalize_periodic(periodic, data_dim=2)
@@ -644,7 +944,19 @@ def mixed_fftconv3d_fp32_bhl_chunked(
 ) -> torch.Tensor:
     """Memory-efficient 3D mixed-BC FFT conv (BHL) via channel chunking.
 
-    See :func:`mixed_fftconv3d_fp32_bhl` for semantics.
+    Produces the same output as :func:`mixed_fftconv3d_fp32_bhl` but processes
+    at most ``chunk_size`` channels at a time to limit peak memory.
+
+    Args:
+        x: Input tensor of shape ``[B, H, X, Y, Z]`` (any dtype, cast to fp32).
+        kernel: Kernel tensor of shape ``[1|B, H, K_x, K_y, K_z]``.
+        periodic: Length-3 sequence ``(periodic_x, periodic_y, periodic_z)``.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+        chunk_size: Channels per chunk. Defaults to 128.
+
+    Returns:
+        Tensor of shape ``[B, H, X, Y, Z]`` in the original dtype of ``x``.
     """
     chunk = chunk_size if chunk_size is not None else _DEFAULT_MIXED_CHUNK_SIZE
     periodic_t = _normalize_periodic(periodic, data_dim=3)
@@ -673,6 +985,20 @@ def mixed_fftconv1d_fp32_bhl_w_reshape_chunked(
     """Chunked 1D mixed-BC FFT conv wrapper for BLH layout.
 
     Reshapes BLH ↔ BHL around :func:`mixed_fftconv1d_fp32_bhl_chunked`.
+    Combines channel chunking (for memory savings) with the BLH → BHL reshape
+    (for FFT efficiency).
+
+    Args:
+        x: Input tensor of shape ``[B, L, H]`` (BLH, channels-last).
+        kernel: Kernel tensor of shape ``[1|B, K, H]`` (BLH). Leading dim 1
+            for a shared kernel, ``B`` for per-sample kernels.
+        periodic: Length-1 sequence of bools.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+        chunk_size: Channels per chunk. Defaults to 128.
+
+    Returns:
+        Tensor of shape ``[B, L, H]`` in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b l h -> b h l")
     k_bhl = rearrange(kernel, "b k h -> b h k")
@@ -698,6 +1024,18 @@ def mixed_fftconv2d_fp32_bhl_w_reshape_chunked(
     """Chunked 2D mixed-BC FFT conv wrapper for BLH layout.
 
     Reshapes BLH ↔ BHL around :func:`mixed_fftconv2d_fp32_bhl_chunked`.
+
+    Args:
+        x: Input tensor of shape ``[B, X, Y, H]`` (BLH, channels-last).
+        kernel: Kernel tensor of shape ``[1|B, K_x, K_y, H]`` (BLH). Leading
+            dim 1 for a shared kernel, ``B`` for per-sample kernels.
+        periodic: Length-2 sequence ``(periodic_x, periodic_y)``.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+        chunk_size: Channels per chunk. Defaults to 128.
+
+    Returns:
+        Tensor of shape ``[B, X, Y, H]`` in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y h -> b h x y")
     k_bhl = rearrange(kernel, "b kx ky h -> b h kx ky")
@@ -723,6 +1061,18 @@ def mixed_fftconv3d_fp32_bhl_w_reshape_chunked(
     """Chunked 3D mixed-BC FFT conv wrapper for BLH layout.
 
     Reshapes BLH ↔ BHL around :func:`mixed_fftconv3d_fp32_bhl_chunked`.
+
+    Args:
+        x: Input tensor of shape ``[B, X, Y, Z, H]`` (BLH, channels-last).
+        kernel: Kernel tensor of shape ``[1|B, K_x, K_y, K_z, H]`` (BLH).
+            Leading dim 1 for a shared kernel, ``B`` for per-sample kernels.
+        periodic: Length-3 sequence ``(periodic_x, periodic_y, periodic_z)``.
+        shortcut: Optional per-channel scale ``[H]``.
+        use_phase_shift: See :func:`mixed_fftconv1d_fp32_bhl`.
+        chunk_size: Channels per chunk. Defaults to 128.
+
+    Returns:
+        Tensor of shape ``[B, X, Y, Z, H]`` in the original dtype of ``x``.
     """
     x_bhl = rearrange(x, "b x y z h -> b h x y z")
     k_bhl = rearrange(kernel, "b kx ky kz h -> b h kx ky kz")

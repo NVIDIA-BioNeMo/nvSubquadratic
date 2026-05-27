@@ -37,7 +37,7 @@ bash scripts/download_well.sh MHD_64 --base-path /scratch/data/the_well
 On a SLURM cluster:
 
 ```bash
-sbatch slurm/download_well.sh active_matter
+sbatch scripts/slurm/download_well.sh active_matter
 ```
 
 Run `bash scripts/download_well.sh` without arguments to see the full list of available datasets.

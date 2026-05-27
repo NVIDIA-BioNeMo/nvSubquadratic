@@ -1,13 +1,13 @@
 """Interactive Kernel + Mask Visualizer (Gradio).
 
-Loads ``.npz`` files produced by ``extract_kernel_data.py`` and provides
-interactive side-by-side exploration of learned SIREN kernels, Gaussian masks,
-and masked kernels across runs and blocks.
+Loads ``.npz`` files produced by ``scripts/data/extract_kernel_data.py`` and
+provides interactive side-by-side exploration of learned SIREN kernels,
+Gaussian masks, and masked kernels across runs and blocks.
 
 All sampled channels are shown at once in a grid — only the block needs switching.
 
 Usage:
-    conda run -n nv-subq python scripts/visualize_kernels_app.py --data-dir tmp/kernel_data
+    conda run -n nv-subq python scripts/visualization/visualize_kernels_app.py --data-dir tmp/kernel_data
 """
 
 from __future__ import annotations

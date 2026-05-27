@@ -13,7 +13,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Wrapper modules that adapt Hugging Face diffusers models to the nvSubQuadratic diffusion pipeline."""
+"""Hugging Face ``diffusers`` adapters for the nvSubquadratic diffusion pipeline.
+
+This module bridges the two-sided contract between the
+``experiments.lightning_wrappers.diffusion_wrapper.DiffusionWrapper`` (which
+drives noise schedules, timestep conditioning, and the optimisation loop)
+and stock HF backbones (:class:`diffusers.DiTTransformer2DModel`,
+:class:`diffusers.UVit2DModel`) that expect their own input layout and
+timestep API.
+
+Two thin ``nn.Module`` wrappers do the translation:
+
+- :class:`DiffusersDiTWrapper` — for DiT-style denoisers that take a
+  ``(B, C, H, W)`` sample and a ``[B]`` discrete-timestep tensor.
+- :class:`DiffusersUVitWrapper` — for the UVit codebook predictor that
+  takes a ``(B, C, H, W)`` sample plus an explicit conditioning tensor.
+
+Both wrappers expose the same ``forward({"input": ...})`` -> ``{"logits": ...}``
+contract that the diffusion wrapper expects, hide the HF model's preferred
+channel layout (BLH inside the library; BCHW for the HF backbones), and
+share a small ``_SharedTimestepState`` object so that the ``DiffusionWrapper``
+can push the current timestep into the HF model just before each forward
+without polluting the wrapper's own constructor signature.  Registration
+happens via :meth:`DiffusersDiTWrapper.hf_register_diffusion_wrapper`, which
+monkey-patches the wrapper's ``_condition_from_timesteps`` to fan out to a
+list of timestep callbacks — this is intentional and reversible
+(``_hf_timestep_callbacks`` is created lazily and only patched once per
+wrapper instance).
+
+Dtype handling: the configs carry a ``dtype`` string (``"float32"``,
+``"bfloat16"``, …); the wrapper casts the sample to that dtype before the
+HF model and casts the output back to the caller's dtype on the way out.
+"""
 
 from __future__ import annotations
 
@@ -46,7 +77,14 @@ class _SharedTimestepState:
 
 @dataclass
 class HuggingFaceDiTConfig:
-    """Configuration for DiT backbones."""
+    """Construction config for a :class:`diffusers.DiTTransformer2DModel` backbone.
+
+    Every field maps 1:1 to the corresponding HF constructor argument.  Fields
+    set to ``None`` are filtered out before being passed to HF so that the
+    library's own defaults apply.  ``dtype`` is a string (e.g. ``"float32"``,
+    ``"bfloat16"``) used at forward time to cast the sample tensor before the
+    HF model runs; weights themselves are not re-cast here.
+    """
 
     sample_size: int = 28
     patch_size: int | None = 2
@@ -71,7 +109,14 @@ class HuggingFaceDiTConfig:
 
 @dataclass
 class HuggingFaceUVitConfig:
-    """Configuration for UVit backbones."""
+    """Construction config for a :class:`diffusers.UVit2DModel` backbone.
+
+    Fields map 1:1 to the HF constructor; ``None`` values are filtered out
+    so the library defaults apply.  Note that UVit predicts logits over a
+    discrete codebook rather than continuous samples, so ``out_channels`` is
+    accepted for interface parity but is *not* propagated to the underlying
+    model.
+    """
 
     sample_size: int = 32
     in_channels: int = 3
@@ -94,7 +139,25 @@ class HuggingFaceUVitConfig:
 
 
 class DiffusersDiTWrapper(nn.Module):
-    """Adapter for DiT-style denoisers that expect discrete timesteps."""
+    """Adapter that exposes a :class:`diffusers.DiTTransformer2DModel` as an nvSubquadratic denoiser.
+
+    The HF DiT expects ``(B, C, H, W)`` samples and a ``[B]`` long-dtype
+    timestep tensor; the diffusion wrapper hands the model
+    ``{"input": (B, H, W, C)}`` and pushes timesteps through a side channel.
+    This adapter:
+
+    - moveaxes ``(B, H, W, C) -> (B, C, H, W)`` on input and back on output;
+    - casts the sample to ``hf_config.dtype`` and restores the caller's dtype;
+    - reads the latest timesteps from a shared state object that the diffusion
+      wrapper populates via the callback installed by
+      :meth:`hf_register_diffusion_wrapper`;
+    - synthesises a zero class-label tensor (the configs we use don't
+      condition on labels) so the HF API doesn't complain.
+
+    Call :meth:`hf_register_diffusion_wrapper` once after construction —
+    typically by the diffusion wrapper itself — to wire the timestep
+    callback before the first forward.
+    """
 
     def __init__(
         self,
@@ -223,7 +286,15 @@ class DiffusersDiTWrapper(nn.Module):
 
 
 class DiffusersUVitWrapper(nn.Module):
-    """Adapter for UVit models that require explicit conditioning tensors."""
+    """Adapter that exposes a :class:`diffusers.UVit2DModel` as an nvSubquadratic discrete-codebook denoiser.
+
+    UVit predicts logits over a discrete codebook rather than continuous
+    samples, so the forward returns ``{"logits": [B, codebook_size, H, W]}``
+    rather than a reconstructed sample.  Layout/dtype handling mirrors
+    :class:`DiffusersDiTWrapper`.  Conditioning tensors that the HF UVit
+    requires (text embeddings or similar) are routed through the registered
+    diffusion wrapper.
+    """
 
     def __init__(
         self,

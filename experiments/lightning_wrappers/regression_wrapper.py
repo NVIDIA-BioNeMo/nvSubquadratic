@@ -1,6 +1,13 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Lightning wrappers for the Classification and Regression experiments."""
+"""Lightning wrapper for regression tasks (MAE / MSE loss).
+
+Provides :class:`RegressionWrapper`, which supports both Mean Absolute Error
+(L1) and Mean Squared Error (L2) regression objectives.  It is also the base
+class for :class:`~experiments.lightning_wrappers.well_lightning_wrapper.WELLRegressionWrapper`.
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 from typing import Literal
 

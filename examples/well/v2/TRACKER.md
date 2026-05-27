@@ -687,5 +687,5 @@ sbatch --job-name=<name> examples/well/submit_well_ivi_2gpu_geodude.sh examples/
 ```bash
 bash scripts/download_well.sh <dataset_name>
 # or on SLURM:
-sbatch slurm/download_well.sh <dataset_name>
+sbatch scripts/slurm/download_well.sh <dataset_name>
 ```

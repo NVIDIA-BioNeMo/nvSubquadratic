@@ -1,6 +1,17 @@
-"""Profile forward/backward/optimizer breakdown for the Gray-Scott Hyena model.
+"""Per-phase profiling for the Gray-Scott Hyena WELL model.
 
-Compares compiled vs uncompiled, with proper CUDA synchronization.
+Reports forward / backward / optimiser breakdown under both eager and
+``torch.compile`` paths with proper CUDA synchronisation.  Useful for
+diagnosing where any new regression came from on this specific WELL
+sub-dataset.
+
+Targets: H100 SXM 80GB (or any Ampere+ GPU), BF16.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/well/profile_timing.py
+
+Output: stdout phase-breakdown table.
 """
 
 import time

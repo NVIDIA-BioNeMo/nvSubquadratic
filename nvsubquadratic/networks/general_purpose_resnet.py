@@ -2,7 +2,51 @@
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Simple implementation of a ResNet for general purpose tasks."""
+"""General-purpose residual network backbone.
+
+:class:`ResidualNetwork` is a flexible, task-agnostic sequence-of-blocks backbone
+used for regression, generation, and spatial-recall tasks.  It wires together a
+configurable stack of :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`
+instances (or any compatible block) via the :mod:`nvsubquadratic.lazy_config`
+system, enabling operator swaps (Hyena / Attention / CKConv / Mamba) purely
+through config without code changes.
+
+**Architecture**
+
+.. code-block:: text
+
+    input [B, *spatial, in_channels]
+        ↓  dropout_in
+        ↓  in_proj          → [B, *spatial, hidden_dim]
+        ↓  block × N        (each block also receives the optional condition)
+        ↓  out_norm
+        ↓  out_proj         → [B, *spatial, out_channels]
+        ↓  readout crop     (optional, for spatial-recall tasks)
+    output {"logits": [B, *target_spatial, out_channels]}
+
+**Conditioning**
+
+An optional ``condition_in_proj`` linearly projects an external conditioning
+signal (e.g. a class embedding or a global context vector) into ``hidden_dim``
+before it is fed to each block's conditioning branch (e.g. FiLM / cross-attention
+in :class:`~nvsubquadratic.modules.residual_block.ResidualBlock`).
+
+**Readout crop**
+
+When ``target_size`` is set the network extracts the bottom-right
+``target_size`` spatial region of the output before returning.  This is used
+for spatial-recall tasks where the model must predict a target patch embedded
+inside a larger context window.  A ``target_size`` element of ``1`` collapses
+(squeezes) that spatial dimension, e.g. ``(1, H, W)`` for a 2-D slice of a
+3-D input.
+
+**Gradient checkpointing**
+
+Set ``gradient_checkpointing=True`` to recompute activations during the backward
+pass instead of storing them, trading compute for memory at large scale.
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 from typing import Sequence
 
@@ -14,31 +58,60 @@ from nvsubquadratic.lazy_config import LazyConfig, instantiate
 
 
 class ResidualNetwork(nn.Module):
-    """Simple implementation of a Residual Network for general purpose tasks.
+    """General-purpose residual network backbone (see module docstring for architecture).
 
-    It assumes:
-    - the input tensor is of shape (batch_size, *spatial_dims, in_channels).
-    - the output tensor is of shape (batch_size, *spatial_dims, out_channels).
+    All sub-modules (projections, norm, blocks) are instantiated from
+    :class:`~nvsubquadratic.lazy_config.LazyConfig` objects so the architecture
+    can be fully configured from YAML/JSON without subclassing.
+
+    **Tensor layout**
+
+    All tensors are in **channels-last** format: ``[B, *spatial, C]``.  The
+    ``data_dim`` argument records the number of spatial axes (1 for sequences,
+    2 for images, 3 for volumes) and is used to convert a scalar ``target_size``
+    into a per-axis tuple.
+
+    **Output format**
+
+    :meth:`forward` always returns a ``dict`` with key ``"logits"`` whose value
+    has shape ``[B, *spatial_out, out_channels]``.  When ``target_size=None``,
+    ``spatial_out = spatial``; otherwise it is the cropped target region.
+
+    Attributes:
+        in_channels (int): Input channel count.
+        out_channels (int): Output channel count / number of classes.
+        num_blocks (int): Number of stacked residual blocks.
+        hidden_dim (int): Internal feature dimension used throughout the trunk.
+        data_dim (int): Number of spatial axes (1/2/3).
+        gradient_checkpointing (bool): Recompute activations on backward.
+        target_size (tuple | None): Per-axis readout crop size, or ``None``.
+        dropout_in (nn.Module): Input dropout / augmentation applied first.
+        in_proj (nn.Module): ``in_channels → hidden_dim`` linear projection.
+        condition_in_proj (nn.Module | None): Optional ``hidden_dim → hidden_dim``
+            projection for the conditioning signal.
+        blocks (nn.ModuleList): Stack of ``num_blocks`` residual blocks.
+        out_norm (nn.Module): Post-trunk normalisation (weight-decay excluded).
+        out_proj (nn.Module): ``hidden_dim → out_channels`` readout projection.
 
     Args:
-        in_channels (int): Number of input channels
-        out_channels (int): Number of output channels
-        num_blocks (int): Number of blocks
-        hidden_dim (int): Number of hidden dimensions
-        in_proj_cfg (LazyConfig): Configuration for the input projection
-        out_proj_cfg (LazyConfig): Configuration for the output projection
-        norm_cfg (LazyConfig): Configuration for the normalization
-        block_cfg (LazyConfig): Configuration for the residual block
-        dropout_in_cfg (LazyConfig): Configuration for the dropout in layer (applied to the input)
-        condition_in_proj_cfg (LazyConfig | None): Configuration for the condition input projection or None if no condition is used.
-            If provided, the condition tensor is of shape [B, * spatial_dims_condition, hidden_dim].
-            If not provided, the condition tensor is None.
-        target_size (int | tuple | None): Size of the readout region. Can be:
-            - int: Same size for all spatial dimensions (e.g., 16 for 16x16 in 2D)
-            - tuple: Different size per dimension. For 3D spatial recall where the target
-              is a 2D image on the last depth slice, use (1, H, W) to extract only the
-              last depth slice with HxW spatial region.
-            - None: No readout extraction (return full output)
+        in_channels: Number of input signal channels.
+        out_channels: Number of output channels (e.g. vocabulary / class count).
+        num_blocks: Depth of the residual tower.
+        hidden_dim: Width of the residual tower.
+        data_dim: Spatial dimensionality (1, 2, or 3).
+        in_proj_cfg: LazyConfig for the input projection (typically ``nn.Linear``).
+        out_proj_cfg: LazyConfig for the output projection.
+        norm_cfg: LazyConfig for the output normalisation layer.
+        block_cfg: LazyConfig for each residual block; instantiated ``num_blocks``
+            times.
+        dropout_in_cfg: LazyConfig for the input dropout layer.
+        condition_in_proj_cfg: Optional LazyConfig for the condition projection.
+            Pass ``None`` for unconditional networks.
+        target_size: Readout crop size.  ``int`` → same size on every spatial
+            axis.  ``tuple`` → per-axis sizes (use ``1`` to squeeze that axis).
+            ``None`` → return the full output.
+        gradient_checkpointing: Enable activation recomputation in :meth:`forward`
+            to reduce peak memory at the cost of extra compute.
     """
 
     def __init__(
@@ -57,7 +130,23 @@ class ResidualNetwork(nn.Module):
         target_size: int | Sequence[int] | None = None,
         gradient_checkpointing: bool = False,
     ):
-        """Initialize the ResidualNetwork."""
+        """Instantiate all sub-modules from LazyConfig objects.
+
+        Args:
+            in_channels: Number of input signal channels.
+            out_channels: Number of output channels.
+            num_blocks: Number of residual blocks to stack.
+            hidden_dim: Internal feature width.
+            data_dim: Spatial dimensionality (1 / 2 / 3).
+            in_proj_cfg: Config for the input projection.
+            out_proj_cfg: Config for the output projection.
+            norm_cfg: Config for the output norm layer.
+            block_cfg: Config for each residual block (instantiated N times).
+            dropout_in_cfg: Config for input dropout.
+            condition_in_proj_cfg: Optional config for condition projection.
+            target_size: Readout crop specification (see class docstring).
+            gradient_checkpointing: Recompute activations during backward pass.
+        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -136,18 +225,22 @@ class ResidualNetwork(nn.Module):
         return x[tuple(slices)]
 
     def forward(self, input_and_condition: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        """Forward pass of the ResidualNetwork.
+        """Run the full forward pass: project → blocks → norm → project → crop.
 
         Args:
-            input_and_condition: A dictionary containing the input and condition.
-                Keys: "input" and "condition".
+            input_and_condition: Dictionary with two keys:
 
-            - input: Input tensor of shape [B, * spatial_dims, hidden_dim].
-            - condition: Condition tensor of shape [B, * spatial_dims_condition, hidden_dim].
+                * ``"input"`` — signal tensor of shape ``[B, *spatial, in_channels]``.
+                * ``"condition"`` — optional conditioning tensor of shape
+                  ``[B, *spatial_cond, hidden_dim]``, or ``None`` when
+                  ``condition_in_proj_cfg`` was not provided.
 
         Returns:
-            Dict[str, torch.Tensor]:
-                - "logits": tensor of shape [B, * spatial_dims, out_channels].
+            dict[str, torch.Tensor]: Single-key dict:
+
+            * ``"logits"`` — shape ``[B, *spatial_out, out_channels]`` where
+              ``spatial_out`` equals ``spatial`` unless ``target_size`` is set,
+              in which case it is the cropped readout region.
         """
         # Extract the input and condition from the dictionary
         x, condition = input_and_condition["input"], input_and_condition["condition"]

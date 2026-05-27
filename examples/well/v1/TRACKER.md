@@ -100,10 +100,10 @@ WELL_DATA_PATH=/scratch/data bash scripts/download_well.sh MHD_64
 
 Run `bash scripts/download_well.sh` with no arguments to see all available datasets.
 
-For **SLURM clusters**, submit via `slurm/download_well.sh` to avoid tying up a login node:
+For **SLURM clusters**, submit via `scripts/slurm/download_well.sh` to avoid tying up a login node:
 
 ```bash
-sbatch slurm/download_well.sh supernova_explosion_64
+sbatch scripts/slurm/download_well.sh supernova_explosion_64
 ```
 
 **NFS/shared filesystem note:** On some shared mounts (e.g. IVI), `curl --create-dirs` fails with permission errors when trying to `mkdir` parent directories. The SLURM download script works around this by **pre-creating the dataset directories** (`train/`, `valid/`, `test/`) before invoking the download. If you hit similar `mkdir`-related permission warnings when downloading interactively, manually create the target directories first:

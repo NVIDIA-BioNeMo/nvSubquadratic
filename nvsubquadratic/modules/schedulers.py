@@ -1,6 +1,25 @@
 # TODO: Add license header here
 
-"""Custom LR scheduler utilities."""
+"""Custom LR scheduler utilities.
+
+Currently provides :class:`ResumableSequentialLR`, a bug-fixed subclass of
+:class:`torch.optim.lr_scheduler.SequentialLR` that correctly restores the
+learning rate to the optimizer's ``param_groups`` after a checkpoint resume.
+
+**Background**
+
+A typical training schedule consists of multiple phases — e.g. a linear warmup
+followed by a cosine decay.  PyTorch's ``SequentialLR`` chains together a list of
+sub-schedulers and advances through them when configured milestone epochs are
+reached.  However, as of PyTorch 2.10 its ``load_state_dict`` method restores
+the scheduler's internal bookkeeping but silently omits propagating the restored
+LR back to the optimizer, causing the schedule to restart from the initial warmup
+LR after every checkpoint resume.
+
+:class:`ResumableSequentialLR` patches this by calling
+``optimizer.param_groups[i]["lr"] = _last_lr[i]`` immediately after the parent
+``load_state_dict`` completes.
+"""
 
 import torch
 
@@ -29,8 +48,21 @@ class ResumableSequentialLR(torch.optim.lr_scheduler.SequentialLR):
     still exists.
     """
 
-    def load_state_dict(self, state_dict):
-        """Load state and apply restored LR to optimizer param groups."""
+    def load_state_dict(self, state_dict: dict) -> None:
+        """Load scheduler state and propagate restored LRs to the optimizer.
+
+        Calls the parent ``SequentialLR.load_state_dict``, then immediately
+        copies each value in ``self._last_lr`` into the corresponding
+        ``optimizer.param_groups[i]["lr"]``.  This ensures that the first
+        ``optimizer.step()`` after a resume uses the learning rate that was
+        active when the checkpoint was saved, rather than the freshly
+        initialised (warmup-start) value.
+
+        Args:
+            state_dict: Scheduler state dictionary as produced by
+                :meth:`state_dict`.  Typically loaded from a checkpoint with
+                ``torch.load`` and passed directly to this method.
+        """
         super().load_state_dict(state_dict)
         if hasattr(self, "_last_lr") and self._last_lr:
             for param_group, lr in zip(self.optimizer.param_groups, self._last_lr):

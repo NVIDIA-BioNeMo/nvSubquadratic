@@ -1,6 +1,13 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Lightning wrappers for the Classification and Regression experiments."""
+"""Lightning wrapper for continuous-time diffusion (JiT-style) experiments.
+
+Provides :class:`DiffusionWrapper`, which implements the flow-matching / JiT
+training loop: noises inputs according to a time-dependent schedule, trains a
+denoiser network, and generates samples via an ODE integrator at inference time.
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 import copy
 import math
