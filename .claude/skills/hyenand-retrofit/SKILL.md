@@ -218,13 +218,13 @@ After writing:
 
 Copy parameter values, not whole files. The repo's curated index lives at `docs/examples/index.md` and `docs/repository_overview.md`; the highest-leverage pointers per axis combination:
 
-| Axes (data_dim, causal, layout) | File                                                            |
-| ------------------------------- | --------------------------------------------------------------- |
-| 2D, non-causal, tokens (ViT)    | `examples/vit5_imagenet/v5_patch/_base_config.py`               |
-| 2D, non-causal, hybrid pattern  | `examples/vit5_imagenet/vit5_hybrid/_base_config.py`            |
-| 2D, non-causal, feature_map     | `examples/well/v2/active_matter/hyena.py` (FFT_PADDING="circular") |
+| Axes (data_dim, causal, layout) | File                                                                                     |
+| ------------------------------- | ---------------------------------------------------------------------------------------- |
+| 2D, non-causal, tokens (ViT)    | `examples/vit5_imagenet/v5_patch/_base_config.py`                                        |
+| 2D, non-causal, hybrid pattern  | `examples/vit5_imagenet/vit5_hybrid/_base_config.py`                                     |
+| 2D, non-causal, feature_map     | `examples/well/v2/active_matter/hyena.py` (FFT_PADDING="circular")                       |
 | 3D, non-causal, feature_map     | `examples/well/v2/supernova_explosion_64/hyena.py` (zero) / `MHD_64/hyena.py` (circular) |
-| 1D, non-causal, smallest        | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py` |
-| Diffusion (HF diffusers)        | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py`       |
+| 1D, non-causal, smallest        | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py`                          |
+| Diffusion (HF diffusers)        | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py`                                |
 
 For full per-module API and the math primer on the FFT ops, see `docs/api_reference/modules.rst` and `docs/architecture.md` — both are auto-built from the rich inline docstrings.
