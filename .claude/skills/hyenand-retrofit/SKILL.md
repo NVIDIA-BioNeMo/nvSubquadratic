@@ -26,7 +26,7 @@ These four axes are orthogonal. Fix them before writing.
 
 1. **`data_dim ∈ {1, 2, 3}`** — number of spatial axes the mixer sees. Picks `Conv1d/2d/3d` for the short conv and sets `data_dim` on `CKConvND`, `SIRENKernelND`, and `GaussianModulationND`.
 
-1. **`causal ∈ {True, False}`** — autoregressive 1D LMs are causal; vision, segmentation, PDE are bidirectional. Causal sets `fft_padding="causal"`, `use_rope=True`, mask `parametrization="exp_decay"`, `omega_0=100`. Bidirectional sets `fft_padding ∈ {"zero", "circular"}`, `use_rope=False`, `parametrization="direct"`, `omega_0=10`.
+1. **`causal ∈ {True, False}`** — autoregressive 1D LMs are causal; vision, segmentation, PDE are bidirectional. Causal sets `is_causal=True` on `CKConvND` (1D only) plus `use_rope=True`, mask `parametrization="exp_decay"`, `omega_0=100`. Bidirectional sets `is_causal=False`, `use_rope=False`, `parametrization="direct"`, `omega_0=10`. Boundary condition (`fft_padding`) is a separate axis-4-style choice — see the FFT-backend section.
 
 1. **Host layout** — `tokens [B, N, C]` (most ViTs, causal LMs) or `feature_map [B, C, *spatial]` (CNNs, U-Nets, hierarchical encoders). Spatial dim count does *not* change this — a 1D, 2D, or 3D feature-map host all use `[B, C, *S] -> [B, *S, C]`.
 
@@ -79,9 +79,8 @@ global_conv_cfg = LazyConfig(CKConvND)(
     hidden_dim=HIDDEN_DIM,
     kernel_cfg=kernel_cfg,
     mask_cfg=mask_cfg,
-    fft_padding=(
-        "causal" if CAUSAL else "zero"
-    ),  # "circular" is a valid bidirectional alt
+    fft_padding="zero",  # "circular" for periodic BCs; per-axis list for mixed
+    is_causal=CAUSAL,  # 1D-only; ignored when CAUSAL is False
     fft_backend=(
         "subq_ops" if (DATA_DIM == 2 and not CAUSAL) else "torch_fft"
     ),  # see "FFT backend selection" below
@@ -115,18 +114,20 @@ mixer = instantiate(
 **Knob ownership** (common foot-gun):
 
 - `Hyena(...)`: `use_rope`, `rope_base`, `gate_nonlinear_cfg`, `pixelhyena_norm_cfg`, `qk_norm_cfg`, `short_conv_cfg`, `global_conv_cfg`.
-- `CKConvND(...)` (passed as `global_conv_cfg`): `data_dim`, `hidden_dim`, `mask_cfg`, `fft_padding`, `kernel_cfg`, `fft_backend`. Also optional `grid_type` (`"single"`/`"double"`), `use_chunked_fftconv` (memory optimization; `zero`/`causal` padding only — circular has no chunked variant by design), and `use_fp16_fft` (memory; `circular` requires power-of-2 spatial dims; not allowed with `subq_ops`).
+- `CKConvND(...)` (passed as `global_conv_cfg`): `data_dim`, `hidden_dim`, `mask_cfg`, `fft_padding`, `is_causal`, `kernel_cfg`, `fft_backend`. Also optional `grid_type` (`"single"`/`"double"`), `use_chunked_fftconv` (memory optimization; works with zero/causal padding only — circular has no chunked variant by design), and `use_fp16_fft` (memory; requires power-of-2 spatial dims for circular padding; not allowed with `subq_ops`). `fft_padding` accepts a single mode string (`"zero"`/`"circular"`) or a per-axis list (`["circular", "zero", ...]`) — see the FFT-backend section.
 - `SIRENKernelND(...)` (passed as `kernel_cfg`): `omega_0`, `hidden_omega_0`, `mlp_hidden_dim`, `num_layers`, `embedding_dim`, `L_cache`, `use_bias`, `out_dim`.
 - `GaussianModulationND(...)` (passed as `mask_cfg`): `data_dim`, `num_channels`, `min_attenuation_at_step`, `max_attenuation_at_limit`, `init_extent`, `parametrization`.
 
-## FFT backend selection
+## FFT backend and boundary conditions
 
 `CKConvND` has two backends. The skeleton above picks one from the four axes; the rule:
 
-- **`fft_backend="subq_ops"`** — optimized CUDA kernel from the optional `subquadratic_ops_torch` package (`pip install subquadratic_ops_torch`). Faster on H100/A100 for the 2D vision case. Constraints (all asserted at construction): `data_dim == 2`, `fft_padding == "zero"`, non-causal, `use_fp16_fft == False`. The canonical 2D ImageNet configs (`vit5_hybrid`, `v5/hyena_gap_pretrain.py`) use this path.
-- **`fft_backend="torch_fft"`** (default) — pure `torch.fft`, supports the full matrix: `data_dim ∈ {1, 2, 3}`, `fft_padding ∈ {"zero", "circular", "causal"}` (causal is 1D-only), optional fp16 and chunked variants.
+- **`fft_backend="subq_ops"`** — optimized CUDA kernel from the optional `subquadratic_ops_torch` package (`pip install subquadratic_ops_torch`). Faster on H100/A100 for the 2D vision case. Constraints (all asserted at construction): `data_dim == 2`, `fft_padding == "zero"`, `is_causal == False`, `use_fp16_fft == False`. The canonical 2D ImageNet configs (`vit5_hybrid`, `v5/hyena_gap_pretrain.py`) use this path.
+- **`fft_backend="torch_fft"`** (default) — pure `torch.fft`, supports the full matrix: `data_dim ∈ {1, 2, 3}`, `fft_padding ∈ {"zero", "circular"}` or per-axis list, `is_causal=True` (1D only), optional fp16 and chunked variants.
 
 The skeleton's `fft_backend="subq_ops" if (DATA_DIM == 2 and not CAUSAL) else "torch_fft"` picks the fast path when eligible and falls back otherwise. If the user has not installed `subquadratic_ops_torch`, the import fails at first forward — either swap to `"torch_fft"` or tell them to install it.
+
+**Per-axis mixed boundary conditions.** `fft_padding` accepts a list of modes — one per spatial axis — when the user's domain has different BCs on different axes. Example: a PDE on a periodic channel with hard walls in the cross-stream direction is `fft_padding=["circular", "zero"]` for 2D. This routes through `nvsubquadratic.ops.mixed_fftconv` and forces `fft_backend="torch_fft"` (the subq_ops kernel is single-mode). Default to a single mode if the user hasn't specified mixed; ask if the domain has clearly heterogeneous boundaries.
 
 ## Wire it in
 
@@ -177,11 +178,13 @@ class HyenaAttnAdapter(nn.Module):
 
 For hierarchical hosts where the natural API is a `use_hyena=True` flag inside the host class, edit in place — the sibling-file rule doesn't apply. Use an outer `nn.Linear(C, 3*C)` for QKV projection and an `nn.Linear(C, C)` for output projection if you want q/k/v streams to diverge (rather than self-mixing on a single tensor).
 
+**Layout convention.** The library uses `BHL` (channels-first, `[B, H, *spatial]`) as the fast path internally and exposes `_w_reshape` wrappers for channels-last (`BLH`) callers. The adapter above does the explicit `moveaxis`, which works and is the safest pattern for retrofitting. If the user is constructing directly from `nvsubquadratic.ops.*` (rather than going through the full `Hyena` module), prefer the `*_w_reshape` variants instead — see `docs/architecture.md` for the full BHL/BLH convention.
+
 ## Foot-guns
 
 These break the first forward pass or the first large-input forward pass.
 
-1. **INT32 unfold overflow in large 3D short conv.** `F.conv3d` uses `im2col` with INT32 indexing. For typical channel counts, spatial extent ≥ 160³ overflows. Symptom: `RuntimeError: Input tensor is too large`. Fix: use `DepthwiseFFTConv3d` from nvSubquadratic for the short conv (eliminates `im2col`). 1D and 2D rarely hit this.
+1. **INT32 unfold overflow in large 3D short conv.** `F.conv3d` uses `im2col` with INT32 indexing. For typical channel counts, spatial extent ≥ 160³ overflows. Symptom: `RuntimeError: Input tensor is too large`. There is no drop-in fix in this repo today (real 3D Hyena configs in `examples/well/v2/*/hyena.py` run at 64³ with plain `nn.Conv3d` and don't hit this); options at larger extent are (a) patch-merge to a smaller working grid, (b) replace the short conv with `nn.Identity()` (the global Hyena conv still mixes spatial information; only fine-grained QKV smoothing is lost), or (c) chunk the short conv along the batch dim. 1D and 2D rarely hit this.
 
 1. **RoPE divisibility.** With `use_rope=True`, the per-block hidden dim must be divisible by `2 * data_dim`: `% 2` for 1D, `% 4` for 2D, `% 6` for 3D. In hierarchical encoders, this must hold at every stage that uses Hyena (`embed_dim * 2^stage`). Validate at construction; fail loudly with a helpful message.
 
@@ -191,7 +194,7 @@ These break the first forward pass or the first large-input forward pass.
 
 1. **Pretrained-weight loading.** Hyena blocks have an entirely different `state_dict` prefix than attention blocks. Loading an attention checkpoint into a Hyena variant produces a wall of missing/unexpected keys. Either filter to shared submodules (patch_embed, downsample, MLP, norms), or skip pretrained loading for Hyena variants.
 
-1. **`subq_ops` backend constraint set.** `fft_backend="subq_ops"` asserts loudly on any one of: `data_dim ≠ 2`, `fft_padding ≠ "zero"`, `is_causal=True`, `use_fp16_fft=True`. The canonical 2D vision case is fine; extending to 3D, circular padding, or causal LMs requires flipping to `fft_backend="torch_fft"`. Easy to miss when copy-pasting a 2D config as a 3D starting point.
+1. **`subq_ops` backend constraint set.** `fft_backend="subq_ops"` asserts loudly on any one of: `data_dim ≠ 2`, `fft_padding ≠ "zero"` (so circular and per-axis-mixed both disqualify), `is_causal=True`, `use_fp16_fft=True`. The canonical 2D vision case is fine; extending to 3D, circular padding, mixed BCs, or causal LMs requires flipping to `fft_backend="torch_fft"`. Easy to miss when copy-pasting a 2D config as a 3D starting point.
 
 ## Smoke-test stub
 
@@ -213,12 +216,15 @@ After writing:
 
 ## Reference configs in this repo
 
-Copy parameter values, not whole files:
+Copy parameter values, not whole files. The repo's curated index lives at `docs/examples/index.md` and `docs/repository_overview.md`; the highest-leverage pointers per axis combination:
 
-| Use case                          | File                                                            |
-| --------------------------------- | --------------------------------------------------------------- |
-| Smallest end-to-end Hyena example | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py` |
-| ImageNet ViT-5 (FiLM + registers) | `examples/vit5_imagenet/v5_patch/_base_config.py`               |
-| ImageNet hybrid (pattern-driven)  | `examples/vit5_imagenet/vit5_hybrid/_base_config.py`            |
-| Diffusion (HF diffusers retrofit) | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py`       |
-| PDE fields (The Well)             | `examples/well/v2/*.py`                                         |
+| Axes (data_dim, causal, layout) | File                                                            |
+| ------------------------------- | --------------------------------------------------------------- |
+| 2D, non-causal, tokens (ViT)    | `examples/vit5_imagenet/v5_patch/_base_config.py`               |
+| 2D, non-causal, hybrid pattern  | `examples/vit5_imagenet/vit5_hybrid/_base_config.py`            |
+| 2D, non-causal, feature_map     | `examples/well/v2/active_matter/hyena.py` (FFT_PADDING="circular") |
+| 3D, non-causal, feature_map     | `examples/well/v2/supernova_explosion_64/hyena.py` (zero) / `MHD_64/hyena.py` (circular) |
+| 1D, non-causal, smallest        | `examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py` |
+| Diffusion (HF diffusers)        | `examples/imagenet_diffusion/ccnn_12_768_hyena_qknorm.py`       |
+
+For full per-module API and the math primer on the FFT ops, see `docs/api_reference/modules.rst` and `docs/architecture.md` — both are auto-built from the rich inline docstrings.
