@@ -1,7 +1,29 @@
 # TODO: Add license header here
 
 
-"""UCF101 datamodule with in-code download in prepare_data."""
+"""UCF101 video-classification datamodule for PyTorch Lightning.
+
+Provides :class:`UCF101DataModule`, which wraps
+:class:`torchvision.datasets.UCF101`.  :meth:`prepare_data` automatically
+downloads and extracts both the video archive and the train/test annotation
+split files if they are not already present under ``data_dir`` /
+``annotation_dir``.
+
+**Two output modes** (selected via ``data_type``):
+
+- ``"video"`` — returns clips shaped ``[B, T, H, W, C]`` (channels-last,
+  float32).  Each clip spans ``frames_per_clip`` frames sampled at
+  ``frame_rate`` fps with ``step_between_clips`` temporal stride.
+- ``"sequence"`` — flattens the temporal and spatial axes into a 1-D token
+  sequence: ``[B, T*H*W, C]``.  Suitable for models that treat video as a
+  flat sequence of patches.
+
+**Deterministic workers**
+
+When ``use_deterministic_worker_init=True`` each DataLoader worker is seeded
+with ``base_seed + worker_id`` via :func:`deterministic_worker_init_fn`,
+ensuring reproducible random clip sampling across runs and restarts.
+"""
 
 import os
 import random

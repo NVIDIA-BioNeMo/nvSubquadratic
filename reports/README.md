@@ -30,9 +30,11 @@ plus the supporting `.py` scripts and `.png` figures it cites.
 
 ## Index
 
-| topic                                                                     | summary                                                                                                                                                                                                                        | added   |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| [`ckconv_block_diagonal_kernel/`](ckconv_block_diagonal_kernel/REPORT.md) | Block-diagonal multi-ω₀ SIREN kernel + block-aligned Gaussian mask for ViT-5 hybrid Hyena. Default selection, **resolution scaling rule** (`ω₀ ← m·ω₀`) verified across 1×/2×/4× grids, prod-vs-prototype bit-identical check. | 2026-04 |
+| topic                                                                                 | summary                                                                                                                                                                                                                        | added   |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| [`ckconv_block_diagonal_kernel/`](ckconv_block_diagonal_kernel/REPORT.md)             | Block-diagonal multi-ω₀ SIREN kernel + block-aligned Gaussian mask for ViT-5 hybrid Hyena. Default selection, **resolution scaling rule** (`ω₀ ← m·ω₀`) verified across 1×/2×/4× grids, prod-vs-prototype bit-identical check. | 2026-04 |
+| [`spatial_recall/`](spatial_recall/REPORT.md)                                         | Qualitative target-vs-prediction snapshots for the 1D/2D/3D EMNIST spatial-recall task suite (simple copy, mask selection, color selection, color conditioning).                                                               | 2026-05 |
+| [`vit5_imagenet_dataloader_profiling/`](vit5_imagenet_dataloader_profiling/REPORT.md) | Feb-2026 investigation that diagnosed the CPU-decode bottleneck on ViT-5-Small ImageNet and motivated the move to the DALI-fused dataloader.                                                                                   | 2026-02 |
 
 ## Adding a new report
 

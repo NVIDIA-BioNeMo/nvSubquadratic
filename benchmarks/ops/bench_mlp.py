@@ -1,7 +1,17 @@
 """Focused GPU correctness + benchmark for MLP: torch vs QuACK.
 
-Matches the well/euler training config:
-  dim=384, activation="glu", batch_size=24, seq_len=1024, bf16
+Matches the well/euler training config (``dim=384``,
+``activation="glu"``, ``batch_size=24``, ``seq_len=1024``, BF16) so the
+relative numbers are representative of the real training workload.
+
+Targets: Hopper or Blackwell GPUs (H100, B200) — the QuACK fused path
+needs them; on Ampere this script falls back to the pure-PyTorch MLP
+and only the timing of that one variant is meaningful.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python benchmarks/ops/bench_mlp.py
+
+Output: stdout summary table comparing the torch and QuACK backends.
 """
 
 import time

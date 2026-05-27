@@ -66,14 +66,14 @@ docker build \
 
 ### Enroot (SLURM clusters)
 
-For SLURM deployments that use enroot/pyxis, [`slurm/enroot/build_sqsh.sh`](slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
+For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.sh`](scripts/slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
 
 ```bash
 # H100 (x86-64, default)
-slurm/enroot/build_sqsh.sh
+scripts/slurm/enroot/build_sqsh.sh
 
 # GB200 (ARM64) — uses qemu emulation on an x86 build host
-PLATFORM=arm64 slurm/enroot/build_sqsh.sh
+PLATFORM=arm64 scripts/slurm/enroot/build_sqsh.sh
 ```
 
 ### Apptainer
@@ -155,7 +155,15 @@ source .env && PYTHONPATH=. python -m pytest tests/ -m nightly -v -o addopts=""
 
 ### Documentation
 
-The API reference is built with Sphinx. Sources live under [`docs/`](docs/) and the rendered site is published to the `gh-pages` branch on every push to `main` via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
+All public classes and functions carry **Google-style docstrings** with math
+context, shape annotations, and paper references.  See [`CONVENTIONS.md`](CONVENTIONS.md)
+for the style guide and PR checklist.
+
+#### Viewing the docs
+
+The API reference is built with Sphinx. Sources live under [`docs/`](docs/) and
+the rendered site is published to the `gh-pages` branch on every push to `main`
+via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
 
 Build and preview locally:
 
@@ -166,7 +174,11 @@ make -C docs html SPHINXBUILD="python -m sphinx"
 python -m http.server 8000 --directory docs/_build/html
 ```
 
-Open <http://localhost:8000> to browse. The autosummary stubs in `docs/generated/` are regenerated on every build (gitignored).
+Open <http://localhost:8000> to browse.  The autosummary stubs under
+`docs/api/generated/` are regenerated on every build (gitignored).
+
+While editing, you can also hover over any symbol in VS Code / PyCharm to
+see the rendered docstring, or run `help(SomeClass)` in a REPL.
 
 ### CI
 

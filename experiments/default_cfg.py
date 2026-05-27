@@ -2,7 +2,34 @@
 
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Default configuration for experiments with nvSubQuadratic."""
+"""Typed configuration dataclasses for nvSubquadratic experiments.
+
+Every training run is fully described by an :class:`ExperimentConfig` (or one
+of its task-specific subclasses such as :class:`DiffusionExperimentConfig`).
+These are plain Python :mod:`dataclasses` so they can be instantiated directly
+in a Python config file, serialised via OmegaConf, and overridden at the CLI.
+
+**Sub-configs**
+
+- :class:`TrainConfig` — batch size, iterations, gradient clip, wall-time limit.
+- :class:`TrainerConfig` — Lightning Trainer overrides (validation frequency,
+  checkpoint interval, DDP settings).
+- :class:`SchedulerConfig` — schedule name (``"cosine"``, ``"wsd"``,
+  ``"constant"``), warmup fraction, total iterations.
+- :class:`WandbConfig` — project, entity, run resumption.
+- :class:`OptimizerConfig` — optimizer class and hyperparameters.
+- :class:`AutoResumeConfig` — automatic checkpoint resumption from local or
+  W&B artifact.
+
+Network and Lightning wrapper are specified as
+:class:`~nvsubquadratic.lazy_config.LazyConfig` objects (``net_cfg``,
+``lightning_wrapper_cfg``) so the full experiment is config-driven.
+
+:data:`PLACEHOLDER` is re-exported from :mod:`nvsubquadratic.lazy_config` for
+convenience in config files.
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 from dataclasses import dataclass, field
 from typing import Literal, Optional, Union
@@ -126,7 +153,23 @@ class StartFromCheckpointConfig:
 
 @dataclass
 class ExperimentConfig:
-    """Default configuration for experiments with nvSubQuadratic."""
+    """Top-level configuration for a single nvSubquadratic training run.
+
+    All fields have sensible defaults; task-specific overrides are specified
+    in experiment config files under ``experiments/``.  The config is loaded
+    by ``experiments/run.py``, printed as a tree via Rich, and passed to
+    :func:`~experiments.trainer.construct_trainer` and the Lightning wrapper.
+
+    **Key optional fields**
+
+    - ``compile = True``: wrap the network with ``torch.compile``.  Mutually
+      exclusive with the QuACK kernel path (use ``use_quack=False`` in norm
+      layers when compiling).
+    - ``experiment_dir``: override the default ``runs/<run_name>/`` checkpoint
+      directory with an absolute path.
+    - ``num_nodes``: number of multi-node training hosts (passed to the
+      Lightning :class:`~pytorch_lightning.Trainer`).
+    """
 
     device: str = "cuda"
     debug: bool = True

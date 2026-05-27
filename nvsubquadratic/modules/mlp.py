@@ -1,15 +1,107 @@
 # TODO: Add license header here
 
 
-"""MLP implementation for ND signals.
+"""Channel-mixing MLP block for ND residual networks.
 
-Supports two backends:
+Within the residual block architecture (see
+:mod:`nvsubquadratic.modules.residual_block`), every repeating unit has two
+complementary branches:
 
-* ``"torch"`` — pure PyTorch (``nn.Linear`` → activation → ``nn.Linear``).
-* ``"quack"`` — QuACK fused GEMM+activation kernels (Hopper/Blackwell only).
-  Requires ``quack-kernels >= 0.3.0``, ``bias=False``, dims divisible by 8,
-  and a supported activation (``glu``, ``swiglu``).  Raises at init if any
-  constraint is violated.
+1. **Sequence mixer** — captures long-range *spatial/temporal* interactions
+   (Hyena, Attention, CKConv, Mamba, …).
+2. **MLP** *(this module)* — performs *point-wise channel mixing*, refining
+   each position's feature vector independently of its neighbours.
+
+The :class:`MLP` class provides a two-layer feed-forward network that acts
+as the channel-mixing branch.  Three activation variants are offered:
+
+* **Plain GELU / ReLU / SiLU MLP** (``activation in {"gelu", "relu", "silu"}``):
+
+  .. code-block:: text
+
+      y = W₂(act(W₁(x)))
+
+  ``W₁ : C → H``, ``W₂ : H → C`` where ``H = floor(expansion_factor × C)``.
+
+* **Gated Linear Unit (GLU)** (``activation="glu"``):
+
+  .. code-block:: text
+
+      y = W₂(sigmoid(W₁ₐ(x)) ⊙ W₁ᵦ(x))
+
+  ``W₁`` projects to ``2H``, then is split at the midpoint into a gate half
+  and a value half.  ``W₂ : H → C``.
+
+* **SwiGLU** (``activation="swiglu"``, the default in many modern configs):
+
+  .. code-block:: text
+
+      y = W₂(SiLU(W₁ₐ(x)) ⊙ W₁ᵦ(x))
+
+  Same gated structure as GLU but with SiLU in place of sigmoid; follows
+  Noam Shazeer's SwiGLU paper (arXiv:2002.05202).
+
+Expansion-ratio semantics
+--------------------------
+``expansion_factor`` controls the width of the hidden (intermediate) layer
+relative to the model dimension ``C``:
+
+    H = floor(expansion_factor * C)
+
+For **plain** activations (GELU, ReLU, SiLU) the total linear-layer parameter
+count is ``C*H + H*C = 2*C*H``.  For **gated** activations (GLU, SwiGLU) the
+first projection doubles to ``C → 2H``, so the count becomes
+``C*2H + H*C = 3*C*H``.  To keep the parameter budget comparable between
+plain and gated MLPs, gated configs are typically paired with a smaller
+``expansion_factor``:
+
+- Plain GELU at ``expansion_factor=4`` ≈ ``8C²`` parameters.
+- SwiGLU at ``expansion_factor=8/3`` ≈ ``8C²`` parameters.
+- A commonly used approximation is ``expansion_factor ≈ 4/3`` relative to the
+  plain target.
+
+Activation function summary
+----------------------------
++----------+----------------------------------------------+----------------------------+
+| Name     | Formula                                      | Notes                      |
++==========+==============================================+============================+
+| ``relu`` | ``max(0, x)``                                | Plain; sparse activations  |
++----------+----------------------------------------------+----------------------------+
+| ``gelu`` | ``x · Φ(x)`` (tanh approximation)           | Plain; smooth, common in   |
+|          |                                              | Transformers / BERT-family |
++----------+----------------------------------------------+----------------------------+
+| ``silu`` | ``x · σ(x)``                                 | Plain; also called Swish   |
++----------+----------------------------------------------+----------------------------+
+| ``glu``  | ``sigmoid(a) ⊙ b``                           | Gated; ``W₁`` → 2H        |
++----------+----------------------------------------------+----------------------------+
+| ``swiglu``| ``SiLU(a) ⊙ b``                            | Gated; recommended modern  |
+|           |                                              | default (arXiv:2002.05202) |
++----------+----------------------------------------------+----------------------------+
+
+Hardware back-ends
+------------------
+By default (``backend="torch"``) the MLP uses standard ``nn.Linear`` layers
+with a PyTorch activation.  On Hopper/Blackwell GPUs with QuACK kernels
+installed, setting ``backend="quack"`` enables fused GEMM+activation kernels
+that reduce memory traffic.  QuACK is **experimental** (forward correctness
+verified; backward and benchmark still pending) and is currently blocked by a
+``NotImplementedError`` in :func:`_validate_quack_backend`.
+
+GRN integration
+---------------
+The :class:`MLP` itself does not embed a GRN layer; if Global Response
+Normalization (see :mod:`nvsubquadratic.modules.grn`) is desired it should be
+inserted between the two linear layers by the calling code or by wrapping
+:class:`MLP` in a subclass.  GRN is particularly effective inside gated-linear
+units (GLU / SwiGLU) where per-channel magnitude carries semantic weight.
+
+Tensor layout
+-------------
+All tensors use **channels-last** layout: ``(B, *spatial_dims, C)``, where
+``B`` is the batch size, ``*spatial_dims`` are one or more spatial axes
+(length-1 for 1-D sequences, ``(H, W)`` for 2-D images, etc.), and ``C`` is
+the channel dimension.  The MLP is spatially agnostic — it applies the same
+two-layer projection independently to every position.
 """
 
 from typing import Callable, Literal
@@ -77,6 +169,15 @@ def _split_to_interleaved(weight: torch.Tensor) -> torch.Tensor:
     This rearranges the *rows* of a ``(2N, D)`` weight matrix so that
     the GEMM output lands in QuACK's expected layout.  Uses
     ``torch.stack`` + ``reshape`` so autograd can differentiate through it.
+
+    Args:
+        weight: Weight matrix of shape ``(2N, D)`` in PyTorch split layout,
+            where rows ``[:N]`` are the gate weights and rows ``[N:]`` are the
+            value weights.
+
+    Returns:
+        torch.Tensor: Weight matrix of the same shape ``(2N, D)`` re-ordered
+        into QuACK's interleaved layout (even rows = value, odd rows = gate).
     """
     N = weight.shape[0] // 2
     # QuACK interleaved layout: even rows = value, odd rows = gate.
@@ -89,7 +190,27 @@ def _quack_mlp_forward(
     weight2: torch.Tensor,
     activation: str,
 ) -> torch.Tensor:
-    """Dispatch to the appropriate QuACK fused kernel (gated vs non-gated)."""
+    """Dispatch to the appropriate QuACK fused kernel (gated vs non-gated).
+
+    Selects between the gated (GLU/SwiGLU) and non-gated (GELU/ReLU) QuACK
+    kernel families, converts weights to QuACK's layout if necessary, and
+    executes the fused forward pass.  Intermediate pre-activations are stored
+    only when ``torch.is_grad_enabled()`` so that backward can reuse them.
+
+    Args:
+        x: Input tensor of shape ``(B, *spatial_dims, C)`` (channels-last).
+            Must have the channel dimension divisible by 8 (QuACK constraint).
+        weight1: First linear layer weight of shape ``(H * glu_factor, C)``
+            where ``H`` is the hidden dimension and ``glu_factor`` is 2 for
+            gated activations (GLU / SwiGLU) and 1 otherwise.
+        weight2: Second linear layer weight of shape ``(C, H)``.
+        activation: One of ``"glu"``, ``"swiglu"``, ``"gelu"``, ``"relu"``.
+            Must be present in :data:`_QUACK_ACT_MAP`.
+
+    Returns:
+        torch.Tensor: Output tensor of shape ``(B, *spatial_dims, C)``,
+        matching the input shape.
+    """
     quack_act = _QUACK_ACT_MAP[activation]
     if activation in _QUACK_GATED_ACTS:
         w1 = _split_to_interleaved(weight1)
@@ -119,7 +240,36 @@ def _validate_quack_backend(
     dim: int,
     hidden_dim: int,
 ) -> None:
-    """Raise ``ValueError`` at init time if QuACK constraints are not met."""
+    """Raise ``ValueError`` at init time if QuACK constraints are not met.
+
+    Called during :class:`MLP.__init__` when ``backend="quack"`` is requested.
+    Fails fast with an actionable error message rather than letting a misuse
+    surface as an obscure CUDA error at first forward call.
+
+    .. note::
+        This function currently raises :exc:`NotImplementedError` unconditionally
+        because the QuACK backend is experimental (backward pass and benchmark
+        are not yet validated).  Use ``backend="torch"`` for all production use.
+
+    Args:
+        activation: Requested activation name.  Must be a key in
+            :data:`_QUACK_ACT_MAP` (``"glu"``, ``"swiglu"``, ``"gelu"``,
+            ``"relu"``).
+        bias: Whether bias terms are enabled.  QuACK fused GEMM kernels do not
+            support bias, so ``bias=True`` raises :exc:`ValueError`.
+        dim: Input / output channel dimension ``C``.  Must be divisible by 8.
+        hidden_dim: Expanded hidden dimension ``H = expansion_factor * C``.
+            Must be divisible by 8.
+
+    Raises:
+        NotImplementedError: Always, because the QuACK backend is not yet
+            production-ready.
+        ValueError: If ``quack-kernels`` is not installed or is below
+            :data:`_QUACK_MLP_MIN_VERSION`, if ``activation`` is not supported,
+            if ``bias=True``, or if ``dim`` / ``hidden_dim`` are not divisible
+            by 8.  (These checks are unreachable until the
+            :exc:`NotImplementedError` is removed.)
+    """
     raise NotImplementedError(
         "MLP backend='quack' is experimental and needs more testing "
         "(forward correctness verified, backward + benchmark pending). "
@@ -156,17 +306,79 @@ def _validate_quack_backend(
 
 
 class MLP(nn.Module):
-    """Two-layer MLP with optional QuACK fused GEMM+activation backend.
+    """Point-wise two-layer MLP — the channel-mixing branch of each residual block.
 
-    Args:
-        dim: Input and output dimension.
-        activation: Activation function ('relu', 'gelu', 'silu', 'glu', 'swiglu').
-        dropout_cfg: LazyConfig for the dropout layer.
-        expansion_factor: Hidden-dim multiplier.
-        bias: Whether to use bias in linear layers.
-        backend: ``"torch"`` for pure PyTorch, ``"quack"`` for fused kernels.
-        init_method_in: Optional init for first layer weights.
-        init_method_out: Optional init for second layer weights.
+    Acts on each spatial position independently (no cross-position interaction),
+    expanding the channel dimension by ``expansion_factor``, applying a
+    non-linearity, and projecting back:
+
+    **Plain MLP** (``activation in {"relu", "gelu", "silu"}``):
+
+    .. code-block:: text
+
+        y = W₂( act( W₁(x) ) )
+
+    where ``W₁ : C → H``, ``W₂ : H → C``, and ``H = floor(expansion_factor × C)``.
+
+    **Gated variants** (``activation in {"glu", "swiglu"}``):
+
+    .. code-block:: text
+
+        [a, b] = W₁(x)          # W₁ : C → 2H, split at midpoint
+        y = W₂( gate(a) ⊙ b )  # W₂ : H → C
+
+    - *GLU* (``"glu"``): ``gate(a) = sigmoid(a)``
+    - *SwiGLU* (``"swiglu"``): ``gate(a) = SiLU(a)``
+
+    Because the first projection ``W₁`` must produce ``2H`` outputs for the
+    gate, ``layer1`` has shape ``(2H, C)`` when a gated activation is used
+    (see ``glu_factor`` in ``__init__``), while ``layer2`` remains ``(C, H)``.
+    This means the **parameter count differs** from the plain variant:
+
+    - Plain: ``C*H + H*C = 2CH`` parameters in the two linear layers.
+    - Gated: ``C*2H + H*C = 3CH`` parameters in the two linear layers.
+
+    At ``expansion_factor=2``:
+
+    - Plain (GELU): ``H = 2C``, params ≈ ``4C²``.
+    - SwiGLU: ``H = 2C``, params ≈ ``6C²``.
+
+    To keep parameter counts comparable, gated configs often use a smaller
+    ``expansion_factor`` (e.g. ``4/3`` rather than ``2``).
+
+    Dropout is inserted between the two layers (applied *after* the
+    activation and gate product).
+
+    The ``backend`` argument selects the compute kernel family:
+
+    - ``"torch"`` (default): Standard ``nn.Linear`` + PyTorch activation.
+      Works everywhere.
+    - ``"quack"`` (*experimental, currently blocked*): QuACK fused GEMM +
+      activation kernels targeting Hopper / Blackwell GPUs.  Requires
+      ``quack-kernels >= 0.3.0``, ``bias=False``, channel dimensions divisible
+      by 8, and a supported activation.  Currently raises
+      :exc:`NotImplementedError` at init time pending backward validation.
+
+    Attributes:
+        hidden_dim (int): Expanded hidden channel dimension
+            ``H = floor(expansion_factor * dim)``.  For gated variants
+            this is the *post-gate* width — the actual ``layer1`` output
+            width is ``2 * hidden_dim``.
+        activation (str): Name of the activation function in use.
+            One of ``"relu"``, ``"gelu"``, ``"silu"``, ``"glu"``,
+            ``"swiglu"``.
+        backend (str): Compute backend, either ``"torch"`` or ``"quack"``.
+        is_glu_variant (bool): ``True`` when ``activation`` is ``"glu"`` or
+            ``"swiglu"``, indicating that ``layer1`` produces ``2 * hidden_dim``
+            outputs and the forward path applies a gating product.
+        layer1 (nn.Linear): First linear projection.
+            Shape: ``(hidden_dim * glu_factor, dim)`` where ``glu_factor``
+            is 2 for gated activations, 1 otherwise.
+        dropout (nn.Module): Dropout layer instantiated from ``dropout_cfg``.
+            Applied between the activation (or gate product) and ``layer2``.
+        layer2 (nn.Linear): Second linear projection.
+            Shape: ``(dim, hidden_dim)``.  Projects back to the input
+            channel dimension ``C``.
     """
 
     def __init__(
@@ -180,7 +392,59 @@ class MLP(nn.Module):
         init_method_in: Callable[[torch.Tensor], torch.Tensor] | None = None,
         init_method_out: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ):
-        """Initialize the MLP."""
+        """Initialise the MLP.
+
+        Args:
+            dim: Input and output channel dimension ``C``.  Both ``layer1``
+                and ``layer2`` preserve this outer dimension (the network's
+                residual stream width).
+            activation: Non-linearity to apply between the two linear layers.
+                Controls whether the MLP is plain or gated:
+
+                - ``"relu"``, ``"gelu"``, ``"silu"``: plain MLP; ``layer1``
+                  maps ``C → H``.
+                - ``"glu"``: sigmoid-gated MLP; ``layer1`` maps ``C → 2H``
+                  and is split into gate + value halves.
+                - ``"swiglu"``: SiLU-gated MLP (recommended for modern
+                  configs); same gating structure as ``"glu"`` but with
+                  SiLU in place of sigmoid.
+
+            dropout_cfg: :class:`~nvsubquadratic.lazy_config.LazyConfig`
+                specifying the dropout module inserted between the activation
+                and ``layer2``.  Use ``torch.nn.Identity`` (or a
+                ``LazyConfig`` that targets it) for no dropout.
+            expansion_factor: Multiplier that sets the hidden dimension
+                ``H = floor(expansion_factor * dim)``.  Defaults to ``2.0``.
+                For gated activations, the actual ``layer1`` output width is
+                ``2 * H``; to keep total parameter count similar to a plain
+                MLP with ``expansion_factor=2``, use ``expansion_factor ≈ 4/3``
+                for SwiGLU / GLU.
+            bias: Whether to include additive bias terms in ``layer1`` and
+                ``layer2``.  Defaults to ``False``.  Must be ``False`` when
+                ``backend="quack"``.
+            backend: Compute kernel family.  ``"torch"`` (default) uses
+                ``nn.Linear`` + PyTorch activation and runs on any hardware.
+                ``"quack"`` enables fused GEMM+activation kernels but is
+                currently experimental (raises :exc:`NotImplementedError`
+                at init).
+            init_method_in: Optional weight initialiser for ``layer1``.
+                Expected signature: ``init_method_in(out_features)(weight)``
+                — a *curried* callable that first takes the number of output
+                features and returns an in-place initialiser.  Bias is always
+                zero-initialised when present, regardless of this argument.
+                Pass ``None`` to use PyTorch's default Kaiming uniform init.
+            init_method_out: Optional weight initialiser for ``layer2``.
+                Same curried signature as ``init_method_in``, applied to
+                ``layer2.weight``.  Pass ``None`` for PyTorch default init.
+
+        Raises:
+            NotImplementedError: If ``backend="quack"`` (experimental; use
+                ``backend="torch"`` for now).
+            ValueError: If ``backend="quack"`` and any QuACK constraint is
+                violated (unsupported activation, ``bias=True``, or dimension
+                not divisible by 8).  Currently unreachable due to the
+                :exc:`NotImplementedError` raised first.
+        """
         super().__init__()
         self.hidden_dim = int(dim * expansion_factor)
         self.activation = activation
@@ -212,7 +476,29 @@ class MLP(nn.Module):
                 nn.init.zeros_(self.layer2.bias)
 
     def _apply_activation(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply the activation function to the input."""
+        """Apply the configured activation function to a pre-activation tensor.
+
+        For plain activations (``"relu"``, ``"gelu"``, ``"silu"``) this is a
+        simple element-wise call.  For gated variants (``"glu"``, ``"swiglu"``)
+        the tensor is split along the last dimension and a gate product is
+        applied, halving the channel count from ``2H`` to ``H``.
+
+        Args:
+            x: Pre-activation tensor of shape ``(B, *spatial_dims, H')``
+               where ``H' = hidden_dim`` for plain activations and
+               ``H' = 2 * hidden_dim`` for gated variants.
+
+        Returns:
+            torch.Tensor: Post-activation tensor of shape
+            ``(B, *spatial_dims, hidden_dim)``.  The channel dimension is
+            halved for gated activations (``"glu"``, ``"swiglu"``), unchanged
+            for plain ones.
+
+        Raises:
+            ValueError: If ``self.activation`` is not one of the supported
+                values (``"relu"``, ``"gelu"``, ``"silu"``, ``"glu"``,
+                ``"swiglu"``).
+        """
         if self.activation in ["relu", "gelu", "silu"]:
             return getattr(F, self.activation)(x)
         elif self.activation == "glu":
@@ -243,9 +529,11 @@ class MLP(nn.Module):
 
         Args:
             num_tokens: Number of tokens (positions) the MLP is applied to.
+                Equal to the product of all spatial dimensions, i.e.
+                ``H * W`` for 2-D images or ``T`` for 1-D sequences.
 
         Returns:
-            Total FLOPs as an integer.
+            int: Total FLOPs as an integer.
         """
         T = num_tokens
         flops = 0
@@ -262,7 +550,25 @@ class MLP(nn.Module):
         return flops
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the MLP."""
+        """Apply the two-layer MLP to an ND feature tensor.
+
+        Operates identically on every spatial position — no cross-position
+        interaction occurs in this module.  The QuACK path bypasses dropout
+        (QuACK kernels fuse both linear layers and the activation into a
+        single kernel; dropout must be inserted by the caller if needed).
+
+        Args:
+            x: Input feature tensor of shape ``(B, *spatial_dims, C)`` in
+                channels-last layout, where ``B`` is the batch size,
+                ``spatial_dims`` are one or more spatial axes (e.g. ``(H, W)``
+                for 2-D images or ``(T,)`` for 1-D sequences), and ``C``
+                is the channel dimension (must equal the ``dim`` passed at
+                construction time).
+
+        Returns:
+            torch.Tensor: Output tensor of shape ``(B, *spatial_dims, C)``,
+            the same shape as ``x``.
+        """
         if self.backend == "quack":
             return _quack_mlp_forward(x, self.layer1.weight, self.layer2.weight, self.activation)
 

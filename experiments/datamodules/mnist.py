@@ -1,7 +1,13 @@
 # TODO: Add license header here
 
 
-"""MNIST datamodule."""
+"""MNIST / EMNIST datamodule for PyTorch Lightning.
+
+Wraps :class:`torchvision.datasets.MNIST` (and optionally EMNIST variants)
+in a :class:`pytorch_lightning.LightningDataModule`.  Handles train/val splits,
+channel replication (1 → 3 channels for models that expect RGB), and the
+channels-last reshape expected by nvSubquadratic models (``[B, H, W, C]``).
+"""
 
 from typing import Literal
 

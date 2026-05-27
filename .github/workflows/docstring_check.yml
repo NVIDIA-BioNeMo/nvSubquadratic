@@ -1,0 +1,49 @@
+name: Docstring coverage
+
+on:
+  pull_request:
+
+# Cancel in-flight runs for the same PR when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docstrings:
+    name: Check docstrings on changed files
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history to diff against base branch
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Collect changed Python files in scope
+        id: changed
+        run: |
+          git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            | grep -E '^(nvsubquadratic|experiments)/.*\.py$' \
+            > changed_files.txt || true
+          echo "Files to check:"
+          cat changed_files.txt
+
+      - name: Run docstring checks on changed files
+        run: |
+          if [ ! -s changed_files.txt ]; then
+            echo "No in-scope Python files changed — skipping."
+            exit 0
+          fi
+          # D100 missing module docstring
+          # D101 missing class docstring
+          # D102 missing method docstring
+          # D103 missing function docstring
+          # D301 use r""" for docstrings with backslashes
+          # D417 missing argument descriptions in docstring
+          xargs ruff check --select D100,D101,D102,D103,D301,D417 < changed_files.txt

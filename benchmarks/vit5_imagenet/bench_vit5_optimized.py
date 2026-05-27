@@ -1,4 +1,19 @@
-"""Benchmark optimized ViT-5-Small: correctness check + throughput measurement."""
+"""Benchmark optimised ViT-5-Small: correctness check + throughput.
+
+Runs the production-optimised pipeline (BF16 +
+``torch.compile(max-autotune)`` + DALI-fused dataloader) and reports
+samples/sec, ms/step, and peak memory.  These are the numbers that
+populate the headline tables in
+[``benchmarks/README.md``](../README.md).
+
+Targets: H100 SXM 80GB, BF16, batch size 256, DALI installed.
+
+Usage:
+    PYTHONPATH=. conda run -n nv-subq python \\
+        benchmarks/vit5_imagenet/bench_vit5_optimized.py
+
+Output: stdout summary table.
+"""
 
 import sys
 import time

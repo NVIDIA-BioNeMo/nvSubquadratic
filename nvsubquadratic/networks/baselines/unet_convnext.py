@@ -268,10 +268,10 @@ class UNetConvNext(nn.Module):
         """Forward pass.
 
         Args:
-            x: Channels-first input tensor [B, C_in, *spatial].
+            x: Channels-first input tensor ``[B, C_in, *spatial]``.
 
         Returns:
-            Channels-first output tensor [B, C_out, *spatial].
+            Channels-first output tensor ``[B, C_out, *spatial]``.
 
         Note:
             **Known bug (upstream):** ``skips[0]`` (finest-resolution encoder

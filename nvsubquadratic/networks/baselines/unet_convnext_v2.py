@@ -126,10 +126,10 @@ class UNetConvNextV2(nn.Module):
         a final concatenation with skips[0] at the original resolution.
 
         Args:
-            x: Channels-first input tensor [B, C_in, *spatial].
+            x: Channels-first input tensor ``[B, C_in, *spatial]``.
 
         Returns:
-            Channels-first output tensor [B, C_out, *spatial].
+            Channels-first output tensor ``[B, C_out, *spatial]``.
         """
         x = self.in_proj(x)
         skips = []

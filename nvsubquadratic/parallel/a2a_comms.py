@@ -1,5 +1,64 @@
 # TODO: Add license header here
 
+"""All-to-all communication primitives for Context Parallelism (CP).
+
+This module implements the sequence ↔ channel redistribution pattern used by
+the Hyena CP setup, where the *sequence* (spatial) axis is split across CP
+ranks during attention/Hyena computation and the *channel* axis is split across
+ranks during the FFT convolution.  Switching between these two views requires
+an ``all_to_all_single`` collective.
+
+**Communication pattern**
+
+There are two dual directions:
+
+- ``"split_to_full"`` — each rank holds a *channel shard* and a *full sequence*;
+  the collective gathers the full channel dimension while splitting the sequence:
+
+  .. code-block:: text
+
+      input  [B, C/P,    L  ]  (channel-split, full sequence per rank)
+      output [B,  C,    L/P ]  (full channels, sequence-split per rank)
+
+- ``"full_to_split"`` — each rank holds a *full channel set* and a *sequence shard*;
+  the collective gathers the full sequence while splitting channels:
+
+  .. code-block:: text
+
+      input  [B,  C,    L/P ]  (full channels, sequence-split)
+      output [B, C/P,    L  ]  (channel-split, full sequence)
+
+The same logic applies to 2-D (``[B, C, H, W]``) and 3-D (``[B, C, T, H, W]``)
+inputs; the *first* spatial axis (``shape[2]``) is always treated as the
+sequence/temporal dimension for splitting.
+
+**Zigzag splitting**
+
+Plain contiguous splitting can cause load imbalance in causal (autoregressive)
+settings because early sequence positions have shorter context than later ones.
+Zigzag splitting interleaves chunks so each rank receives an equal mix of early
+and late positions:
+
+.. code-block:: text
+
+    chunk indices for P=2: [0, 3, 1, 2] → rank 0 gets chunks {0, 2},
+                                           rank 1 gets chunks {1, 3}
+
+The inverse permutation is applied in the ``split_to_full`` direction to restore
+the original sequence order.
+
+**Autograd support**
+
+:class:`AllToAllSingleFunction` wraps :func:`all_to_all_single_fn` in a custom
+``torch.autograd.Function`` so gradients are correctly propagated: the backward
+of ``split_to_full`` is ``full_to_split`` and vice versa.
+
+Public API:
+    AllToAllSingleFunction: Differentiable all-to-all collective.
+    all_to_all_single_fn: Non-differentiable functional form (use for inference
+        or when called from within another custom autograd function).
+"""
+
 from typing import Literal
 
 import torch
@@ -214,16 +273,28 @@ def all_to_all_single_fn(
 
 
 class AllToAllSingleFunction(Function):
-    """Custom autograd function for all_to_all_single communication with optional zigzag splitting.
+    """Differentiable all-to-all collective for CP sequence ↔ channel redistribution.
 
-    A custom autograd function for performing all_to_all_single communication with optional zigzag splitting.
-    Supports both 1D and 3D tensors.
+    Wraps :func:`all_to_all_single_fn` in a :class:`torch.autograd.Function` so
+    that gradients flow correctly through the collective boundary.  The backward
+    pass is the dual communication direction:
+
+    .. code-block:: text
+
+        forward  split_to_full → backward full_to_split
+        forward  full_to_split → backward split_to_full
+
+    **Usage**::
+
+        out = AllToAllSingleFunction.apply(x, cp_group, "split_to_full", True)
+
+    The ``apply`` arguments correspond to the positional parameters of
+    :meth:`forward` (excluding ``ctx``).
 
     Attributes:
-    - ctx: A context object that stores information for the forward and backward passes.
-    - group: The process group for communication.
-    - type: The type of communication pattern ('split_to_full' or 'full_to_split').
-    - with_zigzag_splitting: A boolean indicating whether to apply zigzag splitting (1D only).
+        ctx.group: Process group saved for the backward collective.
+        ctx.type: Communication direction saved for reversal in backward.
+        ctx.with_zigzag_splitting: Zigzag flag saved for backward.
     """
 
     @staticmethod
@@ -233,8 +304,26 @@ class AllToAllSingleFunction(Function):
         group: dist.ProcessGroup,
         type: Literal["split_to_full", "full_to_split"],
         with_zigzag_splitting: bool,
-    ):
-        """Forward pass for the AllToAllSingleFunction."""
+    ) -> torch.Tensor:
+        """Execute the all-to-all collective and save state for backward.
+
+        Args:
+            ctx: Autograd context; stores ``group``, ``type``, and
+                ``with_zigzag_splitting`` for use in :meth:`backward`.
+            input_tensor: Input tensor of shape ``[B, C_local, *spatial]``.
+                The tensor is detached before communication to prevent PyTorch
+                from tracking in-collective ops.
+            group: CP process group.
+            type: ``"split_to_full"`` or ``"full_to_split"`` (see module
+                docstring for the reshape semantics of each direction).
+            with_zigzag_splitting: Apply zigzag chunk permutation to balance
+                load across ranks.  Should match the value used in the
+                corresponding backward call.
+
+        Returns:
+            torch.Tensor: Redistributed tensor; shape is the dual of the
+            input under the chosen ``type``.
+        """
         ctx.group = group
         ctx.type = type
         ctx.with_zigzag_splitting = with_zigzag_splitting
@@ -251,7 +340,22 @@ class AllToAllSingleFunction(Function):
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
-        """Backward pass for the AllToAllSingleFunction."""
+        """Propagate gradients through the dual all-to-all direction.
+
+        Reverses the communication pattern: ``split_to_full`` ↔ ``full_to_split``.
+        Zigzag permutation and process group are taken from ``ctx``.
+
+        Args:
+            ctx: Autograd context with saved ``group``, ``type``, and
+                ``with_zigzag_splitting``.
+            grad_output: Upstream gradient tensor; same shape as the forward
+                output.
+
+        Returns:
+            Tuple of four elements matching the forward signature:
+            ``(grad_input, None, None, None)``.  Only the first element is
+            meaningful; the others correspond to non-tensor arguments.
+        """
         # The backward pass will perform the reverse communication
         grad_input = all_to_all_single_fn(
             group=ctx.group,

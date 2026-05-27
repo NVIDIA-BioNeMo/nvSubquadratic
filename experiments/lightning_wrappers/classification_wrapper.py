@@ -1,6 +1,19 @@
 # Adapted from https://github.com/implicit-long-convs/ccnn_v2
 
-"""Lightning wrappers for the Classification and Regression experiments."""
+"""Lightning wrapper for image classification tasks.
+
+Provides :class:`ClassificationWrapper` and :class:`SoftTargetCrossEntropy`.
+
+**Loss modes**
+
+- ``"cross_entropy"`` — standard :class:`torch.nn.CrossEntropyLoss` (hard labels).
+- ``"soft_target_ce"`` — :class:`SoftTargetCrossEntropy`:
+  ``-sum(target * log_softmax(logits))``.  Use with Mixup/CutMix (DeiT III recipe).
+- ``"bce"`` — :class:`torch.nn.BCEWithLogitsLoss` with binarised multi-hot targets.
+  Matches the ViT-5 / DeiT III pre-training recipe (``--bce-loss``).
+
+Adapted from https://github.com/implicit-long-convs/ccnn_v2.
+"""
 
 import torch
 import torch.nn.functional as F

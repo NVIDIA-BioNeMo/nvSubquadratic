@@ -4,6 +4,8 @@
 # Configuration file for the Sphinx documentation builder.
 # See https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+"""Sphinx configuration for the nvsubquadratic API reference."""
+
 import os
 import re as _re
 import sys
@@ -40,9 +42,14 @@ extensions = [
     "sphinx.ext.extlinks",
     "sphinx.ext.githubpages",
     "sphinx.ext.doctest",
+    "sphinx.ext.todo",
     "sphinx_copybutton",
     "sphinx.ext.mathjax",
 ]
+
+# Show `.. todo::` blocks (used in a few docstrings) instead of silently
+# dropping them at build time.
+todo_include_todos = True
 
 templates_path = ["_templates"]
 
@@ -58,6 +65,7 @@ autodoc_default_options = {
 }
 
 autodoc_mock_imports = [
+    # CUDA / GPU-only deps — never installable on the docs runner.
     "subquadratic_ops_torch",
     "subquadratic_ops_torch._ext",
     "quack",
@@ -65,11 +73,30 @@ autodoc_mock_imports = [
     "apex",
     "flash_attn",
     "dali",
+    "nvidia",
     "nvidia.dali",
+    # Pure-Python deps that the doc runner skips to keep the install lean.
     "einops",
     "megatron",
     "megatron.core",
     "omegaconf",
+    "cleanfid",
+    "diffusers",
+    "pytorch_lightning",
+    "lightning",
+    "matplotlib",
+    "PIL",
+    "datasets",
+    "h5py",
+    "scipy",
+    "the_well",
+    "torch_fidelity",
+    "torchmetrics",
+    "torchvision",
+    "timm",
+    "wandb",
+    "rich",
+    "tqdm",
 ]
 
 add_module_names = False
@@ -143,18 +170,27 @@ html_theme_options = {
     "pygments_light_style": "tango",
     "pygments_dark_style": "monokai",
     "footer_links": {},
+    "navigation_depth": 2,
+    "show_nav_level": 1,
+    "show_toc_level": 2,
 }
 
 
+# Match markdown links whose target escapes the docs/ tree via one or more
+# `../`. The path must start with an alphanumeric/underscore so we don't
+# rewrite intra-docs links like `[foo](./bar.md)` or `[foo](../README.md)`
+# that resolve fine inside the rendered site. Anchored on the closing `](`
+# of the markdown link to avoid touching unrelated parentheses.
 _REL_REPO_LINK = _re.compile(r"\]\((?:\.\./)+([A-Za-z0-9_][^)]*)\)")
 
 
 def _rewrite_repo_links(app, docname, source):
     """Rewrite markdown links like [text](../../foo/bar.py) to absolute GitHub URLs.
 
-    Preserves intra-docs relative links (no leading ../) and external URLs. Lets
-    the source markdown stay readable on GitHub web while the rendered HTML
-    points at the right blob URL.
+    Lets the source markdown stay readable on GitHub web (where the ``../``
+    paths resolve correctly inside the repo) while the rendered Sphinx HTML
+    points at the right blob URL on the active branch.  Intra-docs relative
+    links and external URLs are left untouched.
     """
     text = source[0]
     new = _REL_REPO_LINK.sub(rf"]({_gh_blob_base}/\1)", text)
