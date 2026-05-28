@@ -106,17 +106,17 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable", None),
     "pytorch": ("https://docs.pytorch.org/docs/stable", None),
     "subquadratic_ops_torch": (
-        "https://nvidia-digital-bio.github.io/subquadraticOps-docs/",
+        "https://nvidia-bionemo.github.io/subquadraticOps-docs/",
         None,
     ),
 }
 
-_gh_repo = "https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private"
+_gh_repo = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private"
 _gh_blob_base = f"{_gh_repo}/blob/{github_version}"
 
 extlinks = {
     "subq-ops": (
-        "https://nvidia-digital-bio.github.io/subquadraticOps-docs/%s",
+        "https://nvidia-bionemo.github.io/subquadraticOps-docs/%s",
         "subquadratic-ops: %s",
     ),
     "ghsrc": (
@@ -159,7 +159,7 @@ html_css_files = [
     "custom.css",
 ]
 html_context = {
-    "github_user": "NVIDIA-Digital-Bio",
+    "github_user": "NVIDIA-BioNeMo",
     "github_repo": "nvSubquadratic-private",
     "github_version": github_version,
     "doc_path": "docs",
