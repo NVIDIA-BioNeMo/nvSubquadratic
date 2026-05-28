@@ -351,10 +351,21 @@ def get_base_config(
     #   ``--save_last_freq 5`` (every 5 epochs).  Lightning works in steps,
     #   so we convert: ``save_freq_epochs * iters_per_epoch``.  Avoids
     #   per-epoch checkpoints which would slow training noticeably.
+    # Disable monitor-based checkpointing.  With ``check_val_every_n_epoch=
+    # 40`` the ``val/loss`` metric isn't logged until step ~50K, and
+    # Lightning's ModelCheckpoint silently skips the save (and the
+    # ``save_last`` rolling copy) when the monitor metric is unavailable.
+    # Setting ``checkpoint_monitor=""`` (opt-out sentinel) tells our
+    # ``trainer.py`` to pass ``monitor=None``, so the main callback saves
+    # unconditionally on ``every_n_train_steps`` and ``last.ckpt`` updates
+    # on schedule — the only sane behaviour for crash recovery on a
+    # 20-hour run.  Best-by-val-loss tracking is disabled (not a
+    # meaningful diffusion model-selection signal anyway).
     config.trainer = TrainerConfig(
         check_val_every_n_epoch=eval_freq_epochs,
         checkpoint_every_n_steps=save_freq_epochs * iters_per_epoch,
         periodic_save_every_n_steps=periodic_save_epochs * iters_per_epoch,
+        checkpoint_monitor="",
     )
 
     config.scheduler = SchedulerConfig(

@@ -96,13 +96,23 @@ def construct_trainer(
         deterministic = False
         benchmark = True
 
-    # Metric to monitor
-    if cfg.trainer.checkpoint_monitor is not None:
+    # Metric to monitor.  Three modes:
+    # - explicit "" (opt-out sentinel): no monitor, save unconditionally on
+    #   step trigger.  Avoids Lightning silently skipping saves when the
+    #   monitor metric has never been logged (e.g. infrequent validation).
+    # - explicit metric name: use that metric.
+    # - None (default): auto-derive from scheduler.mode.
+    monitor: Optional[str]
+    if cfg.trainer.checkpoint_monitor == "":
+        monitor = None
+    elif cfg.trainer.checkpoint_monitor is not None:
         monitor = cfg.trainer.checkpoint_monitor
     elif cfg.scheduler.mode == "max":
         monitor = "val/acc"
     elif cfg.scheduler.mode == "min":
         monitor = "val/loss"
+    else:
+        monitor = None
 
     # Derive run root and checkpoint directory based on run name.
     run_root_dir = experiment_dir if experiment_dir is not None else Path("runs") / run_name
@@ -110,13 +120,18 @@ def construct_trainer(
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     print(f"[checkpoint] Saving checkpoints to: {checkpoint_dir.resolve()}")
 
-    # Callback for model checkpointing:
+    # Callback for model checkpointing.  When ``monitor=None`` the callback
+    # saves unconditionally on the ``every_n_train_steps`` trigger and
+    # ``save_last=True`` produces a rolling ``last.ckpt`` — no metric gating.
+    # When ``monitor`` is set, Lightning saves the best-by-metric and only
+    # fires ``save_last`` when the main save also fires (i.e. when the
+    # metric is available).  See ``TrainerConfig.checkpoint_monitor``.
     checkpoint_kwargs = {
         "dirpath": str(checkpoint_dir),
         "monitor": monitor,
-        "mode": cfg.scheduler.mode,  # Save on best validation accuracy
+        "mode": cfg.scheduler.mode if monitor is not None else "min",
         "save_top_k": 1,
-        "save_last": True,  # Keep track of the model at the last epoch
+        "save_last": True,  # rolling last.ckpt (always overwritten)
         "verbose": True,
     }
     # Add step-based checkpointing if configured (useful for long runs to avoid losing progress)

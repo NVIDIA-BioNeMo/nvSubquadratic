@@ -113,3 +113,76 @@ def test_main_callback_unaffected_by_periodic_flag(tmp_path: Path) -> None:
     assert main.save_top_k == 1
     assert main.save_last is True
     assert main._every_n_train_steps == 5  # = TrainConfig.checkpoint_every_n_steps used above
+
+
+# =============================================================================
+# Regression: monitor=None mode (the "no monitor" sentinel)
+# =============================================================================
+
+
+def _read_main_callback_with_monitor(tmp_path: Path, checkpoint_monitor):
+    """Construct the trainer with a specific ``checkpoint_monitor`` value and
+    return only the main (non-periodic) ``ModelCheckpoint`` callback."""
+    import importlib
+    import sys
+
+    construct_trainer = importlib.import_module("experiments.trainer").construct_trainer
+    from experiments.default_cfg import (
+        ExperimentConfig,
+        SchedulerConfig,
+        TrainConfig,
+        TrainerConfig,
+    )
+
+    cfg = ExperimentConfig()
+    cfg.train = TrainConfig(iterations=10, batch_size=1, precision="32-true")
+    cfg.scheduler = SchedulerConfig(name="constant", warmup_iterations_percentage=0.0, total_iterations=10, mode="min")
+    cfg.trainer = TrainerConfig(
+        checkpoint_every_n_steps=5,
+        checkpoint_monitor=checkpoint_monitor,
+        wandb_checkpoint_upload=False,
+    )
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        trainer, _ckpt = construct_trainer(
+            cfg=cfg,
+            wandb_logger=None,
+            run_name="monitor_test",
+            experiment_dir=tmp_path / "run_dir",
+            num_nodes=1,
+        )
+    finally:
+        sys.path.pop(0)
+
+    ckpt_cbs = [cb for cb in trainer.callbacks if isinstance(cb, pl_callbacks.ModelCheckpoint)]
+    return next(cb for cb in ckpt_cbs if cb.save_top_k != -1)
+
+
+def test_default_monitor_is_auto_derived_from_scheduler_mode(tmp_path: Path) -> None:
+    """``checkpoint_monitor=None`` -> ``"val/loss"`` (scheduler.mode='min' here)."""
+    main = _read_main_callback_with_monitor(tmp_path, checkpoint_monitor=None)
+    assert main.monitor == "val/loss"
+
+
+def test_explicit_monitor_string_is_used_verbatim(tmp_path: Path) -> None:
+    """A non-empty ``checkpoint_monitor`` string is forwarded directly."""
+    main = _read_main_callback_with_monitor(tmp_path, checkpoint_monitor="train/loss_step")
+    assert main.monitor == "train/loss_step"
+
+
+def test_empty_string_monitor_disables_metric_gating(tmp_path: Path) -> None:
+    """``checkpoint_monitor=""`` (opt-out) sets ``monitor=None`` on the callback.
+
+    Regression test for the bug where diffusion runs with
+    ``check_val_every_n_epoch=40`` produced no checkpoints for the first
+    50K steps because Lightning silently skipped saves whose monitor
+    metric had never been logged.  With ``monitor=None`` the main
+    callback saves unconditionally on ``every_n_train_steps`` and
+    ``save_last=True`` produces a rolling ``last.ckpt``.
+    """
+    main = _read_main_callback_with_monitor(tmp_path, checkpoint_monitor="")
+    assert main.monitor is None
+    # save_last + every_n_train_steps must still be wired so rolling last works.
+    assert main.save_last is True
+    assert main._every_n_train_steps == 5

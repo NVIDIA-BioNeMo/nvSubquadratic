@@ -91,8 +91,23 @@ class TrainerConfig:
     # 30 * 1251 = 37530`` saves ~20 checkpoints over a 600-epoch run.
     periodic_save_every_n_steps: Optional[int] = None
 
-    # Override the metric monitored by ModelCheckpoint. If None, auto-derived
-    # from scheduler.mode ("val/acc" for max, "val/loss" for min).
+    # Override the metric monitored by ModelCheckpoint.
+    #
+    # - ``None`` (default): auto-derived from ``scheduler.mode`` —
+    #   ``"val/acc"`` for ``"max"``, ``"val/loss"`` for ``"min"``.  The
+    #   callback then only saves at ``every_n_train_steps`` triggers when
+    #   the monitor metric has been *logged at least once* in
+    #   ``trainer.callback_metrics``.  For diffusion runs with infrequent
+    #   validation (e.g. ``check_val_every_n_epoch=40``) this gates the
+    #   first save behind the first val epoch — which can be MANY hours of
+    #   training, so the run is unprotected against crashes.
+    # - ``""`` (empty string, opt-out sentinel): no monitor; the callback
+    #   saves unconditionally at every ``every_n_train_steps`` trigger and
+    #   ``save_last=True`` produces a rolling ``last.ckpt``.  Best-tracking
+    #   by metric is disabled.  Recommended for diffusion runs where
+    #   ``val/loss`` is not a meaningful model-selection signal anyway.
+    # - any other string: use that metric (must be logged via
+    #   ``self.log(name, ...)``).
     checkpoint_monitor: Optional[str] = None
 
     # Enable DDP find_unused_parameters (required when some model parameters
