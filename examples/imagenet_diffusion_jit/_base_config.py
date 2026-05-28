@@ -86,7 +86,7 @@ __all__ = ["get_base_config"]
 
 
 # ─── Defaults (override per leaf config) ─────────────────────────────────────
-WANDB_ENTITY = "dafidofff"
+WANDB_ENTITY = "implicit-long-convs"  # matches the v5_hybrid classification team
 WANDB_PROJECT = "nvsubquadratic"
 NUM_CLASSES = 1000
 
@@ -274,6 +274,17 @@ def get_base_config(
     config = DiffusionExperimentConfig()
     config.debug = False
     config.seed = 42
+    # Whole-network ``torch.compile`` with ``max-autotune-no-cudagraphs``
+    # mirrors the v5_hybrid classification convention.  ``max-autotune-
+    # no-cudagraphs`` chooses the best Inductor schedule per kernel without
+    # the static-shape constraint that pure ``max-autotune`` (with
+    # cudagraphs) would impose — diffusion training has dynamic batch
+    # sizes at the validation / sampling phase, which would invalidate
+    # the cudagraph capture.  The JiT reference relies on per-block
+    # ``@torch.compile`` decorators instead; the whole-network path here
+    # is materially equivalent and avoids touching the model code.
+    config.compile = True
+    config.compile_mode = "max-autotune-no-cudagraphs"
 
     # Production DALI pipeline (same path used by all v5_hybrid
     # classification configs).  ``task="generation"`` makes the pipeline
