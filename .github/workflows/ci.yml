@@ -59,7 +59,7 @@ jobs:
         uses: int128/docker-build-cache-config-action@v1
         id: cache
         with:
-          image: ghcr.io/nvidia-digital-bio/nvsubquadratic-private/ci-cache
+          image: ghcr.io/nvidia-bionemo/nvsubquadratic-private/ci-cache
 
       - name: Build image
         uses: docker/build-push-action@v5
@@ -73,7 +73,7 @@ jobs:
             nvsubquadratic-ci:latest
           cache-from: |
             ${{ steps.cache.outputs.cache-from }}
-            type=registry,ref=ghcr.io/nvidia-digital-bio/nvsubquadratic-private/ci-cache:main
+            type=registry,ref=ghcr.io/nvidia-bionemo/nvsubquadratic-private/ci-cache:main
           cache-to: ${{ steps.cache.outputs.cache-to }}
 
       - name: Run pytest
