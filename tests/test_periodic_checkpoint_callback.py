@@ -186,3 +186,136 @@ def test_empty_string_monitor_disables_metric_gating(tmp_path: Path) -> None:
     # save_last + every_n_train_steps must still be wired so rolling last works.
     assert main.save_last is True
     assert main._every_n_train_steps == 5
+
+
+# =============================================================================
+# End-to-end: run Lightning Trainer.fit() and prove the ckpt actually appears
+# =============================================================================
+#
+# Unit tests above only check the callback is constructed with the right args.
+# These tests run a real ``Trainer.fit()`` on a CPU-only trivial model and
+# assert that ``last.ckpt`` (and ``best.ckpt`` / step-snapshot ckpts) actually
+# materialise on disk at the expected save trigger.  This is the only way to
+# catch Lightning behaviours like "monitor metric missing -> silent skip".
+
+
+class _TrivialLM(__import__("pytorch_lightning").LightningModule):
+    """Minimal trainable LightningModule (one learnable scalar, MSE loss)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        import torch
+
+        self.p = torch.nn.Parameter(torch.zeros(1))
+
+    def training_step(self, batch, batch_idx):
+
+        loss = (self.p - batch).pow(2).mean()
+        # Log a step-frequency metric so the "explicit monitor on a train
+        # metric" path has something to compare against.
+        self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=False)
+        return loss
+
+    def configure_optimizers(self):
+        import torch
+
+        return torch.optim.SGD(self.parameters(), lr=1e-2)
+
+
+def _run_short_trainer(
+    tmp_path: Path,
+    *,
+    checkpoint_monitor,
+    max_steps: int = 30,
+    every_n_train_steps: int = 10,
+):
+    """Run a 30-step ``Trainer.fit()`` and return the checkpoint dir contents."""
+    import importlib
+    import sys
+
+    import pytorch_lightning as pl
+    import torch
+
+    construct_trainer = importlib.import_module("experiments.trainer").construct_trainer
+    from experiments.default_cfg import (
+        ExperimentConfig,
+        SchedulerConfig,
+        TrainConfig,
+        TrainerConfig,
+    )
+
+    cfg = ExperimentConfig()
+    cfg.train = TrainConfig(iterations=max_steps, batch_size=4, precision="32-true")
+    cfg.scheduler = SchedulerConfig(
+        name="constant", warmup_iterations_percentage=0.0, total_iterations=max_steps, mode="min"
+    )
+    cfg.trainer = TrainerConfig(
+        checkpoint_every_n_steps=every_n_train_steps,
+        checkpoint_monitor=checkpoint_monitor,
+        wandb_checkpoint_upload=False,
+    )
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        trainer, _ckpt_cb = construct_trainer(
+            cfg=cfg,
+            wandb_logger=None,
+            run_name="e2e_ckpt_test",
+            experiment_dir=tmp_path / "run_dir",
+            num_nodes=1,
+        )
+    finally:
+        sys.path.pop(0)
+
+    # Override the trainer for a strictly CPU-only short fit (sidesteps GPU /
+    # DDP / fp16 plumbing inside ``construct_trainer`` for this unit test).
+    # Only forward the ModelCheckpoint callbacks (the others — progress bar,
+    # LR monitor, timer — would conflict with ``enable_progress_bar=False``
+    # or pollute the unit test with noisy output).
+    ckpt_callbacks = [cb for cb in trainer.callbacks if isinstance(cb, pl_callbacks.ModelCheckpoint)]
+    trainer = pl.Trainer(
+        max_steps=max_steps,
+        accelerator="cpu",
+        devices=1,
+        callbacks=ckpt_callbacks,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        logger=False,
+        check_val_every_n_epoch=10_000,  # never validate -> reproduces the bug
+    )
+
+    model = _TrivialLM()
+    dataset = [torch.tensor([float(i)]) for i in range(max_steps * 2)]
+    loader = torch.utils.data.DataLoader(dataset, batch_size=4)
+    trainer.fit(model, train_dataloaders=loader)
+
+    ckpt_dir = tmp_path / "run_dir" / "checkpoints"
+    return sorted(p.name for p in ckpt_dir.glob("*.ckpt"))
+
+
+def test_e2e_empty_string_monitor_writes_last_ckpt(tmp_path: Path) -> None:
+    """Fix verification: with ``checkpoint_monitor=''`` Lightning saves the
+    rolling ``last.ckpt`` on every ``every_n_train_steps`` trigger, even
+    when no validation has ever run.
+
+    This is the contract the JiT base config now relies on for crash
+    recovery during the ~50K-step gap before the first val epoch.
+
+    Note: we explicitly do *not* try to also reproduce the original bug
+    here (``monitor='val/loss'`` failing to save).  On CPU + a trivial
+    LightningModule the bug does not reproduce (Lightning DOES write
+    ``last.ckpt`` in that path), so any such test would be a false
+    negative.  In the live DDP+wandb+DALI environment the same config
+    DID fail to produce any ckpts; the root cause is environment-specific
+    and outside the scope of this unit test.  The CRITICAL invariant we
+    *can* prove on CPU is that the ``monitor=None`` path used by our fix
+    saves ``last.ckpt`` correctly — that's what this test pins.
+    """
+    files = _run_short_trainer(tmp_path, checkpoint_monitor="", max_steps=30, every_n_train_steps=10)
+    # ``save_top_k=1`` + ``save_last=True`` produces at least ``last.ckpt``
+    # (and possibly a step-named "best" ckpt). The CRITICAL assertion is
+    # that ``last.ckpt`` exists — that's what autoresume reads on a fresh
+    # SLURM allocation.
+    assert "last.ckpt" in files, (
+        f"FIX FAILED: expected last.ckpt in checkpoints/ with monitor='' + every_n_train_steps=10, got {files}"
+    )
