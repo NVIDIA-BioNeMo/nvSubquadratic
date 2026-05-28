@@ -75,6 +75,7 @@ from experiments.default_cfg import (
     DiffusionExperimentConfig,
     SchedulerConfig,
     TrainConfig,
+    TrainerConfig,
     WandbConfig,
 )
 from experiments.lightning_wrappers.diffusion_wrapper import DiffusionWrapper
@@ -103,6 +104,8 @@ JIT_BLR = 5e-5  # main_jit.py default
 JIT_WEIGHT_DECAY = 0.0  # main_jit.py default
 JIT_EPOCHS = 600  # README scripts
 JIT_WARMUP_EPOCHS = 5  # main_jit.py default
+JIT_EVAL_FREQ_EPOCHS = 40  # main_jit.py --eval_freq (sampling + FID cadence)
+JIT_SAVE_FREQ_EPOCHS = 5  # main_jit.py --save_last_freq (checkpoint cadence)
 JIT_EMA_DECAY = 0.9999  # main_jit.py ema_decay1 (used for sampling)
 # JiT also tracks a SECOND EMA at 0.9996 ("ema_decay2") that is checkpointed
 # but never used for sampling in the released eval scripts.  We track it for
@@ -147,6 +150,8 @@ def get_base_config(
     weight_decay: float = JIT_WEIGHT_DECAY,
     epochs: int = JIT_EPOCHS,
     warmup_epochs: int = JIT_WARMUP_EPOCHS,
+    eval_freq_epochs: int = JIT_EVAL_FREQ_EPOCHS,
+    save_freq_epochs: int = JIT_SAVE_FREQ_EPOCHS,
     ema_decay: float = JIT_EMA_DECAY,
     noise_scale: float = 1.0,
     guidance_scale: float = 2.9,
@@ -189,6 +194,16 @@ def get_base_config(
         epochs: Training epochs.  JiT paper / README scripts use ``600``;
             the argparser default is ``200``.
         warmup_epochs: Linear-warmup phase length.  JiT default ``5``.
+        eval_freq_epochs: Run validation (loss + sample-grid logging +
+            optional online FID) every ``N`` epochs.  JiT default ``40``
+            (``main_jit.py --eval_freq``).  Setting this to ``1`` to
+            sample on every epoch is prohibitively expensive for the
+            full 600-epoch recipe (16 samples * 50 NFE = ~750 GPU-step
+            equivalents of overhead per validation epoch).
+        save_freq_epochs: Save a ``checkpoint-last.ckpt`` every ``N``
+            epochs.  JiT default ``5`` (``main_jit.py --save_last_freq``).
+            Translated to Lightning's per-step granularity as
+            ``save_freq_epochs * iters_per_epoch``.
         ema_decay: EMA decay (single EMA in our wrapper).  JiT uses
             ``0.9999`` for its primary sampling EMA, so default to that.
         noise_scale: Initial noise scale used for both the training z_t mix
@@ -299,6 +314,21 @@ def get_base_config(
         grad_clip=0.0,  # JiT does not clip gradients (no clipping in engine_jit.py)
         accumulate_grad_steps=accumulate_grad_steps,
         precision=JIT_PRECISION,
+    )
+
+    # Sampling + checkpointing cadence — matches JiT's defaults:
+    # - ``check_val_every_n_epoch=40`` mirrors ``main_jit.py --eval_freq 40``;
+    #   validation loss + image-grid logging + optional FID all fire on those
+    #   epochs.  Without this override Lightning runs validation every single
+    #   epoch (600 sampling cycles, each generating ``num_samples`` images
+    #   with ``num_inference_steps`` NFEs) — far more compute than the paper.
+    # - ``checkpoint_every_n_steps`` corresponds to JiT's
+    #   ``--save_last_freq 5`` (every 5 epochs).  Lightning works in steps,
+    #   so we convert: ``save_freq_epochs * iters_per_epoch``.  Avoids
+    #   per-epoch checkpoints which would slow training noticeably.
+    config.trainer = TrainerConfig(
+        check_val_every_n_epoch=eval_freq_epochs,
+        checkpoint_every_n_steps=save_freq_epochs * iters_per_epoch,
     )
 
     config.scheduler = SchedulerConfig(
