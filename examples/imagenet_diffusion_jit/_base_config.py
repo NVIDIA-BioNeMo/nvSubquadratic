@@ -105,7 +105,13 @@ JIT_WEIGHT_DECAY = 0.0  # main_jit.py default
 JIT_EPOCHS = 600  # README scripts
 JIT_WARMUP_EPOCHS = 5  # main_jit.py default
 JIT_EVAL_FREQ_EPOCHS = 40  # main_jit.py --eval_freq (sampling + FID cadence)
-JIT_SAVE_FREQ_EPOCHS = 5  # main_jit.py --save_last_freq (checkpoint cadence)
+JIT_SAVE_FREQ_EPOCHS = 5  # main_jit.py --save_last_freq (rolling-last cadence)
+# Cadence for the *permanent* (save_top_k=-1) checkpoints used for offline
+# FID / post-hoc model selection.  JiT's reference saves a permanent
+# snapshot every 100 epochs; we use 30 to get more granular FID curves at
+# moderate storage cost (~52 GB for JiT-B over 600 epochs, ~180 GB for L,
+# ~380 GB for H).  Tune per disk budget in the leaf config.
+JIT_PERIODIC_SAVE_EPOCHS = 30
 JIT_EMA_DECAY = 0.9999  # main_jit.py ema_decay1 (used for sampling)
 # JiT also tracks a SECOND EMA at 0.9996 ("ema_decay2") that is checkpointed
 # but never used for sampling in the released eval scripts.  We track it for
@@ -152,6 +158,7 @@ def get_base_config(
     warmup_epochs: int = JIT_WARMUP_EPOCHS,
     eval_freq_epochs: int = JIT_EVAL_FREQ_EPOCHS,
     save_freq_epochs: int = JIT_SAVE_FREQ_EPOCHS,
+    periodic_save_epochs: int = JIT_PERIODIC_SAVE_EPOCHS,
     ema_decay: float = JIT_EMA_DECAY,
     noise_scale: float = 1.0,
     guidance_scale: float = 2.9,
@@ -204,6 +211,13 @@ def get_base_config(
             epochs.  JiT default ``5`` (``main_jit.py --save_last_freq``).
             Translated to Lightning's per-step granularity as
             ``save_freq_epochs * iters_per_epoch``.
+        periodic_save_epochs: Cadence for *permanent* checkpoints retained
+            for offline FID / post-hoc model selection.  Wires up a second
+            ``ModelCheckpoint`` callback with ``save_top_k=-1`` at this
+            cadence; the rolling ``last.ckpt`` from ``save_freq_epochs`` is
+            unaffected.  Default ``30`` (~20 checkpoints over a 600-epoch
+            run).  Set to a large value (e.g. ``9999``) to effectively
+            disable periodic retention.  JiT's reference uses ``100``.
         ema_decay: EMA decay (single EMA in our wrapper).  JiT uses
             ``0.9999`` for its primary sampling EMA, so default to that.
         noise_scale: Initial noise scale used for both the training z_t mix
@@ -329,6 +343,7 @@ def get_base_config(
     config.trainer = TrainerConfig(
         check_val_every_n_epoch=eval_freq_epochs,
         checkpoint_every_n_steps=save_freq_epochs * iters_per_epoch,
+        periodic_save_every_n_steps=periodic_save_epochs * iters_per_epoch,
     )
 
     config.scheduler = SchedulerConfig(

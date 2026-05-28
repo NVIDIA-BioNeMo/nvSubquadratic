@@ -125,6 +125,30 @@ def construct_trainer(
         print(f"[checkpoint] Saving every {cfg.trainer.checkpoint_every_n_steps} steps")
     checkpoint_callback = pl_callbacks.ModelCheckpoint(**checkpoint_kwargs)
 
+    # Optional second ``ModelCheckpoint`` that retains the full periodic
+    # history (``save_top_k=-1``).  Used for offline FID / post-hoc model
+    # selection at multiple training milestones — see ``TrainerConfig.
+    # periodic_save_every_n_steps``.  Snapshots land in ``checkpoints/periodic/``
+    # under a ``periodic-step={step}-epoch={epoch}.ckpt`` filename so they
+    # don't shadow the main best/last pair.
+    periodic_checkpoint_callback: Optional[pl_callbacks.ModelCheckpoint] = None
+    if cfg.trainer.periodic_save_every_n_steps is not None:
+        periodic_dir = checkpoint_dir / "periodic"
+        periodic_dir.mkdir(parents=True, exist_ok=True)
+        periodic_checkpoint_callback = pl_callbacks.ModelCheckpoint(
+            dirpath=str(periodic_dir),
+            filename="periodic-step={step:08d}-epoch={epoch:04d}",
+            save_top_k=-1,  # keep ALL snapshots
+            save_last=False,  # rolling last.ckpt handled by the main callback
+            every_n_train_steps=cfg.trainer.periodic_save_every_n_steps,
+            verbose=True,
+            auto_insert_metric_name=False,  # avoid ``step=`` literal repeating
+        )
+        print(
+            f"[checkpoint] Periodic snapshots (save_top_k=-1) every "
+            f"{cfg.trainer.periodic_save_every_n_steps} steps -> {periodic_dir.resolve()}"
+        )
+
     # Distributed training params
     assert cfg.device == "cuda", "Only CUDA training is supported."
 
@@ -146,6 +170,11 @@ def construct_trainer(
     callbacks_list = [
         # Checkpoint callback (local saving — always enabled)
         checkpoint_callback,
+        # Optional second checkpoint callback retaining the full periodic
+        # history (offline-FID / model selection).  Always added when
+        # configured; never uploaded to W&B (kept local for now to avoid
+        # exploding artifact storage).
+        *([periodic_checkpoint_callback] if periodic_checkpoint_callback is not None else []),
         # Model summary callback
         pl_callbacks.ModelSummary(max_depth=-1),
         # Learning rate monitor callback

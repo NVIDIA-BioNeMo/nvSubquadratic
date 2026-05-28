@@ -80,6 +80,17 @@ class TrainerConfig:
     # Recommended: 2000-5000 for long runs to avoid losing progress on crashes.
     checkpoint_every_n_steps: Optional[int] = None
 
+    # When set, attaches a *second* ``ModelCheckpoint`` callback that retains
+    # **all** snapshots at this cadence (``save_top_k=-1``).  Use this when you
+    # want a rolling history for post-hoc model selection / offline FID at
+    # multiple training milestones, in addition to the rolling ``last.ckpt``
+    # that ``checkpoint_every_n_steps`` already handles.  Defaults to ``None``
+    # (no extra retention).  Storage cost scales linearly with the total
+    # number of save events, so pick the cadence to fit your disk budget:
+    # at 1.28M images / eff_bs=1024 -> 1251 iters/epoch, ``periodic_save_every_n_steps =
+    # 30 * 1251 = 37530`` saves ~20 checkpoints over a 600-epoch run.
+    periodic_save_every_n_steps: Optional[int] = None
+
     # Override the metric monitored by ModelCheckpoint. If None, auto-derived
     # from scheduler.mode ("val/acc" for max, "val/loss" for min).
     checkpoint_monitor: Optional[str] = None
