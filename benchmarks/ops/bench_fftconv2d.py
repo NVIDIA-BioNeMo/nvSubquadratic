@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 r"""Benchmark: torch.fft fftconv2d vs subquadratic_ops_torch CUDA kernel.
 
 Compares latency (forward and forward+backward) of the torch.fft-based

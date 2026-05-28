@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for the direct (non-FFT) 1D causal conv wrappers.
 
 Validates :mod:`nvsubquadratic.ops.causal_conv1d_custom`:

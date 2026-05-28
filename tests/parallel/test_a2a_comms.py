@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """
 Test module for all-to-all communication functions with zigzag splitting.
 """

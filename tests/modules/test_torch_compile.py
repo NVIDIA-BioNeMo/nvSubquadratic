@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for torch.compile compatibility with Hyena models.
 
 Verifies that torch.compile produces identical outputs and gradients compared to eager mode.

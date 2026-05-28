@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Shared config for 3D simple copy — spatial recall v2.
 
 Task: 2D EMNIST digits placed on depth slices of a 3D volume [D, H, W].

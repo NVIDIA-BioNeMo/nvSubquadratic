@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Integration tests for CKConvND with fft_backend='subq_ops'.
 
 Validates that CKConvND produces correct forward and backward results when

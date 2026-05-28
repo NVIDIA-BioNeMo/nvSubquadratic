@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for GaussianModulationND, ExponentialModulationND, and _std_from_attenuation.
 
 Covers:

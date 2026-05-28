@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for SubqOpsCausalConv1d module.
 
 Validates :class:`nvsubquadratic.modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d`

@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 1D - Mamba XS Causal + Patchify.
 
 Patchified version of Mamba for 1D spatial recall:

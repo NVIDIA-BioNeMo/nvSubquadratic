@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Distributed depthwise convolution wrappers for Context Parallelism (CP).
 
 This module provides 1-D, 2-D, and 3-D *depthwise* convolution layers that work

@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Tests for the safe arithmetic eval resolver (Fix 4: no arbitrary code execution).
 
 Verifies that ``_safe_arithmetic_eval`` accepts valid arithmetic and rejects

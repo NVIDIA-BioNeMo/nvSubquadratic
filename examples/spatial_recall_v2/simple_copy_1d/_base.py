@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Shared config for 1D simple copy — spatial recall v2.
 
 Task: flattened EMNIST digit (16x16 → 256 elements) placed in a 1D canvas

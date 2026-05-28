@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Default mixer configurations for spatial recall 2D experiments.
 
 This module provides pre-configured LazyConfigs for commonly used sequence mixers:

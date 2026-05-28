@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """2D Color Conditioning — Mamba XS (v2).
 
 Hidden dim: 160, 4 blocks, headdim=32, expand=2, bidirectional.

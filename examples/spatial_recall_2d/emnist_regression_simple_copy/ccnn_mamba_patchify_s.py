@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 2D - Mamba + Patchify S (Small).
 
 Model Size: S (Small)

@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Tests for WellDataModule staging path resolution (Fix 3: DDP safety).
 
 Verifies that ``_resolve_staged_path`` correctly updates ``well_base_path``

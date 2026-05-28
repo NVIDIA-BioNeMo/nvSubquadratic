@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Causal depthwise 1D convolution backed by the subq_ops CUDA kernel.
 
 Drop-in for ``torch.nn.Conv1d`` in Hyena's ``short_conv`` slot when the host

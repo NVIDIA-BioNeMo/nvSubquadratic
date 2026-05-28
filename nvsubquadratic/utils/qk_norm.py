@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Query-Key (QK) normalisation utilities for attention stabilisation.
 
 QK-norm (Henry et al., "Query-Key Normalization for Transformers", 2020;

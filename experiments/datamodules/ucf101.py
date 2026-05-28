@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """UCF101 video-classification datamodule for PyTorch Lightning.
 
 Provides :class:`UCF101DataModule`, which wraps

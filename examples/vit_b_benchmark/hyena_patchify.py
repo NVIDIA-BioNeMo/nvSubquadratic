@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """ImageNet Classification - Hyena with Patchification (ViT-B scale).
 
 Model Size: ViT-B

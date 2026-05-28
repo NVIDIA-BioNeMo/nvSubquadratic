@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for anisotropic kernel grids in ``nvsubquadratic.modules.kernels_nd``.
 
 These tests cover the per-axis ``L_cache`` support added to the SIREN and

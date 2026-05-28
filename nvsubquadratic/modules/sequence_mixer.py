@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Sequence mixer abstraction layer for ND signals.
 
 This module provides :class:`QKVSequenceMixer`, the **operator-agnostic dispatch

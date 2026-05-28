@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Context Parallelism Test for QKVSequenceMixer.
 
 This module provides comprehensive testing for QKVSequenceMixer with context parallelism,

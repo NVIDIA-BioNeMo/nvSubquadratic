@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 1D - Hyena XS (Extra-Small) - Autoregressive Pretraining.
 
 This config uses autoregressive (next-token prediction) training on the 1D canvas.

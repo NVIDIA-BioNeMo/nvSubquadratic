@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """2D Simple Copy — Attention XS (v2).
 
 Hidden dim: 256, 4 blocks, num_heads=8, head_dim=32.

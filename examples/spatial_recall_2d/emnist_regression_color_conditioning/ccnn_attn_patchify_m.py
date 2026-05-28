@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 2D (Color Conditioning) - Attention + Patchify M.
 
 Model Size: M (Medium)

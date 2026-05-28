@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Causal 1D convolution module.
 
 Provides :class:`CausalConv1D`, a :class:`torch.nn.Conv1d` subclass that pads

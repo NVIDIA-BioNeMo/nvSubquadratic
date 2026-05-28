@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Integration tests for CKConvND with mixed boundary-condition FFT padding.
 
 Validates the new per-axis ``fft_padding`` API (list of mode strings, e.g.

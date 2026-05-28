@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Drop-in wrappers around :mod:`subquadratic_ops_torch` 1D causal conv kernels.
 
 This module exposes thin Python wrappers around the upstream CUDA kernels for

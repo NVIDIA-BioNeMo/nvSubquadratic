@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Config file for TinyImageNet classification using the shared ResNet backbone."""
 
 import os

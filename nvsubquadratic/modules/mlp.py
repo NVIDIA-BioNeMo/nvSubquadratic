@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Channel-mixing MLP block for ND residual networks.
 
 Within the residual block architecture (see

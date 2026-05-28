@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Shared config for 2D simple copy — spatial recall v2.
 
 Task: single EMNIST digit (16x16) placed at a fixed position on a 64x64

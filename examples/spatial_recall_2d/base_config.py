@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Base configuration for spatial recall 2D experiments.
 
 This module provides the base configuration that is common across all spatial recall

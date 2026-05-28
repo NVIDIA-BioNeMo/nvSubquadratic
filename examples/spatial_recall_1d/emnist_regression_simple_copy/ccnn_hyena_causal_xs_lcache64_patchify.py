@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 1D - Hyena XS Causal + Patchify (L_cache=64).
 
 Patchified version of Hyena for 1D spatial recall:

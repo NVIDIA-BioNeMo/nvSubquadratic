@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Tests for causality in Attention and Mamba modules.
 
 Causality Test Principle

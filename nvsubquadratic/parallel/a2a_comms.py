@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """All-to-all communication primitives for Context Parallelism (CP).
 
 This module implements the sequence ↔ channel redistribution pattern used by

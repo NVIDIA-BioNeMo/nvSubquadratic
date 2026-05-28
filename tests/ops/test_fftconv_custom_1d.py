@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for the 1D causal subq_ops wrappers in fftconv_custom.
 
 Validates :func:`nvsubquadratic.ops.fftconv_custom.causal_fftconv1d_*` against

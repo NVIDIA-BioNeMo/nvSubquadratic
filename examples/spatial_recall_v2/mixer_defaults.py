@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Shared mixer defaults for spatial recall v2 experiments.
 
 Modernised mixer factories shared across all spatial recall v2 tasks and dimensions.

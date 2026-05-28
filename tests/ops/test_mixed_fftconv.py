@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for mixed boundary-condition FFT convolution operators (1D/2D/3D).
 
 These tests verify the new ``mixed_fftconv*`` ops in

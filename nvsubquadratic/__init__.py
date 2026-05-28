@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """nvSubquadratic: A unified PyTorch-native library for subquadratic alternatives to attention.
 
 Currently supporting multi-dimensional Hyena operators with optimized CUDA

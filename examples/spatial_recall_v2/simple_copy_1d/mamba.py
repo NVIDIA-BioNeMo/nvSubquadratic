@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """1D Simple Copy — Mamba XS (v2, causal/unidirectional).
 
 Hidden dim: 208, 4 blocks, headdim=32, expand=2.

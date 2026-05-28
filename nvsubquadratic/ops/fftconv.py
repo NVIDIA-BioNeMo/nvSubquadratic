@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 r"""FFT-based convolution operators (fp32) for 1D, 2D, and 3D signals.
 
 Mathematical background

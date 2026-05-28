@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 1D - Attention XS - Fine-tuning from Pretrained Checkpoint.
 
 This config starts from weights pretrained with autoregressive pretraining

@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Distributed-training utility helpers for context-parallel (CP) workloads.
 
 Provides three categories of utilities:

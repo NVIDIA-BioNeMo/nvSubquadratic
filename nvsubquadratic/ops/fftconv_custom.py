@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 r"""Drop-in wrappers around the :mod:`subquadratic_ops_torch` custom CUDA FFT kernels.
 
 The pure-PyTorch FFT path in :mod:`nvsubquadratic.ops.fftconv` is general

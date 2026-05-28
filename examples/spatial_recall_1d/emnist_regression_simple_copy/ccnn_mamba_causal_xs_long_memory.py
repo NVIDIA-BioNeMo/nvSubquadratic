@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 1D - Mamba XS Causal - Frequency/Memory Sweep Config.
 
 This config is designed for sweeping Mamba's frequency/memory parameters, analogous to:

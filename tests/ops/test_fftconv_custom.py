@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for the fftconv_custom wrappers (subq_ops CUDA kernel drop-in replacements).
 
 Validates :mod:`nvsubquadratic.ops.fftconv_custom` against the torch.fft

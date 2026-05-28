@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """3D Color Conditioning -- patched Hyena XS with per-axis Gaussian mask init.
 
 Identical to ``hyena_patch.py`` but replaces the ``nn.Identity`` mask with a

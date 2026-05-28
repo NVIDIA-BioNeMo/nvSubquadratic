@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Shared config for 2D color conditioning — spatial recall v2.
 
 Task: 4 EMNIST digits with coloured bounding boxes on a 64x64 RGB canvas.

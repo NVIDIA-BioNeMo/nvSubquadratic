@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """2D Simple Copy — Hyena XS with Patchify (v2).
 
 Hidden dim: 256, 4 blocks, patch_size=8 (64×64 → 8×8 = 64 tokens).

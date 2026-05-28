@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 r"""Mamba-ND: selective state-space mixer for 1D/2D/3D signals.
 
 Background

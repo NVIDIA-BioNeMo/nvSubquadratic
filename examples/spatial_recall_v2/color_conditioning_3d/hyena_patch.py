@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """3D Color Conditioning -- Hyena XS with Patchify (v2).
 
 Hidden dim: 256, 4 blocks, patch_size=4 (8x64x64 -> 2x16x16 = 512 tokens).

@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """Baseline diffusion configuration leveraging Hugging Face UVit transformer."""
 
 import torch

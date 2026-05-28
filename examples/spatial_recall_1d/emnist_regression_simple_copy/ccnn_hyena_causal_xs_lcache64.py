@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """EMNIST Spatial Recall 1D - Hyena XS (Extra-Small) Causal - L_cache=64 ablation.
 
 This is an ablation experiment testing the effect of smaller kernel cache size.

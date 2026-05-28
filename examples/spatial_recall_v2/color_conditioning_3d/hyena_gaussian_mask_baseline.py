@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
 """3D Color Conditioning -- Hyena XS with Gaussian mask (BASELINE for 2x2).
 
 Ablation corner:

@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Rotary Position Embeddings (RoPE) utilities.
 
 This module provides fast, allocation-friendly primitives to construct and apply

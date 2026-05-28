@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """CLI and config-loading utilities for nvSubquadratic experiments.
 
 Provides helpers used by ``experiments/run.py`` to load Python config files,

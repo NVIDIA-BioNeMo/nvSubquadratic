@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Tests for subquadratic_ops_torch.fft_conv2d CUDA kernel.
 
 Validates the GPU-accelerated FFT conv2d from the ``subquadratic_ops_torch``

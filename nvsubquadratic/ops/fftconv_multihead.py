@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 r"""Multi-head 2D FFT convolution operators with dense within-head channel mixing.
 
 Motivation

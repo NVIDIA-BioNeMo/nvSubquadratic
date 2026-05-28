@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add license header here
-
-
 """Memory-efficient (chunked) FFT convolution operators.
 
 This module provides memory-efficient variants of FFT convolutions that reduce
