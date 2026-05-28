@@ -41,7 +41,7 @@ research team can swap any one of them without touching the others.
   architectures, plus the 1D/2D FFT primitives.  nvSubquadratic
   delegates here via {mod}`subquadratic_ops_torch` and the published
   docs are at
-  <https://nvidia-digital-bio.github.io/subquadraticOps-docs/>.
+  <https://nvidia-bionemo.github.io/subquadraticOps-docs/>.
 - **megatron-core** — Megatron's distributed-training primitives
   (tensor / pipeline / context parallelism).  nvSubquadratic uses it via
   {mod}`nvsubquadratic.parallel.utils`'s

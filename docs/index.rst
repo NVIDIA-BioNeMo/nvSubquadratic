@@ -56,9 +56,9 @@ Where to go next
 Contributor docs
 ----------------
 
-- `CONVENTIONS.md <https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private/blob/main/CONVENTIONS.md>`_ —
+- `CONVENTIONS.md <https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/CONVENTIONS.md>`_ —
   Google-style docstring guide and PR checklist (lives at the repo root).
-- `docs-tracker.md <https://github.com/NVIDIA-Digital-Bio/nvSubquadratic-private/blob/main/docs-tracker.md>`_ —
+- `docs-tracker.md <https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/docs-tracker.md>`_ —
   documentation coverage status per file.
 
 Related projects
@@ -67,7 +67,7 @@ Related projects
 ``nvsubquadratic`` is the high-level PyTorch interface; the underlying
 CUDA kernels live in a separate library:
 
-- `subquadratic-ops <https://nvidia-digital-bio.github.io/subquadraticOps-docs/>`_ —
+- `subquadratic-ops <https://nvidia-bionemo.github.io/subquadraticOps-docs/>`_ —
   optimized CUDA kernels (causal conv1d, FFT conv1d/2d, B2B causal conv1d,
   implicit filters, rearrange) that nvSubquadratic delegates to via
   :mod:`subquadratic_ops_torch`. Refer to its API reference for kernel-level
