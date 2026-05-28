@@ -211,8 +211,20 @@ def _train_pipeline_fused(
     shard_id: int = 0,
     num_shards: int = 1,
     ra_source=None,
+    train_crop_mode: str = "random_resized",
 ):
-    """Training pipeline with decode, crop, augmentations, and normalization."""
+    """Training pipeline with decode, crop, augmentations, and normalization.
+
+    ``train_crop_mode``:
+
+    - ``"random_resized"`` (default): classification-style augmentation via
+      ``fn.random_resized_crop`` with scale jitter ``(0.08, 1.0)``.
+    - ``"center"``: deterministic resize-shorter-side + center-crop, used by
+      diffusion-paper recipes (JiT, DiT, ADM) that train on the same
+      "ImageNet eval preprocessing" they evaluate on.  The center crop
+      itself is applied below inside ``fn.crop_mirror_normalize`` (which
+      defaults to a centered crop when ``crop=`` is set).
+    """
     if ra_source is not None:
         jpegs, labels = fn.external_source(
             source=ra_source,
@@ -230,12 +242,23 @@ def _train_pipeline_fused(
         )
 
     images = fn.decoders.image(jpegs, device="mixed", output_type=types.RGB)
-    images = fn.random_resized_crop(
-        images,
-        size=(image_size, image_size),
-        random_area=(0.08, 1.0),
-        interp_type=types.INTERP_CUBIC,
-    )
+    if train_crop_mode == "random_resized":
+        images = fn.random_resized_crop(
+            images,
+            size=(image_size, image_size),
+            random_area=(0.08, 1.0),
+            interp_type=types.INTERP_CUBIC,
+        )
+    elif train_crop_mode == "center":
+        # Resize so the shorter side equals ``image_size``; the deterministic
+        # center crop is applied below inside ``fn.crop_mirror_normalize``.
+        images = fn.resize(
+            images,
+            resize_shorter=image_size,
+            interp_type=types.INTERP_CUBIC,
+        )
+    else:
+        raise ValueError(f"train_crop_mode must be 'random_resized' or 'center'; got {train_crop_mode!r}.")
     images = fn.flip(images, horizontal=fn.random.coin_flip(probability=0.5))
 
     if final_image_size != image_size:
@@ -284,12 +307,20 @@ def _train_pipeline_fused(
         )
 
     # ── uint8 → float32 + normalize ─────────────────────────────────
+    # When ``train_crop_mode="center"`` we need an explicit center crop here
+    # because the preceding ``fn.resize`` only fixes the shorter side; the
+    # longer side is still > image_size.  ``fn.crop_mirror_normalize``
+    # centers the crop by default.
+    cmn_kwargs = {}
+    if train_crop_mode == "center":
+        cmn_kwargs["crop"] = (image_size, image_size)
     images = fn.crop_mirror_normalize(
         images,
         dtype=types.FLOAT,
         output_layout="CHW",
         mean=[m * 255.0 for m in norm_mean],
         std=[s * 255.0 for s in norm_std],
+        **cmn_kwargs,
     )
 
     return images, labels
@@ -400,11 +431,35 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
         device_id: int = 0,
         channels_first: bool = False,
         local_staging_dir: Optional[str] = None,
+        train_crop_mode: Literal["random_resized", "center"] = "random_resized",
     ) -> None:
-        """Initialize DALI ImageNet DataModule with augmentation and mixup configs."""
+        """Initialize DALI ImageNet DataModule with augmentation and mixup configs.
+
+        ``train_crop_mode`` switches the training pipeline's spatial
+        augmentation strategy:
+
+        - ``"random_resized"`` (default, classification recipe): aggressive
+          ``RandomResizedCrop(scale=(0.08, 1.0))`` scale jitter.
+        - ``"center"`` (diffusion recipe per JiT / DiT / ADM): deterministic
+          ``resize_shorter=image_size`` + symmetric center crop, matching
+          the ImageNet eval preprocessing the diffusion community standardised
+          on.  Use this for byte-exact replication of any diffusion paper
+          that does not use random crops at training time.
+
+        Notes:
+        -----
+        DALI's single-stage ``fn.resize(interp=CUBIC)`` is *not* byte-exact
+        to ADM's multi-stage ``center_crop_arr`` (box-downsample by 2× then
+        bicubic).  The pixel-value drift is far below the noise floor for
+        FID — see ``examples/imagenet_diffusion_jit/__init__.py`` for the
+        full list of small deviations.
+        """
         super().__init__()
 
         self._local_staging_dir = Path(local_staging_dir) if local_staging_dir is not None else None
+        if train_crop_mode not in ("random_resized", "center"):
+            raise ValueError(f"train_crop_mode must be 'random_resized' or 'center'; got {train_crop_mode!r}.")
+        self.train_crop_mode = train_crop_mode
 
         if imagefolder_dir is None:
             raise ValueError(
@@ -594,6 +649,7 @@ class DALIImageNetFusedDataModule(pl.LightningDataModule):
                 seed=self.seed,
                 prefetch_queue_depth=self.prefetch_factor,
                 ra_source=ra_source,
+                train_crop_mode=self.train_crop_mode,
                 **extra_pipe_kwargs,
             )
             self._train_pipe.build()

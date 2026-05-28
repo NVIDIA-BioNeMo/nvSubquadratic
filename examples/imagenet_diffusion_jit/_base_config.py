@@ -69,7 +69,7 @@ from typing import Callable
 
 import torch
 
-from experiments.datamodules._deprecated.ref_imagenet import ImageNetDataModule
+from experiments.datamodules.dali_imagenet_fused import DALIImageNetFusedDataModule
 from experiments.default_cfg import (
     DiffusionConfig,
     DiffusionExperimentConfig,
@@ -89,8 +89,13 @@ WANDB_ENTITY = "dafidofff"
 WANDB_PROJECT = "nvsubquadratic"
 NUM_CLASSES = 1000
 
-HF_DATASET_DEFAULT = os.environ.get("IMAGENET_HF_DATASET", "imagenet-1k")
-HF_CACHE_DEFAULT = os.environ.get("IMAGENET_PATH", "/scratch-shared/dknigge/hf_cache")
+# DALI reads from a local ImageFolder layout (train/, val/ subdirs).
+# ``IMAGENET_FOLDER_PATH`` is the convention used across the v5_hybrid
+# classification configs; ``IMAGENET_PATH`` is kept as a fallback for the
+# raw HF cache path (which the DALI module accepts but does not use for
+# the ImageFolder path).
+IMAGENET_FOLDER_PATH_DEFAULT = os.environ.get("IMAGENET_FOLDER_PATH", "/shared/data/image_datasets/imagenet_folder")
+IMAGENET_PATH_DEFAULT = os.environ.get("IMAGENET_PATH", "/shared/data/image_datasets/imagenet")
 
 # ─── JiT recipe constants ────────────────────────────────────────────────────
 IMAGENET_TRAIN_SIZE = 1_281_167
@@ -149,8 +154,9 @@ def get_base_config(
     attn_dropout: float = 0.0,
     fid_stats_file: str = "",
     fid_online_jit: bool = False,
-    hf_dataset: str = HF_DATASET_DEFAULT,
-    hf_cache: str = HF_CACHE_DEFAULT,
+    imagefolder_dir: str = IMAGENET_FOLDER_PATH_DEFAULT,
+    data_dir: str = IMAGENET_PATH_DEFAULT,
+    local_staging_dir: str | None = None,
     job_group: str = "imagenet_diffusion_jit",
     extra_tags: list | None = None,
 ) -> DiffusionExperimentConfig:
@@ -203,8 +209,19 @@ def get_base_config(
             the path empty by default.
         fid_online_jit: Whether to run the JiT-style online FID evaluation
             during validation epochs.
-        hf_dataset: HuggingFace dataset name (e.g. ``"imagenet-1k"``).
-        hf_cache: Local cache directory for the HuggingFace dataset.
+        imagefolder_dir: Path to the local ImageNet ``ImageFolder`` layout
+            (with ``train/`` and ``val/`` subdirs).  DALI reads directly
+            from this path, so it should ideally live on fast local NVMe.
+            Defaults to ``$IMAGENET_FOLDER_PATH`` or the project's standard
+            shared location.
+        data_dir: Kept for backwards compatibility with the legacy
+            (HF-backed) datamodule path; ignored by DALI but required to
+            satisfy the wrapper's call signature.
+        local_staging_dir: Optional fast-local-NVMe staging directory.
+            When set and ``imagefolder_dir`` points to a network mount,
+            DALI's datamodule auto-stages the data here on
+            ``prepare_data``.  Defaults to ``/scratch/$USER/imagenet_dataset``
+            when ``$USER`` is set (same convention as v5_hybrid).
         job_group: WandB job group.
         extra_tags: Extra WandB tags appended to the default set.
 
@@ -214,6 +231,10 @@ def get_base_config(
     """
     if num_workers is None:
         num_workers = min(12, (os.cpu_count() or 4) - 2)
+
+    if local_staging_dir is None:
+        user = os.environ.get("USER")
+        local_staging_dir = f"/scratch/{user}/imagenet_dataset" if user else None
 
     eff_batch_size = batch_size * num_gpus * accumulate_grad_steps
     learning_rate = _absolute_lr(blr, eff_batch_size)
@@ -225,20 +246,30 @@ def get_base_config(
     config.debug = False
     config.seed = 42
 
-    config.dataset = LazyConfig(ImageNetDataModule)(
-        data_dir=hf_cache,
-        hf_dataset_name=hf_dataset,
+    # Production DALI pipeline (same path used by all v5_hybrid
+    # classification configs).  ``task="generation"`` makes the pipeline
+    # normalise pixels to [-1, 1] via ``Normalize(0.5, 0.5)``, matching
+    # JiT exactly.  ``train_crop_mode="center"`` swaps the default
+    # RandomResizedCrop for a deterministic resize-shorter-side + center
+    # crop, matching JiT's ``center_crop_arr`` up to a single-stage vs
+    # multi-stage interpolation difference (sub-pixel, no measurable FID
+    # impact — see this package's ``__init__.py`` for the full deviation
+    # note).  ``channels_first=False`` gives the wrapper its expected
+    # NHWC layout.
+    config.dataset = LazyConfig(DALIImageNetFusedDataModule)(
+        data_dir=data_dir,
+        imagefolder_dir=imagefolder_dir,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=True,
         seed=42,
-        task="generation",  # normalises pixels to [-1, 1] (matches JiT)
-        drop_labels=False,  # required for class conditioning + in-context tokens
-        # JiT trains on deterministic ADM-style center crops (no scale
-        # jitter); ``"random_resized"`` (the legacy default) is a strong
-        # classification-style augmentation that JiT does not use.
+        task="generation",
+        drop_labels=False,
         train_crop_mode="center",
+        channels_first=False,
+        prefetch_factor=3,
+        local_staging_dir=local_staging_dir,
     )
 
     # The JiT model factory is wrapped in LazyConfig — it accepts forwarded
