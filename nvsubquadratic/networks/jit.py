@@ -15,8 +15,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from nvsubquadratic.lazy_config import LazyConfig
+from nvsubquadratic.modules.mlp import MLP
+from nvsubquadratic.modules.rms_norm import RMSNorm
 from nvsubquadratic.networks.jit_utils import (
-    RMSNorm,
     VisionRotaryEmbeddingFast,
     get_2d_sincos_pos_embed,
 )
@@ -158,23 +160,45 @@ class Attention(nn.Module):
         return x
 
 
-class SwiGLUFFN(nn.Module):
-    """SwiGLU feed-forward network used inside transformer blocks."""
+def _make_swiglu_mlp(hidden_size: int, mlp_ratio: float, drop: float) -> MLP:
+    """Build a SwiGLU FFN that matches the JiT reference exactly.
 
-    def __init__(self, dim: int, hidden_dim: int, drop=0.0, bias=True) -> None:
-        """Initialize the SwiGLU feed-forward network."""
-        super().__init__()
-        hidden_dim = int(hidden_dim * 2 / 3)
-        self.w12 = nn.Linear(dim, 2 * hidden_dim, bias=bias)
-        self.w3 = nn.Linear(hidden_dim, dim, bias=bias)
-        self.ffn_dropout = nn.Dropout(drop)
+    The JiT reference (``model_jit.SwiGLUFFN``) takes an outer
+    ``hidden_dim = int(hidden_size * mlp_ratio)`` then internally collapses
+    it to ``int(hidden_dim * 2 / 3)``, giving an inner SwiGLU width of
+    ``int(hidden_size * mlp_ratio * 2 / 3)``.
 
-    def forward(self, x):
-        """Apply the SwiGLU feed-forward transformation."""
-        x12 = self.w12(x)
-        x1, x2 = x12.chunk(2, dim=-1)
-        hidden = F.silu(x1) * x2
-        return self.w3(self.ffn_dropout(hidden))
+    The project's :class:`~nvsubquadratic.modules.mlp.MLP` computes
+    ``hidden = int(dim * expansion_factor)`` directly, so we pass
+    ``expansion_factor = mlp_ratio * 2 / 3`` to land on the same inner width:
+
+    .. code-block:: text
+
+        JiT:     int(int(hidden_size * mlp_ratio) * 2/3)
+        Project: int(hidden_size * (mlp_ratio * 2/3))
+
+    Both reduce to the same integer for any ``hidden_size``, ``mlp_ratio``
+    pair where the multiplication is exact (i.e. ``mlp_ratio * 2`` is
+    integer-valued at machine precision).  Verified in
+    ``tests/networks/test_jit_modules.py``.
+
+    Args:
+        hidden_size: Transformer hidden width (e.g. 768 for JiT-B).
+        mlp_ratio: Outer expansion ratio (4.0 for all JiT sizes).
+        drop: Dropout probability applied between the two linear layers.
+
+    Returns:
+        A ``MLP`` instance functionally equivalent to JiT's ``SwiGLUFFN``.
+        Layer naming differs (``layer1`` / ``layer2`` here vs ``w12`` /
+        ``w3`` in JiT) but the computation graph is identical.
+    """
+    return MLP(
+        dim=hidden_size,
+        activation="swiglu",
+        dropout_cfg=LazyConfig(nn.Dropout)(p=drop),
+        expansion_factor=mlp_ratio * 2 / 3,
+        bias=True,
+    )
 
 
 class FinalLayer(nn.Module):
@@ -211,8 +235,10 @@ class JiTBlock(nn.Module):
             proj_drop=proj_drop,
         )
         self.norm2 = RMSNorm(hidden_size, eps=1e-6)
-        mlp_hidden_dim = int(hidden_size * mlp_ratio)
-        self.mlp = SwiGLUFFN(hidden_size, mlp_hidden_dim, drop=proj_drop)
+        # Reuses the project's MLP (activation="swiglu") instead of a hand-rolled
+        # SwiGLU implementation.  Math is bit-identical to JiT's ``SwiGLUFFN`` —
+        # see ``tests/networks/test_jit_modules.py``.
+        self.mlp = _make_swiglu_mlp(hidden_size, mlp_ratio, drop=proj_drop)
         self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True))
 
     def forward(self, x, c, feat_rope=None):
@@ -254,9 +280,21 @@ class JiT(nn.Module):
         self.in_context_start = in_context_start
         self.num_classes = num_classes
 
-        # time and class embed (unused in DiffusionWrapper forward, DDP will crash if requires_grad=True)
+        # Time and class embedders.
+        #
+        # When ``DiffusionWrapper.network_handles_conditioning=True`` (the
+        # JiT-exact mode), these are *used* by ``JiT.forward`` to build the
+        # AdaLN conditioning vector ``c = t_emb + y_emb`` and the raw
+        # ``y_emb`` for the in-context cls tokens.  When the wrapper-managed
+        # mode is active instead (the legacy default), the wrapper provides
+        # ``condition`` / ``class_emb`` directly, these embedders are unused
+        # at forward time, and we freeze them so DDP doesn't complain about
+        # parameters that never receive gradients.  The wrapper calls
+        # :meth:`enable_internal_conditioning` after construction when it
+        # needs the embedders to be trainable.
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size)
+        self._internal_conditioning = False
         self.t_embedder.requires_grad_(False)
         self.y_embedder.requires_grad_(False)
 
@@ -308,6 +346,20 @@ class JiT(nn.Module):
     def hidden_dim(self):
         """Return the model hidden dimension."""
         return self.hidden_size
+
+    def enable_internal_conditioning(self) -> None:
+        """Unfreeze ``t_embedder`` / ``y_embedder`` and switch ``forward`` to JiT-native mode.
+
+        Called by
+        :class:`~experiments.lightning_wrappers.diffusion_wrapper.DiffusionWrapper`
+        when ``diffusion.network_handles_conditioning=True``.  After this
+        call the network embeds raw ``timesteps`` and ``labels`` itself
+        (matching the JiT reference exactly), and the wrapper's own
+        ``time_mlp`` / ``label_embed`` are bypassed.
+        """
+        self._internal_conditioning = True
+        self.t_embedder.requires_grad_(True)
+        self.y_embedder.requires_grad_(True)
 
     def initialize_weights(self):
         """Initialize trainable parameters following JiT defaults."""
@@ -362,9 +414,41 @@ class JiT(nn.Module):
         return imgs
 
     def forward(self, input_and_condition):
-        """Run a forward pass from a DiffusionWrapper-style input dictionary."""
+        """Run a forward pass from a DiffusionWrapper-style input dictionary.
+
+        Two input layouts are supported:
+
+        - **Wrapper-managed conditioning** (legacy default): dict contains
+          ``"input"``, ``"condition"`` (= t_emb + y_emb, pre-built by the
+          wrapper) and ``"class_emb"`` (= raw y_emb, used for in-context
+          tokens).  The network's own ``t_embedder`` / ``y_embedder`` are
+          unused and frozen.
+        - **Network-managed (JiT-exact) conditioning**: dict contains
+          ``"input"``, ``"timesteps"`` (1D, in ``[0, 1]``) and ``"labels"``
+          (int64, already CFG-dropped if applicable).  The network embeds
+          them through its own ``t_embedder`` + ``y_embedder``, exactly as
+          in the JiT reference.  Enabled via
+          :meth:`enable_internal_conditioning` — the wrapper calls this
+          automatically when
+          ``diffusion.network_handles_conditioning=True``.
+        """
         x = input_and_condition["input"]
-        c = input_and_condition["condition"]
+
+        if "timesteps" in input_and_condition:
+            # JiT-native conditioning: build c and y_emb internally.
+            t = input_and_condition["timesteps"]
+            t_emb = self.t_embedder(t)
+            if self.in_context_len > 0 or self.num_classes is not None:
+                y = input_and_condition["labels"]
+                y_emb = self.y_embedder(y)
+                c = t_emb + y_emb
+            else:
+                y_emb = None
+                c = t_emb
+        else:
+            # Wrapper-managed conditioning (legacy path).
+            c = input_and_condition["condition"]
+            y_emb = input_and_condition.get("class_emb", None)
 
         # DiffusionWrapper passes BHWC, but JiT expects BCHW (Conv2d).
         x = x.permute(0, 3, 1, 2)
@@ -376,10 +460,13 @@ class JiT(nn.Module):
         added_context = False
         for i, block in enumerate(self.blocks):
             if self.in_context_len > 0 and i == self.in_context_start:
-                # DiffusionWrapper passes the raw label embedding under "class_emb" so that
-                # in-context tokens carry only class identity, matching the JiT reference.
-                y_emb = input_and_condition["class_emb"]
-
+                if y_emb is None:
+                    raise RuntimeError(
+                        "JiT.forward: in-context cls tokens are configured "
+                        "(in_context_len > 0) but no class embedding was "
+                        "provided.  Either set num_classes=None or pass "
+                        "'class_emb' / 'labels' in the input dict."
+                    )
                 in_context_tokens = y_emb.unsqueeze(1).repeat(1, self.in_context_len, 1)
                 in_context_tokens += self.in_context_posemb
                 x = torch.cat([in_context_tokens, x], dim=1)

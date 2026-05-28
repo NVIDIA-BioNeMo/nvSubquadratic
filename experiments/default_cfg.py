@@ -228,6 +228,15 @@ class DiffusionConfig:
     ema_decay: float = 0.9995
     ema_update_every: int = 1
     ema_warmup_steps: int = 5_000
+    # Optional second EMA tracker (JiT-style ``ema_decay2=0.9996``).  When
+    # set, the wrapper maintains a second EMA in addition to the primary
+    # ``ema_decay`` one.  The second EMA is **not** used for sampling — it
+    # is purely tracked + checkpointed for parity with JiT's checkpoint
+    # format and to enable post-hoc Karras-style EMA interpolation
+    # (Karras et al., "Analyzing and Improving the Training Dynamics of
+    # Diffusion Models", CVPR 2024) without retraining.  ``None`` (default)
+    # disables it.
+    ema_decay_secondary: Optional[float] = None
 
     # Classifier-free guidance settings, enabled by default.
     use_classifier_free_guidance: bool = True
@@ -238,6 +247,31 @@ class DiffusionConfig:
     # CFG time interval: apply guidance only within [start, end].
     cfg_interval_start: float = 0.1
     cfg_interval_end: float = 1.0
+
+    # Loss-target clamping near t -> 1.  When True, the v-space target is
+    # computed as ``(x - z) / (1 - t).clamp_min(t_eps_clamp)`` — matching
+    # JiT's ``denoiser.py`` exactly.  When False (default), the target is
+    # ``x - eps`` (unclamped), which only diverges from JiT for
+    # ``1 - t < t_eps_clamp`` (~6% of samples under the default
+    # logit-normal prior).  Set to True for byte-exact JiT replication.
+    clamp_target_v: bool = False
+    # Floor used for the ``(1 - t)`` clamp in the v-loss denominator
+    # (both predicted_v and, when ``clamp_target_v=True``, target_v).
+    # Matches JiT's ``--t_eps 5e-2`` default.
+    t_eps_clamp: float = 0.05
+
+    # When True, the wrapper bypasses its own time-embedding MLP and
+    # class-label embedding table and instead passes the **raw**
+    # ``timesteps`` and ``labels`` tensors to the network through the
+    # input dict.  The network is then expected to expose its own
+    # time/label embedders.  This is required for byte-exact JiT
+    # replication (JiT's ``TimestepEmbedder`` has a ``Linear(256, H)``
+    # inner shape that differs from the wrapper's default
+    # ``Linear(2H, 2H) -> Linear(2H, H)``) and is also strictly cleaner
+    # for any network that wants to use its own conditioning pipeline.
+    # Default ``False`` preserves the legacy behaviour for all other
+    # network types (CCNN-Hyena, etc.).
+    network_handles_conditioning: bool = False
 
     # Online FID evaluation (JiT-style).
     fid_online_jit: bool = False

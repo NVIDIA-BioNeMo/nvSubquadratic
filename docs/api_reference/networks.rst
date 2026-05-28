@@ -52,7 +52,6 @@ factory functions for the published model sizes.
    ~networks.jit.TimestepEmbedder
    ~networks.jit.LabelEmbedder
    ~networks.jit.Attention
-   ~networks.jit.SwiGLUFFN
    ~networks.jit.FinalLayer
 
 .. autosummary::
@@ -68,7 +67,11 @@ factory functions for the published model sizes.
    ~networks.jit.JiT_H_16
    ~networks.jit.JiT_H_32
 
-JiT helpers (rotary embeddings, RMSNorm, sin-cos position embeddings):
+JiT helpers (rotary embeddings, sin-cos position embeddings).  ``RMSNorm``
+is re-exported from :mod:`nvsubquadratic.modules.rms_norm` for backwards
+compatibility, and the SwiGLU FFN is provided by the project's
+:class:`~nvsubquadratic.modules.mlp.MLP` (``activation="swiglu"``) via the
+private helper :func:`nvsubquadratic.networks.jit._make_swiglu_mlp`:
 
 .. autosummary::
    :toctree: generated/
@@ -76,7 +79,6 @@ JiT helpers (rotary embeddings, RMSNorm, sin-cos position embeddings):
 
    ~networks.jit_utils.VisionRotaryEmbedding
    ~networks.jit_utils.VisionRotaryEmbeddingFast
-   ~networks.jit_utils.RMSNorm
 
 .. autosummary::
    :toctree: generated/

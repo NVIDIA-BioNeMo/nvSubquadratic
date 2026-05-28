@@ -56,6 +56,11 @@ class DiffusionWrapper(LightningWrapperBase):
         self.cfg_interval_start = float(diffusion_cfg.cfg_interval_start)
         self.cfg_interval_end = float(diffusion_cfg.cfg_interval_end)
 
+        # JiT-exactness knobs (all default to the legacy wrapper behaviour).
+        self.clamp_target_v = bool(diffusion_cfg.clamp_target_v)
+        self.t_eps_clamp = float(diffusion_cfg.t_eps_clamp)
+        self.network_handles_conditioning = bool(diffusion_cfg.network_handles_conditioning)
+
         hidden_dim = getattr(network, "hidden_dim", None)
         if hidden_dim is None:
             raise AttributeError("DiffusionWrapper requires the network to expose a 'hidden_dim' attribute.")
@@ -67,13 +72,19 @@ class DiffusionWrapper(LightningWrapperBase):
         self.timestep_dim = timestep_dim
         self.max_period = float(diffusion_cfg.max_period)
 
-        # Time conditioning pipeline: sinusoidal embedding followed by an MLP so the backbone always
-        # receives conditioning in its native hidden dimension.
-        self.time_mlp = torch.nn.Sequential(
-            torch.nn.Linear(self.timestep_dim, hidden_dim * 2),
-            torch.nn.SiLU(),
-            torch.nn.Linear(hidden_dim * 2, hidden_dim),
-        )
+        # Time conditioning pipeline.  When ``network_handles_conditioning=True``,
+        # the wrapper does not build its own time MLP — the network is expected
+        # to embed raw timesteps internally.  Otherwise (legacy default), the
+        # wrapper builds a sinusoidal embedding + 2-layer MLP that maps to
+        # ``hidden_dim``.
+        if self.network_handles_conditioning:
+            self.time_mlp = None
+        else:
+            self.time_mlp = torch.nn.Sequential(
+                torch.nn.Linear(self.timestep_dim, hidden_dim * 2),
+                torch.nn.SiLU(),
+                torch.nn.Linear(hidden_dim * 2, hidden_dim),
+            )
 
         # Sampling and logging configuration.
         self.example_input_shape: Optional[torch.Size] = None
@@ -113,13 +124,18 @@ class DiffusionWrapper(LightningWrapperBase):
             if self.num_classes is None or self.num_classes <= 0:
                 raise ValueError("diffusion.num_classes must be a positive integer when enabling class conditioning.")
             # We dedicate one additional embedding slot to represent the unconditional branch.
-            # This embedding is learned during training (initialized to zero).
+            # When ``network_handles_conditioning=True`` the network is expected to expose its
+            # own embedding table of shape ``(num_classes + 1, hidden_dim)`` and we route the
+            # null-label index through it directly; the wrapper only needs to know the index.
             self.null_label_index = self.num_classes
-            self.label_embed = torch.nn.Embedding(self.num_classes + 1, hidden_dim)
-            torch.nn.init.normal_(self.label_embed.weight, mean=0.0, std=0.02)
-            with torch.no_grad():
-                # Initialize the unconditional embedding to zero.
-                self.label_embed.weight[self.null_label_index].zero_()
+            if self.network_handles_conditioning:
+                self.label_embed = None  # network owns the embedding table
+            else:
+                self.label_embed = torch.nn.Embedding(self.num_classes + 1, hidden_dim)
+                torch.nn.init.normal_(self.label_embed.weight, mean=0.0, std=0.02)
+                with torch.no_grad():
+                    # Initialize the unconditional embedding to zero.
+                    self.label_embed.weight[self.null_label_index].zero_()
         else:
             self.null_label_index = None
             self.label_embed = None
@@ -129,7 +145,11 @@ class DiffusionWrapper(LightningWrapperBase):
         self.ema_decay = float(diffusion_cfg.ema_decay)
         self.ema_update_every = int(diffusion_cfg.ema_update_every)
         self.ema_warmup_steps = int(diffusion_cfg.ema_warmup_steps)
+        self.ema_decay_secondary = (
+            float(diffusion_cfg.ema_decay_secondary) if diffusion_cfg.ema_decay_secondary is not None else None
+        )
         self._ema_model: Optional[torch.nn.Module] = None
+        self._ema_model_secondary: Optional[torch.nn.Module] = None
         self._ema_has_been_updated = False
         if self.ema_enabled:
             # Create a shadow copy of the network that does not receive gradients.
@@ -137,11 +157,29 @@ class DiffusionWrapper(LightningWrapperBase):
             for p in self._ema_model.parameters():
                 p.detach_()
                 p.requires_grad_(False)
+            # Optional second EMA at a different decay (JiT-style ema_decay2).
+            # Not used for sampling — purely tracked for parity with JiT and
+            # for Karras-style post-hoc EMA interpolation experiments.
+            if self.ema_decay_secondary is not None:
+                self._ema_model_secondary = copy.deepcopy(self.network)
+                for p in self._ema_model_secondary.parameters():
+                    p.detach_()
+                    p.requires_grad_(False)
 
         # Allow Hugging Face-backed models to register themselves for callbacks.
         register_fn = getattr(network, "hf_register_diffusion_wrapper", None)
         if callable(register_fn):
             register_fn(self)
+
+        # If the network exposes a hook for internal conditioning (e.g.
+        # ``nvsubquadratic.networks.jit.JiT.enable_internal_conditioning``),
+        # call it whenever the wrapper is configured to delegate conditioning
+        # to the network.  This unfreezes any time/label embedders the
+        # network keeps frozen by default for the legacy path.
+        if self.network_handles_conditioning:
+            enable_fn = getattr(self.network, "enable_internal_conditioning", None)
+            if callable(enable_fn):
+                enable_fn()
 
     @staticmethod
     def _channels_last_to_first(tensor: torch.Tensor) -> torch.Tensor:
@@ -181,11 +219,111 @@ class DiffusionWrapper(LightningWrapperBase):
         return embedding
 
     def _noiselevel_embedding(self, timesteps: torch.Tensor) -> torch.Tensor:
-        """Embed continuous timesteps t ∈ [0, 1] into the model hidden dimension."""
+        """Embed continuous timesteps t ∈ [0, 1] into the model hidden dimension.
+
+        Only called when ``network_handles_conditioning=False``; otherwise the
+        network builds its own time embedding from the raw timesteps.
+        """
+        assert self.time_mlp is not None, (
+            "_noiselevel_embedding was called but the wrapper has no time_mlp "
+            "(``network_handles_conditioning=True``).  The network is expected "
+            "to embed timesteps itself in this mode."
+        )
         target_dtype = self.time_mlp[0].weight.dtype
         # Scale t into the sinusoidal range expected by time_mlp (matching JiT continuous-time).
         scaled_t = timesteps.to(target_dtype).clamp_(0.0, 1.0) * float(self.num_train_timesteps)
         return self.time_mlp(self._timestep_embedding(scaled_t))
+
+    def _resolve_labels(
+        self,
+        timesteps: torch.Tensor,
+        *,
+        labels: Optional[torch.Tensor] = None,
+        unconditional: bool = False,
+        dropout_mask: Optional[torch.Tensor] = None,
+    ) -> Optional[torch.Tensor]:
+        """Apply CFG dropout / unconditional override to a batch of labels.
+
+        Returns the final integer label tensor that should be fed to the
+        embedding table (either the wrapper's ``label_embed`` or the
+        network's own embedder when ``network_handles_conditioning=True``).
+        Returns ``None`` when class conditioning is disabled.
+
+        The logic is identical to :meth:`_condition_from_timesteps`'s label
+        handling, factored out so both wrapper-managed and
+        network-managed conditioning paths can share it.
+        """
+        if not self.class_conditioning:
+            return None
+        if labels is None:
+            if unconditional:
+                return torch.full_like(timesteps, self.null_label_index, dtype=torch.long)
+            raise ValueError(
+                "Class conditioning requested but no labels were provided. "
+                "Ensure the datamodule keeps labels (drop_labels=False) and the caller forwards them."
+            )
+        labels_to_embed = labels.to(timesteps.device, dtype=torch.long).view(-1).clone()
+        if unconditional:
+            labels_to_embed.fill_(self.null_label_index)
+        if dropout_mask is not None:
+            if dropout_mask.shape != labels_to_embed.shape:
+                raise ValueError("dropout_mask must match the shape of the labels tensor.")
+            labels_to_embed[dropout_mask] = self.null_label_index
+        if (labels_to_embed < 0).any():
+            raise ValueError("Encountered negative labels while class conditioning; check datamodule configuration.")
+        if (labels_to_embed > self.null_label_index).any():
+            raise ValueError("Label index out of range for classifier-free guidance.")
+        return labels_to_embed
+
+    def _build_net_input(
+        self,
+        z_cl: torch.Tensor,
+        timesteps: torch.Tensor,
+        *,
+        labels: Optional[torch.Tensor] = None,
+        unconditional: bool = False,
+        dropout_mask: Optional[torch.Tensor] = None,
+    ) -> dict[str, torch.Tensor]:
+        """Build the dict passed to the network for a single forward call.
+
+        Two layouts are supported:
+
+        - **Wrapper-managed conditioning** (default,
+          ``network_handles_conditioning=False``): the wrapper builds the
+          combined ``condition`` (time + label embedding) and the raw
+          ``class_emb`` (label embedding only) and includes them in the
+          returned dict.
+        - **Network-managed conditioning**
+          (``network_handles_conditioning=True``): the wrapper passes the
+          raw ``timesteps`` and ``labels`` tensors instead and lets the
+          network embed them internally.  Required for byte-exact JiT
+          replication.
+
+        Both layouts always include ``"input"`` (the noised image,
+        channels-last).
+        """
+        if self.network_handles_conditioning:
+            labels_for_net = self._resolve_labels(
+                timesteps,
+                labels=labels,
+                unconditional=unconditional,
+                dropout_mask=dropout_mask,
+            )
+            net_input: dict[str, torch.Tensor] = {"input": z_cl, "timesteps": timesteps}
+            if labels_for_net is not None:
+                net_input["labels"] = labels_for_net
+            return net_input
+        else:
+            condition, class_emb = self._condition_from_timesteps(
+                timesteps,
+                labels=labels,
+                unconditional=unconditional,
+                dropout_mask=dropout_mask,
+            )
+            net_input = {"input": z_cl, "condition": condition}
+            if class_emb is not None:
+                net_input["class_emb"] = class_emb
+            return net_input
 
     def _condition_from_timesteps(
         self,
@@ -300,7 +438,6 @@ class DiffusionWrapper(LightningWrapperBase):
         # 3. Mix clean image and noise to get z_t.
         t_b = timesteps.view(batch_size, 1, 1, 1)
         z_bchw = t_b * images_bchw + (1.0 - t_b) * eps_bchw
-        target_v = images_bchw - eps_bchw
 
         # 4. Predict x from z_t and conditioning.
         z_cl = self._channels_first_to_last(z_bchw)
@@ -308,20 +445,27 @@ class DiffusionWrapper(LightningWrapperBase):
         if self.class_conditioning and self.condition_dropout_prob > 0.0:
             dropout_mask = torch.rand(batch_size, device=self.device) < self.condition_dropout_prob
 
-        condition, class_emb = self._condition_from_timesteps(
+        net_input = self._build_net_input(
+            z_cl,
             timesteps,
             labels=labels_tensor,
             dropout_mask=dropout_mask,
         )
-        net_input = {"input": z_cl, "condition": condition}
-        if class_emb is not None:
-            net_input["class_emb"] = class_emb
         prediction = self.network(net_input)["logits"]
         prediction_bchw = self._channels_last_to_first(prediction)
 
         # 5. JiT objective: network predicts x, loss is applied in v-space.
-        denominator = torch.clamp(1.0 - t_b, min=0.05)
+        denominator = torch.clamp(1.0 - t_b, min=self.t_eps_clamp)
         predicted_v = (prediction_bchw - z_bchw) / denominator
+        if self.clamp_target_v:
+            # JiT-exact: target v is also divided by the clamped (1 - t).
+            # When 1 - t > t_eps_clamp this reduces algebraically to x - eps;
+            # only differs when 1 - t < t_eps_clamp (~6% of samples under
+            # the default logit-normal prior with p_mean=-0.8, p_std=0.8).
+            target_v = (images_bchw - z_bchw) / denominator
+        else:
+            # Legacy behaviour: target is the unclamped (x - eps).
+            target_v = images_bchw - eps_bchw
         loss = F.mse_loss(predicted_v, target_v)
 
         if return_clean_images:
@@ -374,6 +518,9 @@ class DiffusionWrapper(LightningWrapperBase):
         if self.ema_enabled and self._ema_model is not None:
             self._ema_model.to(self.device)
             self._ema_model.eval()
+        if self._ema_model_secondary is not None:
+            self._ema_model_secondary.to(self.device)
+            self._ema_model_secondary.eval()
 
     def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
         """Update EMA parameters at the configured interval."""
@@ -393,6 +540,15 @@ class DiffusionWrapper(LightningWrapperBase):
                     if ema_buffer.shape != buffer.shape:
                         ema_buffer.resize_as_(buffer)
                     ema_buffer.copy_(buffer)
+                # Optional second EMA at a different decay (JiT-style).
+                if self._ema_model_secondary is not None:
+                    decay2 = self.ema_decay_secondary
+                    for ema_param, param in zip(self._ema_model_secondary.parameters(), self.network.parameters()):
+                        ema_param.mul_(decay2).add_(param, alpha=1.0 - decay2)
+                    for ema_buffer, buffer in zip(self._ema_model_secondary.buffers(), self.network.buffers()):
+                        if ema_buffer.shape != buffer.shape:
+                            ema_buffer.resize_as_(buffer)
+                        ema_buffer.copy_(buffer)
                 self._ema_has_been_updated = True
 
     def on_validation_epoch_end(self, outputs=None):
@@ -533,49 +689,29 @@ class DiffusionWrapper(LightningWrapperBase):
             <= max(self.cfg_interval_start, self.cfg_interval_end)
         )
 
+        # Network expects channels-last in 'input'.
+        x_cl = self._channels_first_to_last(x)
         pred_bchw = None
 
         if do_cfg:
-            # CFG
-            cond_uncond, class_emb_uncond = self._condition_from_timesteps(
-                t_batch,
-                labels=labels,
-                unconditional=True,
-            )
-            cond_cond, class_emb_cond = self._condition_from_timesteps(
-                t_batch,
-                labels=labels,
-            )
-
-            # Note: Model expects channels-last in 'input'
-            x_cl = self._channels_first_to_last(x)
-
-            inp_uncond = {"input": x_cl, "condition": cond_uncond}
-            if class_emb_uncond is not None:
-                inp_uncond["class_emb"] = class_emb_uncond
-            inp_cond = {"input": x_cl, "condition": cond_cond}
-            if class_emb_cond is not None:
-                inp_cond["class_emb"] = class_emb_cond
-
+            # CFG: build two net_input dicts, one with the requested labels
+            # and one with the null label for the unconditional pass.
+            inp_uncond = self._build_net_input(x_cl, t_batch, labels=labels, unconditional=True)
+            inp_cond = self._build_net_input(x_cl, t_batch, labels=labels)
             out_uncond = model(inp_uncond)["logits"]
             out_cond = model(inp_cond)["logits"]
 
             pred_uncond = self._channels_last_to_first(out_uncond)
             pred_cond = self._channels_last_to_first(out_cond)
-
             pred_bchw = pred_uncond + self.guidance_scale * (pred_cond - pred_uncond)
         else:
-            # Standard forward
-            condition, class_emb = self._condition_from_timesteps(t_batch, labels=labels)
-            x_cl = self._channels_first_to_last(x)
-            inp = {"input": x_cl, "condition": condition}
-            if class_emb is not None:
-                inp["class_emb"] = class_emb
+            # Standard forward, no CFG.
+            inp = self._build_net_input(x_cl, t_batch, labels=labels)
             out = model(inp)["logits"]
             pred_bchw = self._channels_last_to_first(out)
 
         # JiT mode predicts x and converts to velocity with denominator clipping.
-        denominator = max(1.0 - t_scalar, 0.05)
+        denominator = max(1.0 - t_scalar, self.t_eps_clamp)
         return (pred_bchw - x) / denominator
 
     def _heun_step(self, model, x, t, dt, labels):

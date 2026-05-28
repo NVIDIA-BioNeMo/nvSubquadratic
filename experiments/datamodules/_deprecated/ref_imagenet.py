@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Tuple
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
+from PIL import Image
 from timm.data import Mixup
 from timm.data.auto_augment import rand_augment_transform
 from timm.data.random_erasing import RandomErasing
@@ -15,6 +17,57 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as tv_datasets
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
+
+
+def _center_crop_arr_adm(pil_image: Image.Image, image_size: int) -> Image.Image:
+    """Deterministic ADM/JiT center-crop with multi-stage downsampling.
+
+    Direct port of ``center_crop_arr`` from
+    `guided-diffusion <https://github.com/openai/guided-diffusion/blob/main/guided_diffusion/image_datasets.py>`__,
+    which is the exact preprocessing used by JiT
+    (``~/projects/JiT/util/crop.py::center_crop_arr``):
+
+    1. Box-downscale by 2× repeatedly until the shorter side is ``< 2 * image_size``.
+       Box resampling preserves high-frequency content better than a single large
+       bicubic downscale.
+    2. Bicubic resize so the shorter side equals exactly ``image_size``.
+    3. Symmetric center crop to ``(image_size, image_size)``.
+
+    This is the "ImageNet eval preprocessing" that the diffusion community has
+    settled on (ADM / Latent Diffusion / DiT / MAR / JiT all use it).
+    """
+    while min(*pil_image.size) >= 2 * image_size:
+        pil_image = pil_image.resize(
+            tuple(x // 2 for x in pil_image.size),
+            resample=Image.BOX,
+        )
+    scale = image_size / min(*pil_image.size)
+    pil_image = pil_image.resize(
+        tuple(round(x * scale) for x in pil_image.size),
+        resample=Image.BICUBIC,
+    )
+    arr = np.array(pil_image)
+    crop_y = (arr.shape[0] - image_size) // 2
+    crop_x = (arr.shape[1] - image_size) // 2
+    return Image.fromarray(arr[crop_y : crop_y + image_size, crop_x : crop_x + image_size])
+
+
+class _CenterCropArrADM:
+    """Picklable wrapper around :func:`_center_crop_arr_adm` for ``transforms.Compose``.
+
+    A plain ``transforms.Lambda(...)`` over a closure captures
+    ``self.image_size`` and breaks worker pickling on ``fork``-mode dataloaders;
+    a module-level callable class avoids that and stays small.
+    """
+
+    def __init__(self, image_size: int) -> None:
+        self.image_size = int(image_size)
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        return _center_crop_arr_adm(img, self.image_size)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(image_size={self.image_size})"
 
 
 # Pre-computed statistics for diffusion-ready 32x32 crops (10k sample estimate).
@@ -156,6 +209,7 @@ class ImageNetDataModule(pl.LightningDataModule):
         image_size: int = 256,
         final_image_size: Optional[int] = None,
         center_crop: bool = True,
+        train_crop_mode: Literal["random_resized", "center"] = "random_resized",
         drop_labels: bool = True,
         hf_dataset_name: str = "imagenet-1k",
         hf_dataset_config: Optional[str] = None,
@@ -184,6 +238,9 @@ class ImageNetDataModule(pl.LightningDataModule):
         self.image_size = image_size
         self.final_image_size = final_image_size or image_size
         self.center_crop = center_crop
+        if train_crop_mode not in ("random_resized", "center"):
+            raise ValueError(f"train_crop_mode must be 'random_resized' or 'center'; got {train_crop_mode!r}.")
+        self.train_crop_mode = train_crop_mode
         self.drop_labels = drop_labels
         self.hf_dataset_name = hf_dataset_name
         self.hf_dataset_config = hf_dataset_config
@@ -253,13 +310,28 @@ class ImageNetDataModule(pl.LightningDataModule):
         ops: list[transforms.Transform] = []
 
         if train:
-            ops.append(
-                RandomResizedCropAndInterpolation(
-                    self.image_size,
-                    scale=(0.08, 1.0),
-                    interpolation="bicubic",
+            # ``train_crop_mode`` selects the spatial-augmentation strategy:
+            #
+            # - ``"random_resized"`` (legacy default): aggressive scale jitter
+            #   via ``RandomResizedCrop(scale=(0.08, 1.0))`` — the standard
+            #   classification recipe.  Adds substantial implicit scale
+            #   augmentation; appropriate for classification but **not** for
+            #   matching diffusion papers that use deterministic crops.
+            # - ``"center"``: JiT/ADM/DiT-style deterministic ``center_crop_arr``
+            #   (multi-stage Box-downscale then Bicubic to exact ``image_size``,
+            #   then symmetric center crop).  Use this for byte-exact replication
+            #   of any diffusion paper that uses the standard ImageNet eval
+            #   preprocessing for training (essentially all of them since ADM).
+            if self.train_crop_mode == "random_resized":
+                ops.append(
+                    RandomResizedCropAndInterpolation(
+                        self.image_size,
+                        scale=(0.08, 1.0),
+                        interpolation="bicubic",
+                    )
                 )
-            )
+            else:  # "center"
+                ops.append(_CenterCropArrADM(self.image_size))
 
             ops.append(transforms.RandomHorizontalFlip())
 

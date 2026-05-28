@@ -4,9 +4,18 @@
 
 Ported from the reference JiT implementation at
 https://github.com/LTH14/JiT.  Contains the rotary-embedding primitives
-(:class:`VisionRotaryEmbedding`, :class:`VisionRotaryEmbeddingFast`),
-the local :class:`RMSNorm`, and the 1D/2D sin-cos positional-embedding
-helpers used to seed the patch tokens.
+(:class:`VisionRotaryEmbedding`, :class:`VisionRotaryEmbeddingFast`) and
+the 1D/2D sin-cos positional-embedding helpers used to seed the patch
+tokens.
+
+RMSNorm formerly lived in this file as a hand-rolled port of JiT's
+``util/model_util.py::RMSNorm``.  It has been removed in favour of
+:class:`nvsubquadratic.modules.rms_norm.RMSNorm` — the math is
+bit-identical to the JiT reference (verified in
+``tests/networks/test_jit_modules.py``) and the project's module
+additionally tags ``weight._no_weight_decay = True`` and dispatches to a
+fused QuACK kernel on supported GPUs.  Import ``RMSNorm`` directly from
+``nvsubquadratic.modules.rms_norm`` if you need it.
 """
 
 from math import pi
@@ -161,24 +170,6 @@ class VisionRotaryEmbeddingFast(nn.Module):
     def forward(self, t):
         """Apply precomputed flattened rotary embedding values to ``t``."""
         return t * self.freqs_cos + rotate_half(t) * self.freqs_sin
-
-
-class RMSNorm(nn.Module):
-    """Root-mean-square normalization used by JiT blocks."""
-
-    def __init__(self, hidden_size, eps=1e-6):
-        """Initialize RMSNorm parameters."""
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        """Normalize ``hidden_states`` with RMS statistics on the last dimension."""
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return (self.weight * hidden_states).to(input_dtype)
 
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0):
