@@ -341,6 +341,7 @@ scripts/slurm/cluster.env
 .env.development.local
 .env.test.local
 .env.production.local
+.cursorindexingignore
 
 # Package lock files (if using other package managers)
 package-lock.json
