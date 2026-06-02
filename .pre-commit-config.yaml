@@ -51,24 +51,14 @@ repos:
           ]
   - repo: local
     hooks:
-      - id: license-check
+      - id: license-header-check
         name: License header check
-        entry: python scripts/license_check.py
-        language: system
-        files: \.py$
-        args:
-          [
-            --check-dirs,
-            nvsubquadratic/,
-            --check-dirs,
-            tests/,
-            --check-dirs,
-            examples/,
-          ]
-        pass_filenames: false
+        entry: scripts/license_check.py
+        language: script
+        types_or: [python, rust]
+        pass_filenames: true
         always_run: false
-        description: Ensure all Python files have proper NVIDIA license headers
-        stages: [manual] # Only run license check when explicitly invoked.
+        description: Ensure all .py/.rs files have proper NVIDIA license headers (bionemo pattern).
       # Pre-push hooks disabled — GPU tests now run in CI (GitHub Actions).
       # Uncomment to re-enable local pre-push testing (requires a GPU in your dev environment).
       # - id: pytest-pre-push
