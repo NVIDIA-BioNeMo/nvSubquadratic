@@ -182,10 +182,8 @@ see the rendered docstring, or run `help(SomeClass)` in a REPL.
 
 ### CI
 
-GPU tests run automatically on pull requests via a self-hosted [Colossus](https://colossus.nvidia.com) runner.
-The runner is provisioned using the Ansible playbook at
-[gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook](https://gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook)
-— see that repo for setup instructions.
+GPU tests run automatically on pull requests via a self-hosted runner.
+Runner provisioning is maintained out-of-tree; contact the maintainers for access.
 
 ### Pre-commit Hooks
 
