@@ -25,7 +25,7 @@ jobs:
       - name: Run pre-commit (commit-stage hooks)
         run: |
           pip install pre-commit
-          # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets
+          # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets, license-header-check
           # Does NOT run pytest-pre-push / torchrun-cp-tests (those are pre-push stage)
           pre-commit run --all-files --hook-stage commit --show-diff-on-failure --color always
 
