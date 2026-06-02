@@ -36,11 +36,8 @@ project = "nvsubquadratic"
 
 
 def _read_version():
-    init_path = os.path.join(os.path.dirname(__file__), "..", "nvsubquadratic", "__init__.py")
-    for line in open(init_path):
-        if line.startswith("__version__"):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return "0.0.0"
+    version_path = os.path.join(os.path.dirname(__file__), "..", "VERSION")
+    return open(version_path).read().strip()
 
 
 version = _read_version()

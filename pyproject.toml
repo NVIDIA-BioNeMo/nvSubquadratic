@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nvsubquadratic"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A unified PyTorch-native library for subquadratic alternatives to quadratic attention methods with optimized CUDA kernels."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -25,7 +25,7 @@ keywords = [
     "ckconv",
     "fft",
     "subquadratic-attention",
-    "attention"
+    "attention",
     "long-context",
     "cuda",
 ]
@@ -72,6 +72,9 @@ dependencies = [
 # Optional: use QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
 # On Ampere and older GPUs the kernel is not available; RMSNorm uses PyTorch fallback.
 quack = ["quack-kernels"]
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
 
 [tool.setuptools.packages.find]
 where = ["."]
