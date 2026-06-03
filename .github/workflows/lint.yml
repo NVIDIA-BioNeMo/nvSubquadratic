@@ -1,0 +1,79 @@
+name: Lint
+
+on:
+  pull_request:
+    paths:
+      - "nvsubquadratic/**"
+      - "tests/**"
+      - "experiments/**"
+      - "examples/**"
+      - "scripts/**"
+      - "benchmarks/**"
+      - "docs/**"
+      - "**/*.py"
+      - "**/*.rs"
+      - "**/*.pyi"
+      - "**/*.ipynb"
+      - "**/*.yml"
+      - "**/*.yaml"
+      - "**/*.toml"
+      - "**/*.md"
+      - "**/*.cfg"
+      - "**/*.ini"
+      - ".pre-commit-config.yaml"
+      - ".secrets.baseline"
+      - ".secrets-nb.baseline"
+      - "pyproject.toml"
+      - ".github/workflows/lint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "nvsubquadratic/**"
+      - "tests/**"
+      - "experiments/**"
+      - "examples/**"
+      - "scripts/**"
+      - "benchmarks/**"
+      - "docs/**"
+      - "**/*.py"
+      - "**/*.rs"
+      - "**/*.pyi"
+      - "**/*.ipynb"
+      - "**/*.yml"
+      - "**/*.yaml"
+      - "**/*.toml"
+      - "**/*.md"
+      - "**/*.cfg"
+      - "**/*.ini"
+      - ".pre-commit-config.yaml"
+      - ".secrets.baseline"
+      - ".secrets-nb.baseline"
+      - "pyproject.toml"
+      - ".github/workflows/lint.yml"
+  workflow_dispatch:
+
+# Cancel in-flight runs for the same PR/branch when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on GitHub-hosted runner — no GPU needed, fast feedback.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run pre-commit (commit-stage hooks)
+        run: |
+          pip install pre-commit
+          # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets, license-header-check
+          # Does NOT run pytest-pre-push / torchrun-cp-tests (those are pre-push stage)
+          pre-commit run --all-files --hook-stage commit --show-diff-on-failure --color always
