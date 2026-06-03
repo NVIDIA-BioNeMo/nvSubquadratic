@@ -19,7 +19,17 @@ Currently supporting multi-dimensional Hyena operators with optimized CUDA
 kernels.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
+
+try:
+    __version__ = _pkg_version("nvsubquadratic")
+except PackageNotFoundError:
+    # Fallback for editable / source checkouts where the package isn't installed.
+    from pathlib import Path as _Path
+
+    __version__ = (_Path(__file__).resolve().parent.parent / "VERSION").read_text().strip()
 
 __all__ = [
     "__version__",

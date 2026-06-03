@@ -1,42 +1,53 @@
-name: CI
+name: GPU tests
 
 on:
   pull_request:
+    paths:
+      - "nvsubquadratic/**"
+      - "tests/**"
+      - "benchmarks/**"
+      - "examples/**"
+      - "experiments/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "Pipfile"
+      - "Pipfile.lock"
+      - "requirements-dev.txt"
+      - "Dockerfile"
+      - "Dockerfile.*"
+      - ".github/workflows/gpu-tests.yml"
   push:
     branches: [main]
+    paths:
+      - "nvsubquadratic/**"
+      - "tests/**"
+      - "benchmarks/**"
+      - "examples/**"
+      - "experiments/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "Pipfile"
+      - "Pipfile.lock"
+      - "requirements-dev.txt"
+      - "Dockerfile"
+      - "Dockerfile.*"
+      - ".github/workflows/gpu-tests.yml"
+  workflow_dispatch:
 
 # Cancel in-flight runs for the same PR/branch when a new commit is pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  # ── Lint ────────────────────────────────────────────────────────────────────
-  # Runs on GitHub-hosted runner — no GPU needed, fast feedback.
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Run pre-commit (commit-stage hooks)
-        run: |
-          pip install pre-commit
-          # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets, license-header-check
-          # Does NOT run pytest-pre-push / torchrun-cp-tests (those are pre-push stage)
-          pre-commit run --all-files --hook-stage commit --show-diff-on-failure --color always
-
-  # ── GPU tests ───────────────────────────────────────────────────────────────
-  # Runs on a self-hosted Colossus machine provisioned via the Ansible playbook at
-  # https://gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook
+  # Runs on a self-hosted Colossus GPU runner; provisioning is out-of-tree.
   # GHCR registry cache means even a fresh runner skips the Apex compile (~30 min)
   # by pulling cached layers. Warm runs (code-only changes) are ~5 min.
   gpu-tests:
     runs-on: [self-hosted, gpu, colossus]
-    needs: lint
     timeout-minutes: 120
     permissions:
       contents: read
