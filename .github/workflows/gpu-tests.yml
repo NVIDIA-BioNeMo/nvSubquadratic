@@ -1,37 +1,14 @@
 name: GPU tests
 
+# `gpu-tests` is a *required* status check on `main` (repo ruleset). It runs on
+# every PR (no path filter) so the required status is always reported — a
+# path-filtered required check never reports on non-matching PRs and blocks
+# merge forever ("Expected — waiting for status to be reported").
+
 on:
   pull_request:
-    paths:
-      - "nvsubquadratic/**"
-      - "tests/**"
-      - "benchmarks/**"
-      - "examples/**"
-      - "experiments/**"
-      - "scripts/**"
-      - "pyproject.toml"
-      - "Pipfile"
-      - "Pipfile.lock"
-      - "requirements-dev.txt"
-      - "Dockerfile"
-      - "Dockerfile.*"
-      - ".github/workflows/gpu-tests.yml"
   push:
     branches: [main]
-    paths:
-      - "nvsubquadratic/**"
-      - "tests/**"
-      - "benchmarks/**"
-      - "examples/**"
-      - "experiments/**"
-      - "scripts/**"
-      - "pyproject.toml"
-      - "Pipfile"
-      - "Pipfile.lock"
-      - "requirements-dev.txt"
-      - "Dockerfile"
-      - "Dockerfile.*"
-      - ".github/workflows/gpu-tests.yml"
   workflow_dispatch:
 
 # Cancel in-flight runs for the same PR/branch when a new commit is pushed

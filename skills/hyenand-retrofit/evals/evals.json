@@ -1,0 +1,103 @@
+{
+  "skill_name": "hyenand-retrofit",
+  "evals": [
+    {
+      "id": 1,
+      "name": "native-pure-swap",
+      "prompt": "I have an attention-based config at examples/vit5_imagenet/v5_patch/attention_patch16.py (relative to the repo root). Make a sibling file that swaps attention for pure HyenaND. Use the repo's existing builder abstractions — don't reinvent the Hyena module. Write the output sibling file into the same directory as the original.",
+      "expected_output": "A new file hyena_patch16.py (or similar) in the v5_patch/ directory that calls build_hyena_net instead of build_attention_net and does not set compile_compatible_fftconv=False. Should NOT include an inline __main__ stub — the canonical sibling files in this repo are bare config shims.",
+      "files": ["examples/vit5_imagenet/v5_patch/attention_patch16.py", "examples/vit5_imagenet/v5_patch/_base_config.py"],
+      "ground_truth": "examples/vit5_imagenet/v5_patch/hyena_patch16.py",
+      "assertions": [
+        {"text": "Output file imports build_hyena_net from v5_patch._base_config", "check": "grep_output:from examples.vit5_imagenet.v5_patch._base_config import.*build_hyena_net"},
+        {"text": "Output file does NOT import build_attention_net", "check": "grep_output_negative:from examples.vit5_imagenet.v5_patch._base_config import.*build_attention_net"},
+        {"text": "Output file calls build_hyena_net(PATCH_SIZE) inside get_config", "check": "grep_output:build_hyena_net\\s*\\(\\s*PATCH_SIZE"},
+        {"text": "Output file does NOT set compile_compatible_fftconv=False", "check": "grep_output_negative:compile_compatible_fftconv\\s*=\\s*False"},
+        {"text": "Output file does not modify the original attention_patch16.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "native-hybrid",
+      "prompt": "I have a pure-attention config at examples/vit5_imagenet/vit5_hybrid/full_attention.py (relative to the repo root). I want to produce a hybrid HyenaND+attention version using the paper-recommended HHHA pattern (3 Hyena blocks followed by 1 attention, repeated for the 12 blocks). Write a sibling file. Use the repo's existing build_hybrid_net builder.",
+      "expected_output": "A new file (e.g., hybrid_hhha.py) in the vit5_hybrid/ directory that imports build_hybrid_net, defines LAYER_PATTERN = 'HHHA' * 3 (or equivalent multiplication of NUM_BLOCKS // 4), calls build_hybrid_net with layer_pattern=LAYER_PATTERN. Should NOT include an inline __main__ stub.",
+      "files": ["examples/vit5_imagenet/vit5_hybrid/full_attention.py", "examples/vit5_imagenet/vit5_hybrid/_base_config.py"],
+      "ground_truth": "examples/vit5_imagenet/vit5_hybrid/hybrid_hhha.py",
+      "assertions": [
+        {"text": "Output file imports build_hybrid_net", "check": "grep_output:from examples.vit5_imagenet.vit5_hybrid._base_config import.*build_hybrid_net"},
+        {"text": "Output file defines a LAYER_PATTERN variable", "check": "grep_output:LAYER_PATTERN\\s*="},
+        {"text": "LAYER_PATTERN contains the substring 'HHHA'", "check": "grep_output:HHHA"},
+        {"text": "Output file passes layer_pattern to build_hybrid_net", "check": "grep_output:build_hybrid_net\\s*\\([^)]*layer_pattern"},
+        {"text": "Output file does not modify the original full_attention.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "foreign-timm-vit",
+      "prompt": "I have a tiny standalone PyTorch ViT (not using nvsubquadratic conventions) at skills/hyenand-retrofit/evals/inputs/tiny_vit_attention.py (path is relative to the repo root). It uses nn.MultiheadAttention inside its TransformerBlock. Produce a sibling file that swaps out the attention for HyenaND from the nvsubquadratic library, keeping the rest of the model intact. The model handles 64x64 RGB images with 8x8 patches (8x8 grid = 64 patches + 1 CLS = 65 tokens). Apply reasonable vision-modality defaults from the library.",
+      "expected_output": "A new file (e.g., tiny_vit_hyenand.py or tiny_vit_attention_hyenand.py) in the same inputs/ directory. It must import Hyena from nvsubquadratic, construct a Hyena mixer with vision defaults (data_dim=2, use_rope=False, per-axis Gaussian mask or identity, SiLU gate), wrap each block's .attn with an ADAPTER module that (a) handles the [B, 65, C] -> [B, 8, 8, C] reshape with CLS peeled off, (b) returns (out, None) so `h, _ = self.attn(...)` keeps working, (c) swallows need_weights/attn_mask kwargs. Must contain a __main__ smoke-test block that runs one forward pass.",
+      "files": ["skills/hyenand-retrofit/evals/inputs/tiny_vit_attention.py"],
+      "assertions": [
+        {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
+        {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
+        {"text": "Output file imports SIRENKernelND", "check": "grep_output:from nvsubquadratic.modules.kernels_nd import.*SIRENKernelND"},
+        {"text": "Output file references the original TinyViT class (subclass or wrap)", "check": "grep_output:TinyViT"},
+        {"text": "Output file does not enable RoPE (use_rope=False for 2D vision)", "check": "grep_output_negative:use_rope\\s*=\\s*True"},
+        {"text": "Output file uses data_dim=2", "check": "grep_output:data_dim\\s*=\\s*2"},
+        {"text": "Output file defines an adapter class (look for Adapter or Wrapper in a class name)", "check": "grep_output:class\\s+\\w*(Adapter|Wrapper|Mixer)\\w*\\("},
+        {"text": "Adapter returns a 2-tuple to match nn.MultiheadAttention contract", "check": "grep_output:return\\s+\\w+\\s*,\\s*None"},
+        {"text": "Adapter handles CLS / prefix tokens (slice before / after index 1)", "check": "grep_output:\\[:,\\s*:\\s*1\\s*\\]|\\[:,\\s*1\\s*:\\s*\\]|num_prefix_tokens"},
+        {"text": "Output file contains a __main__ smoke-test block", "check": "grep_output:if __name__"},
+        {"text": "Output file does not modify the original tiny_vit_attention.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "foreign-3d-feature-map",
+      "prompt": "I have a small standalone 3D U-Net at skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py (path relative to repo root). It has a SpatialAttention3D bottleneck module that operates on [B, C, D, H, W] channel-first feature maps and internally uses F.scaled_dot_product_attention — there is no nn.MultiheadAttention slot to swap. Produce a sibling file that replaces the bottleneck with HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The bottleneck operates on 16x16x16 feature maps with 48 channels. Apply reasonable 3D bidirectional defaults.",
+      "expected_output": "A new file (e.g., tiny_unet3d_hyenand.py) in the same inputs/ directory that imports Hyena from nvsubquadratic with data_dim=3 and uses Conv3d for the short conv. The replacement must handle the channel-first [B, C, D, H, W] -> channel-last [B, D, H, W, C] layout (feature_map host, not tokens). Must NOT slice CLS / prefix tokens. Must contain a __main__ smoke-test block.",
+      "files": ["skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py"],
+      "assertions": [
+        {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
+        {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
+        {"text": "Output file imports SIRENKernelND", "check": "grep_output:from nvsubquadratic.modules.kernels_nd import.*SIRENKernelND"},
+        {"text": "Output file uses data_dim=3", "check": "grep_output:data_dim\\s*=\\s*3"},
+        {"text": "Output file uses Conv3d for the short conv", "check": "grep_output:Conv3d"},
+        {"text": "Output file references original TinyUNet3D class", "check": "grep_output:TinyUNet3D"},
+        {"text": "Output file does NOT introduce a non-zero prefix-token count (no CLS in feature-map host)", "check": "grep_output_negative:num_prefix_tokens\\s*=\\s*[1-9]"},
+        {"text": "Output file handles channel-first <-> channel-last layout", "check": "grep_output:moveaxis|permute|rearrange"},
+        {"text": "Output file contains a __main__ smoke-test block", "check": "grep_output:if __name__"},
+        {"text": "Output file does not modify the original tiny_unet3d_attention.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "foreign-1d-causal-lm",
+      "prompt": "I have a tiny causal char-level LM at skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py (path relative to repo root). It uses causal nn.MultiheadAttention inside CausalBlock with an explicit attn_mask. Produce a sibling file that swaps the attention for HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The model processes sequences of length 256 with hidden_dim=128. Apply reasonable 1D causal defaults.",
+      "expected_output": "A new file (e.g., tiny_charlm_hyenand.py) in the same inputs/ directory that imports Hyena from nvsubquadratic with data_dim=1 and causal defaults: is_causal=True on CKConvND (NOT fft_padding='causal' — that string is rejected by CKConvND validation), use_rope=True, fft_padding='zero' (or another valid mode string), mask parametrization='exp_decay', omega_0=100. Uses Conv1d for the short conv. Wraps each block's .attn with an adapter that handles the tokens [B, T, C] layout without prefix tokens, returns (out, None) for the nn.MultiheadAttention contract, and swallows attn_mask/need_weights kwargs. Must contain a __main__ smoke-test block.",
+      "files": ["skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py"],
+      "assertions": [
+        {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
+        {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
+        {"text": "Output file imports SIRENKernelND", "check": "grep_output:from nvsubquadratic.modules.kernels_nd import.*SIRENKernelND"},
+        {"text": "Output file uses data_dim=1", "check": "grep_output:data_dim\\s*=\\s*1"},
+        {"text": "Output file uses Conv1d for the short conv", "check": "grep_output:Conv1d"},
+        {"text": "Output file enables RoPE for causal LM", "check": "grep_output:use_rope\\s*=\\s*True"},
+        {"text": "Output file sets is_causal=True on CKConvND (causal LM)", "check": "grep_output:is_causal\\s*=\\s*True"},
+        {"text": "Output file does NOT use the obsolete fft_padding='causal' value (it's rejected by CKConvND validation)", "check": "grep_output_negative:fft_padding\\s*=\\s*['\\\"]causal['\\\"]"},
+        {"text": "Output file uses exp_decay mask parametrization", "check": "grep_output:parametrization\\s*=\\s*['\\\"]exp_decay['\\\"]"},
+        {"text": "Output file uses omega_0=100 (causal default)", "check": "grep_output:omega_0\\s*=\\s*100"},
+        {"text": "Output file references original TinyCharLM class", "check": "grep_output:TinyCharLM"},
+        {"text": "Adapter returns 2-tuple to match nn.MultiheadAttention contract", "check": "grep_output:return\\s+\\w+\\s*,\\s*None"},
+        {"text": "Adapter does NOT slice CLS / prefix tokens (causal LM has no CLS)", "check": "grep_output_negative:num_prefix_tokens\\s*=\\s*[1-9]"},
+        {"text": "Output file contains a __main__ smoke-test block", "check": "grep_output:if __name__"},
+        {"text": "Output file does not modify the original tiny_charlm_attention.py", "check": "original_unmodified"},
+        {"text": "Output file is a sibling in the same directory as the original", "check": "sibling_location"}
+      ]
+    }
+  ]
+}
