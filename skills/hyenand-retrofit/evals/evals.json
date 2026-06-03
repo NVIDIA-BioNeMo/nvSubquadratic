@@ -36,9 +36,9 @@
     {
       "id": 3,
       "name": "foreign-timm-vit",
-      "prompt": "I have a tiny standalone PyTorch ViT (not using nvsubquadratic conventions) at .claude/skills/hyenand-retrofit/evals/inputs/tiny_vit_attention.py (path is relative to the repo root). It uses nn.MultiheadAttention inside its TransformerBlock. Produce a sibling file that swaps out the attention for HyenaND from the nvsubquadratic library, keeping the rest of the model intact. The model handles 64x64 RGB images with 8x8 patches (8x8 grid = 64 patches + 1 CLS = 65 tokens). Apply reasonable vision-modality defaults from the library.",
+      "prompt": "I have a tiny standalone PyTorch ViT (not using nvsubquadratic conventions) at skills/hyenand-retrofit/evals/inputs/tiny_vit_attention.py (path is relative to the repo root). It uses nn.MultiheadAttention inside its TransformerBlock. Produce a sibling file that swaps out the attention for HyenaND from the nvsubquadratic library, keeping the rest of the model intact. The model handles 64x64 RGB images with 8x8 patches (8x8 grid = 64 patches + 1 CLS = 65 tokens). Apply reasonable vision-modality defaults from the library.",
       "expected_output": "A new file (e.g., tiny_vit_hyenand.py or tiny_vit_attention_hyenand.py) in the same inputs/ directory. It must import Hyena from nvsubquadratic, construct a Hyena mixer with vision defaults (data_dim=2, use_rope=False, per-axis Gaussian mask or identity, SiLU gate), wrap each block's .attn with an ADAPTER module that (a) handles the [B, 65, C] -> [B, 8, 8, C] reshape with CLS peeled off, (b) returns (out, None) so `h, _ = self.attn(...)` keeps working, (c) swallows need_weights/attn_mask kwargs. Must contain a __main__ smoke-test block that runs one forward pass.",
-      "files": [".claude/skills/hyenand-retrofit/evals/inputs/tiny_vit_attention.py"],
+      "files": ["skills/hyenand-retrofit/evals/inputs/tiny_vit_attention.py"],
       "assertions": [
         {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
         {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
@@ -57,9 +57,9 @@
     {
       "id": 4,
       "name": "foreign-3d-feature-map",
-      "prompt": "I have a small standalone 3D U-Net at .claude/skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py (path relative to repo root). It has a SpatialAttention3D bottleneck module that operates on [B, C, D, H, W] channel-first feature maps and internally uses F.scaled_dot_product_attention — there is no nn.MultiheadAttention slot to swap. Produce a sibling file that replaces the bottleneck with HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The bottleneck operates on 16x16x16 feature maps with 48 channels. Apply reasonable 3D bidirectional defaults.",
+      "prompt": "I have a small standalone 3D U-Net at skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py (path relative to repo root). It has a SpatialAttention3D bottleneck module that operates on [B, C, D, H, W] channel-first feature maps and internally uses F.scaled_dot_product_attention — there is no nn.MultiheadAttention slot to swap. Produce a sibling file that replaces the bottleneck with HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The bottleneck operates on 16x16x16 feature maps with 48 channels. Apply reasonable 3D bidirectional defaults.",
       "expected_output": "A new file (e.g., tiny_unet3d_hyenand.py) in the same inputs/ directory that imports Hyena from nvsubquadratic with data_dim=3 and uses Conv3d for the short conv. The replacement must handle the channel-first [B, C, D, H, W] -> channel-last [B, D, H, W, C] layout (feature_map host, not tokens). Must NOT slice CLS / prefix tokens. Must contain a __main__ smoke-test block.",
-      "files": [".claude/skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py"],
+      "files": ["skills/hyenand-retrofit/evals/inputs/tiny_unet3d_attention.py"],
       "assertions": [
         {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
         {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},
@@ -77,9 +77,9 @@
     {
       "id": 5,
       "name": "foreign-1d-causal-lm",
-      "prompt": "I have a tiny causal char-level LM at .claude/skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py (path relative to repo root). It uses causal nn.MultiheadAttention inside CausalBlock with an explicit attn_mask. Produce a sibling file that swaps the attention for HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The model processes sequences of length 256 with hidden_dim=128. Apply reasonable 1D causal defaults.",
+      "prompt": "I have a tiny causal char-level LM at skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py (path relative to repo root). It uses causal nn.MultiheadAttention inside CausalBlock with an explicit attn_mask. Produce a sibling file that swaps the attention for HyenaND from the nvSubquadratic library, keeping the rest of the model intact. The model processes sequences of length 256 with hidden_dim=128. Apply reasonable 1D causal defaults.",
       "expected_output": "A new file (e.g., tiny_charlm_hyenand.py) in the same inputs/ directory that imports Hyena from nvsubquadratic with data_dim=1 and causal defaults: is_causal=True on CKConvND (NOT fft_padding='causal' — that string is rejected by CKConvND validation), use_rope=True, fft_padding='zero' (or another valid mode string), mask parametrization='exp_decay', omega_0=100. Uses Conv1d for the short conv. Wraps each block's .attn with an adapter that handles the tokens [B, T, C] layout without prefix tokens, returns (out, None) for the nn.MultiheadAttention contract, and swallows attn_mask/need_weights kwargs. Must contain a __main__ smoke-test block.",
-      "files": [".claude/skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py"],
+      "files": ["skills/hyenand-retrofit/evals/inputs/tiny_charlm_attention.py"],
       "assertions": [
         {"text": "Output file imports Hyena from nvsubquadratic.modules.hyena_nd", "check": "grep_output:from nvsubquadratic.modules.hyena_nd import.*Hyena"},
         {"text": "Output file imports CKConvND", "check": "grep_output:from nvsubquadratic.modules.ckconv_nd import.*CKConvND"},

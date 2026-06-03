@@ -56,7 +56,7 @@ Separate workflow, not bolted onto the main GPU CI in
 ```yaml
 on:
   pull_request:
-    paths: ['.claude/skills/hyenand-retrofit/**']
+    paths: ['skills/hyenand-retrofit/**']
   workflow_dispatch:          # manual button for ad-hoc runs
   schedule:
     - cron: '0 6 * * 1'       # weekly Monday 06:00 UTC — catches model drift
@@ -123,15 +123,17 @@ deliberately tolerant of surface-level variation (`data_dim\s*=\s*3`, not
 The full eval harness is ~50 lines of Python. Core loop:
 
 ```python
-# .claude/skills/hyenand-retrofit/evals/run_evals.py
+# skills/hyenand-retrofit/evals/run_evals.py
 import json, re, subprocess, pathlib, sys
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 EVALS = json.load(open(pathlib.Path(__file__).parent / "evals.json"))["evals"]
 
 
 def run_one(eval_case):
-    # Spawn claude -p with the skill auto-loaded via .claude/ discovery
+    # Spawn claude -p. NOTE: the skill now lives in skills/ (not .claude/skills/),
+    # so it is NOT auto-discovered — reference SKILL.md explicitly in the prompt,
+    # or symlink/copy it under .claude/skills/ for the duration of the eval run.
     prompt = eval_case["prompt"]
     result = subprocess.run(
         ["claude", "-p", prompt, "--output-format", "json"],
@@ -184,7 +186,7 @@ Caveats this sketch glosses over:
 - Passing the eval's `files` input list to the agent so it knows what to read
 
 The skill-creator plugin's
-[scripts/run_eval.py](../../../../.claude/plugins/marketplaces/claude-plugins-official/plugins/skill-creator/skills/skill-creator/scripts/run_eval.py)
+[scripts/run_eval.py](../../../.claude/plugins/marketplaces/claude-plugins-official/plugins/skill-creator/skills/skill-creator/scripts/run_eval.py)
 already handles the `claude -p` spawn correctly (uuid-named command file for
 skill discovery, partial-message stream parsing for fast trigger detection).
 Cannibalize it rather than re-implementing.

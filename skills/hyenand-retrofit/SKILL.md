@@ -34,7 +34,7 @@ These four axes are orthogonal. Fix them before writing.
 
 ## Pure or hybrid
 
-Separate decision: replace every attention site (pure) or leave some as attention (hybrid). Hybrids are common in vision and genomics LMs because attention's selectivity complements Hyena's global mixing. If unsure, ask via AskUserQuestion.
+Separate decision: replace every attention site (pure) or leave some as attention (hybrid). Hybrids are common in vision and genomics LMs because attention's selectivity complements Hyena's global mixing. If unsure, ask the user.
 
 - **Pure** — swap every site. Smallest change, cleanest comparison.
 - **Hybrid** — *which* sites stay attention is itself an ablation, not a settled choice. Pick any reasonable starting point (e.g., alternate, or hold attention in the deepest stages) and treat the pattern as a knob to sweep. For hierarchical encoders, prefer a per-stage `bool` list (`[True, True, False, False]`) over a `"HHAA"` string — it maps cleanly onto the encoder's stage construction loop.
