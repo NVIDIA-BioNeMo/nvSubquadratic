@@ -1,8 +1,27 @@
-# TODO: Add license header here
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """License header checker and enforcer for nvSubquadratic library.
 
-This script ensures all Python files have proper NVIDIA license headers.
+This script ensures all Python (and Rust) files have proper NVIDIA license headers.
+Designed to be invoked by pre-commit with `pass_filenames: true` and
+`types_or: [python, rust]`; takes one or more file paths and auto-applies the
+standard NVIDIA Apache-2.0 header to any file lacking one. Pre-commit then
+detects the modification and fails the hook so the contributor can re-stage.
 """
 
 import argparse
@@ -11,7 +30,6 @@ import re
 import textwrap
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 
 logging.basicConfig(level=logging.INFO)
@@ -55,12 +73,7 @@ assert license_regex.match(default_combined_license), "Default license text or r
 def process_file(filepath: Path, dry_run: bool) -> bool:
     """Process a file to ensure it has a valid license block, or add a new one if it doesn't.
 
-    Args:
-        filepath: Path to the file to process
-        dry_run: If True, only show what would be changed without making changes
-
-    Returns:
-        True if file was modified (or would be modified in dry_run), False otherwise
+    Returns True if the file was (or would be) modified, False if it already had a valid header.
     """
     comment_start = get_comment_delimiter(filepath)
     try:
@@ -86,14 +99,8 @@ def process_file(filepath: Path, dry_run: bool) -> bool:
     def uncomment(text: str) -> str:
         return re.sub(rf"^{comment_start}\ ?", "", text)
 
-    # Check for skip marker
     if "# noqa: license-check" in license_block:
         logger.info(f"Skipping {filepath} because it contains `# noqa: license-check`.")
-        return False
-
-    # Check for TODO placeholder (temporary until proper license is determined)
-    if license_block and any("TODO: Add license header here" in line for line in license_block):
-        logger.info(f"Skipping {filepath} because it contains a TODO license placeholder.")
         return False
 
     license_block_text = "\n".join(uncomment(line) for line in license_block) + "\n"
@@ -124,72 +131,23 @@ def get_comment_delimiter(filepath: Path) -> str:
             raise ValueError(f"Unsupported file type: {filepath}")
 
 
-def find_python_files(directories: List[Path]) -> List[Path]:
-    """Find all Python files in the given directories."""
-    python_files = []
-    for directory in directories:
-        if directory.is_file() and directory.suffix == ".py":
-            python_files.append(directory)
-        elif directory.is_dir():
-            python_files.extend(directory.rglob("*.py"))
-    return python_files
-
-
 def main():
     """Main entry point for the license check script."""
     parser = argparse.ArgumentParser(description="Ensure files have proper license headers")
-    parser.add_argument("files", nargs="*", help="Specific files to process")
-    parser.add_argument(
-        "-c",
-        "--check-dirs",
-        action="append",
-        dest="directories",
-        help="Directories to check recursively for Python files",
-    )
+    parser.add_argument("files", nargs="+", help="Files to process")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be changed without making changes")
 
     args = parser.parse_args()
 
-    files_to_process = []
+    for filename in args.files:
+        filepath = Path(filename)
+        if not filepath.exists():
+            raise FileNotFoundError(f"File {filename} does not exist")
 
-    if args.files:
-        # Process specific files
-        for filename in args.files:
-            filepath = Path(filename)
-            if not filepath.exists():
-                raise FileNotFoundError(f"File {filename} does not exist")
+        if filepath.suffix not in [".py", ".rs"]:
+            raise ValueError(f"Unsupported file type: {filepath}")
 
-            if filepath.suffix not in [".py", ".rs"]:
-                logger.warning(f"Skipping {filepath} - unsupported file type")
-                continue
-
-            files_to_process.append(filepath)
-
-    if args.directories:
-        # Process directories recursively
-        directories = [Path(d) for d in args.directories]
-        for directory in directories:
-            if not directory.exists():
-                raise FileNotFoundError(f"Directory {directory} does not exist")
-            if not directory.is_dir():
-                raise ValueError(f"{directory} is not a directory")
-
-        files_to_process.extend(find_python_files(directories))
-
-    if not files_to_process:
-        logger.warning("No Python files found to process")
-        return
-
-    modified_count = 0
-    for filepath in files_to_process:
-        try:
-            if process_file(filepath, args.dry_run):
-                modified_count += 1
-        except Exception as e:
-            logger.error(f"Error processing {filepath}: {e}")
-
-    action = "would be modified" if args.dry_run else "were modified"
-    logger.info(f"License check complete: {modified_count} files {action} out of {len(files_to_process)} processed")
+        process_file(filepath, args.dry_run)
 
 
 if __name__ == "__main__":

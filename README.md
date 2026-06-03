@@ -182,10 +182,8 @@ see the rendered docstring, or run `help(SomeClass)` in a REPL.
 
 ### CI
 
-GPU tests run automatically on pull requests via a self-hosted [Colossus](https://colossus.nvidia.com) runner.
-The runner is provisioned using the Ansible playbook at
-[gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook](https://gitlab-master.nvidia.com/farhadr/colossus-ansible-playbook)
-— see that repo for setup instructions.
+GPU tests run automatically on pull requests via a self-hosted runner.
+Runner provisioning is maintained out-of-tree; contact the maintainers for access.
 
 ### Pre-commit Hooks
 
@@ -196,3 +194,16 @@ The runner is provisioned using the Ansible playbook at
 - YAML validation
 - Markdown formatting
 - Secret detection
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+DCO sign-off requirement and the PR/issue flow.  Pull requests from
+external forks run through the same CI pipeline; the GPU stage requires a
+codeowner ([.github/CODEOWNERS](.github/CODEOWNERS)) to approve workflow
+runs from outside collaborators before the self-hosted runner picks them
+up — this is the standard GitHub "Require approval for outside
+collaborators" gate.
+
+For security-sensitive findings, please follow [SECURITY.md](SECURITY.md)
+instead of opening a public issue or PR.

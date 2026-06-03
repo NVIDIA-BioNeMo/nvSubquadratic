@@ -1,0 +1,26 @@
+# CODEOWNERS — required reviewers for protected paths.
+#
+# Order matters: the **last** matching pattern wins.
+# Use individual GitHub usernames (with the `@` prefix) or team slugs
+# (e.g. `@NVIDIA-BioNeMo/<team-slug>`) once a team is provisioned.
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customizations/customizing-your-repository/about-code-owners
+
+# Default — applies to anything not matched by a more specific rule below.
+*                              @farhadrgh @saeepaliwal
+
+# Release artefacts: license text, attribution, contributor docs, security policy.
+/LICENSE/                      @farhadrgh @saeepaliwal
+/CONTRIBUTING.md               @farhadrgh @saeepaliwal
+/SECURITY.md                   @farhadrgh @saeepaliwal
+/release_checklist.md          @farhadrgh @saeepaliwal
+
+# Build & packaging metadata.
+/pyproject.toml                @farhadrgh @saeepaliwal
+/VERSION                       @farhadrgh @saeepaliwal
+
+# CI workflows and codeowner config itself.
+/.github/                      @farhadrgh @saeepaliwal
+
+# Documentation source.
+/docs/                         @farhadrgh @saeepaliwal
