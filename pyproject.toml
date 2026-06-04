@@ -65,7 +65,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
-Documentation = "https://nvidia-BioNeMo.github.io/nvSubquadratic/"
+Documentation = "https://nvidia-bionemo.github.io/nvSubquadratic/"
 Repository = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
 Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 
