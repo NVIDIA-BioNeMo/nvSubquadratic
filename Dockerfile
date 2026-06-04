@@ -61,7 +61,7 @@ RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
     ninja-build \
     git
 
-WORKDIR /workspaces/nvSubquadratic-private
+WORKDIR /workspaces/nvSubquadratic
 
 # ── Heavy build: Apex from source (cached until apex commit changes) ──────────
 # This layer is intentionally placed before COPY so code changes do not
@@ -81,7 +81,7 @@ RUN pip install --no-cache-dir -r requirements-dev.txt
 # ── Source: invalidated on every code change (fast — just package install) ────
 COPY . .
 
-RUN git config --global --add safe.directory /workspaces/nvSubquadratic-private
+RUN git config --global --add safe.directory /workspaces/nvSubquadratic
 
 RUN pip install --no-cache-dir wheel-stub \
     && pip install --no-cache-dir --no-build-isolation ".[quack]" \
@@ -97,7 +97,7 @@ RUN chown -R ubuntu:ubuntu /workspaces && \
 USER ubuntu
 
 # Set environment variables for development mode
-ENV PYTHONPATH=/workspaces/nvSubquadratic-private
+ENV PYTHONPATH=/workspaces/nvSubquadratic
 
 # Expose Jupyter port
 EXPOSE 8888

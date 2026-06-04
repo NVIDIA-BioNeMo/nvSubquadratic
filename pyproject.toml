@@ -64,10 +64,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private"
-Documentation = "https://nvidia-BioNeMo.github.io/nvSubquadratic-private/"
-Repository = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private"
-Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/issues"
+Homepage = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
+Documentation = "https://nvidia-BioNeMo.github.io/nvSubquadratic/"
+Repository = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
+Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 
 [project.optional-dependencies]
 # Optional: use QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).

@@ -5,20 +5,20 @@ From: nvcr.io/nvidia/pytorch:25.06-py3
     Maintainer nvSubquadratic Dev
 
 %environment
-    export PYTHONPATH=/workspaces/nvSubquadratic-private:${PYTHONPATH}
+    export PYTHONPATH=/workspaces/nvSubquadratic:${PYTHONPATH}
 
 %files
-    . /workspaces/nvSubquadratic-private
+    . /workspaces/nvSubquadratic
 
 %post
     export DEBIAN_FRONTEND=noninteractive
     apt-get update && \
         apt-get install -y --no-install-recommends build-essential git && \
         rm -rf /var/lib/apt/lists/*
-    cd /workspaces/nvSubquadratic-private
+    cd /workspaces/nvSubquadratic
 
     # Set up git safe directory
-    git config --global --add safe.directory /workspaces/nvSubquadratic-private
+    git config --global --add safe.directory /workspaces/nvSubquadratic
 
     # Install dependencies
     pip install --no-cache-dir -r requirements-dev.txt
@@ -46,7 +46,7 @@ elif [ -d "$CUDA_COMPAT" ]; then
     fi
 fi
 
-REPO=/workspaces/nvSubquadratic-private
+REPO=/workspaces/nvSubquadratic
 HOOK="$REPO/.git/hooks/pre-commit"
 if [ -d "$REPO/.git" ] && [ ! -f "$HOOK" ]; then
     if command -v pre-commit >/dev/null 2>&1; then

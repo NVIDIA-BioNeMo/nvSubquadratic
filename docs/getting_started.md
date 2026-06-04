@@ -2,7 +2,7 @@
 
 This page walks a new user from a fresh checkout to a working Hyena
 forward pass.  For the full installation matrix (dev container, Docker,
-Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/README.md).
+Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/README.md).
 
 ## Requirements
 
@@ -39,7 +39,7 @@ pip install --no-build-isolation -e .
 ```
 
 Docker, Apptainer, enroot/SLURM, and dev-container instructions live in
-the [project README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/README.md#installation).
+the [project README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/README.md#installation).
 
 ## Hello, Hyena
 

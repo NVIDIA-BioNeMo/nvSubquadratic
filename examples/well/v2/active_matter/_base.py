@@ -39,7 +39,7 @@ DATA_DIM = 2
 SPATIAL_RESOLUTION = (256, 256)
 WELL_BASE_PATH = os.environ.get(
     "WELL_DATA_PATH",
-    "/workspaces/nvSubquadratic-private/data/the_well/datasets/",
+    "/workspaces/nvSubquadratic/data/the_well/datasets/",
 )
 WELL_DATASET_NAME = "active_matter"
 

@@ -56,9 +56,9 @@ Where to go next
 Contributor docs
 ----------------
 
-- `CONVENTIONS.md <https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/CONVENTIONS.md>`_ —
+- `CONVENTIONS.md <https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/CONVENTIONS.md>`_ —
   Google-style docstring guide and PR checklist (lives at the repo root).
-- `docs-tracker.md <https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/docs-tracker.md>`_ —
+- `docs-tracker.md <https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/docs-tracker.md>`_ —
   documentation coverage status per file.
 
 Related projects
