@@ -123,7 +123,7 @@ intersphinx_mapping = {
     ),
 }
 
-_gh_repo = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private"
+_gh_repo = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
 _gh_blob_base = f"{_gh_repo}/blob/{github_version}"
 
 extlinks = {
@@ -172,7 +172,7 @@ html_css_files = [
 ]
 html_context = {
     "github_user": "NVIDIA-BioNeMo",
-    "github_repo": "nvSubquadratic-private",
+    "github_repo": "nvSubquadratic",
     "github_version": github_version,
     "doc_path": "docs",
 }

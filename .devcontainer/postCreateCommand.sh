@@ -4,7 +4,7 @@
 pip install --no-build-isolation --editable .
 
 # Set up git safe directory
-git config --global --add safe.directory /workspaces/nvSubquadratic-private
+git config --global --add safe.directory /workspaces/nvSubquadratic
 
 # Configure bash history search (up/down arrows)
 echo 'Setting up bash history search...'

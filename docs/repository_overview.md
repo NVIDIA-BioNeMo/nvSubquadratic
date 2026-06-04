@@ -9,7 +9,7 @@ tree (`benchmarks/`), and the supporting infrastructure (`scripts/`,
 ## Layout
 
 ```text
-nvSubquadratic-private/
+nvSubquadratic/
 ├── nvsubquadratic/          library code — see "library tree" below
 ├── experiments/             training framework (PyTorch Lightning)
 │   ├── run.py                 CLI entry point
@@ -154,7 +154,7 @@ config tree (LazyConfig dataclasses) that fully describes one
 experiment.  Running it is
 `python -m experiments.run --config examples/.../<config>.py`.  The
 live roadmap is at
-[`examples/overview_tracker.md`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic-private/blob/main/examples/overview_tracker.md).
+[`examples/overview_tracker.md`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/overview_tracker.md).
 
 **`benchmarks/`** — The single home for performance measurement.
 Op-level microbenchmarks (`benchmarks/ops/`), end-to-end model

@@ -50,7 +50,7 @@ Open in VS Code and select "Reopen in Container". The devcontainer extension wil
 ```bash
 # Build and run
 docker build -t nvsubquadratic:dev .
-docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic:dev
+docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic nvsubquadratic:dev
 ```
 
 The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Two build-args let you tune the compile:
@@ -83,13 +83,13 @@ PLATFORM=arm64 scripts/slurm/enroot/build_sqsh.sh
 apptainer build nvsubquadratic.sif nvsubquadratic.def
 
 # Interactive shell with GPUs and live code from your checkout
-apptainer shell --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif
+apptainer shell --nv --bind $(pwd):/workspaces/nvSubquadratic nvsubquadratic.sif
 
 # Run a command inside the image (example: tests)
-apptainer exec --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif python -m pytest nvsubquadratic/ tests/
+apptainer exec --nv --bind $(pwd):/workspaces/nvSubquadratic nvsubquadratic.sif python -m pytest nvsubquadratic/ tests/
 
 # Use the default runscript (starts Jupyter Lab as defined in the .def)
-apptainer run --nv --bind $(pwd):/workspaces/nvSubquadratic-private nvsubquadratic.sif --no-browser
+apptainer run --nv --bind $(pwd):/workspaces/nvSubquadratic nvsubquadratic.sif --no-browser
 ```
 
 ### Conda (recommended for local development)
