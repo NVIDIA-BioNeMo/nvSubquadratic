@@ -7,7 +7,8 @@ Identical to ``hyena.py`` but replaces the ``nn.Identity`` mask with a
 from examples.well.v2.MHD_64._base import DATA_DIM
 from examples.well.v2.MHD_64.hyena import NUM_HIDDEN_CHANNELS
 from examples.well.v2.MHD_64.hyena import get_config as _get_hyena_config
-from experiments.callbacks.mask_monitor import MaskMonitorCallback
+
+# from experiments.callbacks.mask_monitor import MaskMonitorCallback  # disabled: wandb artifact API retry loop blocks training
 from experiments.default_cfg import ExperimentConfig
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
@@ -26,6 +27,6 @@ def get_config() -> ExperimentConfig:
         parametrization="direct",
     )
 
-    config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))
+    # config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))  # disabled: wandb artifact API retry loop blocks training
 
     return config

@@ -183,7 +183,7 @@ def main() -> None:
     else:
         # Avoid auto logging all checkpoints; selective uploader handles best/last
         log_model = False
-        offline = False
+        offline = config.wandb.offline
 
     if config.autoresume.enabled:
         # If run name is not provided, use the deterministic run name without timestamp

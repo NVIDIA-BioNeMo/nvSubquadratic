@@ -94,6 +94,7 @@ class WandbConfig:
     job_group: str = ""
     tags: list = field(default_factory=list)
     run_id: Optional[str] = None  # Explicit W&B run ID for resuming or linking runs
+    offline: bool = False  # If True, log to disk only (no remote sync). Implied when debug=True.
 
 
 @dataclass

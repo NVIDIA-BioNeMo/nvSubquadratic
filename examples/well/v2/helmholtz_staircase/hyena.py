@@ -1,19 +1,21 @@
-"""Hyena config for gray_scott_reaction_diffusion (v2).
+"""Hyena config for helmholtz_staircase (v2).
 
 Uses a ResidualNetwork with Hyena (QKV + CKConv global conv) as the
-sequence mixer.  Circular FFT padding matches the dataset's periodic
-boundary conditions.  With patch_size=16 the effective sequence
-resolution is 32×32.
+sequence mixer.  Zero-pad FFT matches the dataset's open boundary conditions.
+With patch_size=8 the effective sequence resolution is 128×32.
 
 Patch-size CLI override
 -----------------------
 Only ``net.in_proj_cfg.patch_size=P`` is needed; stride, out_proj patch_size,
 and kernel L_cache are derived via OmegaConf interpolators.
+
+Note: L_cache is a per-axis list [1024//P, 256//P] because the spatial
+resolution is non-square (1024×256).
 """
 
 import torch
 
-from examples.well.v2.euler_multi_quadrants_periodicBC._base import (
+from examples.well.v2.helmholtz_staircase._base import (
     DATA_DIM,
     IN_CHANNELS,
     OUT_CHANNELS,
@@ -37,20 +39,20 @@ from nvsubquadratic.utils.qk_norm import L2Norm
 # ─── Model hyperparameters ────────────────────────────────────────────────────
 NUM_HIDDEN_CHANNELS = 384
 NUM_BLOCKS = 12
-PATCH_SIZE = 16
+PATCH_SIZE = 8
 
 DROPOUT_IN_RATE = 0.0
 DROPOUT_RATE = 0.0
 GRID_TYPE = "single"
-FFT_PADDING = "circular"  # periodic boundary conditions
+FFT_PADDING = "zero"  # open boundary conditions
 OMEGA_0 = 30.0
 
 GRADIENT_CHECKPOINTING = True
 
 
 def get_config() -> ExperimentConfig:
-    """Build Hyena experiment config for euler_multi_quadrants_periodicBC."""
-    config = get_base_config()
+    """Build Hyena experiment config for helmholtz_staircase."""
+    config = get_base_config(learning_rate=1e-3, weight_decay=1e-5)
 
     config.compile = True
     config.compile_mode = "max-autotune-no-cudagraphs"
@@ -94,7 +96,10 @@ def get_config() -> ExperimentConfig:
                             num_layers=3,
                             embedding_dim=64,
                             omega_0=OMEGA_0,
-                            L_cache="${eval:'512 // ${net.in_proj_cfg.patch_size}'}",
+                            L_cache=[
+                                "${eval:'1024 // ${net.in_proj_cfg.patch_size}'}",
+                                "${eval:'256 // ${net.in_proj_cfg.patch_size}'}",
+                            ],
                             use_bias=True,
                             hidden_omega_0=1.0,
                         ),

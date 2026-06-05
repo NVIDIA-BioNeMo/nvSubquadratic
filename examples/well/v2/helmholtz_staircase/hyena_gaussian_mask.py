@@ -1,12 +1,12 @@
-"""Hyena config with Gaussian modulation mask for euler_multi_quadrants_periodicBC (v2).
+"""Hyena config with Gaussian modulation mask for helmholtz_staircase (v2).
 
-Identical to ``cfg_hyena.py`` but replaces the ``nn.Identity`` mask with a
+Identical to ``hyena.py`` but replaces the ``nn.Identity`` mask with a
 ``GaussianModulationND`` mask on the CKConv global convolution kernel.
 """
 
-from examples.well.v2.euler_multi_quadrants_periodicBC._base import DATA_DIM
-from examples.well.v2.euler_multi_quadrants_periodicBC.hyena import NUM_HIDDEN_CHANNELS
-from examples.well.v2.euler_multi_quadrants_periodicBC.hyena import get_config as _get_hyena_config
+from examples.well.v2.helmholtz_staircase._base import DATA_DIM
+from examples.well.v2.helmholtz_staircase.hyena import NUM_HIDDEN_CHANNELS
+from examples.well.v2.helmholtz_staircase.hyena import get_config as _get_hyena_config
 
 # from experiments.callbacks.mask_monitor import MaskMonitorCallback  # disabled: wandb artifact API retry loop blocks training
 from experiments.default_cfg import ExperimentConfig
@@ -15,7 +15,7 @@ from nvsubquadratic.modules.masks_nd import GaussianModulationND
 
 
 def get_config() -> ExperimentConfig:
-    """Build Hyena + Gaussian mask config for euler_multi_quadrants_periodicBC."""
+    """Build Hyena + Gaussian mask config for helmholtz_staircase."""
     config = _get_hyena_config()
 
     config.net.block_cfg.sequence_mixer_cfg.mixer_cfg.global_conv_cfg.mask_cfg = LazyConfig(GaussianModulationND)(

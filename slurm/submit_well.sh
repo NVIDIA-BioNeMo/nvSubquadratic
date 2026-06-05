@@ -7,6 +7,7 @@
 #SBATCH --mem=0
 #SBATCH --mail-type=FAIL
 #SBATCH --job-name=healthcareeng_research-nvsubq.well
+#SBATCH --gpus-per-node=1
 
 # Usage (from repo root):
 #   sbatch slurm/submit_well.sh examples/well/v2/active_matter/hyena_gaussian_mask.py
@@ -47,12 +48,15 @@ for arg in "$@"; do
 done
 
 # Container image
-IMAGE_NAME="${SQSH_IMAGE:-/lustre/fsw/healthcareeng_research/oviessmann/nvsubquadratic/enroot/nvsubquadratic-x86_64.sqsh}"
+#eos lustre path:
+#IMAGE_NAME="${SQSH_IMAGE:-/lustre/fsw/portfolios/healthcareeng/users/oviessmann/nvsubquadratic/enroot/nvsubquadratic-x86_64.sqsh}"
+#dfw lustre path:
+IMAGE_NAME="${SQSH_IMAGE:-/lustre/fsw/portfolios/healthcareeng/projects/healthcareeng_research/users/oviessmann/nvsubquadratic/enroot/nvsubquadratic-x86_64.sqsh}"
 
 # Host paths
 WORKDIR="${PWD}"
 RUNS_DIR="${WORKDIR}/runs"
-DATA_DIR="${WELL_HOST_DIR:-/lustre/fsw/healthcareeng_research/oviessmann/nvsubquadratic/data/well_data/datasets}"
+DATA_DIR="${WELL_HOST_DIR:-/lustre/fsw/portfolios/healthcareeng/users/oviessmann/nvsubquadratic/data/well_data/datasets}"
 
 # Create necessary directories
 mkdir -p "${RUNS_DIR}"
@@ -90,7 +94,7 @@ echo "$(date): Job ${SLURM_JOB_ID} started (W&B run ID: ${RUN_ID})" >> "${RESULT
 # ============================================================================
 # Container mounts
 # ============================================================================
-REPO_DIR="/lustre/fsw/healthcareeng_research/oviessmann/nvsubquadratic"
+REPO_DIR="/lustre/fsw/portfolios/healthcareeng/users/oviessmann/nvsubquadratic"
 WORK_DIR="/workspaces/nvSubquadratic-private"
 CONFIG_PATH="${WORK_DIR}/${CONFIG_FILE}"
 
@@ -109,8 +113,8 @@ echo "Job ID:        ${SLURM_JOB_ID}"
 echo "Run Name:      ${RUN_NAME}"
 echo "Node(s):       ${SLURM_NODELIST}"
 echo "Num nodes:     ${SLURM_JOB_NUM_NODES}"
-echo "GPUs per node: ${SLURM_NTASKS_PER_NODE}"
-echo "Total GPUs:    $((${SLURM_JOB_NUM_NODES} * ${SLURM_NTASKS_PER_NODE}))"
+echo "GPUs per node: ${SLURM_GPUS_PER_NODE}"
+echo "Total GPUs:    $((${SLURM_JOB_NUM_NODES} * ${SLURM_GPUS_PER_NODE}))"
 echo "Config:        ${CONFIG_FILE}"
 echo "Overrides:     ${CONFIG_OVERRIDES}"
 echo "Container:     ${IMAGE_NAME}"
