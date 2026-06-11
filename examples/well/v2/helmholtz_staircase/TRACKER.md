@@ -27,7 +27,7 @@ Paper baseline: CNextU-net VRMSE = 0.02758, FNO = 0.00046 (dominant).
 
 | Batch/GPU | GPUs | WandB Run                                                                                                                                                                                                   | val/VRMSE | it/s   | total steps |
 | --------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------ | ----------- |
-| 42        | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_helmholtz_staircase_cfg_unet_convnext_bs_42_enabled_True_experiment_dir\_/workspace/results_lr_0.003_num_nodes_1_run_start_time_1781084507_run_tim | 0.004504  | 0.8176 | 72,115      |
+| 42        | 1    | OV\_\_workspaces_nvSubquadratic-private_examples_well_v2_helmholtz_staircase_cfg_unet_convnext_bs_42_enabled_True_experiment_dir\_/workspace/results_lr_0.003_num_nodes_1_run_start_time_1781084507_run_tim | 0.004504  | 490.58 | 72,115      |
 
 ## Results — Attention
 
