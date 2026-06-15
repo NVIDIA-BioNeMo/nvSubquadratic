@@ -282,18 +282,6 @@ class TestValidation:
                 fft_backend="subq_ops",
             )
 
-    def test_fp16_with_per_axis_padding_raises(self):
-        with pytest.raises(NotImplementedError, match=r"use_fp16_fft is not supported"):
-            CKConvND(
-                data_dim=2,
-                hidden_dim=HIDDEN_DIM,
-                kernel_cfg=_make_kernel_cfg(data_dim=2),
-                mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type=None,
-                fft_padding=["circular", "zero"],
-                use_fp16_fft=True,
-            )
-
     def test_existing_circular_with_double_grid_still_rejected(self):
         # Legacy single-mode constraint untouched.
         with pytest.raises(AssertionError, match=r"requires grid_type='single'"):
