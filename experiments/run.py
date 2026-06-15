@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=str,
         required=True,
-        help="Path to the configuration file, e.g., config/experiments/mnist/mnist_classification_cfg.py",
+        help="Path to the configuration file, e.g., examples/imagenet_classification/ccnn_7_512_hyena.py",
     )
 
     # Add a catch-all for arbitrary config overrides

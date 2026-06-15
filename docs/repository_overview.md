@@ -20,12 +20,9 @@ nvSubquadratic/
 │   ├── callbacks/             FiLM monitor, image-grid viz, EMA, walltime checkpointer, …
 │   └── utils/                 cli + checkpointing helpers
 ├── examples/                LazyConfig recipes that feed experiments.run
-│   ├── mnist_classification/
 │   ├── imagenet_classification/
-│   ├── imagenet_diffusion/
 │   ├── vit5_imagenet/         ViT-5 baseline suite (v1–v5)
 │   ├── spatial_recall_{1,2,3}d/ and spatial_recall_v2/
-│   ├── ucf101_classification/
 │   ├── well/                  The Well PDE benchmark suite
 │   └── overview_tracker.md    active experimental roadmap
 ├── benchmarks/              performance measurement (the canonical home)
