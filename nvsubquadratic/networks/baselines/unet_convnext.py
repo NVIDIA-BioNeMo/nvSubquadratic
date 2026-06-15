@@ -16,7 +16,7 @@
 #
 # Portions ported from PolymathicAI/the_well (BSD-3-Clause), itself adapted from
 # facebookresearch/ConvNeXt (MIT; Copyright (c) Meta Platforms, Inc. and affiliates).
-# See LICENSE/third_party.txt for the full BSD-3-Clause and MIT license texts.
+# See THIRD_PARTY_NOTICES.txt for the full BSD-3-Clause and MIT license texts.
 
 """UNet-ConvNeXt baseline from The Well benchmark.
 

@@ -16,7 +16,7 @@
 #
 # Builds on unet_convnext.py, which is ported from PolymathicAI/the_well
 # (BSD-3-Clause), itself adapted from facebookresearch/ConvNeXt (MIT; Copyright
-# (c) Meta Platforms, Inc. and affiliates). See LICENSE/third_party.txt.
+# (c) Meta Platforms, Inc. and affiliates). See THIRD_PARTY_NOTICES.txt.
 
 """UNet-ConvNeXt V2 — fixed skip connections.
 
