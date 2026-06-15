@@ -48,7 +48,6 @@ dependencies = [
     "numpy>=1.21.0",
     "pyarrow>=14.0.0,<20.0.0",     # Constrained to be compatible with cudf/pylibcudf in NGC containers
     "datasets>=2.14.0",
-    "clean-fid>=0.1.35",
     "megatron-core",
     "pytorch-lightning>=2.0.0",
     "omegaconf>=2.3.0",

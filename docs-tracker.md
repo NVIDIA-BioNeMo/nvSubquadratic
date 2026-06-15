@@ -104,7 +104,6 @@ the `tests/` tree is out of scope for this tracker.)
 | File             | Status | Notes                                                                                 |
 | ---------------- | ------ | ------------------------------------------------------------------------------------- |
 | `lazy_config.py` | \[x\]  | LazyConfig + instantiate — deferred instantiation, nested configs, arithmetic strings |
-| `metrics/`       | \[x\]  | cleanfid.py — CleanFID wrapper, FID formula, usage context                            |
 | `utils/`         | \[x\]  | init.py (weight init factories), qk_norm.py (QK-norm, L2Norm module), quack_utils.py  |
 | `testing/`       | \[x\]  | utils.py — compute_relative_error, TTrace reference, already had good docstrings      |
 
