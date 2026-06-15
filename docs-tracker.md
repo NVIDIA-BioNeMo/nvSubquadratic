@@ -36,18 +36,15 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/ops/` — FFT convolution primitives
 
-| File                       | Status | Notes                                                                                   |
-| -------------------------- | ------ | --------------------------------------------------------------------------------------- |
-| `README.md`                | \[x\]  | Folder overview, decision tree, math primer (new file)                                  |
-| `fftconv.py`               | \[x\]  | Module + key per-fn docstrings rewritten with math                                      |
-| `circular_fftconv.py`      | \[x\]  | Already strong; left as-is                                                              |
-| `circular_fftconv_fp16.py` | \[x\]  | Already strong; relies on FP16_FFTCONV_DERIVATION.md                                    |
-| `fftconv_fp16.py`          | \[x\]  | Already adequate; left as-is                                                            |
-| `fftconv_multihead.py`     | \[x\]  | Module docstring expanded with multi-head/low-rank math                                 |
-| `fftconv_chunked.py`       | \[x\]  | Already strong; left as-is                                                              |
-| `fftconv_custom.py`        | \[x\]  | Module docstring expanded with motivation; 1D causal wrappers added in 1D PR            |
-| `causal_conv1d_custom.py`  | \[x\]  | New (1D PR): thin wrappers for direct `causal_conv1d` + fused `b2b_causal_conv1d`       |
-| `mixed_fftconv.py`         | \[x\]  | New (#120): per-axis mixed boundary-condition FFT conv; see `docs/ops/MIXED_BC_PLAN.md` |
+| File                      | Status | Notes                                                                                               |
+| ------------------------- | ------ | --------------------------------------------------------------------------------------------------- |
+| `README.md`               | \[x\]  | Folder overview, decision tree, math primer (new file)                                              |
+| `fftconv.py`              | \[x\]  | Module + key per-fn docstrings rewritten with math                                                  |
+| `circular_fftconv.py`     | \[x\]  | Already strong; left as-is                                                                          |
+| `fftconv_chunked.py`      | \[x\]  | Already strong; left as-is                                                                          |
+| `fftconv_custom.py`       | \[x\]  | Module docstring expanded with motivation; 1D causal wrappers added in 1D PR                        |
+| `causal_conv1d_custom.py` | \[x\]  | New (1D PR): thin wrappers for direct `causal_conv1d` + fused `b2b_causal_conv1d`                   |
+| `mixed_fftconv.py`        | \[x\]  | New (#120): per-axis mixed boundary-condition FFT conv; see `docs/ops/mixed_boundary_conditions.md` |
 
 ### `nvsubquadratic/modules/` — Building blocks
 
@@ -56,7 +53,6 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `kernels_nd.py`                    | \[x\]  | Learned kernel parametrisation — RFF + SIREN, FiLM-conditioned variants                           |
 | `hyena_nd.py`                      | \[x\]  | Hyena operator (ND) — two-gate sandwich, AllToAll CP, BC-aware convolution                        |
 | `ckconv_nd.py`                     | \[x\]  | CKConv (ND) — implicit kernel `k_θ(p) = MLP_θ(pos_enc(p))`, FFT domain, BC modes                  |
-| `ckconv_multihead_nd.py`           | \[x\]  | Multi-head CKConv — H heads, dense d×d kernel per head, low-rank U·V factorisation                |
 | `mamba_nd.py`                      | \[x\]  | Mamba SSM (ND) — selective SSM, ZOH discretisation, raster-scan ND, bidirectional mode            |
 | `attention.py`                     | \[x\]  | Scaled dot-product attention — multi-head, RoPE, ND spatial, O(L²) FLOP formula                   |
 | `vit5_attention.py`                | \[x\]  | ViT5 attention — register-aware 2D RoPE, QK-norm, CUDA-graph-safe buffers                         |
@@ -89,8 +85,6 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `classification_resnet.py`            | \[x\]  | ClassificationResNet — GAP readout, resolution-agnostic, inherits ResidualNetwork                                                         |
 | `vit5_classification.py`              | \[x\]  | ViT5 classification — token layout, hybrid blocks, CLS/GAP/register_concat readouts, FLOP count                                           |
 | `vit5_hierarchical_classification.py` | \[ \]  | Pending (#122 — `feat/patch-merging`): Swin-style 4-stage hierarchical ViT-5 classifier with GAP readout and optional register-row layout |
-| `huggingface_diffusers.py`            | \[x\]  | HF diffusers adapters — DiT and UVit wrappers, BHL↔BCHW translation, shared timestep state model                                          |
-| `jit.py` / `jit_utils.py`             | \[x\]  | JiT diffusion backbone port (LTH14/JiT) — patch embed, attention/SwiGLU blocks, RoPE helpers, RMSNorm                                     |
 | `baselines/unet_convnext.py`          | \[x\]  | UNet-ConvNeXt baseline ported from The Well — preserves upstream `skips[0]` bug for reproducibility                                       |
 | `baselines/unet_convnext_v2.py`       | \[x\]  | Fixed-skip variant of UNet-ConvNeXt — consumes the missing finest-resolution skip                                                         |
 
@@ -124,7 +118,6 @@ the `tests/` tree is out of scope for this tracker.)
 | `lightning_wrappers/base_lightning_wrapper.py` | \[x\]  | LightningWrapperBase — param groups, scheduler, checkpoint resume, profiling                               |
 | `lightning_wrappers/classification_wrapper.py` | \[x\]  | ClassificationWrapper — cross_entropy / soft_target_ce / bce loss modes                                    |
 | `lightning_wrappers/regression_wrapper.py`     | \[x\]  | RegressionWrapper — MAE/MSE loss, base for WELLRegressionWrapper                                           |
-| `lightning_wrappers/diffusion_wrapper.py`      | \[x\]  | DiffusionWrapper — JiT continuous-time diffusion, ODE sampler                                              |
 | `lightning_wrappers/autoregressive_wrapper.py` | \[x\]  | Already had good module + class docstrings; left as-is                                                     |
 | `lightning_wrappers/arc_wrapper.py`            | \[ \]  | (untracked new file — out of scope until merged)                                                           |
 | `lightning_wrappers/well_lightning_wrapper.py` | \[x\]  | Already had good class docstring; left as-is                                                               |
@@ -156,7 +149,6 @@ README per subdirectory.  No Sphinx API reference entry.
 | `ops/bench_fftconv2d.py`                         | \[x\]  | Already had a full docstring                                                                               |
 | `ops/bench_mlp.py`                               | \[x\]  | torch vs QuACK MLP correctness + timing                                                                    |
 | `ops/bench_subquadratic_fftconv.py`              | \[x\]  | Sanity gate for the CUDA fft_causal_conv1d kernel                                                          |
-| `ops/FP16_FFTCONV_RESULTS.md`                    | \[x\]  | FP16 FFT conv accuracy + throughput vs FP32 reference                                                      |
 | `vit5_imagenet/README.md`                        | \[x\]  | Per-script overview + pointer to the historical profiling report                                           |
 | `vit5_imagenet/bench_vit5_baseline.py`           | \[x\]  | Baseline (eager, torchvision dataloader) throughput                                                        |
 | `vit5_imagenet/bench_vit5_compile.py`            | \[x\]  | `torch.compile` configuration sweep                                                                        |

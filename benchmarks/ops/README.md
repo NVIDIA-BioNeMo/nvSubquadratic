@@ -46,12 +46,3 @@ PYTHONPATH=. conda run -n nv-subq python benchmarks/ops/bench_subquadratic_fftco
 ```
 
 Output: stdout.
-
-## Related
-
-- [`FP16_FFTCONV_RESULTS.md`](FP16_FFTCONV_RESULTS.md) — accuracy and
-  throughput of the FP16 FFT convolution path against the FP32
-  reference.  See
-  [`docs/ops/FP16_FFTCONV_DERIVATION.md`](../../docs/ops/FP16_FFTCONV_DERIVATION.md)
-  for the dual-mean-centering derivation that motivates the FP16
-  implementation.

@@ -231,7 +231,7 @@ FFT_FUNCTIONS_CHUNKED = {
     },
 }
 
-# Mixed-BC FFT convolutions: only fp32 in v1 (see docs/ops/MIXED_BC_PLAN.md).
+# Mixed-BC FFT convolutions: fp32 (see docs/ops/mixed_boundary_conditions.md).
 # Each entry is ``(fn_for_BLH_input (bhl_w_reshape), fn_for_BHL_input)`` and
 # takes an additional ``periodic`` argument compared to the legacy ops; the
 # wrapper ``_wrap_mixed_op`` below adapts the call signature.

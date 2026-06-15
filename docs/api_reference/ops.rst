@@ -87,13 +87,13 @@ sequence axis in chunks.
    ~ops.fftconv_chunked.set_default_chunk_size
    ~ops.fftconv_chunked.get_default_chunk_size
 
-Mixed-precision FFT convolutions
---------------------------------
+Mixed boundary-condition FFT convolutions
+-----------------------------------------
 
-FFT convolutions that switch internal precision per-axis (e.g. fp16 on
-power-of-2 dims, fp32 on others).  See the
-`FP16 Circular FFT Convolution: Derivation <../ops/FP16_FFTCONV_DERIVATION.html>`_
-for the numerical-stability background.
+FFT convolutions with per-axis boundary conditions — periodic on some
+spatial axes, zero-padded on others.  See
+:doc:`../ops/mixed_boundary_conditions` for the per-axis algorithm and the
+``fft_padding`` API.
 
 .. autosummary::
    :toctree: generated/
