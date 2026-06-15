@@ -16,7 +16,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 
 **Requirements**:
 
-- CUDA-compatible NVIDIA GPU (Ampere or Hopper architecture)
+- CUDA-compatible NVIDIA GPU (Ampere or newer)
 - CUDA Toolkit 12.0 or higher
 - Python 3.11 or higher
 

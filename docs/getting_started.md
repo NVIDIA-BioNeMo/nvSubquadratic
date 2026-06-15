@@ -6,7 +6,7 @@ Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNe
 
 ## Requirements
 
-- CUDA-compatible NVIDIA GPU (Ampere or Hopper architecture)
+- CUDA-compatible NVIDIA GPU (Ampere or newer)
 - CUDA Toolkit 12.0 or higher
 - Python 3.11 or higher
 
