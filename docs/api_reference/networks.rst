@@ -6,8 +6,7 @@ Networks
 ========
 
 End-to-end classification and general-purpose networks composing the
-modules above, plus the diffusion backbones and the UNet-ConvNeXt
-baselines used in benchmark comparisons.
+modules above, plus the UNet-ConvNeXt baselines used in benchmark comparisons.
 
 Classification & general-purpose
 --------------------------------
@@ -19,21 +18,6 @@ Classification & general-purpose
    ~networks.classification_resnet.ClassificationResNet
    ~networks.general_purpose_resnet.ResidualNetwork
    ~networks.vit5_classification.ViT5ClassificationNet
-
-Diffusion — Hugging Face adapters
----------------------------------
-
-Wrappers that expose :class:`diffusers.DiTTransformer2DModel` and
-:class:`diffusers.UVit2DModel` to the diffusion Lightning wrapper.
-
-.. autosummary::
-   :toctree: generated/
-   :template: class_template.rst
-
-   ~networks.huggingface_diffusers.HuggingFaceDiTConfig
-   ~networks.huggingface_diffusers.HuggingFaceUVitConfig
-   ~networks.huggingface_diffusers.DiffusersDiTWrapper
-   ~networks.huggingface_diffusers.DiffusersUVitWrapper
 
 Diffusion — JiT backbone
 ------------------------
