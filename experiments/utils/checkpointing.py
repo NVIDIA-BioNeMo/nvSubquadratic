@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add licence header
-
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """Utility helpers for checkpointing operations (loading, downloading, uploading, pruning, etc.)."""
 
 from __future__ import annotations

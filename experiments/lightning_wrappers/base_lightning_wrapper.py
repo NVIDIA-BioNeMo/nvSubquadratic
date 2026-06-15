@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """Base PyTorch Lightning wrapper for all nvSubquadratic experiments.
 
 Provides :class:`LightningWrapperBase`, the shared superclass for all task-specific
@@ -36,8 +34,6 @@ ARC).  It handles:
 Task-specific forward passes, losses, and metrics live in the subclasses
 (:class:`~experiments.lightning_wrappers.classification_wrapper.ClassificationWrapper`,
 :class:`~experiments.lightning_wrappers.regression_wrapper.RegressionWrapper`, etc.).
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 import warnings

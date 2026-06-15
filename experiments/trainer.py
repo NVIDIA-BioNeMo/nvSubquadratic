@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: Add licence header
-
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """PyTorch Lightning trainer factory for nvSubquadratic experiments.
 
 :func:`construct_trainer` is the single entry point for building a
@@ -40,8 +36,6 @@
 7. Returns the fully configured :class:`pytorch_lightning.Trainer` together with
    the :class:`~pytorch_lightning.callbacks.ModelCheckpoint` callback (so the
    caller can inspect ``checkpoint_callback.best_model_path``).
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 from pathlib import Path

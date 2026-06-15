@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """Typed configuration dataclasses for nvSubquadratic experiments.
 
 Every training run is fully described by an :class:`ExperimentConfig`.
@@ -39,8 +37,6 @@ Network and Lightning wrapper are specified as
 
 :data:`PLACEHOLDER` is re-exported from :mod:`nvsubquadratic.lazy_config` for
 convenience in config files.
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 from dataclasses import dataclass, field

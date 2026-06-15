@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """Classification residual network — global-average-pool readout.
 
 :class:`ClassificationResNet` subclasses :class:`ResidualNetwork` and overrides
@@ -38,8 +36,6 @@ All constructor arguments are inherited from
 :class:`~nvsubquadratic.networks.general_purpose_resnet.ResidualNetwork`;
 ``target_size`` is not used by this subclass (the GAP step replaces the
 readout-crop mechanism).
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 import torch

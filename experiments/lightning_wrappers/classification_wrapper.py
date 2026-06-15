@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """Lightning wrapper for image classification tasks.
 
 Provides :class:`ClassificationWrapper` and :class:`SoftTargetCrossEntropy`.
@@ -26,8 +24,6 @@ Provides :class:`ClassificationWrapper` and :class:`SoftTargetCrossEntropy`.
   ``-sum(target * log_softmax(logits))``.  Use with Mixup/CutMix (DeiT III recipe).
 - ``"bce"`` — :class:`torch.nn.BCEWithLogitsLoss` with binarised multi-hot targets.
   Matches the ViT-5 / DeiT III pre-training recipe (``--bce-loss``).
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 import torch
