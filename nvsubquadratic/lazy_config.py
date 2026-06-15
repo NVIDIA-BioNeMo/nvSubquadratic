@@ -51,8 +51,6 @@ premature instantiation of configs that still hold placeholders.
 :func:`save_config` / :func:`load_config` serialise configs to YAML via
 OmegaConf.  :func:`to_config` reverse-engineers a ``__target__`` dict from an
 already-instantiated object (best-effort; works for simple cases).
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 import ast

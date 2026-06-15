@@ -113,7 +113,6 @@ def get_config() -> ExperimentConfig:
                         data_dim=DATA_DIM,
                         hidden_dim=NUM_HIDDEN_CHANNELS,
                         fft_padding=FFT_PADDING,
-                        use_fp16_fft=False,
                         kernel_cfg=LazyConfig(SIRENKernelND)(
                             data_dim=DATA_DIM,
                             out_dim=NUM_HIDDEN_CHANNELS,

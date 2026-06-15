@@ -92,18 +92,14 @@ Optional ``shortcut: [H]`` adds a per-channel residual scale of the input:
     y \leftarrow y + \text{shortcut} \odot x
 
 broadcast along the spatial dimensions. This fuses the residual into the same
-kernel launch and matches the algebra used by the multi-head FFT conv (see
-:mod:`nvsubquadratic.ops.fftconv_multihead`) and by Hyena gating.
+kernel launch and matches the algebra used by Hyena gating.
 
 Precision
 ---------
 All operators accept any input dtype. Internally ``x`` and ``kernel`` are
 cast to ``float32`` for numerical stability (the frequency-domain product
 amplifies the dynamic range of intermediate values); the output is returned
-in the original dtype of ``x``. For aggressive memory/compute savings on
-power-of-two spatial dims, see the fp16 counterparts in
-:mod:`nvsubquadratic.ops.fftconv_fp16` and
-:mod:`nvsubquadratic.ops.circular_fftconv_fp16`.
+in the original dtype of ``x``.
 
 Performance
 -----------

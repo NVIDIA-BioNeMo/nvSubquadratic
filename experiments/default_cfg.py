@@ -13,12 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """Typed configuration dataclasses for nvSubquadratic experiments.
 
-Every training run is fully described by an :class:`ExperimentConfig` (or one
-of its task-specific subclasses such as :class:`DiffusionExperimentConfig`).
+Every training run is fully described by an :class:`ExperimentConfig`.
 These are plain Python :mod:`dataclasses` so they can be instantiated directly
 in a Python config file, serialised via OmegaConf, and overridden at the CLI.
 
@@ -40,8 +37,6 @@ Network and Lightning wrapper are specified as
 
 :data:`PLACEHOLDER` is re-exported from :mod:`nvsubquadratic.lazy_config` for
 convenience in config files.
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 from dataclasses import dataclass, field
@@ -216,56 +211,3 @@ class ExperimentConfig:
     start_from_checkpoint: StartFromCheckpointConfig = field(default_factory=StartFromCheckpointConfig)
     autoresume: AutoResumeConfig = field(default_factory=AutoResumeConfig)
     callbacks: list[LazyConfig] = field(default_factory=list)
-
-
-@dataclass
-class DiffusionConfig:
-    """Diffusion configuration for JiT-style continuous-time flow matching."""
-
-    num_train_timesteps: int = 1_000
-    time_embed_dim: Optional[int] = None
-    max_period: float = 10_000.0
-
-    # Noise scale for initial sample (1.0 for 256px, 2.0 for 512px per JiT).
-    noise_scale: float = 1.0
-
-    # Logit-normal time sampling parameters (JiT defaults).
-    p_mean: float = -0.8
-    p_std: float = 0.8
-
-    num_inference_steps: int = 50
-    num_samples: int = 25
-    log_samples: bool = True
-
-    ema_enabled: bool = True
-    ema_decay: float = 0.9995
-    ema_update_every: int = 1
-    ema_warmup_steps: int = 5_000
-
-    # Classifier-free guidance settings, enabled by default.
-    use_classifier_free_guidance: bool = True
-    guidance_scale: float = 3.5
-    condition_dropout_prob: float = 0.1
-    num_classes: Optional[int] = 1000
-
-    # CFG time interval: apply guidance only within [start, end].
-    cfg_interval_start: float = 0.1
-    cfg_interval_end: float = 1.0
-
-    # Online FID evaluation (JiT-style).
-    fid_online_jit: bool = False
-    fid_stats_file: str = ""
-    fid_num_samples: int = 50_000
-    fid_interval: int = 100
-    fid_batch_size: int = 512
-    fid_num_inference_steps: Optional[int] = None
-
-
-@dataclass
-class DiffusionExperimentConfig(ExperimentConfig):
-    """Experiment configuration for diffusion runs."""
-
-    # Override debug mode.
-    debug: bool = False
-
-    diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)

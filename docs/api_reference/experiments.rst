@@ -7,7 +7,7 @@ Experiments
 
 The ``experiments`` package wires nvSubquadratic modules into reproducible
 training pipelines built on PyTorch Lightning.  Each experiment is a
-``LazyConfig`` of dataclasses (``ExperimentConfig`` / ``DiffusionExperimentConfig``)
+``LazyConfig`` of dataclasses (``ExperimentConfig``)
 plus a wrapper subclass that defines the training step.
 
 Entry points
@@ -33,14 +33,12 @@ the per-experiment config files in ``examples/``.
    :template: class_template.rst
 
    ~default_cfg.ExperimentConfig
-   ~default_cfg.DiffusionExperimentConfig
    ~default_cfg.TrainConfig
    ~default_cfg.TrainerConfig
    ~default_cfg.SchedulerConfig
    ~default_cfg.WandbConfig
    ~default_cfg.AutoResumeConfig
    ~default_cfg.StartFromCheckpointConfig
-   ~default_cfg.DiffusionConfig
 
 Lightning wrappers
 ------------------
@@ -55,7 +53,6 @@ Task-specific wrappers around a common base.  Each wrapper defines
    ~lightning_wrappers.base_lightning_wrapper.LightningWrapperBase
    ~lightning_wrappers.classification_wrapper.ClassificationWrapper
    ~lightning_wrappers.classification_wrapper.SoftTargetCrossEntropy
-   ~lightning_wrappers.diffusion_wrapper.DiffusionWrapper
    ~lightning_wrappers.regression_wrapper.RegressionWrapper
    ~lightning_wrappers.well_lightning_wrapper.WELLRegressionWrapper
    ~lightning_wrappers.autoregressive_wrapper.AutoregressiveWrapper
@@ -98,7 +95,6 @@ that experiments target.
    ~datamodules.mnist
    ~datamodules.emnist
    ~datamodules.tinyimagenet
-   ~datamodules.ucf101
    ~datamodules.spatial_recall_dataset
    ~datamodules.dali_imagenet_fused
    ~datamodules.pde.well

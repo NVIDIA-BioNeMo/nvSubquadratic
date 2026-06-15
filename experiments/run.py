@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 r"""Main entry point for launching nvSubquadratic training runs.
 
 **Usage**::
@@ -45,8 +43,6 @@ Command-line interface:
 6. Instantiates the Lightning wrapper from ``cfg.lightning_wrapper_cfg``.
 7. Calls :func:`~experiments.trainer.construct_trainer` and
    :meth:`pytorch_lightning.Trainer.fit`.
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 import argparse
@@ -105,7 +101,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=str,
         required=True,
-        help="Path to the configuration file, e.g., config/experiments/mnist/mnist_classification_cfg.py",
+        help="Path to the configuration file, e.g., examples/imagenet_classification/ccnn_7_512_hyena.py",
     )
 
     # Add a catch-all for arbitrary config overrides

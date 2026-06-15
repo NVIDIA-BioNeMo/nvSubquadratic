@@ -268,20 +268,6 @@ class TestAssertions:
                 fft_backend="subq_ops",
             )
 
-    def test_rejects_fp16_fft(self):
-        """use_fp16_fft=True is rejected."""
-        with pytest.raises(AssertionError, match="does not support fp16 FFT"):
-            CKConvND(
-                data_dim=2,
-                hidden_dim=32,
-                kernel_cfg=LazyConfig(torch.nn.Identity)(),
-                mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double",
-                fft_padding="zero",
-                use_fp16_fft=True,
-                fft_backend="subq_ops",
-            )
-
     def test_rejects_invalid_backend(self):
         """Invalid fft_backend string is rejected."""
         with pytest.raises(AssertionError, match="Invalid fft_backend"):

@@ -1,6 +1,6 @@
 # Benchmarks
 
-Throughput numbers, FLOP scaling, and FP16 op-level results.  The
+Throughput numbers and FLOP scaling.  The
 tables below are included verbatim from the
 [`benchmarks/README.md`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/benchmarks/README.md)
 single-source — edits should land there, not here.
@@ -19,10 +19,3 @@ for the script that produced the plot.
 start-after: '# ViT-5-Small Throughput Benchmarks'
 ---
 ```
-
-## Op-level results
-
-- [FP16 FFT convolution results](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/benchmarks/ops/FP16_FFTCONV_RESULTS.md)
-  — accuracy and throughput of the FP16 path against the FP32 reference,
-  with the dual-mean-centering derivation summarised in
-  [FP16 Circular FFT Convolution: Derivation](ops/FP16_FFTCONV_DERIVATION.md).

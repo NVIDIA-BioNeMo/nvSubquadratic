@@ -65,8 +65,8 @@ and internally converts this to the boolean ``periodic`` tuple via
 *internal* normalised form used here; YAML configs should always use the
 string list form.
 
-See ``docs/ops/MIXED_BC_PLAN.md`` for the per-axis algorithm, dataset
-motivation table, and deferred work (fp16, multi-head, per-face BCs).
+See ``docs/ops/mixed_boundary_conditions.md`` for the per-axis algorithm,
+dataset motivation table, and limitations.
 
 Algorithm overview
 ------------------

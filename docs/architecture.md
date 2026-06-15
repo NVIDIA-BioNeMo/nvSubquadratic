@@ -66,10 +66,6 @@ are documented in detail in `docs/ops/README.md`; the short version:
   to BHL, run the fast path, and reshape back.  Recommended entry point
   for channels-last callers.
 - **`_chunked`** — processes channels in groups to cap peak FFT memory.
-- **`fp32` vs `fp16`** — internal compute precision.  fp16 ops require
-  power-of-2 spatial dims (cuFFT constraint) and use dual mean-centering
-  for numerical stability — see
-  [FP16 Circular FFT Convolution: Derivation](ops/FP16_FFTCONV_DERIVATION.md).
 
 So `causal_fftconv1d_fp32_bhl_w_reshape` is a causal 1D FFT conv that
 accepts channels-last input, runs the fp32 channels-first kernel under

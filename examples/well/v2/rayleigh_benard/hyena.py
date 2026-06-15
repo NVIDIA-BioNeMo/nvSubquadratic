@@ -131,7 +131,6 @@ def get_config() -> ExperimentConfig:
                         # Mixed boundary conditions: list of per-axis padding
                         # modes (one per spatial axis, in order).
                         fft_padding=FFT_PADDING,
-                        use_fp16_fft=False,
                         kernel_cfg=LazyConfig(SIRENKernelND)(
                             data_dim=DATA_DIM,
                             out_dim=NUM_HIDDEN_CHANNELS,

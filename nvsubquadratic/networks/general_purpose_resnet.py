@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/implicit-long-convs/ccnn_v2
-
 """General-purpose residual network backbone.
 
 :class:`ResidualNetwork` is a flexible, task-agnostic sequence-of-blocks backbone
@@ -57,8 +55,6 @@ inside a larger context window.  A ``target_size`` element of ``1`` collapses
 
 Set ``gradient_checkpointing=True`` to recompute activations during the backward
 pass instead of storing them, trading compute for memory at large scale.
-
-Adapted from https://github.com/implicit-long-convs/ccnn_v2.
 """
 
 from typing import Sequence

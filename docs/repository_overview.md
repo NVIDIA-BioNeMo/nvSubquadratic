@@ -20,12 +20,9 @@ nvSubquadratic/
 │   ├── callbacks/             FiLM monitor, image-grid viz, EMA, walltime checkpointer, …
 │   └── utils/                 cli + checkpointing helpers
 ├── examples/                LazyConfig recipes that feed experiments.run
-│   ├── mnist_classification/
 │   ├── imagenet_classification/
-│   ├── imagenet_diffusion/
 │   ├── vit5_imagenet/         ViT-5 baseline suite (v1–v5)
 │   ├── spatial_recall_{1,2,3}d/ and spatial_recall_v2/
-│   ├── ucf101_classification/
 │   ├── well/                  The Well PDE benchmark suite
 │   └── overview_tracker.md    active experimental roadmap
 ├── benchmarks/              performance measurement (the canonical home)
@@ -43,8 +40,7 @@ nvSubquadratic/
 │   └── vit5_imagenet_dataloader_profiling/
 ├── scripts/                 utilities (data prep, sanity, SLURM, viz)
 │   ├── slurm/                 SLURM submit scripts (portable wrapper + per-experiment)
-│   ├── data/                  data prep (ImageNet folder extraction, FID stats, …)
-│   ├── evaluation/            eval helpers (FID, CMMD)
+│   ├── data/                  data prep (ImageNet folder extraction, normalization stats, …)
 │   ├── visualization/         kernel viewers + throughput plot
 │   └── check_gpu_availability.py, license_check.py, …
 ├── tests/                   correctness tests
@@ -131,8 +127,6 @@ nvsubquadratic/
 │   ├── qk_norm.py                QK normalization (apply + L2Norm)
 │   ├── rope.py                   rotary position embedding (1D / 2D / 3D)
 │   └── quack_utils.py            QuACK capability probe
-├── metrics/
-│   └── cleanfid.py               FID via cleanfid
 └── testing/
     └── utils.py                  compute_relative_error
 ```
@@ -167,8 +161,7 @@ docs page.
 Indexed at {doc}`reports`.
 
 **`scripts/`** — Utility / glue scripts.  SLURM submit drivers
-(`scripts/slurm/`), data prep (`scripts/data/`), evaluation helpers
-(`scripts/evaluation/`), kernel viewers (`scripts/visualization/`),
+(`scripts/slurm/`), data prep (`scripts/data/`), kernel viewers (`scripts/visualization/`),
 and standalone sanity scripts.  No benchmarks live here — those moved
 to `benchmarks/`.
 
