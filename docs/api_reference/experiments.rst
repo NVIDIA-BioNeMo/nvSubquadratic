@@ -95,7 +95,6 @@ that experiments target.
    ~datamodules.mnist
    ~datamodules.emnist
    ~datamodules.tinyimagenet
-   ~datamodules.ucf101
    ~datamodules.spatial_recall_dataset
    ~datamodules.dali_imagenet_fused
    ~datamodules.pde.well

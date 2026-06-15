@@ -125,7 +125,6 @@ the `tests/` tree is out of scope for this tracker.)
 | `datamodules/mnist.py`                         | \[x\]  | MNIST datamodule — channels-last reshape, train/val split                                                  |
 | `datamodules/emnist.py`                        | \[x\]  | EMNIST datamodule — all five splits (digits, letters, balanced, bymerge, byclass)                          |
 | `datamodules/tinyimagenet.py`                  | \[x\]  | TinyImageNet HF-backed datamodule — RandAugment, Mixup/CutMix, token access                                |
-| `datamodules/ucf101.py`                        | \[x\]  | UCF101 — video/sequence modes, frames_per_clip, deterministic workers                                      |
 | `datamodules/dali_imagenet_fused.py`           | \[x\]  | DALI ImageNet — fused GPU augmentation, MixupConfig/AugmentConfig, repeated aug                            |
 | `datamodules/spatial_recall_dataset.py`        | \[x\]  | Already had comprehensive module + class docstrings; left as-is                                            |
 | `datamodules/pde/well.py`                      | \[x\]  | WELL benchmark datamodule — persistent HDF5 handles, NVMe staging, RAM preload, val/test normalisation fix |
