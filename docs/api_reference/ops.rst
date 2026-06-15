@@ -72,21 +72,6 @@ Periodic-boundary FFT convolutions for global mixing without zero padding.
    ~ops.circular_fftconv.circular_fftconv2d_fp32_bhl
    ~ops.circular_fftconv.circular_fftconv3d_fp32_bhl
 
-Multi-head FFT convolutions
----------------------------
-
-Multi-head variants used by Hyena-style mixers, including low-rank
-factorizations.
-
-.. autosummary::
-   :toctree: generated/
-   :template: function_template.rst
-
-   ~ops.fftconv_multihead.fftconv2d_multihead_bhl
-   ~ops.fftconv_multihead.fftconv2d_multihead_lowrank_bhl
-   ~ops.fftconv_multihead.fftconv2d_multihead_circular_bhl
-   ~ops.fftconv_multihead.fftconv2d_multihead_lowrank_circular_bhl
-
 Chunking utilities
 ------------------
 
