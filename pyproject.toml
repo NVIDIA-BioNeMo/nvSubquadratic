@@ -9,7 +9,7 @@ description = "A unified PyTorch-native library for subquadratic alternatives to
 requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE/License.txt", "LICENSE/third_party.txt"]
+license-files = ["LICENSE/License.txt"]
 authors = [
     { name = "NVIDIA Corporation" },
 ]
