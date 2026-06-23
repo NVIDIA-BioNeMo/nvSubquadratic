@@ -136,7 +136,7 @@ The diagram below is the operator that gives the stack its name.  It maps
 1:1 onto the `Short Conv → First Gate → Long Conv → Second Gate` block you
 see throughout the network code.
 
-![The HyenaND operator: kernel-synthesis path on top, data path on the bottom](_static/hyenand_block.jpg)
+![The HyenaND operator: kernel-synthesis path on top, data path on the bottom](_static/architecture.png)
 
 Two paths run and meet at the long convolution:
 
