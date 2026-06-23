@@ -53,6 +53,14 @@ optimisation in subquadratic-ops, and distributed bookkeeping in
 megatron-core.  Practically: if a kernel is slow, fix it in
 subquadratic-ops; if an interface is awkward, fix it here.
 
+## The HyenaND operator
+
+The operator that gives this stack its name — the
+`Short Conv → Gate → Long Conv → Gate` block you see throughout the network
+code — is built up from attention, with the full diagram and a worked
+trace, in {doc}`how_hyenand_works`.  Its fused FFT long-convolution path
+lives in subquadratic-ops; see {doc}`ops/README`.
+
 ## Naming conventions
 
 Two conventions show up everywhere in the ops and module code.  Both
@@ -66,6 +74,10 @@ are documented in detail in `docs/ops/README.md`; the short version:
   to BHL, run the fast path, and reshape back.  Recommended entry point
   for channels-last callers.
 - **`_chunked`** — processes channels in groups to cap peak FFT memory.
+- **`fp32` vs `fp16`** — internal compute precision.  fp16 ops require
+  power-of-2 spatial dims (cuFFT constraint) and use dual mean-centering
+  for numerical stability — see the
+  [FP16 circular FFT convolution report](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/reports/fp16_fft_convolution/REPORT.md).
 
 So `causal_fftconv1d_fp32_bhl_w_reshape` is a causal 1D FFT conv that
 accepts channels-last input, runs the fp32 channels-first kernel under
@@ -80,24 +92,7 @@ configure it with a `LazyConfig` over any of the mixers and the rest of
 the model code is unchanged.  Switching architectures is a one-line
 config diff.
 
-## The lazy-instantiation system
-
-Every config file under `examples/` is a tree of
-{class}`nvsubquadratic.lazy_config.LazyConfig` specs.  A spec is a
-deferred constructor call: `LazyConfig(SomeClass)(arg=...)` returns a
-proxy that holds the target and the arguments, but doesn't instantiate
-yet.  {func}`nvsubquadratic.lazy_config.instantiate` walks the tree,
-resolves nested specs depth-first, evaluates arithmetic strings (for
-`L_cache = "max(H, W)"`-style expressions), and constructs the live
-object graph.
-
-This is why most module constructors take `*_cfg: LazyConfig` rather
-than concrete instances — the user-facing config file decides what to
-instantiate; the module never imports a specific norm/conv/scheduler
-class directly.
-
 ## Further reading
 
 - {doc}`api_reference/index` — the curated API.
 - `docs/ops/README.md` — math primer for the FFT-based convolution ops.
-- `docs-tracker.md` (repo root) — current docstring coverage status.

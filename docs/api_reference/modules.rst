@@ -38,6 +38,7 @@ context-parallel counterparts.
    ~modules.causal_conv1d.CausalConv1D
    ~modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d
    ~modules.ckconv_nd.CKConvND
+   ~modules.ckconv_multihead_nd.CKConvMultiheadND
    ~modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv1d
    ~modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv2d
    ~modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d

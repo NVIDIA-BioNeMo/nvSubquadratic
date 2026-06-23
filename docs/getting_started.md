@@ -6,7 +6,7 @@ Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNe
 
 ## Requirements
 
-- CUDA-compatible NVIDIA GPU (Ampere or newer)
+- CUDA-compatible NVIDIA GPU
 - CUDA Toolkit 12.0 or higher
 - Python 3.11 or higher
 
@@ -43,51 +43,119 @@ the [project README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/
 
 ## Hello, Hyena
 
-A minimal forward pass through a 2D Hyena mixer:
+A minimal forward pass through a real 2D Hyena mixer.  Everything is
+wired with {doc}`LazyConfig <lazy_config>`: each `LazyConfig(Cls)(...)`
+records the class and its arguments without constructing anything, and a
+single `instantiate(...)` call at the end builds the whole tree.  This is
+exactly how the {doc}`experiments <api_reference/experiments>` configs
+assemble their networks — only there the scalar fields are filled by
+`"${net.hidden_dim}"`-style interpolation instead of the concrete
+integers used below.
 
 ```python
 import torch
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.hyena_nd import Hyena
-from nvsubquadratic.modules.kernels_nd import (
-    SIRENKernelND,
-    SIRENPositionalEmbeddingND,
+from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+from nvsubquadratic.modules.rms_norm_channel_first import RMSNormChannelFirst
+from nvsubquadratic.utils.qk_norm import L2Norm
+
+device = torch.device("cuda")
+
+B, H, X, Y = 2, 64, 32, 32
+
+hyena_cfg = LazyConfig(Hyena)(
+    # The long-range global convolution.  CKConvND owns a SIREN-parameterised
+    # kernel and applies it as an FFT conv — the kernel is *generated* by the
+    # SIREN MLP, never random.
+    global_conv_cfg=LazyConfig(CKConvND)(
+        data_dim=2,
+        hidden_dim=H,
+        kernel_cfg=LazyConfig(SIRENKernelND)(
+            data_dim=2,
+            out_dim=H,
+            mlp_hidden_dim=32,
+            num_layers=3,
+            embedding_dim=32,
+            omega_0=10.0,
+            hidden_omega_0=1.0,
+            L_cache=max(X, Y),
+            use_bias=True,
+        ),
+        mask_cfg=LazyConfig(torch.nn.Identity)(),
+        grid_type="double",  # linear (non-circular) convolution
+        fft_padding="zero",
+        fft_backend="torch_fft",  # portable; "subq_ops" uses the fused 2D CUDA kernel
+        is_causal=False,
+    ),
+    # Depthwise short conv on the concatenated [Q; K; V] (3 * H channels).
+    short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+        in_channels=3 * H,
+        out_channels=3 * H,
+        kernel_size=3,
+        groups=3 * H,
+        padding=1,
+        bias=False,
+    ),
+    gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),  # first gate σ
+    gate_nonlinear_2_cfg=LazyConfig(torch.nn.Sigmoid)(),  # second gate σ₂
+    pixelhyena_norm_cfg=LazyConfig(RMSNormChannelFirst)(
+        dim=H, eps=1e-6, use_quack=False
+    ),
+    output_norm_cfg=LazyConfig(RMSNormChannelFirst)(dim=H, eps=1e-6, use_quack=False),
+    qk_norm_cfg=LazyConfig(L2Norm)(dim=1),  # L2 QK-norm on the channel axis
 )
+
+# Build the whole module tree in one call.
+hyena = instantiate(hyena_cfg).to(device)
+
+# Hyena consumes channels-last Q, K, V tensors [B, *spatial, C].  In a full
+# model these come from a linear projection W·x (see QKVSequenceMixer); here
+# we feed random activations to exercise the forward.
+q = torch.randn(B, X, Y, H, device=device)
+k = torch.randn(B, X, Y, H, device=device)
+v = torch.randn(B, X, Y, H, device=device)
+
+y = hyena(q, k, v)
+print(y.shape)  # torch.Size([2, 32, 32, 64])  -> [B, X, Y, C]
+```
+
+In a real network you rarely hold `Q`, `K`, `V` yourself: the
+`QKVSequenceMixer` (see
+[`mixer_defaults.py`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/spatial_recall_v2/mixer_defaults.py))
+projects a single activation `x` into the three tensors and forwards them
+to this `Hyena`.  That same factory is what the spatial-recall experiments
+instantiate.
+
+## Going lower: the FFT conv op directly
+
+The Hyena above ultimately routes its long-range mixing through one of the
+FFT-convolution ops.  When you only need the convolution itself — no
+gating, no kernel generation, no `nn.Module` — you can call the op
+directly.  Here `kernel` is supplied explicitly (any 2D filter; a SIREN
+kernel would normally produce it):
+
+```python
+import torch
+
 from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl
 
 device = torch.device("cuda")
 
 B, H, X, Y = 2, 64, 32, 32
-x = torch.randn(B, H, X, Y, device=device)
+x = torch.randn(B, H, X, Y, device=device)  # channels-first [B, C, X, Y]
+kernel = torch.randn(1, H, X, Y, device=device)  # per-channel filter [1, C, K_x, K_y]
 
-# A SIREN-parameterised long-range 2D kernel.
-kernel_cfg = LazyConfig(SIRENKernelND)(
-    out_dim=H,
-    data_dim=2,
-    mlp_hidden_dim=64,
-    num_layers=3,
-    embedding_dim=32,
-    omega_0=10.0,
-    L_cache=max(X, Y),
-    use_bias=True,
-)
-
-# Wire a Hyena mixer that consumes the kernel via a global FFT conv.
-mixer_cfg = LazyConfig(Hyena)(
-    global_conv_cfg=LazyConfig(lambda: None)(),  # replaced below
-    short_conv_cfg=LazyConfig(torch.nn.Identity)(),
-    gate_nonlinear_cfg=LazyConfig(torch.nn.SiLU)(),
-    pixelhyena_norm_cfg=LazyConfig(torch.nn.Identity)(),
-    qk_norm_cfg=None,
-)
-
-# For a self-contained example, skip the LazyConfig dance and call the
-# op directly:
-kernel = torch.randn(1, H, X, Y, device=device)
-y = fftconv2d_fp32_bhl(x, kernel)
+y = fftconv2d_fp32_bhl(x, kernel)  # "same"-size circular-free conv
 print(y.shape)  # torch.Size([2, 64, 32, 32])
 ```
+
+The op casts to fp32 internally for numerical stability and returns the
+result in `x`'s original dtype.  Note the layout difference: the ops work
+**channels-first** `[B, C, *spatial]` (the `_bhl` suffix), whereas the
+`Hyena` module's public interface is **channels-last** `[B, *spatial, C]`.
 
 The lower-level FFT ops in
 {doc}`nvsubquadratic.ops <api_reference/ops>` are deliberately
@@ -102,5 +170,6 @@ Lightning-driven training pipelines.
 - {doc}`architecture` — the three-layer nvSubquadratic / subquadratic-ops
   / megatron-core story and the naming conventions used throughout the
   library.
-- {doc}`examples/index` — end-to-end training recipes per dataset.
+- [`examples/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples) —
+  end-to-end training recipes per dataset.
 - {doc}`api_reference/index` — the full curated API surface.

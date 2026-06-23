@@ -11,6 +11,13 @@ The active experimental roadmap (priorities, owners, status) lives at
 
 ## Classification
 
+### MNIST / SMNIST
+
+[`examples/mnist_classification/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/mnist_classification)
+covers MNIST with both attention and Hyena baselines, plus a small CCNN
+backbone.  [`examples/smnist_classification/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/smnist_classification)
+covers sequential MNIST (1D input).
+
 ### ImageNet
 
 [`examples/imagenet_classification/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/imagenet_classification)
@@ -24,6 +31,25 @@ Representative entry points: `ccnn_7_512_hyena.py`,
 [`examples/vit5_imagenet/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/vit5_imagenet)
 is the ViT-5 baseline suite (v1–v5) with its own
 [`TRACKER.md`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/vit5_imagenet/TRACKER.md).
+
+### UCF101
+
+[`examples/ucf101_classification/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/ucf101_classification)
+covers video classification with both sequence- and clip-mode datamodules.
+
+## Diffusion
+
+### MNIST
+
+[`examples/mnist_diffusion/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/mnist_diffusion)
+is a small DDPM/JiT diffusion sanity-check.
+
+### ImageNet
+
+[`examples/imagenet_diffusion/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/imagenet_diffusion)
+is the full ImageNet diffusion setup.  See its
+[README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/imagenet_diffusion/README.md)
+for the JiT vs Hyena-vs-attention comparison.
 
 ## Spatial recall
 
