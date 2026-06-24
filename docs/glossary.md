@@ -17,8 +17,9 @@ Subquadratic
 
 Receptive field
   The span of input a single output position can depend on.  A *global*
-  receptive field means any output can see the entire input — attention's
-  defining property, which HyenaND reproduces via long convolutions.
+  receptive field means any output can see the entire input.  This is
+  attention's defining property, which HyenaND reproduces via long
+  convolutions.
 
 Data-dependence
   Whether the operator's mixing weights are computed from the input
@@ -35,15 +36,15 @@ Gating
 Implicit filter
   A convolution kernel produced by evaluating a small network
   ({term}`SIREN`) on grid coordinates, rather than stored as one learnable
-  weight per tap.  Compact, and — because it is a continuous function of
-  position — samplable on a grid of any size or aspect ratio without
+  weight per tap.  It is compact, and because it is a continuous function of
+  position it is samplable on a grid of any size or aspect ratio without
   retraining.  Contrast with an *explicit* filter, whose taps are
   learned parameters (as in a classical CNN).
 
 SIREN
   A sinusoidal-activation MLP ($f_\theta$) used to parametrise implicit
   filters.  Its frequency is controlled by an $\omega_0$ hyperparameter
-  that scales with grid resolution and dimensionality — see
+  that scales with grid resolution and dimensionality.  See
   {doc}`reports` for the dimensional-scaling rule.  Implemented in
   {mod}`nvsubquadratic.modules.kernels_nd`.
 
@@ -61,7 +62,7 @@ FFT convolution (FFTConv)
   Computing a convolution as an element-wise product in the frequency
   domain, $y = \mathcal{F}^{-1}(\mathcal{F}(x) \odot \mathcal{F}(K))$.
   Each FFT is $O(N \log N)$ and the total cost is independent of kernel
-  size — the reason a global kernel is affordable.  Implemented in
+  size, which is what makes a global kernel affordable.  Implemented in
   {doc}`ops/README`.
 
 Convolution theorem
@@ -89,14 +90,14 @@ BHL / BLH
 
 Causal
   An operator where output position $n$ depends only on inputs at
-  positions $\le n$ — no leakage from the future.  Required for
+  positions $\le n$, with no leakage from the future.  Required for
   autoregressive 1D sequence modelling.
 
 Mixer
   An operator with the shared $(q, k, v)$ signature that
   {class}`nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer`
-  dispatches over — Hyena, attention, CKConv, or Mamba — so a network can
-  swap one for another via a one-line config change.
+  dispatches over (Hyena, attention, CKConv, or Mamba), so a network can
+  swap one for another from the config.
 
 CKConv
   Continuous-Kernel Convolution: a convolution whose kernel is an

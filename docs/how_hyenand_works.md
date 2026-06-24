@@ -1,10 +1,10 @@
 # How HyenaND works
 
-This page builds up the operator at the heart of the library from the one
-thing most readers already know — **attention** — and shows how HyenaND
-keeps what makes attention powerful while shedding its costs.  It is the
-conceptual on-ramp; once the ideas here click, {doc}`architecture` and
-{doc}`ops/README` are the reference manuals for the stack and the kernels.
+This page builds up the operator at the heart of the library starting from
+**attention**, which most readers already know, and shows how HyenaND keeps
+what makes attention work while shedding its costs. For reference material,
+{doc}`architecture` documents the stack and {doc}`ops/README` documents the
+kernels.
 
 ## Start from attention
 
@@ -14,19 +14,19 @@ properties make it work:
 - **Global receptive field.**  Every position can look at every other
   position, so a token's representation can depend on context arbitrarily
   far away.
-- **Data-dependence.**  The mixing weights are computed *from the input* —
+- **Data-dependence.**  The mixing weights are computed *from the input*:
   the attention matrix $A(x)$ is built on the fly for each sequence, rather
   than being a fixed set of learned weights.
 
 The price for both is the $N \times N$ attention matrix: compute and memory
 grow as $O(N^2)$ in the number of tokens $N$.  For a 256×256 image that is
-already 65k tokens; for video or a 3D volume it is hopeless.  And attention
-has no native notion of 2D/3D geometry — to apply it to an image you
-flatten the grid into a 1D sequence and let the model relearn that two
-pixels are neighbours.
+already 65k tokens; for video or a 3D volume it is hopeless.  Attention also
+has no native notion of 2D/3D geometry. To apply it to an image you flatten
+the grid into a 1D sequence and let the model relearn that two pixels are
+neighbours.
 
 **HyenaND's goal is to keep the global receptive field and the
-data-dependence, but pay $O(N \log N)$ instead of $O(N^2)$ — and to do it
+data-dependence, but pay $O(N \log N)$ instead of $O(N^2)$, and to do it
 directly on the data's native 2D/3D geometry.**
 
 ```{list-table}
@@ -58,22 +58,22 @@ widths: 28 24 24 24
 
 Mamba is the other popular subquadratic option, but it is inherently 1D: to
 process an image it has to pick an ad-hoc raster scan order, and no single
-1D ordering respects 2D locality.  HyenaND is global, subquadratic, *and*
-multi-dimensional at once.
+1D ordering respects 2D locality.  HyenaND is global and subquadratic while
+operating directly on multi-dimensional data.
 
 ## How HyenaND gets the global receptive field cheaply
 
 A global receptive field means convolving each position with a filter as
 large as the whole input.  Done naively, a convolution of an $N$-element
-signal with an $N$-element kernel costs $O(N^2)$ — we have not saved
+signal with an $N$-element kernel costs $O(N^2)$, so we have not saved
 anything.  Two ideas fix this.
 
 ### 1. An *implicit* filter
 
 Instead of storing one learnable weight per kernel tap (which would be $N$
 parameters for a global kernel, and a different count for every input
-size), HyenaND **generates** the kernel from a small neural network — a
-SIREN MLP $f_\theta$ — evaluated on the grid coordinates:
+size), HyenaND **generates** the kernel from a small neural network, a
+SIREN MLP $f_\theta$, evaluated on the grid coordinates:
 
 $$
 K(\mathbf{p}) = f_\theta(\mathbf{p}), \qquad
@@ -84,7 +84,7 @@ The filter is a continuous *function* of position, not a table of numbers.
 This is the difference between storing a line as the equation $y = mx + b$
 versus listing every point on it.  Because $f_\theta$ is continuous, the
 **same learned kernel can be sampled on a grid of any size or aspect
-ratio** — train at 64×64, evaluate at 256×256, no retraining.  A learned
+ratio**: train at 64×64, evaluate at 256×256, no retraining.  A learned
 Gaussian window $w$ multiplies the filter so its influence can taper with
 distance.
 
@@ -99,7 +99,7 @@ y = \mathcal{F}^{-1}\!\bigl( \mathcal{F}(x) \odot \mathcal{F}(K) \bigr).
 $$
 
 The two forward FFTs and the inverse each cost $O(N \log N)$, the
-element-wise product is $O(N)$, and — crucially — **the total cost is
+element-wise product is $O(N)$, and, crucially, **the total cost is
 independent of kernel size.**  A global kernel costs no more than a tiny
 one.  In $N$ dimensions the FFT runs on the native grid, so a 2D image or
 3D volume is convolved on its real geometry with no flattening:
@@ -110,14 +110,14 @@ $$
 
 This frequency-domain step is the **FFT convolution (FFTConv)** that the
 {doc}`ops/README` primitives implement, and it is what makes a global-kernel
-sequence model subquadratic.  The full math primer — linear vs circular
-boundaries, precision, the decision tree for picking an op — lives there.
+sequence model subquadratic.  The full math primer (linear vs circular
+boundaries, precision, the decision tree for picking an op) lives there.
 
 ## How HyenaND stays data-dependent: gating
 
 Attention is data-dependent because it *builds* the mixing matrix $A(x)$
 from the input.  HyenaND never materialises such a matrix.  Instead it
-interleaves the convolution with **element-wise gating** — multiplying the
+interleaves the convolution with **element-wise gating**: multiplying the
 signal by a data-derived mask.  A convolution is a fixed (Toeplitz) linear
 map; multiplying its input and output by input-dependent gates makes the
 *effective* operator depend on the data, at the cost of a handful of
@@ -140,13 +140,13 @@ see throughout the network code.
 
 Two paths run and meet at the long convolution:
 
-- **Kernel synthesis (top) — "what filter to use."**  Grid coordinates
+- **Kernel synthesis (top), "what filter to use."**  Grid coordinates
   feed the SIREN MLP $f_\theta$, are masked by the learned Gaussian window
   $w$, and are FiLM-conditioned on a control variable $z(\mathbf{x})$
   pooled from the input's register tokens.  The result is an
-  input-dependent, implicitly-parameterised $N$D kernel $K(\mathbf{x})$ —
-  global, freely learned, computed once per input.
-- **Data path (bottom) — "what to filter."**  The input is projected into
+  input-dependent, implicitly-parameterised $N$D kernel $K(\mathbf{x})$ that
+  is global, freely learned, and computed once per input.
+- **Data path (bottom), "what to filter."**  The input is projected into
   $\mathbf{q}, \mathbf{k}, \mathbf{v}$ (with a depthwise short conv for
   local context).  The **inner gate** $Z = \mathbf{q} \odot
   \mathrm{SiLU}(\mathbf{k})$ is convolved with $K(\mathbf{x})$ via the $N$D
@@ -154,14 +154,15 @@ Two paths run and meet at the long convolution:
   {v})$ conditions the result before a final norm.
 
 Read top-to-bottom: synthesise an input-dependent global kernel, gate the
-signal, convolve it cheaply in the frequency domain, gate again.  Global
-receptive field (the long implicit conv) and data-dependence (the two
-gates) — attention's two properties — at $O(N \log N)$ on native geometry.
+signal, convolve it cheaply in the frequency domain, gate again.  This
+gives attention's two properties, a global receptive field (the long
+implicit conv) and data-dependence (the two gates), at $O(N \log N)$ on
+native geometry.
 
 ## A worked trace
 
 The snippet below runs the **actual `Hyena` operator** from the diagram on a
-batch of 32×32 images — there is no random stand-in kernel.  Every argument
+batch of 32×32 images, with no random stand-in kernel.  Every argument
 maps onto a box in the block above: the `CKConvND` global conv *is* the SIREN
 kernel-synthesis + FFTConv path (top), the depthwise `Conv2d` is the short
 conv, the two `SiLU`s are the inner and outer gates, and the `LayerNorm`s are
@@ -224,25 +225,25 @@ Reading it against the diagram: `hyena(q, k, v)` takes the three projections
 (here all equal to `x`, the self-mixing case), runs the depthwise short conv
 for local context, forms the inner gate $Z = \mathbf{q} \odot
 \mathrm{SiLU}(\mathbf{k})$, convolves $Z$ with the SIREN-synthesised kernel
-inside `CKConvND` (the single $O(N \log N)$ FFTConv — the only expensive
+inside `CKConvND` (the single $O(N \log N)$ FFTConv, the only expensive
 step), then applies the outer gate $O = H \odot \mathrm{SiLU}(\mathbf{v})$ and
 the output norm.  In a full network the three projections come from separate
 linear layers, exactly as attention forms its own $q, k, v$.
 
-For the kernel-level view — one tensor pushed through the bare FFTConv
-primitive — see the minimal forward pass in {doc}`getting_started`.
+For the kernel-level view, one tensor pushed through the bare FFTConv
+primitive, see the minimal forward pass in {doc}`getting_started`.
 
 ## Where to go next
 
-- {doc}`architecture` — the three-library stack (nvSubquadratic /
+- {doc}`architecture`: the three-library stack (nvSubquadratic /
   subquadratic-ops / megatron-core) and the BHL/BLH layout conventions.
-- {doc}`ops/README` — the FFT-convolution math primer and the decision
+- {doc}`ops/README`: the FFT-convolution math primer and the decision
   tree for choosing a primitive (linear vs circular, fp32 vs fp16,
   chunking, fused CUDA paths).
-- [`examples/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples) —
-  where native 2D/3D global context pays off: images, video, and PDE
+- [`examples/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples):
+  native 2D/3D global context applied to images, video, and PDE
   rollouts.
-- {doc}`glossary` — quick definitions for SIREN, FiLM, implicit filter,
+- {doc}`glossary`: quick definitions for SIREN, FiLM, implicit filter,
   Toeplitz, register tokens, BHL/BLH.
   </content>
   </invoke>

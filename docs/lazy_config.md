@@ -2,12 +2,12 @@
 
 Every training run in this repository is described, end to end, by a single
 Python config file. The network architecture, the dataset, the optimizer,
-the Lightning wrapper, the schedule — all of it is data, not code wired
+the Lightning wrapper, and the schedule are all data, not code wired
 together at the call site. The mechanism that makes this work is the
 **lazy-config** system in {py:mod}`nvsubquadratic.lazy_config`: a tiny
 deferred-instantiation layer (think of it as a few-hundred-line stand-in for
-Hydra / detectron2 lazy configs) that lets you *declare* an object — what
-class to build and with what arguments — without *building* it yet.
+Hydra / detectron2 lazy configs) that lets you *declare* an object (what
+class to build and with what arguments) without *building* it yet.
 
 This page explains why we do it this way, how the machinery works, and walks
 through the patterns we actually use in the
@@ -19,9 +19,9 @@ configs.
 We are moving all model building into config files on purpose. Three
 properties motivate it:
 
-- **One config per experiment makes research backtrackable.** A run is not a
-  pile of CLI flags and a commit hash you have to reconstruct months later —
-  it is a file. The file *is* the experiment. Every architectural choice
+- **One config per experiment makes research backtrackable.** A run is one
+  file, not a pile of CLI flags and a commit hash you have to reconstruct
+  months later. Every architectural choice
   (kernel size, number of blocks, whether QK-norm is on, which mixer) lives
   in one place, under version control, next to the runs it produced. To
   reproduce a result you point `run.py` at the same file; to understand what
@@ -29,8 +29,8 @@ properties motivate it:
 
 - **Base configs + overrides make ablations cheap and honest.** You write a
   base config once and define each ablation as a small file that *overwrites
-  parts of it*. The dropout sweep, the mixer swap, the size variants — each
-  is its own file, so every run still has a complete, self-contained config.
+  parts of it*. A dropout sweep or a mixer swap is its own file, so every run
+  still has a complete, self-contained config.
   There is no "remember to also pass `--dropout 0.1`" footgun: the ablation
   is the file. This is exactly how the
   [`examples/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples)
@@ -45,14 +45,14 @@ properties motivate it:
   configs.
 
 The cost is that the config files look a little unusual the first time you
-see one — deeply nested `LazyConfig(...)` calls with `"${...}"` strings
+see one: deeply nested `LazyConfig(...)` calls with `"${...}"` strings
 sprinkled through them. The rest of this page makes that syntax legible.
 
 ## The core idea: declare now, build later
 
 A {py:class}`~nvsubquadratic.lazy_config.LazyConfig` wraps a target class or
 callable. *Calling* it with keyword arguments does **not** construct the
-object — it produces an OmegaConf `DictConfig` carrying a `__target__` key
+object; it produces an OmegaConf `DictConfig` carrying a `__target__` key
 plus the arguments:
 
 ```python
@@ -69,14 +69,14 @@ isinstance(norm, torch.nn.LayerNorm)  # True
 
 Two steps, deliberately separated:
 
-1. **Declare** — `LazyConfig(target)(**kwargs)` records *what* to build. No
+1. **Declare.** `LazyConfig(target)(**kwargs)` records *what* to build. No
    import of heavy framework code is forced at this point; the target can
    even be a dotted string like `"torch.nn.LayerNorm"`.
-1. **Build** — {py:func}`~nvsubquadratic.lazy_config.instantiate` resolves
+1. **Build.** {py:func}`~nvsubquadratic.lazy_config.instantiate` resolves
    `__target__` via `importlib`, processes the arguments, and calls the
    target.
 
-That separation is the whole trick. Between declare and build, the config is
+That separation is the point. Between declare and build, the config is
 just data you can edit, override, interpolate, serialise, and diff.
 
 ## Nesting
@@ -130,8 +130,8 @@ Change `hidden_dim` in one place and every `"${net.hidden_dim}"` follows.
 Interpolations are resolved at instantiation / override time, not when the
 config is declared, which is why they survive being edited and overridden.
 
-You can also reference across top-level sections — e.g. a kernel's cache
-length tracks the dataset's canvas size:
+You can also reference across top-level sections. For example, a kernel's
+cache length tracks the dataset's canvas size:
 
 ```python
 L_cache = "${dataset.canvas_size}"
@@ -158,8 +158,8 @@ Two small conveniences let you do math inside configs:
 - **The `${eval:...}` resolver** handles arithmetic in CLI overrides and
   trainer interpolations, e.g.
   `"${eval:'${trainer.samples_per_epoch} // (${train.batch_size} * 2)'}"`.
-  Only arithmetic on literal numbers is permitted — no function calls or
-  attribute access — so configs stay safe to load. (The `${eval:...}` resolver
+  Only arithmetic on literal numbers is permitted, with no function calls or
+  attribute access, so configs stay safe to load. (The `${eval:...}` resolver
   additionally allows `**`; plain arithmetic strings support `+ - * / // %`
   but not power.)
 
@@ -174,7 +174,7 @@ field whose value isn't known yet at declaration time. It plays two roles:
 
    - *By an experiment file, before running.* The spatial-recall base config
      sets `sequence_mixer_cfg=PLACEHOLDER`; each ablation file then asserts the
-     hole is still empty and plugs in a mixer — a self-documenting contract:
+     hole is still empty and plugs in a mixer, a self-documenting contract:
 
      ```python
      block_cfg = LazyConfig(ResidualBlock)(
@@ -199,7 +199,7 @@ field whose value isn't known yet at declaration time. It plays two roles:
 1. **A "don't build me yet" guard.** While `instantiate` walks an argument
    tree, any *nested* config that still contains a `PLACEHOLDER` is left as a
    config dict rather than constructed, so a half-specified subtree is never
-   handed to a constructor mid-build — e.g. a `block_cfg` whose
+   handed to a constructor mid-build. For example, a `block_cfg` whose
    `sequence_mixer_cfg` hole hasn't been filled is passed through as config
    instead of built. This guard is a check on *nested* configs only: a bare
    top-level value like the optimizer's `params=PLACEHOLDER` is not itself
@@ -281,7 +281,7 @@ PYTHONPATH=. python experiments/run.py \
 1. Loads the file and calls `get_config()`.
 
 1. Applies the `key=value` CLI overrides (after checking none of them clobber
-   an interpolated field — see below).
+   an interpolated field, as described below).
 
 1. Builds the objects exactly when needed:
 
@@ -296,21 +296,21 @@ console as a Rich tree, so the exact specification of every run is captured.
 
 ## The base-config and ablation pattern
 
-This is where the design pays off, and it is worth studying the
+It is worth studying the
 [`examples/spatial_recall_2d/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/spatial_recall_2d)
-directory to see it in practice.
+directory to see this pattern in practice.
 Instead of copy-pasting a 150-line config per ablation, we factor the shared
 structure into helper functions and keep each experiment file tiny.
 
 [`spatial_recall_2d/base_config.py`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/spatial_recall_2d/base_config.py)
 exposes `base_experiment_config(...)` which returns a fully-formed
 `ExperimentConfig` with the network, optimizer, scheduler, and callbacks all
-wired — but with the sequence mixer and the dataset left as `PLACEHOLDER`.
+wired, but with the sequence mixer and the dataset left as `PLACEHOLDER`.
 [`mixer_defaults.py`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/spatial_recall_2d/mixer_defaults.py)
 provides `get_hyena_mixer_cfg()`, `get_mamba_mixer_cfg()`, and
-`get_attention_mixer_cfg()` — each a `LazyConfig` for one mixer family.
+`get_attention_mixer_cfg()`, each a `LazyConfig` for one mixer family.
 
-An individual ablation is then *small and complete*:
+An individual ablation file is then short but still self-contained:
 
 ```python
 # examples/spatial_recall_2d/emnist_regression_color_selection/ccnn_hyena_s.py
@@ -342,16 +342,16 @@ def get_config() -> ExperimentConfig:
     return config
 ```
 
-To ablate the mixer, you change one line and the filename — `ccnn_hyena_s.py`
-→ `ccnn_mamba_xs.py`. To ablate size, you change `hidden_dim`. Each variant
+To ablate the mixer, you change one line and the filename (`ccnn_hyena_s.py`
+→ `ccnn_mamba_xs.py`). To ablate size, you change `hidden_dim`. Each variant
 is its own file, so each run still carries a *complete* config, yet the diff
-between any two variants is one or two lines. That is the backtrackable,
-ablation-friendly workflow the config system exists to enable.
+between any two variants is one or two lines. This is the backtrackable,
+ablation-friendly workflow the config system is built for.
 
 Because helpers return `LazyConfig` trees built from `"${...}"`
 interpolations, the swapped-in mixer automatically picks up `hidden_dim`,
-`data_dim`, `num_blocks`, and `canvas_size` from the surrounding config — you
-never restate them.
+`data_dim`, `num_blocks`, and `canvas_size` from the surrounding config, so
+you never restate them.
 
 ## Overriding from the command line
 
@@ -371,7 +371,7 @@ Two guardrails are worth knowing:
 - **You cannot override an interpolated field.** If a field's current value
   is a `"${...}"` string, overriding it directly is rejected
   (`verify_no_interpolator_overwrites`). Override the *source* of the
-  interpolation instead — e.g. set `net.hidden_dim=256`, not the dozen places
+  interpolation instead: set `net.hidden_dim=256`, not the dozen places
   that read `"${net.hidden_dim}"`.
 - **Add genuinely new keys with `+`.** `key=value` requires the key to exist
   (typo protection); Hydra-style `+key=value` force-adds it.
@@ -391,9 +391,9 @@ whether to build it now or pass it through as config:
   constructs it itself. This lets a network inspect or tweak block configs
   (injecting `drop_path_rate`, reading `"${net.num_blocks}"`) before building
   them.
-- **Non-module callables are instantiated eagerly** — e.g. a weight-init
-  factory like `partial_wang_init_fn_with_num_layers(num_layers=...)` is
-  resolved to a function and handed to the module ready to use.
+- **Non-module callables are instantiated eagerly.** For example, a
+  weight-init factory like `partial_wang_init_fn_with_num_layers(num_layers=...)`
+  is resolved to a function and handed to the module ready to use.
 
 Passing `recursive_instantiate=True` overrides this and builds everything
 top-down; the default (`False`) is what the module tree relies on.
@@ -403,7 +403,7 @@ top-down; the default (`False`) is what the module tree relies on.
 {py:func}`~nvsubquadratic.lazy_config.save_config` /
 {py:func}`~nvsubquadratic.lazy_config.load_config` round-trip a config to
 YAML via OmegaConf, and `config_to_dict` (used by `run.py`) flattens the
-whole tree — `LazyConfig`s, dataclasses, function references — into a
+whole tree (`LazyConfig`s, dataclasses, function references) into a
 JSON-serialisable dict for W&B and the console tree. This is what makes a run
 fully recoverable from its logged config.
 
@@ -417,7 +417,7 @@ fully recoverable from its logged config.
 - `PLACEHOLDER` marks a hole that must be filled and blocks premature builds.
 - One file per experiment; a base helper + a one-line swap per ablation.
 - Override with `key=value` on the CLI; never override a `"${...}"` field
-  directly — change its source.
+  directly. Change its source.
 
 For the bigger picture of where configs sit in the stack, see
 {doc}`architecture`; for runnable recipes, the

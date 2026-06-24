@@ -1,6 +1,6 @@
-# `nvsubquadratic.ops` — FFT convolution primitives
+# `nvsubquadratic.ops`: FFT convolution primitives
 
-This folder contains the **lowest-level building blocks** of the library: FFT-based convolution operators that turn an `O(N · K)` spatial convolution into an `O(N log N)` frequency-domain product. They are the workhorses behind every subquadratic mixer in the library (Hyena, CKConv, multi-head variants), and are kept here as plain functions — no `nn.Module` state, no learned parameters — so that higher-level modules can compose them freely.
+This folder contains the lowest-level building blocks of the library: FFT-based convolution operators that turn an `O(N · K)` spatial convolution into an `O(N log N)` frequency-domain product. Every subquadratic mixer in the library (Hyena, CKConv, multi-head variants) is built on them. They are kept here as plain functions, with no `nn.Module` state and no learned parameters, so that higher-level modules can compose them freely.
 
 If you are reading the paper alongside this codebase, this is the file to start with.
 
@@ -14,7 +14,7 @@ $$
 y[n] = \sum_{m} x[n - m] \cdot k[m]
 $$
 
-costs `O(N · K)` per channel. When `K` is small (e.g. a 3×3 image kernel) that is fine. When `K` is **comparable to `N`** — the regime Hyena-style models live in, where each layer's effective receptive field can span the whole input — the spatial cost grows quadratically with sequence length.
+costs `O(N · K)` per channel. When `K` is small (e.g. a 3×3 image kernel) that is fine. The trouble starts when `K` is **comparable to `N`**, the regime Hyena-style models live in, where each layer's effective receptive field can span the whole input. There the spatial cost grows quadratically with sequence length.
 
 The **convolution theorem** lets us replace the spatial convolution with an element-wise product in the frequency domain:
 
@@ -28,7 +28,7 @@ Two flavours show up throughout the folder:
 
 | Flavour                            | What it computes                                                                         | When to use                                                                                                                               |
 | ---------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Linear** (`fftconv*`)            | Standard convolution, zero-padded so no wrap-around occurs, then cropped to "same" size. | Default choice — matches `torch.nn.ConvNd` semantics.                                                                                     |
+| **Linear** (`fftconv*`)            | Standard convolution, zero-padded so no wrap-around occurs, then cropped to "same" size. | Default choice; matches `torch.nn.ConvNd` semantics.                                                                                      |
 | **Circular** (`circular_fftconv*`) | Periodic convolution where the kernel wraps around the input boundary.                   | When you want global mixing under periodic boundary conditions, or when input and kernel are the same size (no padding needed → cheaper). |
 
 ______________________________________________________________________
@@ -39,7 +39,7 @@ ______________________________________________________________________
 | ----------------------------------------------------------- | --------- | ------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | {ref}`fftconv.py <ops-fftconv-fp32>`                        | fp32      | linear        | depthwise      | The default. 1D/2D/3D, causal & non-causal.                                                                                                                                                                                                           |
 | {ref}`circular_fftconv.py <ops-circular-fftconv>`           | fp32      | circular      | depthwise      | Periodic boundaries (e.g. PDEs, ARC grids), or when `K = N` so padding is wasteful.                                                                                                                                                                   |
-| {ref}`mixed_fftconv.py <ops-mixed-fftconv>`                 | fp32      | per-axis BC   | depthwise      | **Mixed boundaries** — periodic on some spatial axes, zero-padded on others (e.g. Well's `rayleigh_benard`, `viscoelastic_instability`, `turbulent_radiative_layer`). Routes to the existing linear/circular ops in the all-False/all-True cases.     |
+| {ref}`mixed_fftconv.py <ops-mixed-fftconv>`                 | fp32      | per-axis BC   | depthwise      | **Mixed boundaries**: periodic on some spatial axes, zero-padded on others (e.g. Well's `rayleigh_benard`, `viscoelastic_instability`, `turbulent_radiative_layer`). Routes to the existing linear/circular ops in the all-False/all-True cases.      |
 | {ref}`fftconv_chunked.py <ops-chunking>`                    | fp32      | linear        | depthwise      | Memory-constrained training; processes channels in chunks. Has a global flag so models can opt in transparently.                                                                                                                                      |
 | {ref}`fftconv_custom.py <ops-fftconv-custom>`               | fp32      | linear        | depthwise      | Wraps optional fused CUDA kernels (`subquadratic_ops_torch.fft_conv2d` for 2D non-causal, `fft_causal_conv1d` for 1D causal) behind the same API as `fftconv.py`.                                                                                     |
 | {ref}`causal_conv1d_custom.py <ops-causal-conv1d>`          | fp32      | direct causal | depthwise      | Non-FFT 1D causal kernels (`causal_conv1d` short conv, `b2b_causal_conv1d` fused proj-gate-mixer-gate). Use for kernels short enough that FFT overhead dominates, or as a fused-Hyena building block.                                                 |
@@ -67,7 +67,7 @@ Every function name encodes its contract:
 
 So `causal_fftconv1d_fp32_bhl_w_reshape` is: causal 1D FFT conv, fp32 internal, accepts channels-last input, internally uses the channels-first kernel.
 
-The CUDA-accelerated wrappers in `fftconv_custom.py` drop the `_fp32_` / `_fp16_` token because the underlying kernel manages its own precision internally — so the same name in `fftconv_custom` is `causal_fftconv1d_bhl_w_reshape`. The direct-conv wrappers in `causal_conv1d_custom.py` (`causal_conv1d`, `b2b_causal_conv1d`) do not follow this scheme because they are thin pass-throughs to the upstream API; see their docstrings for shapes.
+The CUDA-accelerated wrappers in `fftconv_custom.py` drop the `_fp32_` / `_fp16_` token because the underlying kernel manages its own precision internally, so the same name in `fftconv_custom` is `causal_fftconv1d_bhl_w_reshape`. The direct-conv wrappers in `causal_conv1d_custom.py` (`causal_conv1d`, `b2b_causal_conv1d`) do not follow this scheme because they are thin pass-throughs to the upstream API; see their docstrings for shapes.
 
 ______________________________________________________________________
 
@@ -78,7 +78,7 @@ Everything in this folder follows two layouts. Pick whichever matches your surro
 - **BHL** (channels-first): `x: [B, H, *spatial]`, `kernel: [1|B, H, *K_dims]`. Standard for `torch.nn.ConvNd`-style modules. Faster under the hood because FFT runs on contiguous spatial axes without a transpose.
 - **BLH** (channels-last): `x: [B, *spatial, H]`, `kernel: [1|B, *K_dims, H]`. Common in transformer-style code. Use the `_w_reshape` variants.
 
-The kernel's leading dim is either `1` (shared kernel across the batch — the standard depthwise case) or `B` (per-sample kernel, e.g. FiLM-conditioned Hyena where each sample gets its own kernel).
+The kernel's leading dim is either `1` (shared kernel across the batch, the standard depthwise case) or `B` (per-sample kernel, e.g. FiLM-conditioned Hyena where each sample gets its own kernel).
 
 ### The shortcut term
 
@@ -88,7 +88,7 @@ $$
 y \leftarrow y + \mathrm{shortcut} \odot x
 $$
 
-i.e. a per-channel residual scale. This is *not* a generic skip connection — it fuses a specific algebraic shortcut that shows up repeatedly in Hyena-style gating, saving a separate kernel launch. Pass `None` if you don't need it.
+i.e. a per-channel residual scale. This is *not* a generic skip connection; it fuses a specific algebraic shortcut that shows up repeatedly in Hyena-style gating, saving a separate kernel launch. Pass `None` if you don't need it.
 
 ______________________________________________________________________
 
@@ -112,12 +112,12 @@ ______________________________________________________________________
 1. **What's my precision budget?**
 
    - fp32 is the default, always correct.
-   - For aggressive memory/throughput savings on **power-of-2 spatial dims**, use the `*_fp16_*` variant. The fp16 ops use `norm="ortho"` and (for circular) dual mean-centering to stay within fp16 dynamic range — see the [FP16 circular FFT convolution report](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/reports/fp16_fft_convolution/REPORT.md).
+   - For aggressive memory/throughput savings on **power-of-2 spatial dims**, use the `*_fp16_*` variant. The fp16 ops use `norm="ortho"` and (for circular) dual mean-centering to stay within fp16 dynamic range; see the [FP16 circular FFT convolution report](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/reports/fp16_fft_convolution/REPORT.md).
    - If your spatial dims aren't powers of two, stay in fp32 (cuFFT requires power-of-2 for fp16 transforms).
 
 1. **Am I OOMing?**
 
-   - Try `fftconv_chunked` — splits the channel dim into groups to cap peak memory. Default chunk size 128 gives ~26% memory savings for ~11% overhead.
+   - Try `fftconv_chunked`, which splits the channel dim into groups to cap peak memory. Default chunk size 128 gives ~26% memory savings for ~11% overhead.
    - Or combine: `fftconv_fp16.py` already provides `_chunked` variants that stack both savings.
 
 1. **Is there a fused CUDA kernel for my shape?**
@@ -130,7 +130,7 @@ ______________________________________________________________________
 
 ## Numerical notes
 
-- All operators **accept any input dtype** but cast to the internal compute precision (fp32 or fp16) before the FFT. The output is returned in the **original dtype of `x`** — no need for a manual cast on the caller side.
+- All operators **accept any input dtype** but cast to the internal compute precision (fp32 or fp16) before the FFT. The output is returned in the **original dtype of `x`**, so no manual cast is needed on the caller side.
 - The fp32 ops are correct for any input range. The fp16 ops impose two constraints: spatial dims must be powers of two (cuFFT), and the dynamic range is handled by mean-centering both `x` and `k` (see derivation doc).
 - The non-causal linear ops match a standard `torch.nn.ConvNd(padding='same')` up to floating-point rounding. The circular ops match `torch.nn.functional.conv*d` after a circular pad. Both are exercised in `tests/`.
 
@@ -138,9 +138,9 @@ ______________________________________________________________________
 
 ## Related modules
 
-- **[`nvsubquadratic/modules/kernels_nd.py`](../../nvsubquadratic/modules/kernels_nd.py)** — learned kernel parametrisations that produce the kernels these ops consume.
-- **[`nvsubquadratic/modules/hyena_nd.py`](../../nvsubquadratic/modules/hyena_nd.py)** — the Hyena operator, the main consumer of these ops.
-- **[`nvsubquadratic/modules/ckconv_nd.py`](../../nvsubquadratic/modules/ckconv_nd.py)** / **[`ckconv_multihead_nd.py`](../../nvsubquadratic/modules/ckconv_multihead_nd.py)** — CKConv variants that compose these primitives.
+- **[`nvsubquadratic/modules/kernels_nd.py`](../../nvsubquadratic/modules/kernels_nd.py)**: learned kernel parametrisations that produce the kernels these ops consume.
+- **[`nvsubquadratic/modules/hyena_nd.py`](../../nvsubquadratic/modules/hyena_nd.py)**: the Hyena operator, the main consumer of these ops.
+- **[`nvsubquadratic/modules/ckconv_nd.py`](../../nvsubquadratic/modules/ckconv_nd.py)** / **[`ckconv_multihead_nd.py`](../../nvsubquadratic/modules/ckconv_multihead_nd.py)**: CKConv variants that compose these primitives.
 
 ```{toctree}
 ---

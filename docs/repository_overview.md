@@ -28,26 +28,26 @@ nvSubquadratic/
 
 ## The library (`nvsubquadratic/`)
 
-The library is organised bottom-up — function-only convolution primitives,
-then `nn.Module`-shaped building blocks, then full architectures:
+The library is organised bottom-up: function-only convolution primitives,
+then `nn.Module`-shaped building blocks, then full architectures.
 
-- **`ops/`** — function-only FFT convolution primitives (linear / circular /
+- **`ops/`**: function-only FFT convolution primitives (linear / circular /
   mixed boundary, fp32 / fp16, chunked, and fused-CUDA wrappers).
-- **`modules/`** — `nn.Module` building blocks: mixers (Hyena, Mamba,
+- **`modules/`**: `nn.Module` building blocks: mixers (Hyena, Mamba,
   attention, CKConv), learned kernels, residual blocks, norms, and MLPs.
-- **`networks/`** — end-to-end architectures (ResNet / CCNN, ViT-5, the JiT
+- **`networks/`**: end-to-end architectures (ResNet / CCNN, ViT-5, the JiT
   diffusion backbone, and UNet-ConvNeXt baselines).
-- **`parallel/`** — context-parallel primitives (`init_parallel_state`,
+- **`parallel/`**: context-parallel primitives (`init_parallel_state`,
   AllToAll, zigzag split / gather).
-- **`utils/`**, **`metrics/`**, **`testing/`** — weight init, RoPE, QK-norm,
+- **`utils/`**, **`metrics/`**, **`testing/`**: weight init, RoPE, QK-norm,
   and the QuACK probe; FID; relative-error helpers.
 
 See {doc}`api_reference/index` for the curated, per-symbol API.
 
 ## Where to go next
 
-- {doc}`architecture` — the three-layer
+- {doc}`architecture`: the three-layer
   nvSubquadratic / subquadratic-ops / megatron-core story.
-- {doc}`api_reference/index` — the curated API for each
+- {doc}`api_reference/index`: the curated API for each
   `nvsubquadratic/` area.
-- {doc}`ops/README` — math primer for the FFT convolution primitives.
+- {doc}`ops/README`: math primer for the FFT convolution primitives.

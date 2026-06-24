@@ -12,7 +12,7 @@ residual blocks they rely on.
 Mixers
 ------
 
-Sequence/spatial mixers — Hyena, Mamba, attention variants.
+Sequence/spatial mixers: Hyena, Mamba, attention variants.
 
 .. autosummary::
    :toctree: generated/

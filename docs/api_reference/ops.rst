@@ -102,7 +102,7 @@ sequence axis in chunks.
 Mixed boundary-condition FFT convolutions
 -----------------------------------------
 
-FFT convolutions with per-axis boundary conditions — periodic on some
+FFT convolutions with per-axis boundary conditions: periodic on some
 spatial axes, zero-padded on others.  See
 :doc:`../ops/mixed_boundary_conditions` for the per-axis algorithm and the
 ``fft_padding`` API.

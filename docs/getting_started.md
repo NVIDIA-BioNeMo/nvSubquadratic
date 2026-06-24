@@ -48,7 +48,7 @@ wired with {doc}`LazyConfig <lazy_config>`: each `LazyConfig(Cls)(...)`
 records the class and its arguments without constructing anything, and a
 single `instantiate(...)` call at the end builds the whole tree.  This is
 exactly how the {doc}`experiments <api_reference/experiments>` configs
-assemble their networks — only there the scalar fields are filled by
+assemble their networks, except there the scalar fields are filled by
 `"${net.hidden_dim}"`-style interpolation instead of the concrete
 integers used below.
 
@@ -132,8 +132,8 @@ instantiate.
 ## Going lower: the FFT conv op directly
 
 The Hyena above ultimately routes its long-range mixing through one of the
-FFT-convolution ops.  When you only need the convolution itself — no
-gating, no kernel generation, no `nn.Module` — you can call the op
+FFT-convolution ops.  When you only need the convolution itself, with no
+gating, kernel generation, or `nn.Module`, you can call the op
 directly.  Here `kernel` is supplied explicitly (any 2D filter; a SIREN
 kernel would normally produce it):
 
@@ -167,9 +167,9 @@ Lightning-driven training pipelines.
 
 ## Next steps
 
-- {doc}`architecture` — the three-layer nvSubquadratic / subquadratic-ops
-  / megatron-core story and the naming conventions used throughout the
+- {doc}`architecture`: the three layers (nvSubquadratic, subquadratic-ops,
+  megatron-core) and the naming conventions used throughout the
   library.
-- [`examples/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples) —
+- [`examples/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples):
   end-to-end training recipes per dataset.
-- {doc}`api_reference/index` — the full curated API surface.
+- {doc}`api_reference/index`: the full curated API surface.

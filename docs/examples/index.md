@@ -26,7 +26,7 @@ without augmentation, plus tiny variants for laptop sanity checks).
 Representative entry points: `ccnn_7_512_hyena.py`,
 `ccnn_7_512_attention.py`.
 
-### TinyImageNet — ViT-5
+### TinyImageNet: ViT-5
 
 [`examples/vit5_imagenet/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/vit5_imagenet)
 is the ViT-5 baseline suite (v1–v5) with its own
@@ -75,6 +75,6 @@ holds the throughput-comparison configs used to produce the numbers in
 ### The Well
 
 [`examples/well/`](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/well)
-covers The Well PDE benchmark — see its
+covers The Well PDE benchmark; see its
 [README](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/well/README.md)
 for sub-datasets and baselines.
