@@ -7,8 +7,7 @@ Core
 
 Top-level utilities: the lazy-instantiation system that powers every
 config file, weight-init helpers, QK-norm and rotary embedding
-primitives, the QuACK-kernel capability probe, FID computation, and
-testing helpers.
+primitives, the QuACK-kernel capability probe, and testing helpers.
 
 Lazy configuration
 ------------------
@@ -82,15 +81,6 @@ QuACK capability probe
    :template: function_template.rst
 
    ~utils.quack_utils.cuda_supports_quack
-
-Metrics
--------
-
-.. autosummary::
-   :toctree: generated/
-   :template: function_template.rst
-
-   ~metrics.cleanfid.compute_folder_fid
 
 Testing helpers
 ---------------
