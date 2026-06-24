@@ -28,8 +28,8 @@ mixed path closes that gap.
 
 Wall and open boundaries are both treated as **zero-padded linear** at the
 convolution level; physical distinctions (if any) are handled elsewhere
-(data normalisation, loss). Per-face boundary conditions — a different BC
-on opposite faces of the same axis — are not supported (see
+(data normalisation, loss). Per-face boundary conditions, meaning a different
+BC on opposite faces of the same axis, are not supported (see
 [Limitations](#limitations)).
 
 ______________________________________________________________________
@@ -59,7 +59,7 @@ deliberately rejected with an error that redirects to the canonical form:
 
 ### Kernel size per axis
 
-The kernel grid size is auto-derived from the per-axis boundary condition —
+The kernel grid size is auto-derived from the per-axis boundary condition;
 it is **not** a separate knob. When `fft_padding` is a list, the legacy
 `grid_type` argument must be `None` (a conflict raises rather than silently
 overriding):
@@ -119,6 +119,6 @@ ______________________________________________________________________
 - **Custom CUDA path** (`fft_backend="subq_ops"`) supports zero-padding
   only; combining it with a per-axis `fft_padding` raises. Use
   `fft_backend="torch_fft"` (the default) for mixed boundaries.
-- **Auto-wiring** — the periodic axes are specified per config. The Well
+- **Auto-wiring**: the periodic axes are specified per config. The Well
   datamodule can read `boundary_conditions` from the HDF5 metadata, but
   model code does not yet consume it to derive `periodic` automatically.

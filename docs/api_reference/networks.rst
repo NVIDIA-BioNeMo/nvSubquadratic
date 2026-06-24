@@ -6,7 +6,8 @@ Networks
 ========
 
 End-to-end classification and general-purpose networks composing the
-modules above, plus the UNet-ConvNeXt baselines used in benchmark comparisons.
+modules above, plus the UNet-ConvNeXt baselines used in benchmark
+comparisons.
 
 Classification & general-purpose
 --------------------------------
