@@ -43,10 +43,12 @@ nvSubquadratic provides a **high-level PyTorch interface** that depends on the *
 pip install nvsubquadratic
 ```
 
-Requires Python 3.11+ and a CUDA 12-compatible GPU. For the optional fused RMSNorm kernel on Hopper/Blackwell:
+Requires Python 3.11+ and a CUDA 12-compatible GPU. Optional extras:
 
 ```bash
-pip install "nvsubquadratic[quack]"
+pip install "nvsubquadratic[quack]"   # fused RMSNorm kernel (Hopper/Blackwell only)
+pip install "nvsubquadratic[dali]"    # NVIDIA DALI for ImageNet/Well data pipelines (~400 MB)
+pip install "nvsubquadratic[all]"         # all extras
 ```
 
 ### Package Manager
