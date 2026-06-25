@@ -16,7 +16,13 @@ pure-PyTorch path automatically.
 
 ## Install
 
-The recommended developer setup is conda:
+For users who just want to use the library:
+
+```bash
+pip install nvsubquadratic
+```
+
+For contributors or developer setup, the recommended path is conda:
 
 ```bash
 bash setup_conda_env.sh

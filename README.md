@@ -37,6 +37,18 @@ nvSubquadratic provides a **high-level PyTorch interface** that depends on the *
 
 ## Installation
 
+### PyPI
+
+```bash
+pip install nvsubquadratic
+```
+
+Requires Python 3.11+ and a CUDA 12-compatible GPU. For the optional fused RMSNorm kernel on Hopper/Blackwell:
+
+```bash
+pip install "nvsubquadratic[quack]"
+```
+
 ### Package Manager
 
 This project uses **pip** with `pyproject.toml` for dependency management. A `Pipfile.lock` is maintained for nSpect security scanning compliance.

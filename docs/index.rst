@@ -81,13 +81,17 @@ package tour.
 Installation
 ------------
 
-The package is installed from source:
+.. code-block:: bash
+
+    pip install nvsubquadratic
+
+To enable the optional fused RMSNorm kernel on Hopper / Blackwell GPUs:
 
 .. code-block:: bash
 
-    pip install -e .
+    pip install "nvsubquadratic[quack]"
 
-To enable the optional fused RMSNorm kernel on Hopper / Blackwell GPUs:
+For development (editable install from source):
 
 .. code-block:: bash
 
