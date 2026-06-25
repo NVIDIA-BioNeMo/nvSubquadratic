@@ -11,18 +11,11 @@ bash setup_conda_env.sh
 conda activate nvsubquadratic
 ```
 
-## Pre-commit
-
-Run locally before pushing:
-
-```bash
-pre-commit install
-pre-commit run --all-files
-```
-
 ## Test plan
 
-<!-- How did you test this? Bulleted checklist preferred. -->
+- [ ] `pre-commit run --all-files` passes (`pre-commit install` if not yet set up).
+- [ ] Existing tests pass (`pytest tests/`).
+- [ ] New tests added, or explain why not needed:
 
 ## Documentation checklist
 

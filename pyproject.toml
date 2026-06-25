@@ -58,7 +58,6 @@ dependencies = [
     "huggingface_hub",
     "subquadratic-ops-torch-cu12>=0.2.0",
     "timm==1.0.24",
-    "nvidia-dali-cuda120==1.53.0",
 ]
 
 [project.urls]
@@ -71,6 +70,10 @@ Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 # Optional: use QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
 # On Ampere and older GPUs the kernel is not available; RMSNorm uses PyTorch fallback.
 quack = ["quack-kernels"]
+# Optional: NVIDIA DALI data-loading pipeline, used by ImageNet and The Well examples.
+# Not required for the core library; ~400 MB download.
+dali = ["nvidia-dali-cuda120==1.53.0"]
+all = ["quack-kernels", "nvidia-dali-cuda120==1.53.0"]
 
 [tool.setuptools.dynamic]
 version = { file = "VERSION" }

@@ -81,13 +81,19 @@ package tour.
 Installation
 ------------
 
-The package is installed from source:
+.. code-block:: bash
+
+    pip install nvsubquadratic
+
+Optional extras:
 
 .. code-block:: bash
 
-    pip install -e .
+    pip install "nvsubquadratic[quack]"       # fused RMSNorm kernel (Hopper/Blackwell only)
+    pip install "nvsubquadratic[dali]"        # NVIDIA DALI for ImageNet/Well data pipelines
+    pip install "nvsubquadratic[all]"         # all extras
 
-To enable the optional fused RMSNorm kernel on Hopper / Blackwell GPUs:
+For development (editable install from source):
 
 .. code-block:: bash
 

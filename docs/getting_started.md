@@ -16,7 +16,16 @@ pure-PyTorch path automatically.
 
 ## Install
 
-The recommended developer setup is conda:
+For users who just want to use the library:
+
+```bash
+pip install nvsubquadratic                   # core library
+pip install "nvsubquadratic[dali]"           # + NVIDIA DALI for ImageNet/Well examples
+pip install "nvsubquadratic[quack]"          # + fused RMSNorm kernel (Hopper/Blackwell only)
+pip install "nvsubquadratic[all]"            # all extras
+```
+
+For contributors or developer setup, the recommended path is conda:
 
 ```bash
 bash setup_conda_env.sh
