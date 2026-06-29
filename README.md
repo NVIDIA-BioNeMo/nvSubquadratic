@@ -18,7 +18,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 
 - CUDA-compatible NVIDIA GPU (Ampere or newer)
 - CUDA Toolkit 12.0 or higher
-- Python 3.11 or higher
+- Python 3.10 or higher
 
 **quack-kernels (optional)**:
 
@@ -43,7 +43,7 @@ nvSubquadratic provides a **high-level PyTorch interface** that depends on the *
 pip install nvsubquadratic
 ```
 
-Requires Python 3.11+ and a CUDA 12-compatible GPU. Optional extras:
+Requires Python 3.10+ and a CUDA 12-compatible GPU. Optional extras:
 
 ```bash
 pip install "nvsubquadratic[quack]"   # fused RMSNorm kernel (Hopper/Blackwell only)

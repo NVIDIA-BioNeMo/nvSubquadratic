@@ -8,7 +8,7 @@ Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNe
 
 - CUDA-compatible NVIDIA GPU
 - CUDA Toolkit 12.0 or higher
-- Python 3.11 or higher
+- Python 3.10 or higher
 
 The optional fused RMSNorm kernel (`quack-kernels`) requires Hopper or
 Blackwell (H100, B200, B300); on Ampere the library falls back to a

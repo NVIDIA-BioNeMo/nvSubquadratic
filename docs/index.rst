@@ -104,7 +104,7 @@ Requirements
 
 - CUDA-compatible NVIDIA GPU
 - CUDA Toolkit 12.0 or higher
-- Python 3.11 or higher
+- Python 3.10 or higher
 
 Where to go next
 ----------------

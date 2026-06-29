@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nvsubquadratic"
 dynamic = ["version"]
 description = "A unified PyTorch-native library for subquadratic alternatives to quadratic attention methods with optimized CUDA kernels."
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
@@ -35,6 +35,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
