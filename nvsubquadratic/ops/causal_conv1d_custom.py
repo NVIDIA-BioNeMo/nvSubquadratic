@@ -58,7 +58,7 @@ def _get_causal_conv1d():
         except ImportError as exc:
             raise ImportError(
                 "subquadratic_ops_torch is required for causal_conv1d. "
-                "Install it with: pip install subquadratic_ops_torch"
+                "Install the accelerated CUDA kernels with: pip install 'nvsubquadratic[cuda]'"
             ) from exc
     return _causal_conv1d
 
@@ -73,7 +73,7 @@ def _get_b2b_causal_conv1d():
         except ImportError as exc:
             raise ImportError(
                 "subquadratic_ops_torch is required for b2b_causal_conv1d. "
-                "Install it with: pip install subquadratic_ops_torch"
+                "Install the accelerated CUDA kernels with: pip install 'nvsubquadratic[cuda]'"
             ) from exc
     return _b2b_causal_conv1d
 

@@ -38,7 +38,6 @@ from datetime import timedelta
 
 import torch
 import torch.distributed as dist
-from megatron.core import parallel_state
 from torch.distributed.nn.functional import all_gather as functional_all_gather
 
 
@@ -71,6 +70,14 @@ def init_parallel_state(
         initializes the process group if not already initialized. It also verifies
         the context parallel rank and world size after initialization.
     """
+    try:
+        from megatron.core import parallel_state
+    except ImportError as exc:
+        raise ImportError(
+            "megatron-core is required for distributed / context-parallel training "
+            "(init_parallel_state). Install it with: pip install 'nvsubquadratic[distributed]'"
+        ) from exc
+
     num_gpus = torch.cuda.device_count()
     required_world_size = tensor_model_parallel_size * pipeline_model_parallel_size * context_parallel_size
     assert num_gpus == required_world_size, (

@@ -85,26 +85,38 @@ Installation
 
     pip install nvsubquadratic
 
+This installs the full training/experiment stack — nvSubquadratic targets GPU
+workflows.
+
 Optional extras:
 
 .. code-block:: bash
 
-    pip install "nvsubquadratic[quack]"       # fused RMSNorm kernel (Hopper/Blackwell only)
-    pip install "nvsubquadratic[dali]"        # NVIDIA DALI for ImageNet/Well data pipelines
-    pip install "nvsubquadratic[all]"         # all extras
+    pip install "nvsubquadratic[cuda]"         # accelerated fused FFT-conv / causal-conv CUDA kernels
+    pip install "nvsubquadratic[quack]"        # fused RMSNorm kernel (Hopper/Blackwell only)
+    pip install "nvsubquadratic[dali]"         # NVIDIA DALI data pipelines for the examples
+    pip install "nvsubquadratic[distributed]"  # megatron-core, for context-parallel / distributed training
+    pip install "nvsubquadratic[baselines]"    # timm, for the ConvNeXt UNet baseline models
+    pip install "nvsubquadratic[all]"          # all of the above
+
+The accelerated CUDA kernels (``[cuda]``) are a source build requiring ``nvcc``
+and are kept out of core, so ``pip install nvsubquadratic`` also succeeds in
+environments without the CUDA toolkit. The operators default to the portable
+``torch.fft`` backend; ``fft_backend="subq_ops"`` without ``[cuda]`` raises a
+clear ``ImportError``.
 
 For development (editable install from source):
 
 .. code-block:: bash
 
-    pip install -e ".[quack]"
+    pip install -e ".[all]"
 
 Requirements
 ------------
 
-- CUDA-compatible NVIDIA GPU
-- CUDA Toolkit 12.0 or higher
 - Python 3.10 or higher
+- For GPU execution: a CUDA-compatible NVIDIA GPU and CUDA Toolkit 12.0+
+- For the accelerated kernels (``[cuda]``): ``nvcc`` to build ``subquadratic-ops-torch-cu12``
 
 Where to go next
 ----------------

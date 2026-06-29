@@ -19,11 +19,15 @@ pure-PyTorch path automatically.
 For users who just want to use the library:
 
 ```bash
-pip install nvsubquadratic                   # core library
-pip install "nvsubquadratic[dali]"           # + NVIDIA DALI for ImageNet/Well examples
+pip install nvsubquadratic                   # full training/experiment stack
+pip install "nvsubquadratic[cuda]"           # + accelerated fused FFT-conv / causal-conv CUDA kernels
 pip install "nvsubquadratic[quack]"          # + fused RMSNorm kernel (Hopper/Blackwell only)
-pip install "nvsubquadratic[all]"            # all extras
+pip install "nvsubquadratic[all]"            # everything
 ```
+
+The accelerated CUDA kernels (`[cuda]`) need `nvcc` to build and are kept out of
+core, so the base install also works without the CUDA toolkit (the operators
+default to the portable `torch.fft` backend).
 
 For contributors or developer setup, the recommended path is conda:
 
