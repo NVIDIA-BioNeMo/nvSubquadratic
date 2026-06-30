@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ViT5ClassificationNet
+=====================
+
+.. currentmodule:: nvsubquadratic.networks.vit5_classification
+
+.. autoclass:: ViT5ClassificationNet
+   :members:
+   :show-inheritance:

@@ -1,0 +1,1088 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>ViT5Attention &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=fd10adb8"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/generated/nvsubquadratic.modules.vit5_attention.ViT5Attention';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="ViT5HyenaAdapter" href="nvsubquadratic.modules.vit5_hyena_adapter.ViT5HyenaAdapter.html" />
+    <link rel="prev" title="Attention" href="nvsubquadratic.modules.attention.Attention.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="reference internal" href="../modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">API Reference</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../modules.html" class="nav-link">Modules</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">ViT5Attention</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="vit5attention">
+<h1>ViT5Attention<a class="headerlink" href="#vit5attention" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ViT5Attention</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">hidden_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_heads</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_patches_h</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_patches_w</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_registers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">has_cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">qk_norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">rope_base</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">reg_rope_base</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">attn_dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">proj_dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">qkv_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">out_proj_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_fn_qkv_proj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_fn_out_proj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>ViT-5 multi-head self-attention with RMSNorm QK-Norm and register-aware RoPE.</p>
+<p>This module is the primary sequence-mixing operator for the ViT-5 family of
+hierarchical vision transformers.  It computes standard scaled dot-product
+attention:</p>
+<div class="math notranslate nohighlight">
+\[\text{head}_i = \text{softmax}\!\left(
+    \frac{Q_i K_i^\top}{\sqrt{d_k}}
+\right) V_i, \quad
+\text{out} = \text{Concat}(\text{head}_1, \ldots, \text{head}_H) W_O\]</div>
+<p>where <span class="math notranslate nohighlight">\(d_k = C / H\)</span> is the per-head dimension and <span class="math notranslate nohighlight">\(W_O\)</span> is the
+output projection.  Q, K, V are obtained from a single fused linear
+projection <span class="math notranslate nohighlight">\([Q, K, V] = x W_{QKV}\)</span>.</p>
+<p><strong>Token layout</strong></p>
+<p>Input shape: <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">C]</span></code> where
+<code class="docutils literal notranslate"><span class="pre">T</span> <span class="pre">=</span> <span class="pre">num_patches_h</span> <span class="pre">*</span> <span class="pre">num_patches_w</span> <span class="pre">+</span> <span class="pre">(1</span> <span class="pre">if</span> <span class="pre">has_cls</span> <span class="pre">else</span> <span class="pre">0)</span> <span class="pre">+</span> <span class="pre">num_registers</span></code>.
+Token ordering within the sequence axis:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[ patch_0, patch_1, ..., patch_{H*W-1}, (CLS,) reg_0, ..., reg_{R-1} ]
+  &lt;----- H*W patch tokens ---------&gt;   &lt;--1--&gt;  &lt;---- R registers ----&gt;
+</pre></div>
+</div>
+<p>This ordering must be consistent with the token layout produced by the
+network’s patchify + register-injection layers (see
+<code class="xref py py-class docutils literal notranslate"><span class="pre">ViT5Classifier</span></code>).</p>
+<p><strong>Positional encoding</strong></p>
+<p>Three distinct positional encodings are applied:</p>
+<ul class="simple">
+<li><p><strong>Patch tokens</strong> — 2D RoPE with base frequency <code class="docutils literal notranslate"><span class="pre">rope_base</span></code> (default
+10000).  The H×W grid is linearised in row-major (Y-then-X) order.</p></li>
+<li><p><strong>CLS token</strong> — identity rotation: cos=1, sin=0.  No positional bias is
+imposed on the class token.</p></li>
+<li><p><strong>Register tokens</strong> — 2D RoPE with base <code class="docutils literal notranslate"><span class="pre">reg_rope_base</span></code> (default 100),
+treating the <code class="docutils literal notranslate"><span class="pre">R</span></code> registers as a <code class="docutils literal notranslate"><span class="pre">sqrt(R)</span> <span class="pre">×</span> <span class="pre">sqrt(R)</span></code> grid.  A lower base
+value (<code class="docutils literal notranslate"><span class="pre">reg_rope_base=100</span></code> vs <code class="docutils literal notranslate"><span class="pre">rope_base=10000</span></code>) yields higher rotation
+frequencies (theta decays more slowly across head-dim pairs), giving denser
+angular spacing for register positions.  This reflects their role as global
+context carriers without fixed spatial meaning.</p></li>
+</ul>
+<p>All three tables are concatenated into a single buffer pair (<code class="docutils literal notranslate"><span class="pre">rope_cos</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rope_sin</span></code>) of shape <code class="docutils literal notranslate"><span class="pre">[T,</span> <span class="pre">head_dim]</span></code> and applied with a single broadcast
+multiply in <a class="reference internal" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.forward" title="nvsubquadratic.modules.vit5_attention.ViT5Attention.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a>.</p>
+<p><strong>QK normalisation</strong></p>
+<p>When <code class="docutils literal notranslate"><span class="pre">qk_norm</span></code> is provided, two independent norm modules (<code class="docutils literal notranslate"><span class="pre">q_norm</span></code>,
+<code class="docutils literal notranslate"><span class="pre">k_norm</span></code>) are instantiated and applied to Q and K after <code class="docutils literal notranslate"><span class="pre">qkv.unbind()</span></code>
+produces tensors of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">H,</span> <span class="pre">d_k]</span></code>, and <em>before</em> RoPE.  The norm
+is expected to be a learnable RMSNorm or equivalent (accepting input of shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">H,</span> <span class="pre">d_k]</span></code> and normalising along the last axis).  Unlike the generic
+<a class="reference internal" href="nvsubquadratic.modules.attention.Attention.html#nvsubquadratic.modules.attention.Attention" title="nvsubquadratic.modules.attention.Attention"><code class="xref py py-class docutils literal notranslate"><span class="pre">Attention</span></code></a> module which uses a fixed
+L2 (cosine) normalisation, the learnable per-head norm here allows the model
+to control the scale of the dot products.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Norm is applied <strong>before</strong> RoPE in this module (order: <code class="docutils literal notranslate"><span class="pre">unbind</span> <span class="pre">→</span>
+<span class="pre">q_norm/k_norm</span> <span class="pre">→</span> <span class="pre">rope</span> <span class="pre">→</span> <span class="pre">SDPA</span></code>), whereas the generic <code class="xref py py-class docutils literal notranslate"><span class="pre">Attention</span></code>
+applies RoPE before L2-norm.  The order matters for checkpoint
+compatibility — swapping the two will change the effective positional
+encoding applied to normalised queries and keys.</p>
+</div>
+<p><strong>Differences vs.</strong> <a class="reference internal" href="nvsubquadratic.modules.attention.Attention.html#nvsubquadratic.modules.attention.Attention" title="nvsubquadratic.modules.attention.Attention"><code class="xref py py-class docutils literal notranslate"><span class="pre">Attention</span></code></a></p>
+<ul class="simple">
+<li><p>Self-contained QKV + output projections (generic uses outer
+<code class="docutils literal notranslate"><span class="pre">QKVSequenceMixer</span></code>).</p></li>
+<li><p>RMSNorm QK-Norm instead of L2 normalisation.</p></li>
+<li><p>Dual-base register-aware RoPE instead of single-base uniform RoPE.</p></li>
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">C]</span></code> input — no multi-dimensional spatial support, no
+causal masking, no context-parallelism guard.</p></li>
+</ul>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.hidden_dim">
+<span class="sig-name descname"><span class="pre">hidden_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.hidden_dim" title="Link to this definition">#</a></dt>
+<dd><p>Total channel dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.num_heads">
+<span class="sig-name descname"><span class="pre">num_heads</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_heads" title="Link to this definition">#</a></dt>
+<dd><p>Number of attention heads <code class="docutils literal notranslate"><span class="pre">H</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.head_dim">
+<span class="sig-name descname"><span class="pre">head_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.head_dim" title="Link to this definition">#</a></dt>
+<dd><p>Per-head dimension <code class="docutils literal notranslate"><span class="pre">d_k</span> <span class="pre">=</span> <span class="pre">C</span> <span class="pre">/</span> <span class="pre">H</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.scale" title="Link to this definition">#</a></dt>
+<dd><p>Attention logit scale, default <code class="docutils literal notranslate"><span class="pre">head_dim</span> <span class="pre">**</span> <span class="pre">-0.5</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.num_patches_h">
+<span class="sig-name descname"><span class="pre">num_patches_h</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_patches_h" title="Link to this definition">#</a></dt>
+<dd><p>Height of the patch grid used for 2D RoPE.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.num_patches_w">
+<span class="sig-name descname"><span class="pre">num_patches_w</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_patches_w" title="Link to this definition">#</a></dt>
+<dd><p>Width of the patch grid used for 2D RoPE.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.num_registers">
+<span class="sig-name descname"><span class="pre">num_registers</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_registers" title="Link to this definition">#</a></dt>
+<dd><p>Number of register tokens <code class="docutils literal notranslate"><span class="pre">R</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.has_cls">
+<span class="sig-name descname"><span class="pre">has_cls</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.has_cls" title="Link to this definition">#</a></dt>
+<dd><p>Whether the token sequence includes a CLS token
+between the patch tokens and the register tokens.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.attn_dropout">
+<span class="sig-name descname"><span class="pre">attn_dropout</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.attn_dropout" title="Link to this definition">#</a></dt>
+<dd><p>Dropout probability applied to attention weights
+during training; set to 0.0 at inference.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.qkv">
+<span class="sig-name descname"><span class="pre">qkv</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.qkv" title="Link to this definition">#</a></dt>
+<dd><p>Fused QKV projection: <code class="docutils literal notranslate"><span class="pre">Linear(C,</span> <span class="pre">3C,</span> <span class="pre">bias=qkv_bias)</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Linear</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.proj">
+<span class="sig-name descname"><span class="pre">proj</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.proj" title="Link to this definition">#</a></dt>
+<dd><p>Output projection: <code class="docutils literal notranslate"><span class="pre">Linear(C,</span> <span class="pre">C,</span> <span class="pre">bias=out_proj_bias)</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Linear</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.proj_drop">
+<span class="sig-name descname"><span class="pre">proj_drop</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.proj_drop" title="Link to this definition">#</a></dt>
+<dd><p>Dropout on the projected output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Dropout | nn.Identity</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.q_norm">
+<span class="sig-name descname"><span class="pre">q_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.q_norm" title="Link to this definition">#</a></dt>
+<dd><p>Per-head query normaliser.  Present only when
+<code class="docutils literal notranslate"><span class="pre">qk_norm</span></code> is provided (i.e. <code class="docutils literal notranslate"><span class="pre">self.qk_norm</span> <span class="pre">is</span> <span class="pre">True</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Module</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.k_norm">
+<span class="sig-name descname"><span class="pre">k_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.k_norm" title="Link to this definition">#</a></dt>
+<dd><p>Per-head key normaliser.  Present only when
+<code class="docutils literal notranslate"><span class="pre">qk_norm</span></code> is provided.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Module</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.qk_norm">
+<span class="sig-name descname"><span class="pre">qk_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.qk_norm" title="Link to this definition">#</a></dt>
+<dd><p>Flag indicating whether QK normalisation is active.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_base">
+<span class="sig-name descname"><span class="pre">rope_base</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_base" title="Link to this definition">#</a></dt>
+<dd><p>Base frequency for patch-token RoPE.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_base">
+<span class="sig-name descname"><span class="pre">reg_rope_base</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_base" title="Link to this definition">#</a></dt>
+<dd><p>Base frequency for register-token RoPE.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_h">
+<span class="sig-name descname"><span class="pre">reg_rope_h</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_h" title="Link to this definition">#</a></dt>
+<dd><p>Height dimension of the register RoPE grid
+(<code class="docutils literal notranslate"><span class="pre">int(num_registers</span> <span class="pre">**</span> <span class="pre">0.5)</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_w">
+<span class="sig-name descname"><span class="pre">reg_rope_w</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_w" title="Link to this definition">#</a></dt>
+<dd><p>Width dimension of the register RoPE grid
+(<code class="docutils literal notranslate"><span class="pre">int(num_registers</span> <span class="pre">**</span> <span class="pre">0.5)</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_cos">
+<span class="sig-name descname"><span class="pre">rope_cos</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_cos" title="Link to this definition">#</a></dt>
+<dd><p>Non-persistent buffer of shape <code class="docutils literal notranslate"><span class="pre">[T,</span> <span class="pre">head_dim]</span></code>
+containing the concatenated patch + CLS + register cosine tables.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)">torch.Tensor</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_sin">
+<span class="sig-name descname"><span class="pre">rope_sin</span></span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_sin" title="Link to this definition">#</a></dt>
+<dd><p>Non-persistent buffer of shape <code class="docutils literal notranslate"><span class="pre">[T,</span> <span class="pre">head_dim]</span></code>
+containing the concatenated patch + CLS + register sine tables.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)">torch.Tensor</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hidden_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Total hidden dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>. Must be divisible by
+<code class="docutils literal notranslate"><span class="pre">num_heads</span></code>.</p></li>
+<li><p><strong>num_heads</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of attention heads <code class="docutils literal notranslate"><span class="pre">H</span></code>.</p></li>
+<li><p><strong>num_patches_h</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Height of the patch grid (number of patch rows).
+Used to build the patch 2D RoPE table.</p></li>
+<li><p><strong>num_patches_w</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Width of the patch grid (number of patch columns).
+Used to build the patch 2D RoPE table.</p></li>
+<li><p><strong>num_registers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of register tokens <code class="docutils literal notranslate"><span class="pre">R</span></code> appended after the
+(optional) CLS token.  Should be a perfect square when &gt; 0 so
+that the register RoPE grid is exactly <code class="docutils literal notranslate"><span class="pre">sqrt(R)</span> <span class="pre">×</span> <span class="pre">sqrt(R)</span></code>.
+If <code class="docutils literal notranslate"><span class="pre">R</span></code> is not a perfect square, <code class="docutils literal notranslate"><span class="pre">reg_rope_h</span> <span class="pre">=</span> <span class="pre">reg_rope_w</span> <span class="pre">=</span>
+<span class="pre">int(R**0.5)</span></code> silently truncates, producing only
+<code class="docutils literal notranslate"><span class="pre">reg_rope_h</span> <span class="pre">*</span> <span class="pre">reg_rope_w</span> <span class="pre">&lt;</span> <span class="pre">R</span></code> RoPE rows and causing a
+<code class="docutils literal notranslate"><span class="pre">torch.cat</span></code> shape mismatch at init time.  Defaults to <code class="docutils literal notranslate"><span class="pre">4</span></code>.</p></li>
+<li><p><strong>has_cls</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If <code class="docutils literal notranslate"><span class="pre">True</span></code>, the token sequence contains one CLS token
+immediately after the patch tokens.  The CLS token receives
+identity RoPE (cos=1, sin=0).  Defaults to <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p></li>
+<li><p><strong>qk_norm</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a><em> | </em><em>None</em>) – <a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">LazyConfig</span></code></a> for the
+per-head QK normalisation module (e.g. <code class="docutils literal notranslate"><span class="pre">RMSNorm(head_dim)</span></code>).
+When <code class="docutils literal notranslate"><span class="pre">None</span></code>, QK normalisation is disabled.  Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><strong>rope_base</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Base frequency <span class="math notranslate nohighlight">\(\\theta_0\)</span> for the patch RoPE
+frequency schedule.  Defaults to <code class="docutils literal notranslate"><span class="pre">10000.0</span></code>.</p></li>
+<li><p><strong>reg_rope_base</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Base frequency for the register-token RoPE schedule.
+A lower base (higher frequency) gives denser angular spacing.
+Defaults to <code class="docutils literal notranslate"><span class="pre">100.0</span></code>.</p></li>
+<li><p><strong>attn_dropout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Dropout rate on attention weights, applied only during
+training (<code class="docutils literal notranslate"><span class="pre">module.training</span> <span class="pre">is</span> <span class="pre">True</span></code>).  Defaults to <code class="docutils literal notranslate"><span class="pre">0.0</span></code>.</p></li>
+<li><p><strong>proj_dropout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Dropout rate on the output projection.  When <code class="docutils literal notranslate"><span class="pre">0.0</span></code>,
+<code class="docutils literal notranslate"><span class="pre">proj_drop</span></code> is an <code class="docutils literal notranslate"><span class="pre">nn.Identity</span></code>.  Defaults to <code class="docutils literal notranslate"><span class="pre">0.0</span></code>.</p></li>
+<li><p><strong>qkv_bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to include a bias term in the fused QKV projection.
+Defaults to <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
+<li><p><strong>out_proj_bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to include a bias term in the output projection.
+Defaults to <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
+<li><p><strong>scale</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>) – Explicit attention logit scale.  When <code class="docutils literal notranslate"><span class="pre">None</span></code>, the scale
+defaults to <code class="docutils literal notranslate"><span class="pre">head_dim</span> <span class="pre">**</span> <span class="pre">-0.5</span></code>.  Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><strong>init_fn_qkv_proj</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><em>None</em><em>] </em><em>| </em><em>None</em>) – Optional callable <code class="docutils literal notranslate"><span class="pre">fn(weight:</span> <span class="pre">Tensor)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code>
+applied to <code class="docutils literal notranslate"><span class="pre">self.qkv.weight</span></code> after construction.  The bias, if
+present, is zero-initialised.  When <code class="docutils literal notranslate"><span class="pre">None</span></code>, PyTorch’s default
+Xavier uniform initialisation is used.  Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><strong>init_fn_out_proj</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><em>None</em><em>] </em><em>| </em><em>None</em>) – Optional callable <code class="docutils literal notranslate"><span class="pre">fn(weight:</span> <span class="pre">Tensor)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code>
+applied to <code class="docutils literal notranslate"><span class="pre">self.proj.weight</span></code> after construction.  The bias, if
+present, is zero-initialised.  When <code class="docutils literal notranslate"><span class="pre">None</span></code>, PyTorch’s default
+initialisation is used.  Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.14)"><strong>AssertionError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">hidden_dim</span> <span class="pre">%</span> <span class="pre">num_heads</span> <span class="pre">!=</span> <span class="pre">0</span></code>.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.vit5_attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">ViT5Attention</span>
+
+<span class="c1"># 2D patch grid of 14x14 with 4 register tokens and 1 CLS token, no QK norm</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">ViT5Attention</span><span class="p">(</span>
+    <span class="n">hidden_dim</span><span class="o">=</span><span class="mi">384</span><span class="p">,</span>
+    <span class="n">num_heads</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+    <span class="n">num_patches_h</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span>
+    <span class="n">num_patches_w</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span>
+    <span class="n">num_registers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+    <span class="n">has_cls</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">T</span> <span class="o">=</span> <span class="mi">14</span> <span class="o">*</span> <span class="mi">14</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">4</span>  <span class="c1"># patches + CLS + registers = 201</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="mi">384</span><span class="p">)</span>  <span class="c1"># [B, T, C]</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>               <span class="c1"># [B, T, C]</span>
+<span class="k">assert</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+<span class="c1"># To enable QK-norm, pass a LazyConfig targeting any norm module</span>
+<span class="c1"># that accepts [B, T, H, d_k] tensors and normalises along the last axis.</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">hidden_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_heads</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_patches_h</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_patches_w</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_registers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">has_cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">qk_norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">rope_base</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">reg_rope_base</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">attn_dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">proj_dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">qkv_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">out_proj_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_fn_qkv_proj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_fn_out_proj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.__init__" title="Link to this definition">#</a></dt>
+<dd><p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hidden_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_heads</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_patches_h</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_patches_w</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_registers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>has_cls</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>qk_norm</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>rope_base</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>reg_rope_base</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>attn_dropout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>proj_dropout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>qkv_bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>out_proj_bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>scale</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>init_fn_qkv_proj</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><em>None</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>init_fn_out_proj</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><em>None</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.flop_count">
+<span class="sig-name descname"><span class="pre">flop_count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_tokens</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inference</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.flop_count" title="Link to this definition">#</a></dt>
+<dd><p>Count FLOPs for multi-head self-attention on <code class="docutils literal notranslate"><span class="pre">num_tokens</span></code> tokens.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">inference</span></code> flag is accepted for API consistency but does not
+change the count — attention has no cacheable precomputation analogous
+to SIREN kernels.</p>
+<p>Let T = num_tokens, D = <code class="docutils literal notranslate"><span class="pre">self.hidden_dim</span></code>.</p>
+<dl class="simple">
+<dt>FLOPs breakdown:</dt><dd><ol class="arabic simple">
+<li><p>QKV projection (Linear(D, 3D)):       6 * T * D²
+Three projections packed into one:  2 * T * D * 3D.</p></li>
+<li><p>QK-Norm (2x RMSNorm on Q and K):      Delegated to self.q_norm / self.k_norm.
+Only counted when <code class="docutils literal notranslate"><span class="pre">self.qk_norm</span></code> is True; 0 otherwise.
+Each norm module must expose <code class="docutils literal notranslate"><span class="pre">flop_count(num_tokens:</span> <span class="pre">int)</span> <span class="pre">-&gt;</span> <span class="pre">int</span></code>
+returning the cost for a sequence of <code class="docutils literal notranslate"><span class="pre">num_tokens</span></code> tokens across
+all heads (i.e. for the full <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">H,</span> <span class="pre">d_k]</span></code> shaped input).</p></li>
+<li><p>RoPE on Q and K:                       4 * T * D
+Each of Q, K: x * cos + rotate(x) * sin = 2 elementwise
+multiplies per element, over T * D elements, for both Q and K.
+This assumes <strong>full RoPE</strong> (all <code class="docutils literal notranslate"><span class="pre">head_dim</span></code> dimensions rotated),
+which is the case here: the cos/sin buffers have shape
+<code class="docutils literal notranslate"><span class="pre">[T,</span> <span class="pre">head_dim]</span></code> and broadcast across all heads.
+For partial RoPE (only the first <code class="docutils literal notranslate"><span class="pre">rope_dim</span></code> of each head
+rotated, remainder passed through), the count would instead be
+<code class="docutils literal notranslate"><span class="pre">4</span> <span class="pre">*</span> <span class="pre">T</span> <span class="pre">*</span> <span class="pre">num_heads</span> <span class="pre">*</span> <span class="pre">rope_dim</span></code>.</p></li>
+<li><p>SDPA (<a class="reference external" href="mailto:Q&#37;&#52;&#48;K^T">Q<span>&#64;</span>K^T</a> + attn&#64;V):                 4 * T² * D
+<a class="reference external" href="mailto:Q&#37;&#52;&#48;K^T">Q<span>&#64;</span>K^T</a>: 2 * T * T * D.  attn&#64;V: 2 * T * T * D.
+(Softmax cost ~3 * T * H is negligible and omitted.)</p></li>
+<li><p>Output projection (Linear(D, D)):      2 * T * D²</p></li>
+</ol>
+</dd>
+</dl>
+<p>Total: 8 * T * D² + 4 * T² * D + 4 * T * D + qk_norm_flops.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">num_tokens</span></code> should equal
+<code class="docutils literal notranslate"><span class="pre">num_patches_h</span> <span class="pre">*</span> <span class="pre">num_patches_w</span> <span class="pre">+</span> <span class="pre">(1</span> <span class="pre">if</span> <span class="pre">has_cls</span> <span class="pre">else</span> <span class="pre">0)</span> <span class="pre">+</span> <span class="pre">num_registers</span></code>
+to match the actual sequence length seen during <a class="reference internal" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.forward" title="nvsubquadratic.modules.vit5_attention.ViT5Attention.forward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">forward()</span></code></a>.
+Passing a different value will give a proportionally scaled estimate.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>num_tokens</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Total sequence length T
+(cls + patches + registers).  Should equal
+<code class="docutils literal notranslate"><span class="pre">num_patches_h</span> <span class="pre">*</span> <span class="pre">num_patches_w</span> <span class="pre">+</span> <span class="pre">(1</span> <span class="pre">if</span> <span class="pre">has_cls</span> <span class="pre">else</span> <span class="pre">0)</span> <span class="pre">+</span> <span class="pre">num_registers</span></code>.</p></li>
+<li><p><strong>inference</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Accepted for API consistency with other sequence-mixer
+modules (e.g. Hyena); does not affect the FLOP count.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Total FLOPs as an integer.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.forward" title="Link to this definition">#</a></dt>
+<dd><p>Apply ViT-5 multi-head self-attention to a token sequence.</p>
+<p>Executes the following pipeline:</p>
+<ol class="arabic simple">
+<li><p><strong>QKV projection</strong> — <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">W_{QKV}</span></code> reshaped to
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">3,</span> <span class="pre">H,</span> <span class="pre">d_k]</span></code>, then split into Q, K, V each of shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">H,</span> <span class="pre">d_k]</span></code>.</p></li>
+<li><p><strong>(Optional) QK normalisation</strong> — <code class="docutils literal notranslate"><span class="pre">q_norm(Q)</span></code> and <code class="docutils literal notranslate"><span class="pre">k_norm(K)</span></code>
+applied independently along the last (head-dim) axis.</p></li>
+<li><p><strong>RoPE</strong> — <code class="docutils literal notranslate"><span class="pre">Q'</span> <span class="pre">=</span> <span class="pre">Q</span> <span class="pre">*</span> <span class="pre">cos</span> <span class="pre">+</span> <span class="pre">rotate(Q)</span> <span class="pre">*</span> <span class="pre">sin</span></code> and
+<code class="docutils literal notranslate"><span class="pre">K'</span> <span class="pre">=</span> <span class="pre">K</span> <span class="pre">*</span> <span class="pre">cos</span> <span class="pre">+</span> <span class="pre">rotate(K)</span> <span class="pre">*</span> <span class="pre">sin</span></code>, where <code class="docutils literal notranslate"><span class="pre">cos</span></code> / <code class="docutils literal notranslate"><span class="pre">sin</span></code> are the
+precomputed <code class="docutils literal notranslate"><span class="pre">[T,</span> <span class="pre">head_dim]</span></code> buffers broadcast to
+<code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">T,</span> <span class="pre">1,</span> <span class="pre">head_dim]</span></code> over the batch and head axes.  Uses
+<code class="xref py py-func docutils literal notranslate"><span class="pre">_rotate_half_per_axis()</span></code> (split-half convention).</p></li>
+<li><p><strong>Transpose for SDPA</strong> — rearrange to <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">H,</span> <span class="pre">T,</span> <span class="pre">d_k]</span></code>.</p></li>
+<li><p><strong>Scaled dot-product attention</strong> — delegates to
+<code class="docutils literal notranslate"><span class="pre">F.scaled_dot_product_attention</span></code>; PyTorch auto-selects the best
+backend (CuDNN on H100, FlashAttention on A100, etc.).  The
+<code class="docutils literal notranslate"><span class="pre">dropout_p</span></code> is set to <code class="docutils literal notranslate"><span class="pre">self.attn_dropout</span></code> during training and
+0.0 at inference.</p></li>
+<li><p><strong>Merge heads</strong> — <code class="docutils literal notranslate"><span class="pre">out.transpose(1,</span> <span class="pre">2).reshape(B,</span> <span class="pre">T,</span> <span class="pre">C)</span></code>.</p></li>
+<li><p><strong>Output projection + dropout</strong> — <code class="docutils literal notranslate"><span class="pre">proj_drop(proj(out))</span></code>.</p></li>
+</ol>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>x</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>) – <p>Input token sequence of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">C]</span></code> where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">B</span></code> — batch size,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">T</span> <span class="pre">=</span> <span class="pre">num_patches_h</span> <span class="pre">*</span> <span class="pre">num_patches_w</span> <span class="pre">+</span> <span class="pre">(1</span> <span class="pre">if</span> <span class="pre">has_cls</span> <span class="pre">else</span> <span class="pre">0)</span>
+<span class="pre">+</span> <span class="pre">num_registers</span></code> — total token count following the ViT-5
+layout <code class="docutils literal notranslate"><span class="pre">[patches,</span> <span class="pre">(CLS,)</span> <span class="pre">registers]</span></code>,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">C</span> <span class="pre">=</span> <span class="pre">hidden_dim</span></code> — channel dimension.</p></li>
+</ul>
+<p>The spatial dimensions of the patch grid are baked into the
+precomputed <code class="docutils literal notranslate"><span class="pre">rope_cos</span></code> / <code class="docutils literal notranslate"><span class="pre">rope_sin</span></code> buffers; <code class="docutils literal notranslate"><span class="pre">T</span></code> must
+match <code class="docutils literal notranslate"><span class="pre">rope_cos.shape[0]</span></code> exactly.</p>
+</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Output tensor of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">C]</span></code>, the same shape
+as the input.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)">torch.Tensor</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#RuntimeError" title="(in Python v3.14)"><strong>RuntimeError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">T</span></code> does not match <code class="docutils literal notranslate"><span class="pre">rope_cos.shape[0]</span></code>,
+    causing a shape mismatch in the broadcast multiply
+    <code class="docutils literal notranslate"><span class="pre">q</span> <span class="pre">*</span> <span class="pre">cos</span></code>.  The expected value is
+    <code class="docutils literal notranslate"><span class="pre">num_patches_h</span> <span class="pre">*</span> <span class="pre">num_patches_w</span> <span class="pre">+</span> <span class="pre">int(has_cls)</span> <span class="pre">+</span> <span class="pre">num_registers</span></code>
+    as set at construction time.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.vit5_attention.ViT5Attention.extra_repr">
+<span class="sig-name descname"><span class="pre">extra_repr</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.extra_repr" title="Link to this definition">#</a></dt>
+<dd><p>Return a concise string summary of this module’s configuration.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">has_cls</span></code> and <code class="docutils literal notranslate"><span class="pre">scale</span></code> are consequential hyperparameters that
+are <strong>not</strong> included in the output string.  Use
+<code class="docutils literal notranslate"><span class="pre">module.has_cls</span></code> and <code class="docutils literal notranslate"><span class="pre">module.scale</span></code> to inspect them directly.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Comma-separated key=value pairs covering <code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code>,
+<code class="docutils literal notranslate"><span class="pre">num_heads</span></code>, <code class="docutils literal notranslate"><span class="pre">qk_norm</span></code>, <code class="docutils literal notranslate"><span class="pre">num_registers</span></code>, patch grid size,
+<code class="docutils literal notranslate"><span class="pre">rope_base</span></code>, and <code class="docutils literal notranslate"><span class="pre">reg_rope_base</span></code>.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="nvsubquadratic.modules.attention.Attention.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Attention</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="nvsubquadratic.modules.vit5_hyena_adapter.ViT5HyenaAdapter.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">ViT5HyenaAdapter</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention"><code class="docutils literal notranslate"><span class="pre">ViT5Attention</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.hidden_dim"><code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_heads"><code class="docutils literal notranslate"><span class="pre">num_heads</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.head_dim"><code class="docutils literal notranslate"><span class="pre">head_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.scale"><code class="docutils literal notranslate"><span class="pre">scale</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_patches_h"><code class="docutils literal notranslate"><span class="pre">num_patches_h</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_patches_w"><code class="docutils literal notranslate"><span class="pre">num_patches_w</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.num_registers"><code class="docutils literal notranslate"><span class="pre">num_registers</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.has_cls"><code class="docutils literal notranslate"><span class="pre">has_cls</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.attn_dropout"><code class="docutils literal notranslate"><span class="pre">attn_dropout</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.qkv"><code class="docutils literal notranslate"><span class="pre">qkv</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.proj"><code class="docutils literal notranslate"><span class="pre">proj</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.proj_drop"><code class="docutils literal notranslate"><span class="pre">proj_drop</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.q_norm"><code class="docutils literal notranslate"><span class="pre">q_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.k_norm"><code class="docutils literal notranslate"><span class="pre">k_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.qk_norm"><code class="docutils literal notranslate"><span class="pre">qk_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_base"><code class="docutils literal notranslate"><span class="pre">rope_base</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_base"><code class="docutils literal notranslate"><span class="pre">reg_rope_base</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_h"><code class="docutils literal notranslate"><span class="pre">reg_rope_h</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.reg_rope_w"><code class="docutils literal notranslate"><span class="pre">reg_rope_w</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_cos"><code class="docutils literal notranslate"><span class="pre">rope_cos</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.rope_sin"><code class="docutils literal notranslate"><span class="pre">rope_sin</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.flop_count"><code class="docutils literal notranslate"><span class="pre">flop_count()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.vit5_attention.ViT5Attention.extra_repr"><code class="docutils literal notranslate"><span class="pre">extra_repr()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

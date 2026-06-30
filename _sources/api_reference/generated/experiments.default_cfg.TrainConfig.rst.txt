@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+TrainConfig
+===========
+
+.. currentmodule:: experiments.default_cfg
+
+.. autoclass:: TrainConfig
+   :members:
+   :show-inheritance:

@@ -1,0 +1,908 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Attention &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=fd10adb8"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/generated/nvsubquadratic.modules.attention.Attention';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="ViT5Attention" href="nvsubquadratic.modules.vit5_attention.ViT5Attention.html" />
+    <link rel="prev" title="Mamba" href="nvsubquadratic.modules.mamba_nd.Mamba.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="reference internal" href="../modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">API Reference</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../modules.html" class="nav-link">Modules</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Attention</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="attention">
+<h1>Attention<a class="headerlink" href="#attention" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Attention</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">hidden_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_heads</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">apply_qk_norm</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">use_rope</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">is_causal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">attn_dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">rope_base</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">rope_spatial_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>Multi-head scaled dot-product self-attention for 1D/2D/3D spatial inputs.</p>
+<p>Computes standard multi-head attention:</p>
+<div class="math notranslate nohighlight">
+\[ \begin{align}\begin{aligned}\text{head}_i = \text{softmax}\!\left(\frac{Q_i K_i^\top}{\sqrt{d_k}}\right) V_i\\\text{MultiHead}(Q,K,V) = \text{Concat}(\text{head}_1,\ldots,\text{head}_H)\end{aligned}\end{align} \]</div>
+<p>where <span class="math notranslate nohighlight">\(d_k = C / H\)</span> is the per-head dimension, <span class="math notranslate nohighlight">\(H\)</span> is the
+number of heads, and <span class="math notranslate nohighlight">\(C\)</span> is the hidden (channel) dimension.</p>
+<section id="spatial-layout">
+<h2>Spatial layout<a class="headerlink" href="#spatial-layout" title="Link to this heading">#</a></h2>
+<p>Inputs and outputs use <strong>channels-last</strong> layout:</p>
+<ul class="simple">
+<li><p>1D sequences: <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">C]</span></code></p></li>
+<li><p>2D images:    <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">H,</span> <span class="pre">W,</span> <span class="pre">C]</span></code></p></li>
+<li><p>3D volumes:   <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">D,</span> <span class="pre">H,</span> <span class="pre">W,</span> <span class="pre">C]</span></code></p></li>
+</ul>
+<p>Internally, spatial dimensions are flattened to a single sequence axis
+<code class="docutils literal notranslate"><span class="pre">L</span> <span class="pre">=</span> <span class="pre">prod(spatial_dims)</span></code> for the SDPA kernel, then unflattened on output.</p>
+</section>
+<section id="multi-head-splitting">
+<h2>Multi-head splitting<a class="headerlink" href="#multi-head-splitting" title="Link to this heading">#</a></h2>
+<p>The channel axis <code class="docutils literal notranslate"><span class="pre">C</span></code> is split into <code class="docutils literal notranslate"><span class="pre">H</span></code> heads of size <code class="docutils literal notranslate"><span class="pre">d_k</span> <span class="pre">=</span> <span class="pre">C</span> <span class="pre">/</span> <span class="pre">H</span></code>.
+Internally the module works with the merged batch-head axis
+<code class="docutils literal notranslate"><span class="pre">(B</span> <span class="pre">*</span> <span class="pre">H,</span> <span class="pre">L,</span> <span class="pre">d_k)</span></code> before the SDPA call and re-merges after.</p>
+</section>
+<section id="qk-normalisation-cosine-attention">
+<h2>QK normalisation (cosine attention)<a class="headerlink" href="#qk-normalisation-cosine-attention" title="Link to this heading">#</a></h2>
+<p>When <code class="docutils literal notranslate"><span class="pre">apply_qk_norm=True</span></code>, queries and keys are L2-normalised per head
+along the last dimension before the attention logits are formed.  This
+replaces the <code class="docutils literal notranslate"><span class="pre">1/sqrt(d_k)</span></code> scaling with a fixed scale of 1.0 to avoid
+flattening the already-normalised logits.</p>
+</section>
+<section id="rotary-positional-embeddings-rope">
+<h2>Rotary Positional Embeddings (RoPE)<a class="headerlink" href="#rotary-positional-embeddings-rope" title="Link to this heading">#</a></h2>
+<p>RoPE is applied to Q and K before QK-normalisation and before the SDPA
+call.  The cos/sin buffers are precomputed once at <code class="docutils literal notranslate"><span class="pre">__init__</span></code> from
+<code class="docutils literal notranslate"><span class="pre">rope_spatial_dims</span></code> and stored as non-persistent registered buffers
+(<code class="docutils literal notranslate"><span class="pre">persistent=False</span></code>) so they are reconstructed from <code class="docutils literal notranslate"><span class="pre">__init__</span></code> args
+and never serialised to checkpoints.  Head-dim divisibility requirements:</p>
+<ul class="simple">
+<li><p>1D: <code class="docutils literal notranslate"><span class="pre">head_dim</span></code> divisible by 2</p></li>
+<li><p>2D: <code class="docutils literal notranslate"><span class="pre">head_dim</span></code> divisible by 4 (two half-dim RoPE tables, one per axis)</p></li>
+<li><p>3D: <code class="docutils literal notranslate"><span class="pre">head_dim</span></code> divisible by 6 (three one-third-dim RoPE tables)</p></li>
+</ul>
+</section>
+<section id="context-parallelism-cp">
+<h2>Context parallelism (CP)<a class="headerlink" href="#context-parallelism-cp" title="Link to this heading">#</a></h2>
+<p><strong>Not yet functional.</strong>  Passing a <code class="docutils literal notranslate"><span class="pre">cp_group</span></code> with <code class="docutils literal notranslate"><span class="pre">size()</span> <span class="pre">&gt;</span> <span class="pre">1</span></code> to
+<code class="docutils literal notranslate"><span class="pre">forward</span></code> immediately raises <code class="docutils literal notranslate"><span class="pre">ValueError(&quot;Context</span> <span class="pre">parallelism</span> <span class="pre">must</span> <span class="pre">be</span>
+<span class="pre">revisited.&quot;)</span></code>.  The zigzag all-gather/split code below the <code class="docutils literal notranslate"><span class="pre">raise</span></code> is
+dead code retained as a sketch for a future ring-attention implementation.
+Pass <code class="docutils literal notranslate"><span class="pre">cp_group=None</span></code> (the default) for all current use cases.</p>
+</section>
+<section id="backend-selection">
+<h2>Backend selection<a class="headerlink" href="#backend-selection" title="Link to this heading">#</a></h2>
+<p>Attention is computed with <code class="docutils literal notranslate"><span class="pre">torch.nn.functional.scaled_dot_product_attention</span></code>,
+which auto-selects FlashAttention (A100), cuDNN SDPA (H100), or a
+memory-efficient fallback based on device capability.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.hidden_dim">
+<span class="sig-name descname"><span class="pre">hidden_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.hidden_dim" title="Link to this definition">#</a></dt>
+<dd><p>Total channel dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.num_heads">
+<span class="sig-name descname"><span class="pre">num_heads</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.num_heads" title="Link to this definition">#</a></dt>
+<dd><p>Number of attention heads <code class="docutils literal notranslate"><span class="pre">H</span></code>.  In the current
+implementation all heads are computed on every rank (there is no
+head-parallel CP split).  A <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">TODO(&#64;farhad)</span></code> in <code class="docutils literal notranslate"><span class="pre">forward</span></code>
+flags that <code class="docutils literal notranslate"><span class="pre">local_num_heads</span></code> is always equal to <code class="docutils literal notranslate"><span class="pre">num_heads</span></code>,
+which may need revisiting for tensor-parallel training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.head_dim">
+<span class="sig-name descname"><span class="pre">head_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.head_dim" title="Link to this definition">#</a></dt>
+<dd><p>Per-head dimension <code class="docutils literal notranslate"><span class="pre">d_k</span> <span class="pre">=</span> <span class="pre">C</span> <span class="pre">/</span> <span class="pre">H</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.scale" title="Link to this definition">#</a></dt>
+<dd><p>Attention logit scale <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">sqrt(d_k)</span></code>; set to 1.0
+when <code class="docutils literal notranslate"><span class="pre">apply_qk_norm=True</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.apply_qk_norm">
+<span class="sig-name descname"><span class="pre">apply_qk_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.apply_qk_norm" title="Link to this definition">#</a></dt>
+<dd><p>Whether L2 QK normalisation is active.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.use_rope">
+<span class="sig-name descname"><span class="pre">use_rope</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.use_rope" title="Link to this definition">#</a></dt>
+<dd><p>Whether RoPE positional encoding is active.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.rope_base">
+<span class="sig-name descname"><span class="pre">rope_base</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.rope_base" title="Link to this definition">#</a></dt>
+<dd><p>Geometric base for RoPE frequency bands.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.is_causal">
+<span class="sig-name descname"><span class="pre">is_causal</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.is_causal" title="Link to this definition">#</a></dt>
+<dd><p>Whether to apply a causal (auto-regressive) mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.attn_dropout">
+<span class="sig-name descname"><span class="pre">attn_dropout</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.attn_dropout" title="Link to this definition">#</a></dt>
+<dd><p>Dropout probability applied to attention weights
+during training.  Set to 0.0 automatically at inference regardless
+of this value.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention._rope_ndim">
+<span class="sig-name descname"><span class="pre">_rope_ndim</span></span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention._rope_ndim" title="Link to this definition">#</a></dt>
+<dd><p>Spatial rank for which RoPE was initialised (1, 2,
+or 3).  Present only when <code class="docutils literal notranslate"><span class="pre">use_rope=True</span></code>; not defined
+otherwise.  Used in <code class="docutils literal notranslate"><span class="pre">forward</span></code> to dispatch to the correct RoPE
+apply function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">param hidden_dim<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Total hidden-state dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>. Must be
+divisible by <code class="docutils literal notranslate"><span class="pre">num_heads</span></code>.</p>
+</dd>
+<dt class="field-even">type hidden_dim<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+<dt class="field-odd">param num_heads<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of parallel attention heads <code class="docutils literal notranslate"><span class="pre">H</span></code>.</p>
+</dd>
+<dt class="field-even">type num_heads<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+<dt class="field-odd">param apply_qk_norm<span class="colon">:</span></dt>
+<dd class="field-odd"><p>If <code class="docutils literal notranslate"><span class="pre">True</span></code>, L2-normalise Q and K per head
+along the last dimension (cosine attention).</p>
+</dd>
+<dt class="field-even">type apply_qk_norm<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+<dt class="field-odd">param use_rope<span class="colon">:</span></dt>
+<dd class="field-odd"><p>If <code class="docutils literal notranslate"><span class="pre">True</span></code>, apply Rotary Positional Embeddings to
+Q and K before the attention logits.</p>
+</dd>
+<dt class="field-even">type use_rope<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+<dt class="field-odd">param is_causal<span class="colon">:</span></dt>
+<dd class="field-odd"><p>If <code class="docutils literal notranslate"><span class="pre">True</span></code>, apply a causal attention mask so each
+position attends only to earlier positions. Defaults to <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p>
+</dd>
+<dt class="field-even">type is_causal<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+<dt class="field-odd">param attn_dropout<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dropout rate on attention weights (active only
+during training). Defaults to <code class="docutils literal notranslate"><span class="pre">0.0</span></code>.</p>
+</dd>
+<dt class="field-even">type attn_dropout<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+<dt class="field-odd">param rope_base<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Base frequency for RoPE; controls how fast the
+rotation frequency decays across head-dim pairs.
+Defaults to <code class="docutils literal notranslate"><span class="pre">10000.0</span></code>.</p>
+</dd>
+<dt class="field-even">type rope_base<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+<dt class="field-odd">param rope_spatial_dims<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Spatial grid shape used
+to precompute RoPE tables.  Required when <code class="docutils literal notranslate"><span class="pre">use_rope=True</span></code>.
+Examples: <code class="docutils literal notranslate"><span class="pre">(4096,)</span></code> for 1D, <code class="docutils literal notranslate"><span class="pre">(64,</span> <span class="pre">64)</span></code> for 2D,
+<code class="docutils literal notranslate"><span class="pre">(8,</span> <span class="pre">64,</span> <span class="pre">64)</span></code> for 3D.  Must match the spatial shape seen
+during <code class="docutils literal notranslate"><span class="pre">forward</span></code>.</p>
+</dd>
+<dt class="field-even">type rope_spatial_dims<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple[int, …] | None</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">Attention</span>
+
+<span class="c1"># 2D image attention with 8 heads, RoPE, and cosine-attention QK norm</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">Attention</span><span class="p">(</span>
+    <span class="n">hidden_dim</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span>
+    <span class="n">num_heads</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+    <span class="n">apply_qk_norm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">use_rope</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">rope_spatial_dims</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">k</span> <span class="o">=</span> <span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span>  <span class="c1"># [B, H, W, C]</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">attn</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>  <span class="c1"># [B, H, W, C]</span>
+<span class="k">assert</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">hidden_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_heads</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">apply_qk_norm</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">use_rope</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">is_causal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">attn_dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">rope_base</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">rope_spatial_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.__init__" title="Link to this definition">#</a></dt>
+<dd><p>Initialise the Attention module and precompute RoPE buffers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hidden_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Total channel dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>. Must be
+divisible by <code class="docutils literal notranslate"><span class="pre">num_heads</span></code>.</p></li>
+<li><p><strong>num_heads</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of attention heads <code class="docutils literal notranslate"><span class="pre">H</span></code>.</p></li>
+<li><p><strong>apply_qk_norm</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to L2-normalise Q and K per head.</p></li>
+<li><p><strong>use_rope</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to apply Rotary Positional Embeddings.</p></li>
+<li><p><strong>is_causal</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to use a causal attention mask.
+Defaults to <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
+<li><p><strong>attn_dropout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Attention-weight dropout probability.
+Defaults to <code class="docutils literal notranslate"><span class="pre">0.0</span></code>.</p></li>
+<li><p><strong>rope_base</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – RoPE base frequency. Defaults to <code class="docutils literal notranslate"><span class="pre">10000.0</span></code>.</p></li>
+<li><p><strong>rope_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>...</em><em>] </em><em>| </em><em>None</em>) – Spatial grid shape
+for RoPE table precomputation.  Required when
+<code class="docutils literal notranslate"><span class="pre">use_rope=True</span></code>.  <strong>Not stored</strong> as an instance attribute;
+the caller is responsible for tracking the spatial dims if they
+need to recover them after construction (e.g. for serialisation
+or <code class="docutils literal notranslate"><span class="pre">extra_repr</span></code>).  The corresponding cos/sin buffers are
+stored as non-persistent registered buffers (<code class="docutils literal notranslate"><span class="pre">rope_cos</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rope_sin</span></code>, etc.).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.14)"><strong>AssertionError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">hidden_dim</span> <span class="pre">%</span> <span class="pre">num_heads</span> <span class="pre">!=</span> <span class="pre">0</span></code>.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.14)"><strong>AssertionError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">use_rope=True</span></code> and <code class="docutils literal notranslate"><span class="pre">rope_spatial_dims</span></code>
+    is <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.14)"><strong>AssertionError</strong></a> – If RoPE head-dim divisibility requirements are
+    not met (divisible by 2 for 1D, 4 for 2D, 6 for 3D).</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">rope_spatial_dims</span></code> has length other than 1, 2,
+    or 3.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.extra_repr">
+<span class="sig-name descname"><span class="pre">extra_repr</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.extra_repr" title="Link to this definition">#</a></dt>
+<dd><p>Return a concise string summary of this module’s configuration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>Comma-separated key=value pairs for <code class="docutils literal notranslate"><span class="pre">num_heads</span></code>,</dt><dd><p><code class="docutils literal notranslate"><span class="pre">apply_qk_norm</span></code>, <code class="docutils literal notranslate"><span class="pre">is_causal</span></code>, <code class="docutils literal notranslate"><span class="pre">attn_dropout</span></code>,
+<code class="docutils literal notranslate"><span class="pre">use_rope</span></code>, and <code class="docutils literal notranslate"><span class="pre">rope_base</span></code>.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.attention.Attention.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cp_group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.attention.Attention.forward" title="Link to this definition">#</a></dt>
+<dd><p>Apply multi-head scaled dot-product attention.</p>
+<p>Computes:</p>
+<div class="math notranslate nohighlight">
+\[\text{out} = \text{Concat}_{i=1}^{H}
+    \left[
+        \text{softmax}\!\left(
+            \frac{Q_i K_i^\top}{\sqrt{d_k}}
+        \right) V_i
+    \right]\]</div>
+<p>where <span class="math notranslate nohighlight">\(H\)</span> = <code class="docutils literal notranslate"><span class="pre">num_heads</span></code> and <span class="math notranslate nohighlight">\(d_k\)</span> = <code class="docutils literal notranslate"><span class="pre">head_dim</span></code>.
+When <code class="docutils literal notranslate"><span class="pre">apply_qk_norm=True</span></code>, Q and K are L2-normalised before the
+logits are formed and the scale is 1.0 instead of <code class="docutils literal notranslate"><span class="pre">1/sqrt(d_k)</span></code>.</p>
+<p>The forward pipeline is:</p>
+<ol class="arabic simple">
+<li><p>(CP guard) Raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> if <code class="docutils literal notranslate"><span class="pre">cp_group.size()</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>;
+pass <code class="docutils literal notranslate"><span class="pre">cp_group=None</span></code> for all current use cases.</p></li>
+<li><p>Split channel dim into heads: <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial,</span> <span class="pre">C]</span> <span class="pre">→</span> <span class="pre">[B*H,</span> <span class="pre">*spatial,</span> <span class="pre">d_k]</span></code>.</p></li>
+<li><p>(Optional) Apply RoPE to Q and K.</p></li>
+<li><p>(Optional) L2-normalise Q and K per head.</p></li>
+<li><p>Flatten spatial dims: <code class="docutils literal notranslate"><span class="pre">[B*H,</span> <span class="pre">*spatial,</span> <span class="pre">d_k]</span> <span class="pre">→</span> <span class="pre">[B*H,</span> <span class="pre">L,</span> <span class="pre">d_k]</span></code>.</p></li>
+<li><p>Reshape to SDPA layout: <code class="docutils literal notranslate"><span class="pre">[B*H,</span> <span class="pre">L,</span> <span class="pre">d_k]</span> <span class="pre">→</span> <span class="pre">[B,</span> <span class="pre">H,</span> <span class="pre">L,</span> <span class="pre">d_k]</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">F.scaled_dot_product_attention</span></code> (FlashAttention / cuDNN / fallback).</p></li>
+<li><p>Merge heads: <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">H,</span> <span class="pre">L,</span> <span class="pre">d_k]</span> <span class="pre">→</span> <span class="pre">[B,</span> <span class="pre">L,</span> <span class="pre">C]</span></code>.</p></li>
+<li><p>Unflatten spatial dims: <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">L,</span> <span class="pre">C]</span> <span class="pre">→</span> <span class="pre">[B,</span> <span class="pre">*spatial,</span> <span class="pre">C]</span></code>.</p></li>
+<li><p>(Optional CP) Zigzag-split output back to the local spatial slice.</p></li>
+</ol>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>query</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>torch.Tensor</em></a>) – Query tensor of shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C]</span></code>.  <code class="docutils literal notranslate"><span class="pre">spatial_dims</span></code> may be
+<code class="docutils literal notranslate"><span class="pre">(T,)</span></code>, <code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W)</span></code>, or <code class="docutils literal notranslate"><span class="pre">(D,</span> <span class="pre">H,</span> <span class="pre">W)</span></code>.</p></li>
+<li><p><strong>key</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>torch.Tensor</em></a>) – Key tensor of shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C]</span></code>.  Must match <code class="docutils literal notranslate"><span class="pre">query</span></code> shape.</p></li>
+<li><p><strong>value</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>torch.Tensor</em></a>) – Value tensor of shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C]</span></code>.  Must match <code class="docutils literal notranslate"><span class="pre">query</span></code> shape.</p></li>
+<li><p><strong>cp_group</strong> (<em>torch.distributed.ProcessGroup</em><em> | </em><em>None</em>) – Context-parallel
+process group.  When not <code class="docutils literal notranslate"><span class="pre">None</span></code> and <code class="docutils literal notranslate"><span class="pre">cp_group.size()</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>,
+the full spatial sequence is gathered before attention and
+split back afterwards.  <strong>Currently raises ``ValueError``
+as ring-attention is not yet implemented; provided for
+future compatibility.</strong>  Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>Output of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C]</span></code>, the</dt><dd><p>same layout as the inputs.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)">torch.Tensor</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">cp_group</span></code> is provided and has size &gt; 1 (context
+    parallelism is not yet supported).</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hidden_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_heads</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>apply_qk_norm</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>use_rope</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>is_causal</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>attn_dropout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>rope_base</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>rope_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>...</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="nvsubquadratic.modules.mamba_nd.Mamba.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Mamba</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="nvsubquadratic.modules.vit5_attention.ViT5Attention.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">ViT5Attention</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention"><code class="docutils literal notranslate"><span class="pre">Attention</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.hidden_dim"><code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.num_heads"><code class="docutils literal notranslate"><span class="pre">num_heads</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.head_dim"><code class="docutils literal notranslate"><span class="pre">head_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.scale"><code class="docutils literal notranslate"><span class="pre">scale</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.apply_qk_norm"><code class="docutils literal notranslate"><span class="pre">apply_qk_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.use_rope"><code class="docutils literal notranslate"><span class="pre">use_rope</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.rope_base"><code class="docutils literal notranslate"><span class="pre">rope_base</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.is_causal"><code class="docutils literal notranslate"><span class="pre">is_causal</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.attn_dropout"><code class="docutils literal notranslate"><span class="pre">attn_dropout</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention._rope_ndim"><code class="docutils literal notranslate"><span class="pre">_rope_ndim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.extra_repr"><code class="docutils literal notranslate"><span class="pre">extra_repr()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.attention.Attention.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

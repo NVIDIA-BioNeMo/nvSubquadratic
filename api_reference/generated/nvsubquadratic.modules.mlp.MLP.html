@@ -1,0 +1,782 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>MLP &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/generated/nvsubquadratic.modules.mlp.MLP';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="DropPath" href="nvsubquadratic.modules.drop_path.DropPath.html" />
+    <link rel="prev" title="Unpatchify" href="nvsubquadratic.modules.patchify.Unpatchify.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="reference internal" href="../modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">API Reference</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../modules.html" class="nav-link">Modules</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">MLP</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="mlp">
+<h1>MLP<a class="headerlink" href="#mlp" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">MLP</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">activation</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">dropout_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">expansion_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">backend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'torch'</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_method_in</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_method_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>Point-wise two-layer MLP — the channel-mixing branch of each residual block.</p>
+<p>Acts on each spatial position independently (no cross-position interaction),
+expanding the channel dimension by <code class="docutils literal notranslate"><span class="pre">expansion_factor</span></code>, applying a
+non-linearity, and projecting back:</p>
+<p><strong>Plain MLP</strong> (<code class="docutils literal notranslate"><span class="pre">activation</span> <span class="pre">in</span> <span class="pre">{&quot;relu&quot;,</span> <span class="pre">&quot;gelu&quot;,</span> <span class="pre">&quot;silu&quot;}</span></code>):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>y = W₂( act( W₁(x) ) )
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">W₁</span> <span class="pre">:</span> <span class="pre">C</span> <span class="pre">→</span> <span class="pre">H</span></code>, <code class="docutils literal notranslate"><span class="pre">W₂</span> <span class="pre">:</span> <span class="pre">H</span> <span class="pre">→</span> <span class="pre">C</span></code>, and <code class="docutils literal notranslate"><span class="pre">H</span> <span class="pre">=</span> <span class="pre">floor(expansion_factor</span> <span class="pre">×</span> <span class="pre">C)</span></code>.</p>
+<p><strong>Gated variants</strong> (<code class="docutils literal notranslate"><span class="pre">activation</span> <span class="pre">in</span> <span class="pre">{&quot;glu&quot;,</span> <span class="pre">&quot;swiglu&quot;}</span></code>):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[a, b] = W₁(x)          # W₁ : C → 2H, split at midpoint
+y = W₂( gate(a) ⊙ b )  # W₂ : H → C
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><em>GLU</em> (<code class="docutils literal notranslate"><span class="pre">&quot;glu&quot;</span></code>): <code class="docutils literal notranslate"><span class="pre">gate(a)</span> <span class="pre">=</span> <span class="pre">sigmoid(a)</span></code></p></li>
+<li><p><em>SwiGLU</em> (<code class="docutils literal notranslate"><span class="pre">&quot;swiglu&quot;</span></code>): <code class="docutils literal notranslate"><span class="pre">gate(a)</span> <span class="pre">=</span> <span class="pre">SiLU(a)</span></code></p></li>
+</ul>
+<p>Because the first projection <code class="docutils literal notranslate"><span class="pre">W₁</span></code> must produce <code class="docutils literal notranslate"><span class="pre">2H</span></code> outputs for the
+gate, <code class="docutils literal notranslate"><span class="pre">layer1</span></code> has shape <code class="docutils literal notranslate"><span class="pre">(2H,</span> <span class="pre">C)</span></code> when a gated activation is used
+(see <code class="docutils literal notranslate"><span class="pre">glu_factor</span></code> in <code class="docutils literal notranslate"><span class="pre">__init__</span></code>), while <code class="docutils literal notranslate"><span class="pre">layer2</span></code> remains <code class="docutils literal notranslate"><span class="pre">(C,</span> <span class="pre">H)</span></code>.
+This means the <strong>parameter count differs</strong> from the plain variant:</p>
+<ul class="simple">
+<li><p>Plain: <code class="docutils literal notranslate"><span class="pre">C*H</span> <span class="pre">+</span> <span class="pre">H*C</span> <span class="pre">=</span> <span class="pre">2CH</span></code> parameters in the two linear layers.</p></li>
+<li><p>Gated: <code class="docutils literal notranslate"><span class="pre">C*2H</span> <span class="pre">+</span> <span class="pre">H*C</span> <span class="pre">=</span> <span class="pre">3CH</span></code> parameters in the two linear layers.</p></li>
+</ul>
+<p>At <code class="docutils literal notranslate"><span class="pre">expansion_factor=2</span></code>:</p>
+<ul class="simple">
+<li><p>Plain (GELU): <code class="docutils literal notranslate"><span class="pre">H</span> <span class="pre">=</span> <span class="pre">2C</span></code>, params ≈ <code class="docutils literal notranslate"><span class="pre">4C²</span></code>.</p></li>
+<li><p>SwiGLU: <code class="docutils literal notranslate"><span class="pre">H</span> <span class="pre">=</span> <span class="pre">2C</span></code>, params ≈ <code class="docutils literal notranslate"><span class="pre">6C²</span></code>.</p></li>
+</ul>
+<p>To keep parameter counts comparable, gated configs often use a smaller
+<code class="docutils literal notranslate"><span class="pre">expansion_factor</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">4/3</span></code> rather than <code class="docutils literal notranslate"><span class="pre">2</span></code>).</p>
+<p>Dropout is inserted between the two layers (applied <em>after</em> the
+activation and gate product).</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">backend</span></code> argument selects the compute kernel family:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;torch&quot;</span></code> (default): Standard <code class="docutils literal notranslate"><span class="pre">nn.Linear</span></code> + PyTorch activation.
+Works everywhere.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;quack&quot;</span></code> (<em>experimental, currently blocked</em>): QuACK fused GEMM +
+activation kernels targeting Hopper / Blackwell GPUs.  Requires
+<code class="docutils literal notranslate"><span class="pre">quack-kernels</span> <span class="pre">&gt;=</span> <span class="pre">0.3.0</span></code>, <code class="docutils literal notranslate"><span class="pre">bias=False</span></code>, channel dimensions divisible
+by 8, and a supported activation.  Currently raises
+<a class="reference external" href="https://docs.python.org/3/library/exceptions.html#NotImplementedError" title="(in Python v3.14)"><code class="xref py py-exc docutils literal notranslate"><span class="pre">NotImplementedError</span></code></a> at init time pending backward validation.</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>activation</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'relu'</em><em>, </em><em>'gelu'</em><em>, </em><em>'silu'</em><em>, </em><em>'glu'</em><em>, </em><em>'swiglu'</em><em>]</em>)</p></li>
+<li><p><strong>dropout_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>expansion_factor</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>backend</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'torch'</em><em>, </em><em>'quack'</em><em>]</em>)</p></li>
+<li><p><strong>init_method_in</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>init_method_out</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.hidden_dim">
+<span class="sig-name descname"><span class="pre">hidden_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.hidden_dim" title="Link to this definition">#</a></dt>
+<dd><p>Expanded hidden channel dimension
+<code class="docutils literal notranslate"><span class="pre">H</span> <span class="pre">=</span> <span class="pre">floor(expansion_factor</span> <span class="pre">*</span> <span class="pre">dim)</span></code>.  For gated variants
+this is the <em>post-gate</em> width — the actual <code class="docutils literal notranslate"><span class="pre">layer1</span></code> output
+width is <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">hidden_dim</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.activation">
+<span class="sig-name descname"><span class="pre">activation</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.activation" title="Link to this definition">#</a></dt>
+<dd><p>Name of the activation function in use.
+One of <code class="docutils literal notranslate"><span class="pre">&quot;relu&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;gelu&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;silu&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;glu&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;swiglu&quot;</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.backend">
+<span class="sig-name descname"><span class="pre">backend</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.backend" title="Link to this definition">#</a></dt>
+<dd><p>Compute backend, either <code class="docutils literal notranslate"><span class="pre">&quot;torch&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;quack&quot;</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.is_glu_variant">
+<span class="sig-name descname"><span class="pre">is_glu_variant</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.is_glu_variant" title="Link to this definition">#</a></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">True</span></code> when <code class="docutils literal notranslate"><span class="pre">activation</span></code> is <code class="docutils literal notranslate"><span class="pre">&quot;glu&quot;</span></code> or
+<code class="docutils literal notranslate"><span class="pre">&quot;swiglu&quot;</span></code>, indicating that <code class="docutils literal notranslate"><span class="pre">layer1</span></code> produces <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">hidden_dim</span></code>
+outputs and the forward path applies a gating product.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.layer1">
+<span class="sig-name descname"><span class="pre">layer1</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.layer1" title="Link to this definition">#</a></dt>
+<dd><p>First linear projection.
+Shape: <code class="docutils literal notranslate"><span class="pre">(hidden_dim</span> <span class="pre">*</span> <span class="pre">glu_factor,</span> <span class="pre">dim)</span></code> where <code class="docutils literal notranslate"><span class="pre">glu_factor</span></code>
+is 2 for gated activations, 1 otherwise.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Linear</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.dropout">
+<span class="sig-name descname"><span class="pre">dropout</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.dropout" title="Link to this definition">#</a></dt>
+<dd><p>Dropout layer instantiated from <code class="docutils literal notranslate"><span class="pre">dropout_cfg</span></code>.
+Applied between the activation (or gate product) and <code class="docutils literal notranslate"><span class="pre">layer2</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Module</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.layer2">
+<span class="sig-name descname"><span class="pre">layer2</span></span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.layer2" title="Link to this definition">#</a></dt>
+<dd><p>Second linear projection.
+Shape: <code class="docutils literal notranslate"><span class="pre">(dim,</span> <span class="pre">hidden_dim)</span></code>.  Projects back to the input
+channel dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.Linear</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">activation</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">dropout_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">expansion_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">backend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'torch'</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_method_in</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">init_method_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.__init__" title="Link to this definition">#</a></dt>
+<dd><p>Initialise the MLP.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Input and output channel dimension <code class="docutils literal notranslate"><span class="pre">C</span></code>.  Both <code class="docutils literal notranslate"><span class="pre">layer1</span></code>
+and <code class="docutils literal notranslate"><span class="pre">layer2</span></code> preserve this outer dimension (the network’s
+residual stream width).</p></li>
+<li><p><strong>activation</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'relu'</em><em>, </em><em>'gelu'</em><em>, </em><em>'silu'</em><em>, </em><em>'glu'</em><em>, </em><em>'swiglu'</em><em>]</em>) – <p>Non-linearity to apply between the two linear layers.
+Controls whether the MLP is plain or gated:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;relu&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;gelu&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;silu&quot;</span></code>: plain MLP; <code class="docutils literal notranslate"><span class="pre">layer1</span></code>
+maps <code class="docutils literal notranslate"><span class="pre">C</span> <span class="pre">→</span> <span class="pre">H</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;glu&quot;</span></code>: sigmoid-gated MLP; <code class="docutils literal notranslate"><span class="pre">layer1</span></code> maps <code class="docutils literal notranslate"><span class="pre">C</span> <span class="pre">→</span> <span class="pre">2H</span></code>
+and is split into gate + value halves.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;swiglu&quot;</span></code>: SiLU-gated MLP (recommended for modern
+configs); same gating structure as <code class="docutils literal notranslate"><span class="pre">&quot;glu&quot;</span></code> but with
+SiLU in place of sigmoid.</p></li>
+</ul>
+</p></li>
+<li><p><strong>dropout_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – <a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">LazyConfig</span></code></a>
+specifying the dropout module inserted between the activation
+and <code class="docutils literal notranslate"><span class="pre">layer2</span></code>.  Use <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> (or a
+<code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code> that targets it) for no dropout.</p></li>
+<li><p><strong>expansion_factor</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Multiplier that sets the hidden dimension
+<code class="docutils literal notranslate"><span class="pre">H</span> <span class="pre">=</span> <span class="pre">floor(expansion_factor</span> <span class="pre">*</span> <span class="pre">dim)</span></code>.  Defaults to <code class="docutils literal notranslate"><span class="pre">2.0</span></code>.
+For gated activations, the actual <code class="docutils literal notranslate"><span class="pre">layer1</span></code> output width is
+<code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">H</span></code>; to keep total parameter count similar to a plain
+MLP with <code class="docutils literal notranslate"><span class="pre">expansion_factor=2</span></code>, use <code class="docutils literal notranslate"><span class="pre">expansion_factor</span> <span class="pre">≈</span> <span class="pre">4/3</span></code>
+for SwiGLU / GLU.</p></li>
+<li><p><strong>bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to include additive bias terms in <code class="docutils literal notranslate"><span class="pre">layer1</span></code> and
+<code class="docutils literal notranslate"><span class="pre">layer2</span></code>.  Defaults to <code class="docutils literal notranslate"><span class="pre">False</span></code>.  Must be <code class="docutils literal notranslate"><span class="pre">False</span></code> when
+<code class="docutils literal notranslate"><span class="pre">backend=&quot;quack&quot;</span></code>.</p></li>
+<li><p><strong>backend</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'torch'</em><em>, </em><em>'quack'</em><em>]</em>) – Compute kernel family.  <code class="docutils literal notranslate"><span class="pre">&quot;torch&quot;</span></code> (default) uses
+<code class="docutils literal notranslate"><span class="pre">nn.Linear</span></code> + PyTorch activation and runs on any hardware.
+<code class="docutils literal notranslate"><span class="pre">&quot;quack&quot;</span></code> enables fused GEMM+activation kernels but is
+currently experimental (raises <a class="reference external" href="https://docs.python.org/3/library/exceptions.html#NotImplementedError" title="(in Python v3.14)"><code class="xref py py-exc docutils literal notranslate"><span class="pre">NotImplementedError</span></code></a>
+at init).</p></li>
+<li><p><strong>init_method_in</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>] </em><em>| </em><em>None</em>) – Optional weight initialiser for <code class="docutils literal notranslate"><span class="pre">layer1</span></code>.
+Expected signature: <code class="docutils literal notranslate"><span class="pre">init_method_in(out_features)(weight)</span></code>
+— a <em>curried</em> callable that first takes the number of output
+features and returns an in-place initialiser.  Bias is always
+zero-initialised when present, regardless of this argument.
+Pass <code class="docutils literal notranslate"><span class="pre">None</span></code> to use PyTorch’s default Kaiming uniform init.</p></li>
+<li><p><strong>init_method_out</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em>] </em><em>| </em><em>None</em>) – Optional weight initialiser for <code class="docutils literal notranslate"><span class="pre">layer2</span></code>.
+Same curried signature as <code class="docutils literal notranslate"><span class="pre">init_method_in</span></code>, applied to
+<code class="docutils literal notranslate"><span class="pre">layer2.weight</span></code>.  Pass <code class="docutils literal notranslate"><span class="pre">None</span></code> for PyTorch default init.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#NotImplementedError" title="(in Python v3.14)"><strong>NotImplementedError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">backend=&quot;quack&quot;</span></code> (experimental; use
+    <code class="docutils literal notranslate"><span class="pre">backend=&quot;torch&quot;</span></code> for now).</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">backend=&quot;quack&quot;</span></code> and any QuACK constraint is
+    violated (unsupported activation, <code class="docutils literal notranslate"><span class="pre">bias=True</span></code>, or dimension
+    not divisible by 8).  Currently unreachable due to the
+    <a class="reference external" href="https://docs.python.org/3/library/exceptions.html#NotImplementedError" title="(in Python v3.14)"><code class="xref py py-exc docutils literal notranslate"><span class="pre">NotImplementedError</span></code></a> raised first.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.flop_count">
+<span class="sig-name descname"><span class="pre">flop_count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_tokens</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.flop_count" title="Link to this definition">#</a></dt>
+<dd><p>Count FLOPs for a two-layer MLP applied to <code class="docutils literal notranslate"><span class="pre">num_tokens</span></code> tokens.</p>
+<p>Structure: Linear(dim, hidden_dim * glu_factor) -&gt; activation -&gt; Linear(hidden_dim, dim).</p>
+<dl class="simple">
+<dt>FLOPs breakdown (T = num_tokens):</dt><dd><ol class="arabic simple">
+<li><p>layer1 (Linear):  2 * T * <code class="docutils literal notranslate"><span class="pre">self.layer1.in_features</span></code> * <code class="docutils literal notranslate"><span class="pre">self.layer1.out_features</span></code>
+For GLU/SwiGLU, out_features = 2 * hidden_dim (gate doubles width).</p></li>
+<li><p>Activation: T * <code class="docutils literal notranslate"><span class="pre">self.hidden_dim</span></code> (elementwise).
+For GLU variants, an additional T * <code class="docutils literal notranslate"><span class="pre">self.hidden_dim</span></code> for the
+gate multiply (SiLU on one half + elementwise product).</p></li>
+<li><p>layer2 (Linear):  2 * T * <code class="docutils literal notranslate"><span class="pre">self.layer2.in_features</span></code> * <code class="docutils literal notranslate"><span class="pre">self.layer2.out_features</span></code></p></li>
+</ol>
+</dd>
+<dt>Convention: 1 MAC = 2 FLOPs for linear layers.</dt><dd><p>Activations count as 1 FLOP per element.</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>num_tokens</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of tokens (positions) the MLP is applied to.
+Equal to the product of all spatial dimensions, i.e.
+<code class="docutils literal notranslate"><span class="pre">H</span> <span class="pre">*</span> <span class="pre">W</span></code> for 2-D images or <code class="docutils literal notranslate"><span class="pre">T</span></code> for 1-D sequences.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Total FLOPs as an integer.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.mlp.MLP.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.mlp.MLP.forward" title="Link to this definition">#</a></dt>
+<dd><p>Apply the two-layer MLP to an ND feature tensor.</p>
+<p>Operates identically on every spatial position — no cross-position
+interaction occurs in this module.  The QuACK path bypasses dropout
+(QuACK kernels fuse both linear layers and the activation into a
+single kernel; dropout must be inserted by the caller if needed).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>x</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>) – Input feature tensor of shape <code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C)</span></code> in
+channels-last layout, where <code class="docutils literal notranslate"><span class="pre">B</span></code> is the batch size,
+<code class="docutils literal notranslate"><span class="pre">spatial_dims</span></code> are one or more spatial axes (e.g. <code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W)</span></code>
+for 2-D images or <code class="docutils literal notranslate"><span class="pre">(T,)</span></code> for 1-D sequences), and <code class="docutils literal notranslate"><span class="pre">C</span></code>
+is the channel dimension (must equal the <code class="docutils literal notranslate"><span class="pre">dim</span></code> passed at
+construction time).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Output tensor of shape <code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C)</span></code>,
+the same shape as <code class="docutils literal notranslate"><span class="pre">x</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)">torch.Tensor</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="nvsubquadratic.modules.patchify.Unpatchify.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Unpatchify</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="nvsubquadratic.modules.drop_path.DropPath.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">DropPath</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP"><code class="docutils literal notranslate"><span class="pre">MLP</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.hidden_dim"><code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.activation"><code class="docutils literal notranslate"><span class="pre">activation</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.backend"><code class="docutils literal notranslate"><span class="pre">backend</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.is_glu_variant"><code class="docutils literal notranslate"><span class="pre">is_glu_variant</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.layer1"><code class="docutils literal notranslate"><span class="pre">layer1</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.dropout"><code class="docutils literal notranslate"><span class="pre">dropout</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.layer2"><code class="docutils literal notranslate"><span class="pre">layer2</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.flop_count"><code class="docutils literal notranslate"><span class="pre">flop_count()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.mlp.MLP.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

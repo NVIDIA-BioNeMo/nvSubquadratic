@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+enable\_chunking
+================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_chunked
+
+.. autofunction:: enable_chunking

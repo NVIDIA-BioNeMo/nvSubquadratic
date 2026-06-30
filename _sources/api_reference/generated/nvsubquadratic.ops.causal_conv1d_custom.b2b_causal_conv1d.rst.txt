@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+b2b\_causal\_conv1d
+===================
+
+.. currentmodule:: nvsubquadratic.ops.causal_conv1d_custom
+
+.. autofunction:: b2b_causal_conv1d

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+instantiate
+===========
+
+.. currentmodule:: nvsubquadratic.lazy_config
+
+.. autofunction:: instantiate

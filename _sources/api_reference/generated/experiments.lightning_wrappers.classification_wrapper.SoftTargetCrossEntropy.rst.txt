@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+SoftTargetCrossEntropy
+======================
+
+.. currentmodule:: experiments.lightning_wrappers.classification_wrapper
+
+.. autoclass:: SoftTargetCrossEntropy
+   :members:
+   :show-inheritance:

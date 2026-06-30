@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+apply\_qk\_norm
+===============
+
+.. currentmodule:: nvsubquadratic.utils.qk_norm
+
+.. autofunction:: apply_qk_norm

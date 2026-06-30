@@ -1,0 +1,697 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>PositionEmbeddingND &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/generated/nvsubquadratic.modules.position_encoding.PositionEmbeddingND';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Patchify" href="nvsubquadratic.modules.patchify.Patchify.html" />
+    <link rel="prev" title="LayerScale" href="nvsubquadratic.modules.layer_scale.LayerScale.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="reference internal" href="../modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">API Reference</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../modules.html" class="nav-link">Modules</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">PositionEmbeddingND</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="positionembeddingnd">
+<h1>PositionEmbeddingND<a class="headerlink" href="#positionembeddingnd" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">PositionEmbeddingND</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">embedding_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_dim_lengths</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>Axis-factorised learned positional encoding for ND spatial token grids.</p>
+<p>Each spatial axis has its own <code class="docutils literal notranslate"><span class="pre">nn.Embedding</span></code> table of shape
+<code class="docutils literal notranslate"><span class="pre">(max_dim_lengths[d],</span> <span class="pre">embedding_dim</span> <span class="pre">//</span> <span class="pre">data_dim)</span></code>.  For a grid position
+<code class="docutils literal notranslate"><span class="pre">(i_0,</span> <span class="pre">i_1,</span> <span class="pre">...,</span> <span class="pre">i_{D-1})</span></code> the encoding is formed by looking up the
+per-axis embeddings and <em>concatenating</em> them channel-wise:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">PE</span><span class="p">(</span><span class="n">i_0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">i_</span><span class="p">{</span><span class="n">D</span><span class="o">-</span><span class="mi">1</span><span class="p">})</span> <span class="o">=</span> <span class="n">concat</span><span class="p">(</span><span class="n">E_0</span><span class="p">(</span><span class="n">i_0</span><span class="p">),</span> <span class="n">E_1</span><span class="p">(</span><span class="n">i_1</span><span class="p">),</span> <span class="o">...</span><span class="p">,</span> <span class="n">E_</span><span class="p">{</span><span class="n">D</span><span class="o">-</span><span class="mi">1</span><span class="p">}(</span><span class="n">i_</span><span class="p">{</span><span class="n">D</span><span class="o">-</span><span class="mi">1</span><span class="p">}))</span>
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">concat</span></code> denotes concatenation along the channel dimension and each
+<code class="docutils literal notranslate"><span class="pre">E_d</span> <span class="pre">∈</span> <span class="pre">R^{max_dim_lengths[d]</span> <span class="pre">×</span> <span class="pre">(embedding_dim</span> <span class="pre">//</span> <span class="pre">data_dim)}</span></code> is a
+learned embedding matrix.  The result has length <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code>
+(requires <code class="docutils literal notranslate"><span class="pre">embedding_dim</span> <span class="pre">%</span> <span class="pre">data_dim</span> <span class="pre">==</span> <span class="pre">0</span></code>).</p>
+<p>This factorised form is a <em>separable</em> positional encoding: the position
+information for axis <code class="docutils literal notranslate"><span class="pre">d</span></code> is captured entirely in the slice of channels
+<code class="docutils literal notranslate"><span class="pre">[d</span> <span class="pre">*</span> <span class="pre">per_dim,</span> <span class="pre">(d+1)</span> <span class="pre">*</span> <span class="pre">per_dim)</span></code>.  It is not a <em>joint</em> encoding of the
+full ND coordinate (unlike 2D sinusoidal encodings that mix axes), so
+cross-axis interactions must be learned by the mixer layers themselves.</p>
+<p><strong>Output shape</strong>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">forward</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span> <span class="n">of</span> <span class="n">shape</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="o">*</span><span class="n">spatial_dims</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>The returned tensor is a broadcast-expanded encoding grid with the <em>same
+shape as the input</em> <code class="docutils literal notranslate"><span class="pre">x</span></code>, and is typically <strong>added</strong> to <code class="docutils literal notranslate"><span class="pre">x</span></code> before the
+first mixer block:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">position_embedding</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Parameter count</strong> — <code class="docutils literal notranslate"><span class="pre">data_dim</span></code> embedding tables, each of size
+<code class="docutils literal notranslate"><span class="pre">max_dim_lengths[d]</span> <span class="pre">×</span> <span class="pre">(embedding_dim</span> <span class="pre">//</span> <span class="pre">data_dim)</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">max_dim_lengths</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">embedding_dim</span> <span class="o">//</span> <span class="n">data_dim</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">data_dim</span><span class="p">))</span>
+</pre></div>
+</div>
+<p><strong>No weight decay</strong> — all embedding parameters are tagged
+<code class="docutils literal notranslate"><span class="pre">param._no_weight_decay</span> <span class="pre">=</span> <span class="pre">True</span></code> so that optimiser builders (e.g. those
+using <code class="docutils literal notranslate"><span class="pre">param._no_weight_decay</span></code> to separate param groups) can exclude them
+from L2 regularisation, following the standard ViT practice.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>embedding_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>data_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>max_dim_lengths</strong> (<em>Sequence</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.embedding_dim">
+<span class="sig-name descname"><span class="pre">embedding_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.embedding_dim" title="Link to this definition">#</a></dt>
+<dd><p>Total embedding dimension of the output encoding.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.per_dim_embedding_dim">
+<span class="sig-name descname"><span class="pre">per_dim_embedding_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.per_dim_embedding_dim" title="Link to this definition">#</a></dt>
+<dd><p>Per-axis slice width,
+<code class="docutils literal notranslate"><span class="pre">embedding_dim</span> <span class="pre">//</span> <span class="pre">data_dim</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.data_dim">
+<span class="sig-name descname"><span class="pre">data_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.data_dim" title="Link to this definition">#</a></dt>
+<dd><p>Number of spatial axes (1, 2, or 3).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.max_dim_lengths">
+<span class="sig-name descname"><span class="pre">max_dim_lengths</span></span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.max_dim_lengths" title="Link to this definition">#</a></dt>
+<dd><p>Maximum supported grid size for each
+spatial axis.  Length equals <code class="docutils literal notranslate"><span class="pre">data_dim</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a>, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.data_embeddings">
+<span class="sig-name descname"><span class="pre">data_embeddings</span></span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.data_embeddings" title="Link to this definition">#</a></dt>
+<dd><p>Dictionary mapping axis keys
+<code class="docutils literal notranslate"><span class="pre">{&quot;x&quot;}</span></code> / <code class="docutils literal notranslate"><span class="pre">{&quot;x&quot;,</span> <span class="pre">&quot;y&quot;}</span></code> / <code class="docutils literal notranslate"><span class="pre">{&quot;x&quot;,</span> <span class="pre">&quot;y&quot;,</span> <span class="pre">&quot;z&quot;}</span></code> to the
+corresponding <code class="docutils literal notranslate"><span class="pre">nn.Embedding</span></code> modules.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>nn.ModuleDict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">embedding_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_dim_lengths</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.__init__" title="Link to this definition">#</a></dt>
+<dd><p>Initialise per-axis embedding tables.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>embedding_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Total number of channels in the output position
+encoding.  Must be divisible by <code class="docutils literal notranslate"><span class="pre">data_dim</span></code> so that the
+budget can be split evenly across axes.</p></li>
+<li><p><strong>data_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of spatial axes of the input token grid.  Must
+satisfy <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">&lt;=</span> <span class="pre">data_dim</span> <span class="pre">&lt;=</span> <span class="pre">3</span></code>.</p></li>
+<li><p><strong>max_dim_lengths</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Sequence" title="(in Python v3.14)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>]</em>) – Maximum grid size for each spatial axis.  Must
+have exactly <code class="docutils literal notranslate"><span class="pre">data_dim</span></code> entries.  An <code class="docutils literal notranslate"><span class="pre">nn.Embedding</span></code> table
+of length <code class="docutils literal notranslate"><span class="pre">max_dim_lengths[d]</span></code> is allocated for axis <code class="docutils literal notranslate"><span class="pre">d</span></code>;
+inputs whose spatial size along axis <code class="docutils literal notranslate"><span class="pre">d</span></code> exceeds this value
+will raise a <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> in <code class="docutils literal notranslate"><span class="pre">forward</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">data_dim</span> <span class="pre">&lt;</span> <span class="pre">1</span></code>.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">data_dim</span> <span class="pre">&gt;</span> <span class="pre">3</span></code>.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">len(max_dim_lengths)</span> <span class="pre">!=</span> <span class="pre">data_dim</span></code>.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">embedding_dim</span> <span class="pre">%</span> <span class="pre">data_dim</span> <span class="pre">!=</span> <span class="pre">0</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.position_encoding.PositionEmbeddingND.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.forward" title="Link to this definition">#</a></dt>
+<dd><p>Compute the position encoding grid for the given input token grid.</p>
+<p>For each spatial axis <code class="docutils literal notranslate"><span class="pre">d</span></code>, position indices <code class="docutils literal notranslate"><span class="pre">0,</span> <span class="pre">1,</span> <span class="pre">...,</span> <span class="pre">L_d</span> <span class="pre">-</span> <span class="pre">1</span></code>
+are looked up in the corresponding <code class="docutils literal notranslate"><span class="pre">nn.Embedding</span></code> table to produce a
+1-D embedding slice of shape <code class="docutils literal notranslate"><span class="pre">[L_d,</span> <span class="pre">per_dim_embedding_dim]</span></code>.  That
+slice is broadcast-expanded to the full spatial shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">per_dim_embedding_dim]</span></code> and the per-axis tensors
+are concatenated along the last dimension to give the final encoding of
+shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">embedding_dim]</span></code>.</p>
+<p>The returned tensor has the same shape as <code class="docutils literal notranslate"><span class="pre">x</span></code> and should be <strong>added</strong>
+to <code class="docutils literal notranslate"><span class="pre">x</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">position_embedding</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>x</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>) – <p>Input token-grid tensor in channels-last layout.  Shape:
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">embedding_dim]</span></code>, where the number of
+spatial axes must equal <code class="docutils literal notranslate"><span class="pre">data_dim</span></code> and the last dimension
+must equal <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code>.  For example:</p>
+<ul class="simple">
+<li><p>1-D (sequences):  <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">L,</span> <span class="pre">C]</span></code></p></li>
+<li><p>2-D (images):     <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">H,</span> <span class="pre">W,</span> <span class="pre">C]</span></code></p></li>
+<li><p>3-D (volumes):    <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">D,</span> <span class="pre">H,</span> <span class="pre">W,</span> <span class="pre">C]</span></code></p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><p>Position encoding tensor of shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">embedding_dim]</span></code> — the same shape as <code class="docutils literal notranslate"><span class="pre">x</span></code>.
+Each spatial location <code class="docutils literal notranslate"><span class="pre">(i_0,</span> <span class="pre">...,</span> <span class="pre">i_{D-1})</span></code> holds the
+concatenation of the per-axis embedding lookups:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">out</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i_0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">i_</span><span class="p">{</span><span class="n">D</span><span class="o">-</span><span class="mi">1</span><span class="p">},</span> <span class="p">:]</span> <span class="o">=</span>
+    <span class="n">concat</span><span class="p">(</span><span class="n">E_0</span><span class="p">(</span><span class="n">i_0</span><span class="p">),</span> <span class="n">E_1</span><span class="p">(</span><span class="n">i_1</span><span class="p">),</span> <span class="o">...</span><span class="p">,</span> <span class="n">E_</span><span class="p">{</span><span class="n">D</span><span class="o">-</span><span class="mi">1</span><span class="p">}(</span><span class="n">i_</span><span class="p">{</span><span class="n">D</span><span class="o">-</span><span class="mi">1</span><span class="p">}))</span>
+</pre></div>
+</div>
+<p>Internally, for each axis <code class="docutils literal notranslate"><span class="pre">d</span></code> the 1-D embedding of shape
+<code class="docutils literal notranslate"><span class="pre">[L_d,</span> <span class="pre">per_dim_embedding_dim]</span></code> is reshaped to
+<code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">...,</span> <span class="pre">L_d,</span> <span class="pre">...,</span> <span class="pre">1,</span> <span class="pre">per_dim_embedding_dim]</span></code> (singleton in all
+axes except axis <code class="docutils literal notranslate"><span class="pre">d</span></code>) and then broadcast-expanded to
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">per_dim_embedding_dim]</span></code> before the per-axis
+tensors are concatenated along the last dimension.</p>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The returned tensor has the same <code class="docutils literal notranslate"><span class="pre">dtype</span></code> as the embedding weight
+parameters (typically <code class="docutils literal notranslate"><span class="pre">torch.float32</span></code> regardless of the input
+dtype).  In mixed-precision training cast the result before adding
+it to the token grid:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">pos_enc</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">x.ndim</span> <span class="pre">!=</span> <span class="pre">data_dim</span> <span class="pre">+</span> <span class="pre">2</span></code> (wrong number of
+    dimensions — expected batch + <code class="docutils literal notranslate"><span class="pre">data_dim</span></code> spatial + channel).</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">x.shape[-1]</span> <span class="pre">!=</span> <span class="pre">self.embedding_dim</span></code> (channel count
+    of the input does not match the <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code> passed at
+    construction time).</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If any spatial dimension of <code class="docutils literal notranslate"><span class="pre">x</span></code> exceeds the
+    corresponding entry of <code class="docutils literal notranslate"><span class="pre">max_dim_lengths</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>x</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="nvsubquadratic.modules.layer_scale.LayerScale.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">LayerScale</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="nvsubquadratic.modules.patchify.Patchify.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Patchify</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND"><code class="docutils literal notranslate"><span class="pre">PositionEmbeddingND</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.embedding_dim"><code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.per_dim_embedding_dim"><code class="docutils literal notranslate"><span class="pre">per_dim_embedding_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.data_dim"><code class="docutils literal notranslate"><span class="pre">data_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.max_dim_lengths"><code class="docutils literal notranslate"><span class="pre">max_dim_lengths</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.data_embeddings"><code class="docutils literal notranslate"><span class="pre">data_embeddings</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.position_encoding.PositionEmbeddingND.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

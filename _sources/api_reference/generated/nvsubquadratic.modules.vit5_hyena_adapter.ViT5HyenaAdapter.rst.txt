@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ViT5HyenaAdapter
+================
+
+.. currentmodule:: nvsubquadratic.modules.vit5_hyena_adapter
+
+.. autoclass:: ViT5HyenaAdapter
+   :members:
+   :show-inheritance:

@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+Sequence1DVisualizationCallback
+===============================
+
+.. currentmodule:: experiments.callbacks.sequence_visualization_1d
+
+.. autoclass:: Sequence1DVisualizationCallback
+   :members:
+   :show-inheritance:

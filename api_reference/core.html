@@ -1,0 +1,600 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Core &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/core';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="LazyConfig" href="generated/nvsubquadratic.lazy_config.LazyConfig.html" />
+    <link rel="prev" title="AllToAllSingleFunction" href="generated/nvsubquadratic.parallel.a2a_comms.AllToAllSingleFunction.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../_static/searchtools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <script src="../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ops.html">Ops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel.html">Parallel</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="index.html" class="nav-link">API Reference</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Core</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="core">
+<h1>Core<a class="headerlink" href="#core" title="Link to this heading">#</a></h1>
+<p>Top-level utilities: the lazy-instantiation system that powers every
+config file, weight-init helpers, QK-norm and rotary embedding
+primitives, the QuACK-kernel capability probe, and testing helpers.</p>
+<section id="lazy-configuration">
+<h2>Lazy configuration<a class="headerlink" href="#lazy-configuration" title="Link to this heading">#</a></h2>
+<p>The lazy-instantiation system lets configs declare <code class="docutils literal notranslate"><span class="pre">_target_</span></code>-shaped
+specs that are deferred until <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> is called.  This is what
+every experiment config and most <code class="docutils literal notranslate"><span class="pre">modules/</span></code> constructors rely on.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LazyConfig</span></code></a>(target)</p></td>
+<td><p>Deferred-instantiation config builder.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.lazy_config.instantiate.html#nvsubquadratic.lazy_config.instantiate" title="nvsubquadratic.lazy_config.instantiate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">instantiate</span></code></a>(config, *[, recursive_instantiate])</p></td>
+<td><p>Instantiate an object from a <code class="xref py py-class docutils literal notranslate"><span class="pre">LazyConfig</span></code> or <code class="docutils literal notranslate"><span class="pre">__target__</span></code> dict.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="initialisation-helpers">
+<h2>Initialisation helpers<a class="headerlink" href="#initialisation-helpers" title="Link to this heading">#</a></h2>
+<p>Truncated-normal and Wang/SmallInit factories used by SIREN, MLP, and
+projection layers.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.init.trunc_normal_init.html#nvsubquadratic.utils.init.trunc_normal_init" title="nvsubquadratic.utils.init.trunc_normal_init"><code class="xref py py-obj docutils literal notranslate"><span class="pre">trunc_normal_init</span></code></a>([std])</p></td>
+<td><p>Truncated-normal initializer with fixed standard deviation.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.init.trunc_normal_init_factory.html#nvsubquadratic.utils.init.trunc_normal_init_factory" title="nvsubquadratic.utils.init.trunc_normal_init_factory"><code class="xref py py-obj docutils literal notranslate"><span class="pre">trunc_normal_init_factory</span></code></a>([std])</p></td>
+<td><p>Factory that returns <code class="docutils literal notranslate"><span class="pre">fn(dim)</span> <span class="pre">-&gt;</span> <span class="pre">fn(tensor)</span></code> for truncated-normal init.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.init.small_init.html#nvsubquadratic.utils.init.small_init" title="nvsubquadratic.utils.init.small_init"><code class="xref py py-obj docutils literal notranslate"><span class="pre">small_init</span></code></a>(dim)</p></td>
+<td><p>Dim-dependent initializer from &quot;Transformers without Tears&quot; (Nguyen &amp; Salazar, 2019).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.init.wang_init.html#nvsubquadratic.utils.init.wang_init" title="nvsubquadratic.utils.init.wang_init"><code class="xref py py-obj docutils literal notranslate"><span class="pre">wang_init</span></code></a>(dim, num_layers)</p></td>
+<td><p>Depth-scaled initializer (Wang et al.).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.init.partial_wang_init_fn_with_num_layers.html#nvsubquadratic.utils.init.partial_wang_init_fn_with_num_layers" title="nvsubquadratic.utils.init.partial_wang_init_fn_with_num_layers"><code class="xref py py-obj docutils literal notranslate"><span class="pre">partial_wang_init_fn_with_num_layers</span></code></a>(num_layers)</p></td>
+<td><p>Factory that returns <code class="docutils literal notranslate"><span class="pre">partial(wang_init,</span> <span class="pre">num_layers=...)</span></code>.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="qk-normalization-rotary-position-embeddings">
+<h2>QK normalization &amp; rotary position embeddings<a class="headerlink" href="#qk-normalization-rotary-position-embeddings" title="Link to this heading">#</a></h2>
+<p>Shared building blocks consumed by the attention and Hyena mixers.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.qk_norm.L2Norm.html#nvsubquadratic.utils.qk_norm.L2Norm" title="nvsubquadratic.utils.qk_norm.L2Norm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">L2Norm</span></code></a>([dim, eps])</p></td>
+<td><p>L2 normalisation layer — learnable-parameter-free, <code class="xref py py-class docutils literal notranslate"><span class="pre">LazyConfig</span></code>-friendly.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.qk_norm.apply_qk_norm.html#nvsubquadratic.utils.qk_norm.apply_qk_norm" title="nvsubquadratic.utils.qk_norm.apply_qk_norm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_qk_norm</span></code></a>(query, key[, dim, eps])</p></td>
+<td><p>L2-normalise query and key tensors along a given dimension.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.apply_rope_1d_bhl.html#nvsubquadratic.utils.rope.apply_rope_1d_bhl" title="nvsubquadratic.utils.rope.apply_rope_1d_bhl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_rope_1d_bhl</span></code></a>(x, rope_1d_cache)</p></td>
+<td><p>Apply 1D RoPE to a tensor laid out as [batch_size, hidden_dim, seq_len].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.apply_rope_2d_bhl.html#nvsubquadratic.utils.rope.apply_rope_2d_bhl" title="nvsubquadratic.utils.rope.apply_rope_2d_bhl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_rope_2d_bhl</span></code></a>(x, rope_2d_cache)</p></td>
+<td><p>Apply 2D RoPE to a tensor laid out as [batch_size, hidden_dim, H, W].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.apply_rope_3d_bhl.html#nvsubquadratic.utils.rope.apply_rope_3d_bhl" title="nvsubquadratic.utils.rope.apply_rope_3d_bhl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_rope_3d_bhl</span></code></a>(x, rope_3d_cache)</p></td>
+<td><p>Apply 3D RoPE to a tensor laid out as [batch_size, hidden_dim, D, H, W].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.apply_rope_1d_blh.html#nvsubquadratic.utils.rope.apply_rope_1d_blh" title="nvsubquadratic.utils.rope.apply_rope_1d_blh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_rope_1d_blh</span></code></a>(x, rope_1d_cache)</p></td>
+<td><p>Apply 1D RoPE to a tensor laid out as [batch_size, seq_len, hidden_dim].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.apply_rope_2d_blh.html#nvsubquadratic.utils.rope.apply_rope_2d_blh" title="nvsubquadratic.utils.rope.apply_rope_2d_blh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_rope_2d_blh</span></code></a>(x, rope_2d_cache)</p></td>
+<td><p>Apply 2D RoPE to a tensor laid out as [batch_size, H, W, hidden_dim].</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.apply_rope_3d_blh.html#nvsubquadratic.utils.rope.apply_rope_3d_blh" title="nvsubquadratic.utils.rope.apply_rope_3d_blh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_rope_3d_blh</span></code></a>(x, rope_3d_cache)</p></td>
+<td><p>Apply 3D RoPE to a tensor laid out as [batch_size, D, H, W, hidden_dim].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.construct_rope_1d_cache_bhl.html#nvsubquadratic.utils.rope.construct_rope_1d_cache_bhl" title="nvsubquadratic.utils.rope.construct_rope_1d_cache_bhl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">construct_rope_1d_cache_bhl</span></code></a>(seq_len, dim, ...)</p></td>
+<td><p>Construct the 1D RoPE cache for a given sequence length and hidden dimension.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.construct_rope_2d_cache_bhl.html#nvsubquadratic.utils.rope.construct_rope_2d_cache_bhl" title="nvsubquadratic.utils.rope.construct_rope_2d_cache_bhl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">construct_rope_2d_cache_bhl</span></code></a>(height, width, ...)</p></td>
+<td><p>Construct the 2D RoPE cache for a given (height, width) and per-axis dimension.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.construct_rope_3d_cache_bhl.html#nvsubquadratic.utils.rope.construct_rope_3d_cache_bhl" title="nvsubquadratic.utils.rope.construct_rope_3d_cache_bhl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">construct_rope_3d_cache_bhl</span></code></a>(depth, height, ...)</p></td>
+<td><p>Construct the 3D RoPE cache for given (depth, height, width) and per-axis dimension.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.construct_rope_1d_cache_blh.html#nvsubquadratic.utils.rope.construct_rope_1d_cache_blh" title="nvsubquadratic.utils.rope.construct_rope_1d_cache_blh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">construct_rope_1d_cache_blh</span></code></a>(seq_len, dim, ...)</p></td>
+<td><p>Construct the 1D RoPE cache for a given sequence length and hidden dimension.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.construct_rope_2d_cache_blh.html#nvsubquadratic.utils.rope.construct_rope_2d_cache_blh" title="nvsubquadratic.utils.rope.construct_rope_2d_cache_blh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">construct_rope_2d_cache_blh</span></code></a>(height, width, ...)</p></td>
+<td><p>Construct the 2D RoPE cache for a given (height, width) and per-axis dimension.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.rope.construct_rope_3d_cache_blh.html#nvsubquadratic.utils.rope.construct_rope_3d_cache_blh" title="nvsubquadratic.utils.rope.construct_rope_3d_cache_blh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">construct_rope_3d_cache_blh</span></code></a>(depth, height, ...)</p></td>
+<td><p>Construct the 3D RoPE cache for given (depth, height, width) and per-axis dimension.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="quack-capability-probe">
+<h2>QuACK capability probe<a class="headerlink" href="#quack-capability-probe" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.utils.quack_utils.cuda_supports_quack.html#nvsubquadratic.utils.quack_utils.cuda_supports_quack" title="nvsubquadratic.utils.quack_utils.cuda_supports_quack"><code class="xref py py-obj docutils literal notranslate"><span class="pre">cuda_supports_quack</span></code></a>(device)</p></td>
+<td><p>Return <code class="docutils literal notranslate"><span class="pre">True</span></code> if <code class="docutils literal notranslate"><span class="pre">device</span></code> supports QuACK fused kernels.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="testing-helpers">
+<h2>Testing helpers<a class="headerlink" href="#testing-helpers" title="Link to this heading">#</a></h2>
+<p>Small numerical-comparison helpers used by the test suite.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.testing.utils.compute_relative_error.html#nvsubquadratic.testing.utils.compute_relative_error" title="nvsubquadratic.testing.utils.compute_relative_error"><code class="xref py py-obj docutils literal notranslate"><span class="pre">compute_relative_error</span></code></a>(tensor1, tensor2)</p></td>
+<td><p>Compute relative error between two tensors: ||t1 - t2|| / ||t1||.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="generated/nvsubquadratic.parallel.a2a_comms.AllToAllSingleFunction.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">AllToAllSingleFunction</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="generated/nvsubquadratic.lazy_config.LazyConfig.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">LazyConfig</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lazy-configuration">Lazy configuration</a><ul class="pst-show_toc_level nav section-nav flex-column">
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#initialisation-helpers">Initialisation helpers</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#qk-normalization-rotary-position-embeddings">QK normalization &amp; rotary position embeddings</a><ul class="pst-show_toc_level nav section-nav flex-column">
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quack-capability-probe">QuACK capability probe</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#testing-helpers">Testing helpers</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

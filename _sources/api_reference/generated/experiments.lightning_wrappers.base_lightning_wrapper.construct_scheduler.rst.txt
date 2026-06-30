@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+construct\_scheduler
+====================
+
+.. currentmodule:: experiments.lightning_wrappers.base_lightning_wrapper
+
+.. autofunction:: construct_scheduler

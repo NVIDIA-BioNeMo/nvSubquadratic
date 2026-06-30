@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+L2Norm
+======
+
+.. currentmodule:: nvsubquadratic.utils.qk_norm
+
+.. autoclass:: L2Norm
+   :members:
+   :show-inheritance:

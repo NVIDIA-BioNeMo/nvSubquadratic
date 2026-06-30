@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+RMSNormChannelFirst
+===================
+
+.. currentmodule:: nvsubquadratic.modules.rms_norm_channel_first
+
+.. autoclass:: RMSNormChannelFirst
+   :members:
+   :show-inheritance:

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+apply\_rope\_1d\_bhl
+====================
+
+.. currentmodule:: nvsubquadratic.utils.rope
+
+.. autofunction:: apply_rope_1d_bhl

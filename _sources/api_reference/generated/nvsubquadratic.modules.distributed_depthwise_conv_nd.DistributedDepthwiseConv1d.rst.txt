@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+DistributedDepthwiseConv1d
+==========================
+
+.. currentmodule:: nvsubquadratic.modules.distributed_depthwise_conv_nd
+
+.. autoclass:: DistributedDepthwiseConv1d
+   :members:
+   :show-inheritance:

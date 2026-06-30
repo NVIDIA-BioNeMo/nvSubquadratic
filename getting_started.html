@@ -1,0 +1,640 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Getting Started &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'getting_started';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Architecture" href="architecture.html" />
+    <link rel="prev" title="How HyenaND works" href="how_hyenand_works.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="_static/searchtools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script src="searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api_reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/ops.html">Ops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Getting Started</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="getting-started">
+<h1>Getting Started<a class="headerlink" href="#getting-started" title="Link to this heading">#</a></h1>
+<p>This page walks a new user from a fresh checkout to a working Hyena
+forward pass.  For the full installation matrix (dev container, Docker,
+Apptainer, conda, venv) see the project <a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/README.md">README</a>.</p>
+<section id="requirements">
+<h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>CUDA-compatible NVIDIA GPU</p></li>
+<li><p>CUDA Toolkit 12.0 or higher</p></li>
+<li><p>Python 3.10 or higher</p></li>
+</ul>
+<p>The optional fused RMSNorm kernel (<code class="docutils literal notranslate"><span class="pre">quack-kernels</span></code>) requires Hopper or
+Blackwell (H100, B200, B300); on Ampere the library falls back to a
+pure-PyTorch path automatically.</p>
+</section>
+<section id="install">
+<h2>Install<a class="headerlink" href="#install" title="Link to this heading">#</a></h2>
+<p>For users who just want to use the library:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>nvsubquadratic<span class="w">                   </span><span class="c1"># full training/experiment stack</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;nvsubquadratic[cuda]&quot;</span><span class="w">           </span><span class="c1"># + accelerated fused FFT-conv / causal-conv CUDA kernels</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;nvsubquadratic[quack]&quot;</span><span class="w">          </span><span class="c1"># + fused RMSNorm kernel (Hopper/Blackwell only)</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;nvsubquadratic[all]&quot;</span><span class="w">            </span><span class="c1"># everything</span>
+</pre></div>
+</div>
+<p>The accelerated CUDA kernels (<code class="docutils literal notranslate"><span class="pre">[cuda]</span></code>) need <code class="docutils literal notranslate"><span class="pre">nvcc</span></code> to build and are kept out of
+core, so the base install also works without the CUDA toolkit (the operators
+default to the portable <code class="docutils literal notranslate"><span class="pre">torch.fft</span></code> backend).</p>
+<p>For contributors or developer setup, the recommended path is conda:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bash<span class="w"> </span>setup_conda_env.sh
+conda<span class="w"> </span>activate<span class="w"> </span>nvsubquadratic
+</pre></div>
+</div>
+<p>This creates an environment with Python 3.12 and PyTorch 2.10 (CUDA
+12.9), installs the dev dependencies, builds NVIDIA Apex from source,
+and installs <code class="docutils literal notranslate"><span class="pre">quack-kernels</span></code>.</p>
+<p>For an alternative venv-based install:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>venv
+<span class="nb">source</span><span class="w"> </span>venv/bin/activate
+pip<span class="w"> </span>install<span class="w"> </span><span class="nv">torch</span><span class="o">==</span><span class="m">2</span>.10.0<span class="w"> </span><span class="nv">torchvision</span><span class="o">==</span><span class="m">0</span>.25.0<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cu129
+pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements-dev.txt
+pip<span class="w"> </span>install<span class="w"> </span>--no-build-isolation<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Docker, Apptainer, enroot/SLURM, and dev-container instructions live in
+the <a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/README.md#installation">project README</a>.</p>
+</section>
+<section id="hello-hyena">
+<h2>Hello, Hyena<a class="headerlink" href="#hello-hyena" title="Link to this heading">#</a></h2>
+<p>A minimal forward pass through a real 2D Hyena mixer.  Everything is
+wired with <a class="reference internal" href="lazy_config.html"><span class="doc">LazyConfig</span></a>: each <code class="docutils literal notranslate"><span class="pre">LazyConfig(Cls)(...)</span></code>
+records the class and its arguments without constructing anything, and a
+single <code class="docutils literal notranslate"><span class="pre">instantiate(...)</span></code> call at the end builds the whole tree.  This is
+exactly how the <a class="reference internal" href="api_reference/experiments.html"><span class="doc">experiments</span></a> configs
+assemble their networks, except there the scalar fields are filled by
+<code class="docutils literal notranslate"><span class="pre">&quot;${net.hidden_dim}&quot;</span></code>-style interpolation instead of the concrete
+integers used below.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.lazy_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyConfig</span><span class="p">,</span> <span class="n">instantiate</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.hyena_nd</span><span class="w"> </span><span class="kn">import</span> <span class="n">Hyena</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.ckconv_nd</span><span class="w"> </span><span class="kn">import</span> <span class="n">CKConvND</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.kernels_nd</span><span class="w"> </span><span class="kn">import</span> <span class="n">SIRENKernelND</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.rms_norm_channel_first</span><span class="w"> </span><span class="kn">import</span> <span class="n">RMSNormChannelFirst</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.utils.qk_norm</span><span class="w"> </span><span class="kn">import</span> <span class="n">L2Norm</span>
+
+<span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+
+<span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>
+
+<span class="n">hyena_cfg</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">Hyena</span><span class="p">)(</span>
+    <span class="c1"># The long-range global convolution.  CKConvND owns a SIREN-parameterised</span>
+    <span class="c1"># kernel and applies it as an FFT conv — the kernel is *generated* by the</span>
+    <span class="c1"># SIREN MLP, never random.</span>
+    <span class="n">global_conv_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">CKConvND</span><span class="p">)(</span>
+        <span class="n">data_dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">hidden_dim</span><span class="o">=</span><span class="n">H</span><span class="p">,</span>
+        <span class="n">kernel_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">SIRENKernelND</span><span class="p">)(</span>
+            <span class="n">data_dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">out_dim</span><span class="o">=</span><span class="n">H</span><span class="p">,</span>
+            <span class="n">mlp_hidden_dim</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
+            <span class="n">num_layers</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+            <span class="n">embedding_dim</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
+            <span class="n">omega_0</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+            <span class="n">hidden_omega_0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+            <span class="n">L_cache</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">),</span>
+            <span class="n">use_bias</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">mask_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Identity</span><span class="p">)(),</span>
+        <span class="n">grid_type</span><span class="o">=</span><span class="s2">&quot;double&quot;</span><span class="p">,</span>  <span class="c1"># linear (non-circular) convolution</span>
+        <span class="n">fft_padding</span><span class="o">=</span><span class="s2">&quot;zero&quot;</span><span class="p">,</span>
+        <span class="n">fft_backend</span><span class="o">=</span><span class="s2">&quot;torch_fft&quot;</span><span class="p">,</span>  <span class="c1"># portable; &quot;subq_ops&quot; uses the fused 2D CUDA kernel</span>
+        <span class="n">is_causal</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="c1"># Depthwise short conv on the concatenated [Q; K; V] (3 * H channels).</span>
+    <span class="n">short_conv_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">)(</span>
+        <span class="n">in_channels</span><span class="o">=</span><span class="mi">3</span> <span class="o">*</span> <span class="n">H</span><span class="p">,</span>
+        <span class="n">out_channels</span><span class="o">=</span><span class="mi">3</span> <span class="o">*</span> <span class="n">H</span><span class="p">,</span>
+        <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">groups</span><span class="o">=</span><span class="mi">3</span> <span class="o">*</span> <span class="n">H</span><span class="p">,</span>
+        <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">gate_nonlinear_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">)(),</span>  <span class="c1"># first gate σ</span>
+    <span class="n">gate_nonlinear_2_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Sigmoid</span><span class="p">)(),</span>  <span class="c1"># second gate σ₂</span>
+    <span class="n">pixelhyena_norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">RMSNormChannelFirst</span><span class="p">)(</span>
+        <span class="n">dim</span><span class="o">=</span><span class="n">H</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">use_quack</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">),</span>
+    <span class="n">output_norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">RMSNormChannelFirst</span><span class="p">)(</span><span class="n">dim</span><span class="o">=</span><span class="n">H</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">use_quack</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="n">qk_norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">L2Norm</span><span class="p">)(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>  <span class="c1"># L2 QK-norm on the channel axis</span>
+<span class="p">)</span>
+
+<span class="c1"># Build the whole module tree in one call.</span>
+<span class="n">hyena</span> <span class="o">=</span> <span class="n">instantiate</span><span class="p">(</span><span class="n">hyena_cfg</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+<span class="c1"># Hyena consumes channels-last Q, K, V tensors [B, *spatial, C].  In a full</span>
+<span class="c1"># model these come from a linear projection W·x (see QKVSequenceMixer); here</span>
+<span class="c1"># we feed random activations to exercise the forward.</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+<span class="n">y</span> <span class="o">=</span> <span class="n">hyena</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>  <span class="c1"># torch.Size([2, 32, 32, 64])  -&gt; [B, X, Y, C]</span>
+</pre></div>
+</div>
+<p>In a real network you rarely hold <code class="docutils literal notranslate"><span class="pre">Q</span></code>, <code class="docutils literal notranslate"><span class="pre">K</span></code>, <code class="docutils literal notranslate"><span class="pre">V</span></code> yourself: the
+<code class="docutils literal notranslate"><span class="pre">QKVSequenceMixer</span></code> (see
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/spatial_recall_v2/mixer_defaults.py"><code class="docutils literal notranslate"><span class="pre">mixer_defaults.py</span></code></a>)
+projects a single activation <code class="docutils literal notranslate"><span class="pre">x</span></code> into the three tensors and forwards them
+to this <code class="docutils literal notranslate"><span class="pre">Hyena</span></code>.  That same factory is what the spatial-recall experiments
+instantiate.</p>
+</section>
+<section id="going-lower-the-fft-conv-op-directly">
+<h2>Going lower: the FFT conv op directly<a class="headerlink" href="#going-lower-the-fft-conv-op-directly" title="Link to this heading">#</a></h2>
+<p>The Hyena above ultimately routes its long-range mixing through one of the
+FFT-convolution ops.  When you only need the convolution itself, with no
+gating, kernel generation, or <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>, you can call the op
+directly.  Here <code class="docutils literal notranslate"><span class="pre">kernel</span></code> is supplied explicitly (any 2D filter; a SIREN
+kernel would normally produce it):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.ops.fftconv</span><span class="w"> </span><span class="kn">import</span> <span class="n">fftconv2d_fp32_bhl</span>
+
+<span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+
+<span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>  <span class="c1"># channels-first [B, C, X, Y]</span>
+<span class="n">kernel</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>  <span class="c1"># per-channel filter [1, C, K_x, K_y]</span>
+
+<span class="n">y</span> <span class="o">=</span> <span class="n">fftconv2d_fp32_bhl</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">kernel</span><span class="p">)</span>  <span class="c1"># &quot;same&quot;-size circular-free conv</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>  <span class="c1"># torch.Size([2, 64, 32, 32])</span>
+</pre></div>
+</div>
+<p>The op casts to fp32 internally for numerical stability and returns the
+result in <code class="docutils literal notranslate"><span class="pre">x</span></code>’s original dtype.  Note the layout difference: the ops work
+<strong>channels-first</strong> <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">C,</span> <span class="pre">*spatial]</span></code> (the <code class="docutils literal notranslate"><span class="pre">_bhl</span></code> suffix), whereas the
+<code class="docutils literal notranslate"><span class="pre">Hyena</span></code> module’s public interface is <strong>channels-last</strong> <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial,</span> <span class="pre">C]</span></code>.</p>
+<p>The lower-level FFT ops in
+<a class="reference internal" href="api_reference/ops.html"><span class="doc">nvsubquadratic.ops</span></a> are deliberately
+function-only so higher-level mixers can compose them freely.  The
+<a class="reference internal" href="api_reference/modules.html"><span class="doc">nvsubquadratic.modules</span></a> package wraps them
+in <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>-shaped mixers (Hyena, Mamba, Attention, CKConv), and
+<a class="reference internal" href="api_reference/experiments.html"><span class="doc">experiments</span></a> wires those mixers into
+Lightning-driven training pipelines.</p>
+</section>
+<section id="next-steps">
+<h2>Next steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a>: the three layers (nvSubquadratic, subquadratic-ops,
+megatron-core) and the naming conventions used throughout the
+library.</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples"><code class="docutils literal notranslate"><span class="pre">examples/</span></code></a>:
+end-to-end training recipes per dataset.</p></li>
+<li><p><a class="reference internal" href="api_reference/index.html"><span class="doc">API Reference</span></a>: the full curated API surface.</p></li>
+</ul>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="how_hyenand_works.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">How HyenaND works</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="architecture.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Architecture</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#requirements">Requirements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install">Install</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#hello-hyena">Hello, Hyena</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#going-lower-the-fft-conv-op-directly">Going lower: the FFT conv op directly</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next steps</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+LabeledEMAWeightAveraging
+=========================
+
+.. currentmodule:: experiments.callbacks.model_ema
+
+.. autoclass:: LabeledEMAWeightAveraging
+   :members:
+   :show-inheritance:

@@ -1,0 +1,686 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Modules &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/modules';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Hyena" href="generated/nvsubquadratic.modules.hyena_nd.Hyena.html" />
+    <link rel="prev" title="mixed_fftconv3d_fp32_bhl_chunked" href="generated/nvsubquadratic.ops.mixed_fftconv.mixed_fftconv3d_fp32_bhl_chunked.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../_static/searchtools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <script src="../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="index.html" class="nav-link">API Reference</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Modules</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="modules">
+<h1>Modules<a class="headerlink" href="#modules" title="Link to this heading">#</a></h1>
+<p>High-level <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code> building blocks that compose the ops above
+into sequence and spatial mixers, plus the kernels, norms, gates, and
+residual blocks they rely on.</p>
+<section id="mixers">
+<h2>Mixers<a class="headerlink" href="#mixers" title="Link to this heading">#</a></h2>
+<p>Sequence/spatial mixers: Hyena, Mamba, attention variants.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.hyena_nd.Hyena.html#nvsubquadratic.modules.hyena_nd.Hyena" title="nvsubquadratic.modules.hyena_nd.Hyena"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Hyena</span></code></a>(global_conv_cfg, short_conv_cfg, ...)</p></td>
+<td><p>Gated global convolutional mixer for ND signals.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.mamba_nd.Mamba.html#nvsubquadratic.modules.mamba_nd.Mamba" title="nvsubquadratic.modules.mamba_nd.Mamba"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Mamba</span></code></a>(mamba_layer_cfg[, bidirectional])</p></td>
+<td><p>Selective state-space mixer for ND signals.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.attention.Attention.html#nvsubquadratic.modules.attention.Attention" title="nvsubquadratic.modules.attention.Attention"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Attention</span></code></a>(hidden_dim, num_heads, ...[, ...])</p></td>
+<td><p>Multi-head scaled dot-product self-attention for 1D/2D/3D spatial inputs.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.vit5_attention.ViT5Attention.html#nvsubquadratic.modules.vit5_attention.ViT5Attention" title="nvsubquadratic.modules.vit5_attention.ViT5Attention"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ViT5Attention</span></code></a>(hidden_dim, num_heads, ...[, ...])</p></td>
+<td><p>ViT-5 multi-head self-attention with RMSNorm QK-Norm and register-aware RoPE.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.vit5_hyena_adapter.ViT5HyenaAdapter.html#nvsubquadratic.modules.vit5_hyena_adapter.ViT5HyenaAdapter" title="nvsubquadratic.modules.vit5_hyena_adapter.ViT5HyenaAdapter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ViT5HyenaAdapter</span></code></a>(inner_mixer_cfg, grid_w)</p></td>
+<td><p>Bridges ViT-5's <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">T,</span> <span class="pre">C]</span></code> token sequences and Hyena's <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">H,</span> <span class="pre">W,</span> <span class="pre">C]</span></code> spatial interface.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer.html#nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer" title="nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer"><code class="xref py py-obj docutils literal notranslate"><span class="pre">QKVSequenceMixer</span></code></a>(hidden_dim, mixer_cfg[, ...])</p></td>
+<td><p>Operator-agnostic sequence mixer with shared QKV and output projections.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="convolutions">
+<h2>Convolutions<a class="headerlink" href="#convolutions" title="Link to this heading">#</a></h2>
+<p>Depthwise, multi-head, and continuous-kernel convolutions plus their
+context-parallel counterparts.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.causal_conv1d.CausalConv1D.html#nvsubquadratic.modules.causal_conv1d.CausalConv1D" title="nvsubquadratic.modules.causal_conv1d.CausalConv1D"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CausalConv1D</span></code></a>(*args[, is_causal])</p></td>
+<td><p>1D convolution with configurable causal (left-only) or symmetric padding.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d.html#nvsubquadratic.modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d" title="nvsubquadratic.modules.subq_ops_causal_conv1d.SubqOpsCausalConv1d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SubqOpsCausalConv1d</span></code></a>(in_channels, ...[, ...])</p></td>
+<td><p>Depthwise causal 1D conv using <code class="docutils literal notranslate"><span class="pre">subquadratic_ops_torch.causal_conv1d</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.ckconv_nd.CKConvND.html#nvsubquadratic.modules.ckconv_nd.CKConvND" title="nvsubquadratic.modules.ckconv_nd.CKConvND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CKConvND</span></code></a>(data_dim, hidden_dim, kernel_cfg, ...)</p></td>
+<td><p>N-dimensional Continuous Kernel Convolution (CKConv) operator.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv1d.html#nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv1d" title="nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv1d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DistributedDepthwiseConv1d</span></code></a>(hidden_dim, ...)</p></td>
+<td><p>1-D depthwise convolution with CP-aware channel slicing and weight sharing.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv2d.html#nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv2d" title="nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv2d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DistributedDepthwiseConv2d</span></code></a>(hidden_dim, ...)</p></td>
+<td><p>2-D depthwise convolution with CP-aware channel slicing and weight sharing.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d.html#nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d" title="nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DistributedDepthwiseConv3d</span></code></a>(hidden_dim, ...)</p></td>
+<td><p>3-D depthwise convolution with CP-aware channel slicing and weight sharing.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="kernels-filters">
+<h2>Kernels &amp; filters<a class="headerlink" href="#kernels-filters" title="Link to this heading">#</a></h2>
+<p>Learned kernel parametrisations (SIREN, random Fourier features) and
+masks that produce the filters consumed by the FFT ops.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.SIRENKernelND.html#nvsubquadratic.modules.kernels_nd.SIRENKernelND" title="nvsubquadratic.modules.kernels_nd.SIRENKernelND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SIRENKernelND</span></code></a>(out_dim, data_dim, ...[, ...])</p></td>
+<td><p>Convolutional kernel parametrised by a SIREN (sinusoidal representation network) MLP.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND.html#nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND" title="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SIRENPositionalEmbeddingND</span></code></a>(data_dim, ...[, ...])</p></td>
+<td><p>N-dimensional positional embedding using a SIREN first layer.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.MultiOmegaSIRENKernelND.html#nvsubquadratic.modules.kernels_nd.MultiOmegaSIRENKernelND" title="nvsubquadratic.modules.kernels_nd.MultiOmegaSIRENKernelND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultiOmegaSIRENKernelND</span></code></a>(out_dim, data_dim, ...)</p></td>
+<td><p>SIRENKernelND with a per-row ω₀ in the first (positional-embedding) layer.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.MultiOmegaSIRENPositionalEmbeddingND.html#nvsubquadratic.modules.kernels_nd.MultiOmegaSIRENPositionalEmbeddingND" title="nvsubquadratic.modules.kernels_nd.MultiOmegaSIRENPositionalEmbeddingND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultiOmegaSIRENPositionalEmbeddingND</span></code></a>(...[, ...])</p></td>
+<td><p>SIREN positional embedding with a per-row ω₀ in the first layer.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.BlockDiagonalMultiOmegaSIRENKernelND.html#nvsubquadratic.modules.kernels_nd.BlockDiagonalMultiOmegaSIRENKernelND" title="nvsubquadratic.modules.kernels_nd.BlockDiagonalMultiOmegaSIRENKernelND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BlockDiagonalMultiOmegaSIRENKernelND</span></code></a>(...[, ...])</p></td>
+<td><p>Per-block ω₀ + (near-)block-diagonal MLP init for a SIREN kernel.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.LearnableOmegaSIRENKernelND.html#nvsubquadratic.modules.kernels_nd.LearnableOmegaSIRENKernelND" title="nvsubquadratic.modules.kernels_nd.LearnableOmegaSIRENKernelND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LearnableOmegaSIRENKernelND</span></code></a>(out_dim, ...[, ...])</p></td>
+<td><p>SIRENKernelND whose first-layer ω₀ is multiplied by a learnable per-row scale.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.LearnableOmegaSIRENPositionalEmbeddingND.html#nvsubquadratic.modules.kernels_nd.LearnableOmegaSIRENPositionalEmbeddingND" title="nvsubquadratic.modules.kernels_nd.LearnableOmegaSIRENPositionalEmbeddingND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LearnableOmegaSIRENPositionalEmbeddingND</span></code></a>(...)</p></td>
+<td><p>SIREN positional embedding with a learnable per-row ω₀ multiplier.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.BlockDiagonalLearnableOmegaSIRENKernelND.html#nvsubquadratic.modules.kernels_nd.BlockDiagonalLearnableOmegaSIRENKernelND" title="nvsubquadratic.modules.kernels_nd.BlockDiagonalLearnableOmegaSIRENKernelND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BlockDiagonalLearnableOmegaSIRENKernelND</span></code></a>(...)</p></td>
+<td><p>Block-diagonal learnable-ω₀ SIREN kernel.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.RandomFourierKernelND.html#nvsubquadratic.modules.kernels_nd.RandomFourierKernelND" title="nvsubquadratic.modules.kernels_nd.RandomFourierKernelND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RandomFourierKernelND</span></code></a>(out_dim, data_dim, ...)</p></td>
+<td><p>Learned convolutional kernel parametrised via Random Fourier Features and an MLP.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.RandomFourierPositionalEmbeddingND.html#nvsubquadratic.modules.kernels_nd.RandomFourierPositionalEmbeddingND" title="nvsubquadratic.modules.kernels_nd.RandomFourierPositionalEmbeddingND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RandomFourierPositionalEmbeddingND</span></code></a>(data_dim, ...)</p></td>
+<td><p>N-dimensional positional embedding using Random Fourier Features (RFF).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.kernels_nd.Sine.html#nvsubquadratic.modules.kernels_nd.Sine" title="nvsubquadratic.modules.kernels_nd.Sine"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Sine</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Sine activation function used in SIREN networks.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.masks_nd.ExponentialModulationND.html#nvsubquadratic.modules.masks_nd.ExponentialModulationND" title="nvsubquadratic.modules.masks_nd.ExponentialModulationND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ExponentialModulationND</span></code></a>(data_dim, num_channels)</p></td>
+<td><p>Fixed exponential-decay spatial window applied to implicit convolutional kernels.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.masks_nd.GaussianModulationND.html#nvsubquadratic.modules.masks_nd.GaussianModulationND" title="nvsubquadratic.modules.masks_nd.GaussianModulationND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GaussianModulationND</span></code></a>(data_dim, num_channels, ...)</p></td>
+<td><p>Learnable Gaussian-window spatial mask for ND convolutional kernels.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.masks_nd.BlockAlignedGaussianModulationND.html#nvsubquadratic.modules.masks_nd.BlockAlignedGaussianModulationND" title="nvsubquadratic.modules.masks_nd.BlockAlignedGaussianModulationND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BlockAlignedGaussianModulationND</span></code></a>(data_dim, ...)</p></td>
+<td><p>Gaussian modulation with channel-reversed std ordering for block-structured SIRENs.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="normalization">
+<h2>Normalization<a class="headerlink" href="#normalization" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.rms_norm.RMSNorm.html#nvsubquadratic.modules.rms_norm.RMSNorm" title="nvsubquadratic.modules.rms_norm.RMSNorm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RMSNorm</span></code></a>(dim[, eps, use_quack])</p></td>
+<td><p>Root Mean Square Layer Normalization (Zhang &amp; Sennrich, arXiv:1910.07467).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.rms_norm.PerHeadRMSNorm.html#nvsubquadratic.modules.rms_norm.PerHeadRMSNorm" title="nvsubquadratic.modules.rms_norm.PerHeadRMSNorm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PerHeadRMSNorm</span></code></a>(num_heads, head_dim[, eps, ...])</p></td>
+<td><p>RMSNorm applied independently to each attention head (QK-norm).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.rms_norm_channel_first.RMSNormChannelFirst.html#nvsubquadratic.modules.rms_norm_channel_first.RMSNormChannelFirst" title="nvsubquadratic.modules.rms_norm_channel_first.RMSNormChannelFirst"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RMSNormChannelFirst</span></code></a>(dim[, eps, use_quack])</p></td>
+<td><p>Root Mean Square Layer Normalization — channel-first layout (arXiv:1910.07467).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.grn.GlobalResponseNorm.html#nvsubquadratic.modules.grn.GlobalResponseNorm" title="nvsubquadratic.modules.grn.GlobalResponseNorm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GlobalResponseNorm</span></code></a>(dim[, eps])</p></td>
+<td><p>Global Response Normalisation (GRN) layer (Woo et al., arXiv:2301.00808).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.layer_scale.LayerScale.html#nvsubquadratic.modules.layer_scale.LayerScale" title="nvsubquadratic.modules.layer_scale.LayerScale"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LayerScale</span></code></a>(dim[, init_value])</p></td>
+<td><p>Learnable per-channel scalar gate for residual branch outputs.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="position-encoding-patching">
+<h2>Position encoding &amp; patching<a class="headerlink" href="#position-encoding-patching" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.position_encoding.PositionEmbeddingND.html#nvsubquadratic.modules.position_encoding.PositionEmbeddingND" title="nvsubquadratic.modules.position_encoding.PositionEmbeddingND"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PositionEmbeddingND</span></code></a>(embedding_dim, data_dim, ...)</p></td>
+<td><p>Axis-factorised learned positional encoding for ND spatial token grids.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.patchify.Patchify.html#nvsubquadratic.modules.patchify.Patchify" title="nvsubquadratic.modules.patchify.Patchify"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Patchify</span></code></a>(in_features, out_features, ...[, ...])</p></td>
+<td><p>Conv-based patch embedding for ND spatial signals (channels-last I/O).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.patchify.Unpatchify.html#nvsubquadratic.modules.patchify.Unpatchify" title="nvsubquadratic.modules.patchify.Unpatchify"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Unpatchify</span></code></a>(in_features, out_features, ...[, ...])</p></td>
+<td><p>Inverse patch-embedding layer: reconstruct spatial signal from token grid.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.mlp.MLP.html#nvsubquadratic.modules.mlp.MLP" title="nvsubquadratic.modules.mlp.MLP"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MLP</span></code></a>(dim, activation, dropout_cfg[, ...])</p></td>
+<td><p>Point-wise two-layer MLP — the channel-mixing branch of each residual block.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="gating-conditioning">
+<h2>Gating &amp; conditioning<a class="headerlink" href="#gating-conditioning" title="Link to this heading">#</a></h2>
+<p>Drop-path, FiLM-style conditioning, and the QKV conditioning mixer that
+feeds Hyena’s per-sample kernels.</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.drop_path.DropPath.html#nvsubquadratic.modules.drop_path.DropPath" title="nvsubquadratic.modules.drop_path.DropPath"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DropPath</span></code></a>([drop_prob])</p></td>
+<td><p>Drop paths (stochastic depth) per sample — <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> wrapper.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.condition_mixer.QKVConditionMixer.html#nvsubquadratic.modules.condition_mixer.QKVConditionMixer" title="nvsubquadratic.modules.condition_mixer.QKVConditionMixer"><code class="xref py py-obj docutils literal notranslate"><span class="pre">QKVConditionMixer</span></code></a>(hidden_dim, mixer_cfg[, ...])</p></td>
+<td><p>Cross-attention condition mixer that routes a conditioning signal into the feature map.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.film.KernelFiLMGenerator.html#nvsubquadratic.modules.film.KernelFiLMGenerator" title="nvsubquadratic.modules.film.KernelFiLMGenerator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">KernelFiLMGenerator</span></code></a>(cond_dim, ...[, ...])</p></td>
+<td><p>MLP that generates per-layer FiLM (γ, β) pairs from a conditioning vector.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.film.RegisterPooling.html#nvsubquadratic.modules.film.RegisterPooling" title="nvsubquadratic.modules.film.RegisterPooling"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RegisterPooling</span></code></a>(num_registers)</p></td>
+<td><p>Learnable softmax-weighted average over register tokens.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.film.RegisterCompressConcat.html#nvsubquadratic.modules.film.RegisterCompressConcat" title="nvsubquadratic.modules.film.RegisterCompressConcat"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RegisterCompressConcat</span></code></a>(num_registers, ...)</p></td>
+<td><p>Compress each register token and concatenate into a single conditioning vector.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.drop_path.drop_path.html#nvsubquadratic.modules.drop_path.drop_path" title="nvsubquadratic.modules.drop_path.drop_path"><code class="xref py py-obj docutils literal notranslate"><span class="pre">drop_path</span></code></a>(x, drop_prob, training)</p></td>
+<td><p>Apply per-sample stochastic depth (functional form).</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="residual-blocks">
+<h2>Residual blocks<a class="headerlink" href="#residual-blocks" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.residual_block.ResidualBlock.html#nvsubquadratic.modules.residual_block.ResidualBlock" title="nvsubquadratic.modules.residual_block.ResidualBlock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ResidualBlock</span></code></a>(sequence_mixer_cfg, ...)</p></td>
+<td><p>Standard pre-norm residual block for ND signals.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock.html#nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock" title="nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">AdaLNZeroResidualBlock</span></code></a>(sequence_mixer_cfg, ...)</p></td>
+<td><p>Pre-norm residual block with AdaLN-Zero conditioning (DiT-style).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.vit5_residual_block.ViT5ResidualBlock.html#nvsubquadratic.modules.vit5_residual_block.ViT5ResidualBlock" title="nvsubquadratic.modules.vit5_residual_block.ViT5ResidualBlock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ViT5ResidualBlock</span></code></a>(sequence_mixer_cfg, ...[, ...])</p></td>
+<td><p>ViT-5 style residual block with LayerScale and stochastic depth.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="schedulers">
+<h2>Schedulers<a class="headerlink" href="#schedulers" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/nvsubquadratic.modules.schedulers.ResumableSequentialLR.html#nvsubquadratic.modules.schedulers.ResumableSequentialLR" title="nvsubquadratic.modules.schedulers.ResumableSequentialLR"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ResumableSequentialLR</span></code></a>(optimizer, schedulers, ...)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SequentialLR</span></code> with a corrected <code class="docutils literal notranslate"><span class="pre">load_state_dict</span></code>.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="generated/nvsubquadratic.ops.mixed_fftconv.mixed_fftconv3d_fp32_bhl_chunked.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">mixed_fftconv3d_fp32_bhl_chunked</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="generated/nvsubquadratic.modules.hyena_nd.Hyena.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Hyena</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mixers">Mixers</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#convolutions">Convolutions</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#kernels-filters">Kernels &amp; filters</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#normalization">Normalization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#position-encoding-patching">Position encoding &amp; patching</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gating-conditioning">Gating &amp; conditioning</a><ul class="pst-show_toc_level nav section-nav flex-column">
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#residual-blocks">Residual blocks</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#schedulers">Schedulers</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

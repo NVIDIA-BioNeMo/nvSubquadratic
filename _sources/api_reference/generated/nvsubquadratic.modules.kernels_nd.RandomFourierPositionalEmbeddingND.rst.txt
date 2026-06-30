@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+RandomFourierPositionalEmbeddingND
+==================================
+
+.. currentmodule:: nvsubquadratic.modules.kernels_nd
+
+.. autoclass:: RandomFourierPositionalEmbeddingND
+   :members:
+   :show-inheritance:

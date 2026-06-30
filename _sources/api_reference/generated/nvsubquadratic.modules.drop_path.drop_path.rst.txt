@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+drop\_path
+==========
+
+.. currentmodule:: nvsubquadratic.modules.drop_path
+
+.. autofunction:: drop_path

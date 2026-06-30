@@ -1,0 +1,720 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>How HyenaND works &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=fd10adb8"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'how_hyenand_works';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Getting Started" href="getting_started.html" />
+    <link rel="prev" title="nvSubquadratic Documentation" href="index.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="_static/searchtools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script src="searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api_reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/ops.html">Ops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">How HyenaND works</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="how-hyenand-works">
+<h1>How HyenaND works<a class="headerlink" href="#how-hyenand-works" title="Link to this heading">#</a></h1>
+<p>This page builds up the operator at the heart of the library starting from
+<strong>attention</strong>, which most readers already know, and shows how HyenaND keeps
+what makes attention work while shedding its costs. For reference material,
+<a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a> documents the stack and <a class="reference internal" href="ops/README.html"><span class="doc">nvsubquadratic.ops: FFT convolution primitives</span></a> documents the
+kernels.</p>
+<section id="start-from-attention">
+<h2>Start from attention<a class="headerlink" href="#start-from-attention" title="Link to this heading">#</a></h2>
+<p>Self-attention is the operator everything else is measured against.  Two
+properties make it work:</p>
+<ul class="simple">
+<li><p><strong>Global receptive field.</strong>  Every position can look at every other
+position, so a token’s representation can depend on context arbitrarily
+far away.</p></li>
+<li><p><strong>Data-dependence.</strong>  The mixing weights are computed <em>from the input</em>:
+the attention matrix <span class="math notranslate nohighlight">\(A(x)\)</span> is built on the fly for each sequence, rather
+than being a fixed set of learned weights.</p></li>
+</ul>
+<p>The price for both is the <span class="math notranslate nohighlight">\(N \times N\)</span> attention matrix: compute and memory
+grow as <span class="math notranslate nohighlight">\(O(N^2)\)</span> in the number of tokens <span class="math notranslate nohighlight">\(N\)</span>.  For a 256×256 image that is
+already 65k tokens; for video or a 3D volume it is hopeless.  Attention also
+has no native notion of 2D/3D geometry. To apply it to an image you flatten
+the grid into a 1D sequence and let the model relearn that two pixels are
+neighbours.</p>
+<p><strong>HyenaND’s goal is to keep the global receptive field and the
+data-dependence, but pay <span class="math notranslate nohighlight">\(O(N \log N)\)</span> instead of <span class="math notranslate nohighlight">\(O(N^2)\)</span>, and to do it
+directly on the data’s native 2D/3D geometry.</strong></p>
+<div class="pst-scrollable-table-container"><table class="table">
+<colgroup>
+<col style="width: 28.0%" />
+<col style="width: 24.0%" />
+<col style="width: 24.0%" />
+<col style="width: 24.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Attention</p></th>
+<th class="head"><p>Mamba</p></th>
+<th class="head"><p><strong>HyenaND</strong> (ours)</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Receptive field</p></td>
+<td><p>global</p></td>
+<td><p>global (via scan)</p></td>
+<td><p>global</p></td>
+</tr>
+<tr class="row-odd"><td><p>Cost in tokens <span class="math notranslate nohighlight">\(L\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(O(L^2)\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(O(L)\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(O(L \log L)\)</span></p></td>
+</tr>
+<tr class="row-even"><td><p>Native dimensionality</p></td>
+<td><p>any (but geometry-blind)</p></td>
+<td><p>1D only</p></td>
+<td><p><strong>native 1D / 2D / 3D</strong></p></td>
+</tr>
+<tr class="row-odd"><td><p>Data-dependent mixing</p></td>
+<td><p>attention matrix <span class="math notranslate nohighlight">\(A(x)\)</span></p></td>
+<td><p>selective state</p></td>
+<td><p><strong>gating</strong></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Mamba is the other popular subquadratic option, but it is inherently 1D: to
+process an image it has to pick an ad-hoc raster scan order, and no single
+1D ordering respects 2D locality.  HyenaND is global and subquadratic while
+operating directly on multi-dimensional data.</p>
+</section>
+<section id="how-hyenand-gets-the-global-receptive-field-cheaply">
+<h2>How HyenaND gets the global receptive field cheaply<a class="headerlink" href="#how-hyenand-gets-the-global-receptive-field-cheaply" title="Link to this heading">#</a></h2>
+<p>A global receptive field means convolving each position with a filter as
+large as the whole input.  Done naively, a convolution of an <span class="math notranslate nohighlight">\(N\)</span>-element
+signal with an <span class="math notranslate nohighlight">\(N\)</span>-element kernel costs <span class="math notranslate nohighlight">\(O(N^2)\)</span>, so we have not saved
+anything.  Two ideas fix this.</p>
+<section id="an-implicit-filter">
+<h3>1. An <em>implicit</em> filter<a class="headerlink" href="#an-implicit-filter" title="Link to this heading">#</a></h3>
+<p>Instead of storing one learnable weight per kernel tap (which would be <span class="math notranslate nohighlight">\(N\)</span>
+parameters for a global kernel, and a different count for every input
+size), HyenaND <strong>generates</strong> the kernel from a small neural network, a
+SIREN MLP <span class="math notranslate nohighlight">\(f_\theta\)</span>, evaluated on the grid coordinates:</p>
+<div class="math notranslate nohighlight">
+\[
+K(\mathbf{p}) = f_\theta(\mathbf{p}), \qquad
+\mathbf{p} \in \text{grid coordinates}.
+\]</div>
+<p>The filter is a continuous <em>function</em> of position, not a table of numbers.
+This is the difference between storing a line as the equation <span class="math notranslate nohighlight">\(y = mx + b\)</span>
+versus listing every point on it.  Because <span class="math notranslate nohighlight">\(f_\theta\)</span> is continuous, the
+<strong>same learned kernel can be sampled on a grid of any size or aspect
+ratio</strong>: train at 64×64, evaluate at 256×256, no retraining.  A learned
+Gaussian window <span class="math notranslate nohighlight">\(w\)</span> multiplies the filter so its influence can taper with
+distance.</p>
+</section>
+<section id="the-convolution-theorem-fft">
+<h3>2. The convolution theorem (FFT)<a class="headerlink" href="#the-convolution-theorem-fft" title="Link to this heading">#</a></h3>
+<p>Even with a compact parametrisation, <em>applying</em> a global kernel by sliding
+it across the input is still <span class="math notranslate nohighlight">\(O(N^2)\)</span>.  The convolution theorem turns the
+spatial convolution into an element-wise product in the frequency domain:</p>
+<div class="math notranslate nohighlight">
+\[
+y = \mathcal{F}^{-1}\!\bigl( \mathcal{F}(x) \odot \mathcal{F}(K) \bigr).
+\]</div>
+<p>The two forward FFTs and the inverse each cost <span class="math notranslate nohighlight">\(O(N \log N)\)</span>, the
+element-wise product is <span class="math notranslate nohighlight">\(O(N)\)</span>, and, crucially, <strong>the total cost is
+independent of kernel size.</strong>  A global kernel costs no more than a tiny
+one.  In <span class="math notranslate nohighlight">\(N\)</span> dimensions the FFT runs on the native grid, so a 2D image or
+3D volume is convolved on its real geometry with no flattening:</p>
+<div class="math notranslate nohighlight">
+\[
+\text{cost} = O\!\left(\textstyle\prod_n L_n \;\log \prod_n L_n\right).
+\]</div>
+<p>This frequency-domain step is the <strong>FFT convolution (FFTConv)</strong> that the
+<a class="reference internal" href="ops/README.html"><span class="doc">nvsubquadratic.ops: FFT convolution primitives</span></a> primitives implement, and it is what makes a global-kernel
+sequence model subquadratic.  The full math primer (linear vs circular
+boundaries, precision, the decision tree for picking an op) lives there.</p>
+</section>
+</section>
+<section id="how-hyenand-stays-data-dependent-gating">
+<h2>How HyenaND stays data-dependent: gating<a class="headerlink" href="#how-hyenand-stays-data-dependent-gating" title="Link to this heading">#</a></h2>
+<p>Attention is data-dependent because it <em>builds</em> the mixing matrix <span class="math notranslate nohighlight">\(A(x)\)</span>
+from the input.  HyenaND never materialises such a matrix.  Instead it
+interleaves the convolution with <strong>element-wise gating</strong>: multiplying the
+signal by a data-derived mask.  A convolution is a fixed (Toeplitz) linear
+map; multiplying its input and output by input-dependent gates makes the
+<em>effective</em> operator depend on the data, at the cost of a handful of
+element-wise products rather than an <span class="math notranslate nohighlight">\(N \times N\)</span> matmul.</p>
+<p>Just as attention forms three projections <span class="math notranslate nohighlight">\(q, k, v\)</span> from the input,
+HyenaND forms its own projections and threads them through a gate →
+long-convolution → gate sandwich.  This is the same <span class="math notranslate nohighlight">\((q, k, v)\)</span> mixer
+signature that <a class="reference internal" href="api_reference/generated/nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer.html#nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer" title="nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer</span></code></a>
+dispatches over, which is why swapping Hyena for attention, CKConv, or
+Mamba in a network is a one-line config change.</p>
+</section>
+<section id="putting-it-together-the-hyenand-operator">
+<h2>Putting it together: the HyenaND operator<a class="headerlink" href="#putting-it-together-the-hyenand-operator" title="Link to this heading">#</a></h2>
+<p>The diagram below is the operator that gives the stack its name.  It maps
+1:1 onto the <code class="docutils literal notranslate"><span class="pre">Short</span> <span class="pre">Conv</span> <span class="pre">→</span> <span class="pre">First</span> <span class="pre">Gate</span> <span class="pre">→</span> <span class="pre">Long</span> <span class="pre">Conv</span> <span class="pre">→</span> <span class="pre">Second</span> <span class="pre">Gate</span></code> block you
+see throughout the network code.</p>
+<p><img alt="The HyenaND operator: kernel-synthesis path on top, data path on the bottom" src="_images/architecture.png" /></p>
+<p>Two paths run and meet at the long convolution:</p>
+<ul class="simple">
+<li><p><strong>Kernel synthesis (top), “what filter to use.”</strong>  Grid coordinates
+feed the SIREN MLP <span class="math notranslate nohighlight">\(f_\theta\)</span>, are masked by the learned Gaussian window
+<span class="math notranslate nohighlight">\(w\)</span>, and are FiLM-conditioned on a control variable <span class="math notranslate nohighlight">\(z(\mathbf{x})\)</span>
+pooled from the input’s register tokens.  The result is an
+input-dependent, implicitly-parameterised <span class="math notranslate nohighlight">\(N\)</span>D kernel <span class="math notranslate nohighlight">\(K(\mathbf{x})\)</span> that
+is global, freely learned, and computed once per input.</p></li>
+<li><p><strong>Data path (bottom), “what to filter.”</strong>  The input is projected into
+<span class="math notranslate nohighlight">\(\mathbf{q}, \mathbf{k}, \mathbf{v}\)</span> (with a depthwise short conv for
+local context).  The <strong>inner gate</strong> <span class="math notranslate nohighlight">\(Z = \mathbf{q} \odot
+\mathrm{SiLU}(\mathbf{k})\)</span> is convolved with <span class="math notranslate nohighlight">\(K(\mathbf{x})\)</span> via the <span class="math notranslate nohighlight">\(N\)</span>D
+FFTConv above, then the <strong>outer gate</strong> <span class="math notranslate nohighlight">\(O = H \odot \mathrm{SiLU}(\mathbf
+{v})\)</span> conditions the result before a final norm.</p></li>
+</ul>
+<p>Read top-to-bottom: synthesise an input-dependent global kernel, gate the
+signal, convolve it cheaply in the frequency domain, gate again.  This
+gives attention’s two properties, a global receptive field (the long
+implicit conv) and data-dependence (the two gates), at <span class="math notranslate nohighlight">\(O(N \log N)\)</span> on
+native geometry.</p>
+</section>
+<section id="a-worked-trace">
+<h2>A worked trace<a class="headerlink" href="#a-worked-trace" title="Link to this heading">#</a></h2>
+<p>The snippet below runs the <strong>actual <code class="docutils literal notranslate"><span class="pre">Hyena</span></code> operator</strong> from the diagram on a
+batch of 32×32 images, with no random stand-in kernel.  Every argument
+maps onto a box in the block above: the <code class="docutils literal notranslate"><span class="pre">CKConvND</span></code> global conv <em>is</em> the SIREN
+kernel-synthesis + FFTConv path (top), the depthwise <code class="docutils literal notranslate"><span class="pre">Conv2d</span></code> is the short
+conv, the two <code class="docutils literal notranslate"><span class="pre">SiLU</span></code>s are the inner and outer gates, and the <code class="docutils literal notranslate"><span class="pre">LayerNorm</span></code>s are
+the PixelHyena and output norms.  It runs on CPU, so no GPU is needed:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.lazy_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.ckconv_nd</span><span class="w"> </span><span class="kn">import</span> <span class="n">CKConvND</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.hyena_nd</span><span class="w"> </span><span class="kn">import</span> <span class="n">Hyena</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.modules.kernels_nd</span><span class="w"> </span><span class="kn">import</span> <span class="n">SIRENKernelND</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.utils.qk_norm</span><span class="w"> </span><span class="kn">import</span> <span class="n">L2Norm</span>
+
+<span class="n">H</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>  <span class="c1"># hidden channels, 2D grid</span>
+
+<span class="c1"># Top path of the diagram: CKConvND synthesises an implicit kernel with a</span>
+<span class="c1"># SIREN MLP, then applies it via the ND FFTConv — one O(N log N) step.</span>
+<span class="n">global_conv_cfg</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">CKConvND</span><span class="p">)(</span>
+    <span class="n">data_dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">hidden_dim</span><span class="o">=</span><span class="n">H</span><span class="p">,</span>
+    <span class="n">kernel_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">SIRENKernelND</span><span class="p">)(</span>
+        <span class="n">out_dim</span><span class="o">=</span><span class="n">H</span><span class="p">,</span>
+        <span class="n">data_dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">mlp_hidden_dim</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
+        <span class="n">num_layers</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">embedding_dim</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
+        <span class="n">omega_0</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+        <span class="n">L_cache</span><span class="o">=</span><span class="n">X</span><span class="p">,</span>
+        <span class="n">use_bias</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">hidden_omega_0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">mask_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Identity</span><span class="p">)(),</span>  <span class="c1"># Gaussian-window slot (off here)</span>
+    <span class="n">grid_type</span><span class="o">=</span><span class="s2">&quot;double&quot;</span><span class="p">,</span>
+    <span class="n">fft_padding</span><span class="o">=</span><span class="s2">&quot;zero&quot;</span><span class="p">,</span>
+    <span class="n">is_causal</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">hyena</span> <span class="o">=</span> <span class="n">Hyena</span><span class="p">(</span>
+    <span class="n">global_conv_cfg</span><span class="o">=</span><span class="n">global_conv_cfg</span><span class="p">,</span>
+    <span class="n">short_conv_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">)(</span>  <span class="c1"># depthwise short conv on [Q;K;V]</span>
+        <span class="n">in_channels</span><span class="o">=</span><span class="n">H</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="n">out_channels</span><span class="o">=</span><span class="n">H</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">groups</span><span class="o">=</span><span class="n">H</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">gate_nonlinear_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">)(),</span>  <span class="c1"># the two gates</span>
+    <span class="n">pixelhyena_norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">)(</span><span class="n">normalized_shape</span><span class="o">=</span><span class="n">H</span><span class="p">),</span>
+    <span class="n">qk_norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">L2Norm</span><span class="p">)(),</span>
+    <span class="n">output_norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">)(</span><span class="n">normalized_shape</span><span class="o">=</span><span class="n">H</span><span class="p">),</span>
+<span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+
+<span class="n">B</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">H</span><span class="p">)</span>  <span class="c1"># channels-last image batch [B, X, Y, C]</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">hyena</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>  <span class="c1"># q = k = v = x  → self-mixing</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>  <span class="c1"># torch.Size([2, 32, 32, 64])</span>
+</pre></div>
+</div>
+<p>Reading it against the diagram: <code class="docutils literal notranslate"><span class="pre">hyena(q,</span> <span class="pre">k,</span> <span class="pre">v)</span></code> takes the three projections
+(here all equal to <code class="docutils literal notranslate"><span class="pre">x</span></code>, the self-mixing case), runs the depthwise short conv
+for local context, forms the inner gate <span class="math notranslate nohighlight">\(Z = \mathbf{q} \odot
+\mathrm{SiLU}(\mathbf{k})\)</span>, convolves <span class="math notranslate nohighlight">\(Z\)</span> with the SIREN-synthesised kernel
+inside <code class="docutils literal notranslate"><span class="pre">CKConvND</span></code> (the single <span class="math notranslate nohighlight">\(O(N \log N)\)</span> FFTConv, the only expensive
+step), then applies the outer gate <span class="math notranslate nohighlight">\(O = H \odot \mathrm{SiLU}(\mathbf{v})\)</span> and
+the output norm.  In a full network the three projections come from separate
+linear layers, exactly as attention forms its own <span class="math notranslate nohighlight">\(q, k, v\)</span>.</p>
+<p>For the kernel-level view, one tensor pushed through the bare FFTConv
+primitive, see the minimal forward pass in <a class="reference internal" href="getting_started.html"><span class="doc">Getting Started</span></a>.</p>
+</section>
+<section id="where-to-go-next">
+<h2>Where to go next<a class="headerlink" href="#where-to-go-next" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a>: the three-library stack (nvSubquadratic /
+subquadratic-ops / megatron-core) and the BHL/BLH layout conventions.</p></li>
+<li><p><a class="reference internal" href="ops/README.html"><span class="doc">nvsubquadratic.ops: FFT convolution primitives</span></a>: the FFT-convolution math primer and the decision
+tree for choosing a primitive (linear vs circular, fp32 vs fp16,
+chunking, fused CUDA paths).</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples"><code class="docutils literal notranslate"><span class="pre">examples/</span></code></a>:
+native 2D/3D global context applied to images, video, and PDE
+rollouts.</p></li>
+<li><p><a class="reference internal" href="glossary.html"><span class="doc">Glossary</span></a>: quick definitions for SIREN, FiLM, implicit filter,
+Toeplitz, register tokens, BHL/BLH.
+</content>
+</invoke></p></li>
+</ul>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">nvSubquadratic Documentation</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="getting_started.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Getting Started</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#start-from-attention">Start from attention</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-hyenand-gets-the-global-receptive-field-cheaply">How HyenaND gets the global receptive field cheaply</a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#an-implicit-filter">1. An <em>implicit</em> filter</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#the-convolution-theorem-fft">2. The convolution theorem (FFT)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-hyenand-stays-data-dependent-gating">How HyenaND stays data-dependent: gating</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#putting-it-together-the-hyenand-operator">Putting it together: the HyenaND operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#a-worked-trace">A worked trace</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#where-to-go-next">Where to go next</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

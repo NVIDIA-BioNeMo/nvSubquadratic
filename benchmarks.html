@@ -1,0 +1,891 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Benchmarks &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=fd10adb8"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'benchmarks';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Reports" href="reports.html" />
+    <link rel="prev" title="Examples" href="examples/index.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="_static/searchtools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script src="searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api_reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/ops.html">Ops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Benchmarks</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="benchmarks">
+<h1>Benchmarks<a class="headerlink" href="#benchmarks" title="Link to this heading">#</a></h1>
+<p>Throughput numbers, FLOP scaling, FP16 op-level results, and a worked
+ImageNet-training optimization case study.  The raw measurement tables and the
+scripts that reproduce them live in the
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/benchmarks/README.md"><code class="docutils literal notranslate"><span class="pre">benchmarks/README.md</span></code></a>
+single source. When a number changes, update it there and mirror it here.</p>
+<section id="flop-scaling">
+<h2>FLOP scaling<a class="headerlink" href="#flop-scaling" title="Link to this heading">#</a></h2>
+<p>FLOPs are the hardware-independent floor on cost: before any kernel, cache,
+or bandwidth effect, they show why a <em>global</em> operator has to be subquadratic
+to scale at all.  The plot below sweeps the input resolution of the
+ViT-5-Small backbone (7×7 up to 112×112 patches) and counts per-sample FLOPs
+for each mixer.</p>
+<p><img alt="FLOP scaling for the ViT-5-Small attention / Hyena / Hyena+FiLM variants" src="_images/flop_scaling.png" /></p>
+<p>Attention’s token-mixing cost grows as <span class="math notranslate nohighlight">\(O(L^2)\)</span> in the patch count <span class="math notranslate nohighlight">\(L\)</span>, so
+doubling the grid roughly quadruples its FLOPs; the Hyena variants evaluate
+the same global receptive field through FFT convolutions in <span class="math notranslate nohighlight">\(O(L \log L)\)</span>, so
+their curve stays close to linear and the gap widens at every resolution
+step.  There is a crossover: at small grids the constant factors dominate and
+attention is cheaper, but past a modest resolution the asymptotics take over
+and the FLOP gap compounds.  FLOPs are only the theoretical floor, though.  The
+sections that follow show how much of that advantage survives as real
+wall-clock time, and the kernels that make it survive.</p>
+<p>See <a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/benchmarks/compare_flops.py"><code class="docutils literal notranslate"><span class="pre">benchmarks/compare_flops.py</span></code></a>
+for the script that produced the plot.</p>
+</section>
+<section id="throughput-scaling">
+<h2>Throughput scaling<a class="headerlink" href="#throughput-scaling" title="Link to this heading">#</a></h2>
+<p>The FLOP advantage above translates into wall-clock time.  This is
+forward-pass time versus sequence length for <code class="docutils literal notranslate"><span class="pre">flash-attention</span></code>, the
+official <code class="docutils literal notranslate"><span class="pre">mamba_chunk_scan_combined</span></code> Mamba2 kernel, and <code class="docutils literal notranslate"><span class="pre">nSubQ</span></code>:</p>
+<p><img alt="Forward time vs. sequence length for HyenaND, Attention, and Mamba" src="_images/throughput_scaling.png" /></p>
+<p>HyenaND reaches million-token sequences at 265 ms (1M tokens), while attention
+takes ~90 s (a <strong>339×</strong> gap) and the Mamba2 kernel runs out of memory.</p>
+</section>
+<section id="cuda-kernels-nsubq">
+<h2>CUDA kernels (<code class="docutils literal notranslate"><span class="pre">nSubQ</span></code>)<a class="headerlink" href="#cuda-kernels-nsubq" title="Link to this heading">#</a></h2>
+<p>The throughput curve above is only reachable with kernels that respect the
+GPU memory hierarchy.  <code class="docutils literal notranslate"><span class="pre">nSubQ</span></code> is the IO-aware CUDA library behind HyenaND: a
+suite of fused FFT-convolution and causal-convolution kernels written with
+<code class="docutils literal notranslate"><span class="pre">CuTe</span></code> and <code class="docutils literal notranslate"><span class="pre">cuFFTDx</span></code>, benchmarked here on an NVIDIA RTX PRO 6000 Blackwell
+Server Edition.</p>
+<section id="fusion">
+<h3>Fusion<a class="headerlink" href="#fusion" title="Link to this heading">#</a></h3>
+<p>Two hardware trends shape the design.  GPU matrix-multiply throughput has grown
+faster than off-chip (HBM) bandwidth, which favours attention: its dominant
+operations (<span class="math notranslate nohighlight">\(\mathbf{QK}^\top\)</span> and <span class="math notranslate nohighlight">\(\mathbf{PV}\)</span>) are GEMMs, and
+FlashAttention-style kernels already keep the <span class="math notranslate nohighlight">\(L \times L\)</span> score matrix off
+HBM.  FFT-based operators have the opposite profile: their fast path is bound
+by batched-FFT efficiency, memory layout, and bandwidth rather than
+tensor-core GEMM throughput.</p>
+<p>A naive FFT convolution is especially HBM-hungry.  A single pass materialises
+the padded input, the activation spectrum, the filter spectrum, the
+inverse-FFT buffer, and the cropped output (at least five HBM round-trips),
+and linear-convolution padding inflates the spatial footprint by roughly
+<span class="math notranslate nohighlight">\(2^D\)</span> in <span class="math notranslate nohighlight">\(D\)</span> dimensions before complex storage is even counted.  That
+constant factor can hide the <span class="math notranslate nohighlight">\(O(L \log L)\)</span> advantage entirely for 2D images
+and 3D volumes.  <code class="docutils literal notranslate"><span class="pre">nSubQ</span></code> closes the gap by fusing the forward FFT, spectral
+modulation, inverse FFT, and output segmentation into a single kernel that
+keeps every intermediate in on-chip shared memory and registers.</p>
+</section>
+<section id="measured-kernel-speedups">
+<h3>Measured kernel speedups<a class="headerlink" href="#measured-kernel-speedups" title="Link to this heading">#</a></h3>
+<p>All figures are module-level, against the equivalent unfused PyTorch path:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Kernel</p></th>
+<th class="head"><p>What it fuses</p></th>
+<th class="head text-right"><p>Speedup</p></th>
+<th class="head text-right"><p>Memory</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Implicit filter generation</p></td>
+<td><p>SIREN modal-filter synthesis</p></td>
+<td class="text-right"><p><strong>&gt;40×</strong></p></td>
+<td class="text-right"><p><strong>32× less HBM</strong></p></td>
+</tr>
+<tr class="row-odd"><td><p>Causal FFTConv1D (<code class="docutils literal notranslate"><span class="pre">L</span> <span class="pre">≤</span> <span class="pre">16K</span></code>)</p></td>
+<td><p>RFFT + spectral product + IRFFT + chunking</p></td>
+<td class="text-right"><p><strong>~6×</strong></p></td>
+<td class="text-right"><p>~4× less</p></td>
+</tr>
+<tr class="row-even"><td><p>Causal FFTConv1D (<code class="docutils literal notranslate"><span class="pre">L</span> <span class="pre">&gt;</span> <span class="pre">16K</span></code>)</p></td>
+<td><p>3-kernel Cooley–Tukey (C2C/IC2C + product)</p></td>
+<td class="text-right"><p>2–4×</p></td>
+<td class="text-right"><p>2–4× less</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">b2b</span> <span class="pre">causal-conv1d</span></code></p></td>
+<td><p>proj-conv + gate + mixer-conv + gate</p></td>
+<td class="text-right"><p><strong>&gt;7.5×</strong></p></td>
+<td class="text-right"><p>lower HBM, ½ CP comms</p></td>
+</tr>
+<tr class="row-even"><td><p>2D <code class="docutils literal notranslate"><span class="pre">fft-conv2d</span></code> (forward)</p></td>
+<td><p>C2C + complex product + IC2C core</p></td>
+<td class="text-right"><p><strong>&gt;5×</strong></p></td>
+<td class="text-right"><p><strong>&gt;2× less</strong></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">causal-conv1d</span></code> kernels additionally support filters up to 256 taps
+(channel-first) / 128 (channel-last), wider than existing optimised packages.</p>
+</section>
+<section id="implicit-filter-generation">
+<h3>Implicit filter generation<a class="headerlink" href="#implicit-filter-generation" title="Link to this heading">#</a></h3>
+<p>Profiling the Evo2 long-implicit (LI) layer showed that <strong>30 % of its runtime
+was kernel synthesis</strong>, not the convolution itself.  A dedicated fused kernel
+accelerates filter generation by over <strong>40×</strong> at the module level and cuts HBM
+overhead by <strong>32×</strong> (proportional to the modal-filter order).  The memory this
+frees is what lets a 1B-parameter Evo2 model reach 16M-token context.</p>
+<p><img alt="Implicit filter generation: fused kernel vs PyTorch baseline" src="_images/cuda_implicit_filter.png" /></p>
+</section>
+<section id="d-long-convolutions">
+<h3>1D long convolutions<a class="headerlink" href="#d-long-convolutions" title="Link to this heading">#</a></h3>
+<p>For sequence lengths up to 16K, the point where HyenaND’s asymptotics
+overtake fused SDPA, a single kernel fuses the input and filter RFFTs, the
+complex product, the IRFFT, and chunking for a <strong>6×</strong> speedup and <strong>4×</strong> lower
+memory.  Beyond 16K a three-kernel Cooley–Tukey decomposition (recasting the
+1D FFT as a 2D FFT) holds a 2–4× edge.  For the short projection/mixer
+convolutions in the SE and MR layers, the fused <code class="docutils literal notranslate"><span class="pre">b2b</span> <span class="pre">causal-conv1d</span></code> kernel
+folds projection conv, pre-gate, mixer conv, and post-gate into one
+operation: <strong>&gt;7.5×</strong> faster, and with half the context-parallel
+communication points.</p>
+<p><img alt="Fused b2b causal-conv1d for the SE / MR layers" src="_images/cuda_b2b_causal_conv1d.png" /></p>
+</section>
+<section id="d-fft-convolution">
+<h3>2D FFT convolution<a class="headerlink" href="#d-fft-convolution" title="Link to this heading">#</a></h3>
+<p>For vision workloads the <code class="docutils literal notranslate"><span class="pre">fft-conv2d</span></code> kernels run an RFFT along the first
+axis, a fused C2C-FFT + complex-multiply + inverse-C2C core along the second,
+and a closing IRFFT, keeping the frequency-domain intermediates on chip.
+Against an unfused baseline this is over <strong>5×</strong> faster with <strong>&gt;2×</strong> lower
+memory on the forward pass.</p>
+<p><img alt="Forward-pass 2D FFT convolution: fused vs unfused" src="_images/cuda_fft_conv2d.png" /></p>
+</section>
+</section>
+<section id="vit-5-small-imagenet-training-an-optimization-case-study">
+<h2>ViT-5-Small ImageNet training: an optimization case study<a class="headerlink" href="#vit-5-small-imagenet-training-an-optimization-case-study" title="Link to this heading">#</a></h2>
+<p>ImageNet-1k pretraining is where ViT-5-Small’s accuracy is validated before the
+architecture is used on downstream work, so we needed to train it, and train it
+often.  An 800-epoch run is the unit of experiment, and its wall-clock cost
+sets the pace of the research loop: every recipe change, ablation, or
+hyperparameter sweep pays that cost again.  When this work began a single run
+took roughly <strong>37 hours</strong> on 8 × H100 with the first GPU data pipeline (and
+longer still on the original CPU pipeline).  The optimizations documented here
+bring a full run down to about <strong>12 hours</strong>.  Faster runs mean more ideas
+tested per GPU-week and a lower cost per result, which is why we invested in the
+<em>training and data pipeline</em> and not only the model.</p>
+<p>Training ViT-5-Small on ImageNet (22 M params, 224 × 224, batch 256,
+8 × H100 SXM 80 GB, BF16) also makes a clean worked example of systematic
+pipeline optimization.  Every distributed vision job is bounded by model
+compute, data augmentation, and storage I/O independently, and fixing one
+merely exposes the next.  The work below drove end-to-end throughput from
+roughly 2.5 it/s to 12.6 it/s (<strong>5×</strong>) by finding and eliminating each
+bottleneck in turn.  The sections that follow walk each phase: what the profiler
+showed, why the fix worked, and what it exposed next.</p>
+<p>Full profiling tables and configuration history live in
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/vit5_imagenet/OPTIMIZATION_TRACKER.md"><code class="docutils literal notranslate"><span class="pre">examples/vit5_imagenet/OPTIMIZATION_TRACKER.md</span></code></a>.</p>
+<hr class="docutils" />
+<section id="phase-1-unblock-the-compiler">
+<h3>Phase 1: unblock the compiler<a class="headerlink" href="#phase-1-unblock-the-compiler" title="Link to this heading">#</a></h3>
+<p>The original model could not run <code class="docutils literal notranslate"><span class="pre">torch.compile(max-autotune)</span></code> at all; it
+crashed with CUDA Graph errors.  The root cause was a per-forward RoPE cache
+built from a Python <code class="docutils literal notranslate"><span class="pre">dict</span></code>, which forced a graph break on every step and
+prevented the tracer from ever capturing a static graph.  Replacing it with a
+precomputed <code class="docutils literal notranslate"><span class="pre">register_buffer</span></code> fixed the graph break, unlocked <code class="docutils literal notranslate"><span class="pre">max-autotune</span></code>,
+and as a side effect also enabled CUDA Graph replay between steps.</p>
+<p>Three supporting changes completed the model cleanup:</p>
+<ul class="simple">
+<li><p>SDPA backend selection left to PyTorch, so it auto-picks CuDNN on H100
+instead of being locked to FlashAttention.</p></li>
+<li><p>Redundant <code class="docutils literal notranslate"><span class="pre">.to(bfloat16)</span></code> / <code class="docutils literal notranslate"><span class="pre">.to(in_dtype)</span></code> casts around SDPA removed;
+autocast owns precision.</p></li>
+<li><p>Manual float32-upcast RMSNorm swapped for QuACK’s fused Triton kernel.</p></li>
+</ul>
+<p>None of these changes touch weights or hyperparameters.</p>
+<p><em>Single-GPU model throughput (synthetic data, no I/O):</em></p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Configuration</p></th>
+<th class="head text-right"><p>ms/step</p></th>
+<th class="head text-right"><p>img/s</p></th>
+<th class="head text-right"><p>MFU</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Eager — original</p></td>
+<td class="text-right"><p>159.2</p></td>
+<td class="text-right"><p>1,608</p></td>
+<td class="text-right"><p>4.6%</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> (default)</p></td>
+<td class="text-right"><p>46.0</p></td>
+<td class="text-right"><p>5,560</p></td>
+<td class="text-right"><p>15.9%</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> (max-autotune)</p></td>
+<td class="text-right"><p><em>crash</em></p></td>
+<td class="text-right"><p>—</p></td>
+<td class="text-right"><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>After model optimizations</strong></p></td>
+<td class="text-right"><p></p></td>
+<td class="text-right"><p></p></td>
+<td class="text-right"><p></p></td>
+</tr>
+<tr class="row-even"><td><p>Eager — optimized</p></td>
+<td class="text-right"><p>111.1</p></td>
+<td class="text-right"><p>2,305</p></td>
+<td class="text-right"><p>6.6%</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> (default)</p></td>
+<td class="text-right"><p>33.2</p></td>
+<td class="text-right"><p>7,716</p></td>
+<td class="text-right"><p>22.0%</p></td>
+</tr>
+<tr class="row-even"><td><p><strong><code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> (max-autotune)</strong></p></td>
+<td class="text-right"><p><strong>32.0</strong></p></td>
+<td class="text-right"><p><strong>8,003</strong></p></td>
+<td class="text-right"><p><strong>22.9%</strong></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Theoretical peak on H100 SXM (989 TFLOPS BF16) is ~34,800 img/s (100% MFU).
+At 22.9% MFU the remaining gap is compute-bound GEMM and FFT kernel efficiency;
+Python and framework overhead are gone.</p>
+</section>
+<hr class="docutils" />
+<section id="phase-2-replace-the-cpu-data-pipeline">
+<h3>Phase 2: replace the CPU data pipeline<a class="headerlink" href="#phase-2-replace-the-cpu-data-pipeline" title="Link to this heading">#</a></h3>
+<p>With compute at 32 ms/step, CPU data loading immediately became visible.
+Single-GPU profiling showed torchvision CPU decode and augmentation costing
+<strong>105 ms/step</strong>, more than three times the compute budget.  Replacing it with
+NVIDIA DALI (GPU-pipelined JPEG decode, crop, flip) dropped the data component
+to ~42 ms.  The compute side was unchanged; the full step shrank because the
+pipeline was no longer stalled on the CPU.</p>
+<p>Augmentation transforms were also ported to GPU-friendly forms for
+<code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> compatibility: device-cached normalisation tensors via
+<code class="docutils literal notranslate"><span class="pre">register_buffer</span></code>, <code class="docutils literal notranslate"><span class="pre">torch.where</span></code>-based blending instead of boolean-index
+scatter, vectorised colour jitter via <code class="docutils literal notranslate"><span class="pre">argsort</span></code>.  One attempted optimisation,
+DALI <code class="docutils literal notranslate"><span class="pre">fn.transpose</span></code> for CHW output, was <strong>reverted</strong> after profiling showed it
+added ~47 ms due to an explicit memory copy.  Layout conversions that look free
+in PyTorch carry a real cost inside the DALI pipeline graph.</p>
+</section>
+<hr class="docutils" />
+<section id="phase-3-eliminate-i-o-variance">
+<h3>Phase 3: eliminate I/O variance<a class="headerlink" href="#phase-3-eliminate-i-o-variance" title="Link to this heading">#</a></h3>
+<p>The jump from v2 (6.3 it/s) to <code class="docutils literal notranslate"><span class="pre">optimized_plus</span></code> (12.1 it/s) is the biggest
+single step in the campaign: nearly a <strong>2× gain</strong> from a change that has
+nothing to do with the model.  The mechanism is DDP synchronisation stalls
+caused by cross-rank I/O variance on a shared network file system.</p>
+<p>In DDP, every rank must enter <code class="docutils literal notranslate"><span class="pre">allreduce</span></code> together.  When DALI fetch times vary
+from 0.6 ms to 200+ ms across ranks (the norm on a shared NFS under load),
+the fast ranks park at the barrier waiting for the slow ones.  Those stalls
+appear inflated inside the backward pass in per-phase profiling, making it easy
+to misattribute them to compute.  Staging ImageNet on each node’s local NVMe
+(<code class="docutils literal notranslate"><span class="pre">/scratch</span></code>) gave every rank consistent 1–5 ms fetch times and eliminated the
+stalls entirely.</p>
+<p>The v2 augmentation changes shaved ~30 ms off per-step time, but were invisible
+at DDP scale as long as the I/O stall dominated.  Optimisations that show
+clearly in single-GPU profiling may be masked by a different bottleneck in
+multi-GPU runs.</p>
+<p><em>Multi-GPU DDP training throughput (8 × H100, end-to-end):</em></p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Version</p></th>
+<th class="head"><p>Dataloader</p></th>
+<th class="head"><p>Storage</p></th>
+<th class="head text-right"><p>it/s</p></th>
+<th class="head text-right"><p>ms/step</p></th>
+<th class="head text-right"><p>Speedup</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>CPU baseline</p></td>
+<td><p>torchvision</p></td>
+<td><p>Network FS</p></td>
+<td class="text-right"><p>~2.5</p></td>
+<td class="text-right"><p>~400</p></td>
+<td class="text-right"><p>1.0×</p></td>
+</tr>
+<tr class="row-odd"><td><p>v1 (DALI)</p></td>
+<td><p>DALI</p></td>
+<td><p>Network FS</p></td>
+<td class="text-right"><p>5.3</p></td>
+<td class="text-right"><p>189</p></td>
+<td class="text-right"><p>2.1×</p></td>
+</tr>
+<tr class="row-even"><td><p>v2 (DALI + compiled aug)</p></td>
+<td><p>DALI</p></td>
+<td><p>Network FS</p></td>
+<td class="text-right"><p>6.3</p></td>
+<td class="text-right"><p>159</p></td>
+<td class="text-right"><p>2.5×</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>optimized_plus</strong></p></td>
+<td><p><strong>DALI + compiled aug</strong></p></td>
+<td><p><strong>Local NVMe</strong></p></td>
+<td class="text-right"><p><strong>12.1</strong></p></td>
+<td class="text-right"><p><strong>83</strong></p></td>
+<td class="text-right"><p><strong>4.8×</strong></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>fused</strong></p></td>
+<td><p><strong>DALI (all aug in pipeline)</strong></p></td>
+<td><p><strong>Local NVMe</strong></p></td>
+<td class="text-right"><p><strong>12.6</strong></p></td>
+<td class="text-right"><p><strong>79</strong></p></td>
+<td class="text-right"><p><strong>5.0×</strong></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<hr class="docutils" />
+<section id="phase-4-fuse-augmentations-into-the-dali-pipeline">
+<h3>Phase 4: fuse augmentations into the DALI pipeline<a class="headerlink" href="#phase-4-fuse-augmentations-into-the-dali-pipeline" title="Link to this heading">#</a></h3>
+<p>After NVMe staging, the step breakdown exposed one remaining serial cost: ~25 ms
+of GPU augmentation running in <code class="docutils literal notranslate"><span class="pre">on_before_batch_transfer</span></code>, between DALI fetch
+and the forward pass, outside the DALI pipeline’s internal overlap window.</p>
+<p>Moving ThreeAugment, ColorJitter, uint8→float, and normalisation <strong>entirely into
+the DALI pipeline</strong> (using <code class="docutils literal notranslate"><span class="pre">enable_conditionals=True</span></code> for the per-sample
+branching) reduced that component from ~6 ms (v2 measured) to <strong>0.35 ms</strong>
+(Mixup + NHWC permute only).  The “data (ms)” column in the table below goes
+<em>up</em> slightly because it now includes augmentation; what matters is that the
+<strong>full step goes down</strong> because DALI’s internal scheduler overlaps augmentation
+with I/O and the previous step’s compute.</p>
+<p><em>Fused vs. optimised DALI, DDP × 8, H100 SXM, NVMe:</em></p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Pipeline</p></th>
+<th class="head"><p>Model</p></th>
+<th class="head text-right"><p>Full step (ms)</p></th>
+<th class="head text-right"><p>Agg throughput (img/s)</p></th>
+<th class="head text-right"><p>Speedup</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>DALI-optimised</p></td>
+<td><p>Small</p></td>
+<td class="text-right"><p>80.6</p></td>
+<td class="text-right"><p>25,401</p></td>
+<td class="text-right"><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>DALI-fused</strong></p></td>
+<td><p><strong>Small</strong></p></td>
+<td class="text-right"><p><strong>70.4</strong></p></td>
+<td class="text-right"><p><strong>29,103</strong></p></td>
+<td class="text-right"><p><strong>+15%</strong></p></td>
+</tr>
+<tr class="row-even"><td><p>DALI-optimised</p></td>
+<td><p>Base</p></td>
+<td class="text-right"><p>131.1</p></td>
+<td class="text-right"><p>15,622</p></td>
+<td class="text-right"><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>DALI-fused</strong></p></td>
+<td><p><strong>Base</strong></p></td>
+<td class="text-right"><p><strong>120.8</strong></p></td>
+<td class="text-right"><p><strong>16,950</strong></p></td>
+<td class="text-right"><p><strong>+9%</strong></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<hr class="docutils" />
+<section id="final-state-fully-compute-bound">
+<h3>Final state: fully compute-bound<a class="headerlink" href="#final-state-fully-compute-bound" title="Link to this heading">#</a></h3>
+<p><em>Step breakdown after all optimisations (fused DALI, NVMe, compiled):</em></p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Component</p></th>
+<th class="head text-right"><p>Time (ms)</p></th>
+<th class="head text-right"><p>% of step</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>DALI fetch</p></td>
+<td class="text-right"><p>~2</p></td>
+<td class="text-right"><p>3%</p></td>
+</tr>
+<tr class="row-odd"><td><p>Mixup/CutMix + permute</p></td>
+<td class="text-right"><p>0.35</p></td>
+<td class="text-right"><p>0.5%</p></td>
+</tr>
+<tr class="row-even"><td><p>Forward + backward</p></td>
+<td class="text-right"><p>~66</p></td>
+<td class="text-right"><p>94%</p></td>
+</tr>
+<tr class="row-odd"><td><p>Optimizer (FusedLAMB)</p></td>
+<td class="text-right"><p>~2</p></td>
+<td class="text-right"><p>3%</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Data loading (decode, augmentation, I/O, and transfer) now accounts for less
+than 4% of wall-clock time.  The pipeline is fully compute-bound.
+Further throughput gains require model-level work: DDP allreduce efficiency,
+larger batch sizes, or architectural changes to the mixer itself.</p>
+</section>
+</section>
+<section id="op-level-results">
+<h2>Op-level results<a class="headerlink" href="#op-level-results" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/reports/fp16_fft_convolution/REPORT.md">FP16 circular FFT convolution</a>.
+The full investigation report: the dual-mean-centering derivation, the
+accuracy and throughput results against the FP32 reference, and why the
+FP16 path was kept opt-in rather than made the default.</p></li>
+</ul>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="examples/index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Examples</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="reports.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Reports</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#flop-scaling">FLOP scaling</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#throughput-scaling">Throughput scaling</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cuda-kernels-nsubq">CUDA kernels (<code class="docutils literal notranslate"><span class="pre">nSubQ</span></code>)</a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#fusion">Fusion</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#measured-kernel-speedups">Measured kernel speedups</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#implicit-filter-generation">Implicit filter generation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#d-long-convolutions">1D long convolutions</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#d-fft-convolution">2D FFT convolution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#vit-5-small-imagenet-training-an-optimization-case-study">ViT-5-Small ImageNet training: an optimization case study</a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#phase-1-unblock-the-compiler">Phase 1: unblock the compiler</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#phase-2-replace-the-cpu-data-pipeline">Phase 2: replace the CPU data pipeline</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#phase-3-eliminate-i-o-variance">Phase 3: eliminate I/O variance</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#phase-4-fuse-augmentations-into-the-dali-pipeline">Phase 4: fuse augmentations into the DALI pipeline</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#final-state-fully-compute-bound">Final state: fully compute-bound</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#op-level-results">Op-level results</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

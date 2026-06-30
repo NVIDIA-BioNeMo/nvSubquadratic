@@ -1,0 +1,918 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>SIRENKernelND &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/generated/nvsubquadratic.modules.kernels_nd.SIRENKernelND';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="SIRENPositionalEmbeddingND" href="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND.html" />
+    <link rel="prev" title="DistributedDepthwiseConv3d" href="nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="reference internal" href="../modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">API Reference</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../modules.html" class="nav-link">Modules</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">SIRENKernelND</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="sirenkernelnd">
+<h1>SIRENKernelND<a class="headerlink" href="#sirenkernelnd" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">SIRENKernelND</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">out_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">data_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">mlp_hidden_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_layers</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">embedding_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">omega_0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">L_cache</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">use_bias</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">hidden_omega_0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">film_cfg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">film_after_pos_embed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>Convolutional kernel parametrised by a SIREN (sinusoidal representation network) MLP.</p>
+<section id="mathematical-form">
+<h2>Mathematical form<a class="headerlink" href="#mathematical-form" title="Link to this heading">#</a></h2>
+<p>The kernel at coordinate <code class="docutils literal notranslate"><span class="pre">x</span></code> is:</p>
+<blockquote>
+<div><p>k(x) = Linear_out( SIREN_MLP( phi(x) ) )</p>
+</div></blockquote>
+<p>where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">phi(x)</span> <span class="pre">=</span> <span class="pre">sin(W_0</span> <span class="pre">x</span> <span class="pre">+</span> <span class="pre">b_0)</span></code> is the SIREN positional embedding
+(<code class="docutils literal notranslate"><span class="pre">SIRENPositionalEmbeddingND</span></code>) with first-layer frequency <code class="docutils literal notranslate"><span class="pre">omega_0</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SIREN_MLP</span></code> is a stack of <code class="docutils literal notranslate"><span class="pre">num_layers</span> <span class="pre">-</span> <span class="pre">1</span></code> layers, each computing
+<code class="docutils literal notranslate"><span class="pre">sin(W_i</span> <span class="pre">h</span> <span class="pre">+</span> <span class="pre">b_i)</span></code> with weights initialised at frequency
+<code class="docutils literal notranslate"><span class="pre">hidden_omega_0</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Linear_out</span></code> is a linear readout to <code class="docutils literal notranslate"><span class="pre">out_dim</span></code> channels, scaled by
+Wang init (<code class="docutils literal notranslate"><span class="pre">sqrt(1</span> <span class="pre">/</span> <span class="pre">kernel_volume)</span></code>) to normalise initial kernel energy.</p></li>
+</ul>
+<p>The full pipeline (without FiLM conditioning) is therefore:</p>
+<blockquote>
+<div><p>h_0 = sin(W_0 x + b_0)                     – pos embedding
+h_i = sin(W_i h_{i-1} + b_i)  for i=1..N-1 – hidden layers
+k   = W_out h_{N-1} + b_out                 – output layer</p>
+</div></blockquote>
+</section>
+<section id="hyperparameters-controlling-bandwidth-smoothness">
+<h2>Hyperparameters controlling bandwidth / smoothness<a class="headerlink" href="#hyperparameters-controlling-bandwidth-smoothness" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">omega_0</span></code>: Frequency of the first SIREN layer.  Higher values produce
+higher-frequency positional features at init.  Typical range: 1.0–30.0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hidden_omega_0</span></code>: Frequency of the hidden SIREN layers.  Usually set to
+1.0 (default) following the recommendation in the SIREN paper.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mlp_hidden_dim</span></code>: Width of all hidden layers; wider networks can
+express more complex kernel shapes.</p></li>
+</ul>
+</section>
+<section id="film-conditioning">
+<h2>FiLM conditioning<a class="headerlink" href="#film-conditioning" title="Link to this heading">#</a></h2>
+<p>When <code class="docutils literal notranslate"><span class="pre">film_cfg</span></code> is provided, a <code class="docutils literal notranslate"><span class="pre">KernelFiLMGenerator</span></code> is instantiated
+and called on the <code class="docutils literal notranslate"><span class="pre">conditioning</span></code> tensor (shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">C]</span></code>) to produce
+per-layer <code class="docutils literal notranslate"><span class="pre">(gamma,</span> <span class="pre">beta)</span></code> pairs (each of shape <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">mlp_hidden_dim]</span></code>).
+The hidden activations are then modulated as:</p>
+<blockquote>
+<div><p>h_i &lt;- gamma_i * h_i + beta_i</p>
+</div></blockquote>
+<p>When <code class="docutils literal notranslate"><span class="pre">film_after_pos_embed=True</span></code>, an <em>extra</em> FiLM layer is applied to
+the output of the positional embedding (before the first hidden layer),
+making the positional features themselves input-dependent.  This requires
+<code class="docutils literal notranslate"><span class="pre">embedding_dim</span> <span class="pre">==</span> <span class="pre">mlp_hidden_dim</span></code> and one additional film layer in the
+generator (<code class="docutils literal notranslate"><span class="pre">num_film_layers</span> <span class="pre">=</span> <span class="pre">num_layers</span></code>).</p>
+<p>When conditioning is present, the output kernel has shape
+<code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial,</span> <span class="pre">out_dim]</span></code>; otherwise it is <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">*spatial,</span> <span class="pre">out_dim]</span></code>.</p>
+</section>
+<section id="initialisation">
+<h2>Initialisation<a class="headerlink" href="#initialisation" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>All <code class="docutils literal notranslate"><span class="pre">hidden_linears</span></code> are SIREN-initialised with <code class="docutils literal notranslate"><span class="pre">hidden_omega_0</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">out_linear</span></code> is SIREN-initialised with <code class="docutils literal notranslate"><span class="pre">hidden_omega_0</span></code>, then
+additionally Wang-scaled by <code class="docutils literal notranslate"><span class="pre">sqrt(1</span> <span class="pre">/</span> <span class="pre">prod(L_cache_per_axis))</span></code>.
+This “Wang init” (from the CKConv paper, Romero et al. 2021) divides
+the output layer’s weights by the square root of the total grid volume
+(<code class="docutils literal notranslate"><span class="pre">L_cache**data_dim</span></code> for isotropic grids), so the initial filter’s
+L2 energy is independent of the grid resolution.</p></li>
+<li><p>Hidden linear weights and output bias get <code class="docutils literal notranslate"><span class="pre">_no_weight_decay</span> <span class="pre">=</span> <span class="pre">True</span></code>
+so that weight-decay optimizers do not destroy the SIREN spectrum.</p></li>
+</ul>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.out_dim">
+<span class="sig-name descname"><span class="pre">out_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.out_dim" title="Link to this definition">#</a></dt>
+<dd><p>Number of output channels (kernel depth).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.data_dim">
+<span class="sig-name descname"><span class="pre">data_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.data_dim" title="Link to this definition">#</a></dt>
+<dd><p>Number of spatial / temporal input dimensions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.mlp_hidden_dim">
+<span class="sig-name descname"><span class="pre">mlp_hidden_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.mlp_hidden_dim" title="Link to this definition">#</a></dt>
+<dd><p>Hidden width of the SIREN MLP.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.num_layers">
+<span class="sig-name descname"><span class="pre">num_layers</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.num_layers" title="Link to this definition">#</a></dt>
+<dd><p>Total number of SIREN layers (&gt;= 2).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.embedding_dim">
+<span class="sig-name descname"><span class="pre">embedding_dim</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.embedding_dim" title="Link to this definition">#</a></dt>
+<dd><p>SIREN positional-embedding dimensionality.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.omega_0">
+<span class="sig-name descname"><span class="pre">omega_0</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.omega_0" title="Link to this definition">#</a></dt>
+<dd><p>First-layer frequency scaling.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.hidden_omega_0">
+<span class="sig-name descname"><span class="pre">hidden_omega_0</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.hidden_omega_0" title="Link to this definition">#</a></dt>
+<dd><p>Hidden-layer frequency scaling.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.L_cache_per_axis">
+<span class="sig-name descname"><span class="pre">L_cache_per_axis</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.L_cache_per_axis" title="Link to this definition">#</a></dt>
+<dd><p>Per-axis cache extents (canonical form).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a>, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.L_cache">
+<span class="sig-name descname"><span class="pre">L_cache</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.L_cache" title="Link to this definition">#</a></dt>
+<dd><p>Original <code class="docutils literal notranslate"><span class="pre">L_cache</span></code> argument (diagnostics).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a> | Sequence[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.positional_embedding">
+<span class="sig-name descname"><span class="pre">positional_embedding</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.positional_embedding" title="Link to this definition">#</a></dt>
+<dd><p>First SIREN layer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND.html#nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND" title="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND">SIRENPositionalEmbeddingND</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.hidden_linears">
+<span class="sig-name descname"><span class="pre">hidden_linears</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.hidden_linears" title="Link to this definition">#</a></dt>
+<dd><p>Hidden linear layers (length
+<code class="docutils literal notranslate"><span class="pre">num_layers</span> <span class="pre">-</span> <span class="pre">1</span></code>).  Interleaved with <code class="docutils literal notranslate"><span class="pre">self.sine</span></code> in the forward
+pass; stored separately so FiLM can be inserted between them.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.ModuleList.html#torch.nn.ModuleList" title="(in PyTorch v2.12)">torch.nn.ModuleList</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.sine">
+<span class="sig-name descname"><span class="pre">sine</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.sine" title="Link to this definition">#</a></dt>
+<dd><p>Shared sine activation applied after every hidden linear.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="nvsubquadratic.modules.kernels_nd.Sine.html#nvsubquadratic.modules.kernels_nd.Sine" title="nvsubquadratic.modules.kernels_nd.Sine">Sine</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.out_linear">
+<span class="sig-name descname"><span class="pre">out_linear</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.out_linear" title="Link to this definition">#</a></dt>
+<dd><p>Final readout to <code class="docutils literal notranslate"><span class="pre">out_dim</span></code> channels.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html#torch.nn.Linear" title="(in PyTorch v2.12)">torch.nn.Linear</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.num_film_layers">
+<span class="sig-name descname"><span class="pre">num_film_layers</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.num_film_layers" title="Link to this definition">#</a></dt>
+<dd><p>Number of hidden layers eligible for FiLM
+modulation (equal to <code class="docutils literal notranslate"><span class="pre">len(hidden_linears)</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.film_generator">
+<span class="sig-name descname"><span class="pre">film_generator</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.film_generator" title="Link to this definition">#</a></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">KernelFiLMGenerator</span></code> instance or <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.film_after_pos_embed">
+<span class="sig-name descname"><span class="pre">film_after_pos_embed</span></span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.film_after_pos_embed" title="Link to this definition">#</a></dt>
+<dd><p>Whether the first FiLM pair modulates the
+positional embedding output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">param out_dim<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of output channels for the generated kernel.</p>
+</dd>
+<dt class="field-even">param data_dim<span class="colon">:</span></dt>
+<dd class="field-even"><p>Number of spatial/temporal input dimensions (size of coordinate vector).</p>
+</dd>
+<dt class="field-odd">param mlp_hidden_dim<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Hidden width of the SIREN network.</p>
+</dd>
+<dt class="field-even">param num_layers<span class="colon">:</span></dt>
+<dd class="field-even"><p>Total number of layers including the first and hidden layers (&gt;= 2).</p>
+</dd>
+<dt class="field-odd">param embedding_dim<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dimensionality of the SIREN positional embedding.</p>
+</dd>
+<dt class="field-even">param omega_0<span class="colon">:</span></dt>
+<dd class="field-even"><p>Frequency scaling for the first SIREN layer.</p>
+</dd>
+<dt class="field-odd">param L_cache<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Cache extent controlling the maximum supported grid size before
+cache growth.  Either a scalar int (isotropic, same extent on all axes)
+or a sequence of length <code class="docutils literal notranslate"><span class="pre">data_dim</span></code> (anisotropic, per-axis extents).</p>
+</dd>
+<dt class="field-even">param use_bias<span class="colon">:</span></dt>
+<dd class="field-even"><p>Whether to include biases in linear layers.</p>
+</dd>
+<dt class="field-odd">param hidden_omega_0<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Frequency scaling for subsequent SIREN layers (default 1.0).</p>
+</dd>
+<dt class="field-even">param film_cfg<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional LazyConfig for KernelFiLMGenerator. When provided, enables
+input-dependent FiLM conditioning of all hidden SIREN layers.</p>
+</dd>
+<dt class="field-odd">param film_after_pos_embed<span class="colon">:</span></dt>
+<dd class="field-odd"><p>If True, the first FiLM (gamma, beta) pair modulates
+the positional embedding <em>after</em> the sine activation.  Requires
+<code class="docutils literal notranslate"><span class="pre">embedding_dim</span> <span class="pre">==</span> <span class="pre">mlp_hidden_dim</span></code> and one extra FiLM layer in
+<code class="docutils literal notranslate"><span class="pre">film_cfg</span></code> (i.e. <code class="docutils literal notranslate"><span class="pre">num_film_layers</span> <span class="pre">=</span> <span class="pre">num_layers</span> <span class="pre">-</span> <span class="pre">1</span> <span class="pre">+</span> <span class="pre">1</span> <span class="pre">=</span> <span class="pre">num_layers</span></code>).</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">out_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">data_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">mlp_hidden_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_layers</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">embedding_dim</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">omega_0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">L_cache</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">use_bias</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">hidden_omega_0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">film_cfg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">film_after_pos_embed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.__init__" title="Link to this definition">#</a></dt>
+<dd><p>Build SIREN MLP and optional FiLM conditioner.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>out_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>data_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>mlp_hidden_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_layers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>embedding_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>omega_0</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>L_cache</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.14)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>]</em>)</p></li>
+<li><p><strong>use_bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>hidden_omega_0</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>film_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>film_after_pos_embed</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.flop_count">
+<span class="sig-name descname"><span class="pre">flop_count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">grid_lens</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inference</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.flop_count" title="Link to this definition">#</a></dt>
+<dd><p>Return an integer FLOP estimate for one kernel generation forward pass.</p>
+<p>At <code class="docutils literal notranslate"><span class="pre">inference=True</span></code> with no FiLM generator, returns 0 because the
+kernel is input-independent and can be precomputed once and cached.
+When a <code class="docutils literal notranslate"><span class="pre">film_generator</span></code> exists the kernel is input-dependent (via
+register-conditioned FiLM modulation) and must be recomputed on every
+forward pass regardless of the inference flag.</p>
+<p>Let <code class="docutils literal notranslate"><span class="pre">G</span> <span class="pre">=</span> <span class="pre">prod(2</span> <span class="pre">*</span> <span class="pre">L_i</span> <span class="pre">-</span> <span class="pre">1</span> <span class="pre">for</span> <span class="pre">L_i</span> <span class="pre">in</span> <span class="pre">grid_lens)</span></code> be the total grid
+points.  FLOPs breakdown:</p>
+<ul class="simple">
+<li><p><strong>Positional embedding</strong> (<a class="reference internal" href="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND.html#nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND" title="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND"><code class="xref py py-class docutils literal notranslate"><span class="pre">SIRENPositionalEmbeddingND</span></code></a>):
+<code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">G</span> <span class="pre">*</span> <span class="pre">data_dim</span> <span class="pre">*</span> <span class="pre">embedding_dim</span></code> for the linear, plus
+<code class="docutils literal notranslate"><span class="pre">G</span> <span class="pre">*</span> <span class="pre">embedding_dim</span></code> for the <code class="docutils literal notranslate"><span class="pre">sin</span></code> activation.</p></li>
+<li><p><strong>Hidden SIREN layers</strong> (<code class="docutils literal notranslate"><span class="pre">len(self.hidden_linears)</span> <span class="pre">=</span> <span class="pre">num_layers</span> <span class="pre">-</span> <span class="pre">1</span></code>).
+First layer: <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">G</span> <span class="pre">*</span> <span class="pre">embedding_dim</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span></code> plus
+<code class="docutils literal notranslate"><span class="pre">G</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span></code> for the sin.  Each subsequent layer:
+<code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">G</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span></code> plus
+<code class="docutils literal notranslate"><span class="pre">G</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span></code> for the sin.</p></li>
+<li><p><strong>Output linear</strong>: <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">G</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span> <span class="pre">*</span> <span class="pre">out_dim</span></code>.</p></li>
+<li><p><strong>FiLM conditioning</strong> (only when <code class="docutils literal notranslate"><span class="pre">self.film_generator</span></code> is set):
+the FiLM generator MLP costs <code class="docutils literal notranslate"><span class="pre">self.film_generator.flop_count()</span></code>;
+applying <code class="docutils literal notranslate"><span class="pre">gamma</span> <span class="pre">*</span> <span class="pre">h</span> <span class="pre">+</span> <span class="pre">beta</span></code> per modulated layer costs
+<code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">G</span> <span class="pre">*</span> <span class="pre">mlp_hidden_dim</span></code> and is applied to each hidden layer
+(plus the positional embedding when <code class="docutils literal notranslate"><span class="pre">film_after_pos_embed</span></code> is
+<code class="docutils literal notranslate"><span class="pre">True</span></code> — which requires <code class="docutils literal notranslate"><span class="pre">embedding_dim</span> <span class="pre">==</span> <span class="pre">mlp_hidden_dim</span></code>).</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>grid_lens</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>...</em><em>]</em>) – Per-axis output sequence lengths — the same tuple you
+would pass to <code class="docutils literal notranslate"><span class="pre">forward</span></code> as <code class="docutils literal notranslate"><span class="pre">seq_lens</span></code>.  The total number
+of coordinate points the MLP processes is
+<code class="docutils literal notranslate"><span class="pre">G</span> <span class="pre">=</span> <span class="pre">prod(2*L</span> <span class="pre">-</span> <span class="pre">1</span> <span class="pre">for</span> <span class="pre">L</span> <span class="pre">in</span> <span class="pre">grid_lens)</span></code>.</p></li>
+<li><p><strong>inference</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True and no FiLM generator, return 0 (cacheable kernel).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Total FLOPs as an integer.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.kernels_nd.SIRENKernelND.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seq_lens</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">conditioning</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.forward" title="Link to this definition">#</a></dt>
+<dd><p>Compute the SIREN kernel for a given grid of spatial dimensions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>seq_lens</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>...</em><em>]</em>) – Lengths of the input grid for which to compute the positional embeddings.</p></li>
+<li><p><strong>conditioning</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><em>None</em>) – Optional <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">C]</span></code> conditioning vector for FiLM modulation.
+When provided and a <code class="docutils literal notranslate"><span class="pre">film_generator</span></code> exists, SIREN hidden layers are
+modulated, making the output kernel batch-dependent: <code class="docutils literal notranslate"><span class="pre">[B,</span> <span class="pre">*spatial,</span> <span class="pre">out_dim]</span></code>.
+When <code class="docutils literal notranslate"><span class="pre">None</span></code>, behaves identically to the original SIREN: <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">*spatial,</span> <span class="pre">out_dim]</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="docutils literal notranslate"><span class="pre">(kernel,</span> <span class="pre">grid)</span></code> where <code class="docutils literal notranslate"><span class="pre">kernel</span></code> has shape <code class="docutils literal notranslate"><span class="pre">[1|B,</span> <span class="pre">*spatial,</span> <span class="pre">out_dim]</span></code>
+and <code class="docutils literal notranslate"><span class="pre">grid</span></code> has shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">*spatial,</span> <span class="pre">data_dim]</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>, <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>out_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>data_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>mlp_hidden_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>num_layers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>embedding_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>omega_0</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>L_cache</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.14)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>]</em>)</p></li>
+<li><p><strong>use_bias</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>hidden_omega_0</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>film_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>film_after_pos_embed</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="nvsubquadratic.modules.distributed_depthwise_conv_nd.DistributedDepthwiseConv3d.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">DistributedDepthwiseConv3d</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="nvsubquadratic.modules.kernels_nd.SIRENPositionalEmbeddingND.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">SIRENPositionalEmbeddingND</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND"><code class="docutils literal notranslate"><span class="pre">SIRENKernelND</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.out_dim"><code class="docutils literal notranslate"><span class="pre">out_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.data_dim"><code class="docutils literal notranslate"><span class="pre">data_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.mlp_hidden_dim"><code class="docutils literal notranslate"><span class="pre">mlp_hidden_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.num_layers"><code class="docutils literal notranslate"><span class="pre">num_layers</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.embedding_dim"><code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.omega_0"><code class="docutils literal notranslate"><span class="pre">omega_0</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.hidden_omega_0"><code class="docutils literal notranslate"><span class="pre">hidden_omega_0</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.L_cache_per_axis"><code class="docutils literal notranslate"><span class="pre">L_cache_per_axis</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.L_cache"><code class="docutils literal notranslate"><span class="pre">L_cache</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.positional_embedding"><code class="docutils literal notranslate"><span class="pre">positional_embedding</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.hidden_linears"><code class="docutils literal notranslate"><span class="pre">hidden_linears</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.sine"><code class="docutils literal notranslate"><span class="pre">sine</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.out_linear"><code class="docutils literal notranslate"><span class="pre">out_linear</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.num_film_layers"><code class="docutils literal notranslate"><span class="pre">num_film_layers</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.film_generator"><code class="docutils literal notranslate"><span class="pre">film_generator</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.film_after_pos_embed"><code class="docutils literal notranslate"><span class="pre">film_after_pos_embed</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.flop_count"><code class="docutils literal notranslate"><span class="pre">flop_count()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.kernels_nd.SIRENKernelND.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,746 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>ResidualBlock &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api_reference/generated/nvsubquadratic.modules.residual_block.ResidualBlock';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="../../_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="AdaLNZeroResidualBlock" href="nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock.html" />
+    <link rel="prev" title="drop_path" href="nvsubquadratic.modules.drop_path.drop_path.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../lazy_config.html">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../glossary.html">Glossary</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../ops.html">Ops</a></li>
+<li class="toctree-l2 current active"><a class="reference internal" href="../modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">API Reference</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../modules.html" class="nav-link">Modules</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">ResidualBlock</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="residualblock">
+<h1>ResidualBlock<a class="headerlink" href="#residualblock" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ResidualBlock</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">sequence_mixer_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">sequence_mixer_norm_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">condition_mixer_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">condition_mixer_norm_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">mlp_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">mlp_norm_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">dropout_cfg</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a></p>
+<p>Standard pre-norm residual block for ND signals.</p>
+<p>Each forward pass executes up to three residual sub-branches:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>x ──[input_norm]──► sequence_mixer ──► dropout ──►(+)──► x&#39;
+x&#39;──[cond_norm]───► condition_mixer ──► dropout ──►(+)──► x&#39;&#39;   (optional)
+x&#39;&#39;─[mlp_norm]────► mlp ──────────────► dropout ──►(+)──► output
+</pre></div>
+</div>
+<p>Any branch is <em>bypassed entirely</em> (not just zeroed) when its <code class="docutils literal notranslate"><span class="pre">_cfg</span></code>
+target is <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.  This design lets the same class serve
+pure-sequence networks (condition branch disabled), cross-attention
+encoder-decoders (condition branch enabled), and MLP-only ablations.</p>
+<p>The Identity constraint is <strong>one-directional</strong>: if a mixer/MLP config
+targets <code class="docutils literal notranslate"><span class="pre">Identity</span></code>, the corresponding norm config <em>must also</em> be
+<code class="docutils literal notranslate"><span class="pre">Identity</span></code> (enforced by assertion at init).  The reverse — a norm set
+to <code class="docutils literal notranslate"><span class="pre">Identity</span></code> while the mixer is active — is not checked and is the
+caller’s responsibility.</p>
+<p>All normalisation parameters (<code class="docutils literal notranslate"><span class="pre">input_norm</span></code>, <code class="docutils literal notranslate"><span class="pre">condition_mixer_norm</span></code>,
+<code class="docutils literal notranslate"><span class="pre">mlp_norm</span></code>) are tagged with <code class="docutils literal notranslate"><span class="pre">_no_weight_decay</span> <span class="pre">=</span> <span class="pre">True</span></code> so that the
+optimiser can exclude them from weight-decay groups.</p>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="nvsubquadratic.networks.general_purpose_resnet.ResidualNetwork.html#nvsubquadratic.networks.general_purpose_resnet.ResidualNetwork" title="nvsubquadratic.networks.general_purpose_resnet.ResidualNetwork"><code class="xref py py-class docutils literal notranslate"><span class="pre">ResidualNetwork</span></code></a>
+and
+<a class="reference internal" href="nvsubquadratic.networks.classification_resnet.ClassificationResNet.html#nvsubquadratic.networks.classification_resnet.ClassificationResNet" title="nvsubquadratic.networks.classification_resnet.ClassificationResNet"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClassificationResNet</span></code></a>
+for the canonical consumers of this block.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sequence_mixer_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>sequence_mixer_norm_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>condition_mixer_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>condition_mixer_norm_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>mlp_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>mlp_norm_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+<li><p><strong>dropout_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.sequence_mixer">
+<span class="sig-name descname"><span class="pre">sequence_mixer</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.sequence_mixer" title="Link to this definition">#</a></dt>
+<dd><p>The instantiated sequence-mixing
+operator (e.g. <a class="reference internal" href="nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer.html#nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer" title="nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer"><code class="xref py py-class docutils literal notranslate"><span class="pre">QKVSequenceMixer</span></code></a>
+wrapping Hyena, Attention, CKConv, or Mamba).  May be
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> when the mixer branch is disabled.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.input_norm">
+<span class="sig-name descname"><span class="pre">input_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.input_norm" title="Link to this definition">#</a></dt>
+<dd><p>Pre-norm applied before the sequence
+mixer (e.g. LayerNorm or RMSNorm).  May be <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.condition_mixer">
+<span class="sig-name descname"><span class="pre">condition_mixer</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.condition_mixer" title="Link to this definition">#</a></dt>
+<dd><p>Cross-attention or conditioning
+operator applied after the sequence mixer.  May be
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> to disable the conditioning branch entirely.
+When not Identity, its <code class="docutils literal notranslate"><span class="pre">forward(x,</span> <span class="pre">condition)</span></code> signature must
+accept the residual stream and a conditioning tensor whose channel
+dimension matches <code class="docutils literal notranslate"><span class="pre">C</span></code> (the hidden channel dim of <code class="docutils literal notranslate"><span class="pre">x</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.condition_mixer_norm">
+<span class="sig-name descname"><span class="pre">condition_mixer_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.condition_mixer_norm" title="Link to this definition">#</a></dt>
+<dd><p>Pre-norm applied before
+<code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code>.  Must be <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> when
+<code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code> is <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.mlp">
+<span class="sig-name descname"><span class="pre">mlp</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.mlp" title="Link to this definition">#</a></dt>
+<dd><p>Position-wise MLP
+(e.g. <a class="reference internal" href="nvsubquadratic.modules.mlp.MLP.html#nvsubquadratic.modules.mlp.MLP" title="nvsubquadratic.modules.mlp.MLP"><code class="xref py py-class docutils literal notranslate"><span class="pre">MLP</span></code></a>).  May be
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> to disable the MLP branch.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.mlp_norm">
+<span class="sig-name descname"><span class="pre">mlp_norm</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.mlp_norm" title="Link to this definition">#</a></dt>
+<dd><p>Pre-norm applied before the MLP.  Must be
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> when <code class="docutils literal notranslate"><span class="pre">mlp</span></code> is <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.dropout">
+<span class="sig-name descname"><span class="pre">dropout</span></span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.dropout" title="Link to this definition">#</a></dt>
+<dd><p>Dropout (or stochastic depth) applied after
+each active branch.  Typically
+<a class="reference internal" href="nvsubquadratic.modules.drop_path.DropPath.html#nvsubquadratic.modules.drop_path.DropPath" title="nvsubquadratic.modules.drop_path.DropPath"><code class="xref py py-class docutils literal notranslate"><span class="pre">DropPath</span></code></a> or
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Dropout</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)">torch.nn.Module</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">sequence_mixer_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">sequence_mixer_norm_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">condition_mixer_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">condition_mixer_norm_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">mlp_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">mlp_norm_cfg</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">dropout_cfg</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.__init__" title="Link to this definition">#</a></dt>
+<dd><p>Initialise the ResidualBlock.</p>
+<p>All positional sub-modules are supplied as
+<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">LazyConfig</span></code></a> objects and
+instantiated here.  Passing <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> as the target for a
+<code class="docutils literal notranslate"><span class="pre">*_cfg</span></code> / <code class="docutils literal notranslate"><span class="pre">*_norm_cfg</span></code> pair disables that branch at zero cost (no
+forward computation, no parameters).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sequence_mixer_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the sequence mixer.  Typical
+targets: <a class="reference internal" href="nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer.html#nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer" title="nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer"><code class="xref py py-class docutils literal notranslate"><span class="pre">QKVSequenceMixer</span></code></a>
+(which internally wraps Hyena, Attention, CKConv, or Mamba),
+or <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> to skip the mixer branch entirely.</p></li>
+<li><p><strong>sequence_mixer_norm_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the pre-norm applied
+before the sequence mixer.  <strong>Must</strong> be <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>
+when <code class="docutils literal notranslate"><span class="pre">sequence_mixer_cfg</span></code> targets <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p></li>
+<li><p><strong>condition_mixer_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the conditioning / cross-
+attention operator.  Pass <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> (the default
+in most configs) to disable the conditioning branch.  When
+active, the instantiated module’s <code class="docutils literal notranslate"><span class="pre">forward</span></code> must accept
+<code class="docutils literal notranslate"><span class="pre">(x,</span> <span class="pre">condition)</span></code> positional arguments where <code class="docutils literal notranslate"><span class="pre">condition</span></code>
+has the same channel dimension <code class="docutils literal notranslate"><span class="pre">C</span></code> as <code class="docutils literal notranslate"><span class="pre">x</span></code>.  As of this
+writing, <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> is effectively the only
+production-ready value; a concrete cross-attention class is
+planned but not yet part of the public API.</p></li>
+<li><p><strong>condition_mixer_norm_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the pre-norm applied
+before <code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code>.  <strong>Must</strong> be <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>
+when <code class="docutils literal notranslate"><span class="pre">condition_mixer_cfg</span></code> targets <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p></li>
+<li><p><strong>mlp_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the position-wise MLP.  Typical target:
+<a class="reference internal" href="nvsubquadratic.modules.mlp.MLP.html#nvsubquadratic.modules.mlp.MLP" title="nvsubquadratic.modules.mlp.MLP"><code class="xref py py-class docutils literal notranslate"><span class="pre">MLP</span></code></a>.  Pass
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> to skip the MLP branch.</p></li>
+<li><p><strong>mlp_norm_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the pre-norm applied before the MLP.
+<strong>Must</strong> be <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> when <code class="docutils literal notranslate"><span class="pre">mlp_cfg</span></code> targets
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p></li>
+<li><p><strong>dropout_cfg</strong> (<a class="reference internal" href="nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><em>LazyConfig</em></a>) – LazyConfig for the dropout / stochastic-depth module
+applied after each active branch.  Typical targets:
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Dropout</span></code>,
+<a class="reference internal" href="nvsubquadratic.modules.drop_path.DropPath.html#nvsubquadratic.modules.drop_path.DropPath" title="nvsubquadratic.modules.drop_path.DropPath"><code class="xref py py-class docutils literal notranslate"><span class="pre">DropPath</span></code></a>, or
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> for no dropout.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.14)"><strong>AssertionError</strong></a> – If a mixer/MLP config targets <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>
+    but the corresponding norm config does not.  The constraint is
+    one-directional: mixer=Identity ⟹ norm=Identity.  The reverse
+    (norm=Identity while mixer is active) is not checked.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvsubquadratic.modules.residual_block.ResidualBlock.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nvsubquadratic.modules.residual_block.ResidualBlock.forward" title="Link to this definition">#</a></dt>
+<dd><p>Apply the residual block to the input tensor.</p>
+<p>Executes up to three residual sub-branches in order: sequence mixer,
+conditioning mixer (optional), and MLP (optional).  A branch is
+<strong>skipped entirely</strong> when its corresponding module is
+<code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>; the <code class="docutils literal notranslate"><span class="pre">condition</span></code> argument is only consumed
+when the conditioning branch is active.</p>
+<p><strong>Path without conditioning</strong> (<code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code> is Identity):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>x → input_norm → sequence_mixer → dropout →(+)→ x&#39;
+x&#39; → mlp_norm → mlp → dropout →(+)→ output
+</pre></div>
+</div>
+<p><strong>Path with conditioning</strong> (<code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code> is not Identity):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>x  → input_norm → sequence_mixer → dropout →(+)→ x&#39;
+x&#39; → condition_mixer_norm → condition_mixer(x&#39;, condition)
+   → dropout →(+)→ x&#39;&#39;
+x&#39;&#39; → mlp_norm → mlp → dropout →(+)→ output
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a>) – Input feature tensor of shape
+<code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C)</span></code> where <code class="docutils literal notranslate"><span class="pre">B</span></code> is the batch size,
+<code class="docutils literal notranslate"><span class="pre">spatial_dims</span></code> are one or more spatial axes (e.g. <code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W)</span></code>
+for 2-D images or <code class="docutils literal notranslate"><span class="pre">(T,)</span></code> for 1-D sequences), and
+<code class="docutils literal notranslate"><span class="pre">C</span></code> is the hidden channel dimension.</p></li>
+<li><p><strong>condition</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><em>None</em>) – Conditioning tensor used by <code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code>.  Its
+shape depends on the conditioning operator — a common choice
+is <code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">*spatial_dims_condition,</span> <span class="pre">C)</span></code> for cross-attention, or
+<code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">C)</span></code> for a global conditioning vector.  The channel
+dimension <code class="docutils literal notranslate"><span class="pre">C</span></code> must match that of <code class="docutils literal notranslate"><span class="pre">x</span></code>.  This argument is
+<strong>ignored</strong> (and may safely be <code class="docutils literal notranslate"><span class="pre">None</span></code>) when
+<code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code> is <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Output tensor of the same shape as <code class="docutils literal notranslate"><span class="pre">x</span></code>:
+<code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">*spatial_dims,</span> <span class="pre">C)</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)">torch.Tensor</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.14)"><strong>AssertionError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">condition</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code> but
+    <code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code> is not <code class="docutils literal notranslate"><span class="pre">torch.nn.Identity</span></code> (i.e. a
+    conditioning tensor is required but was not provided).</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="nvsubquadratic.modules.drop_path.drop_path.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">drop_path</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="nvsubquadratic.modules.residual_block.AdaLNZeroResidualBlock.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">AdaLNZeroResidualBlock</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock"><code class="docutils literal notranslate"><span class="pre">ResidualBlock</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.sequence_mixer"><code class="docutils literal notranslate"><span class="pre">sequence_mixer</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.input_norm"><code class="docutils literal notranslate"><span class="pre">input_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.condition_mixer"><code class="docutils literal notranslate"><span class="pre">condition_mixer</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.condition_mixer_norm"><code class="docutils literal notranslate"><span class="pre">condition_mixer_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.mlp"><code class="docutils literal notranslate"><span class="pre">mlp</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.mlp_norm"><code class="docutils literal notranslate"><span class="pre">mlp_norm</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.dropout"><code class="docutils literal notranslate"><span class="pre">dropout</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nvsubquadratic.modules.residual_block.ResidualBlock.forward"><code class="docutils literal notranslate"><span class="pre">forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

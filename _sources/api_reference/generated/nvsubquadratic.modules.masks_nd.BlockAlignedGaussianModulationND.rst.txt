@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+BlockAlignedGaussianModulationND
+================================
+
+.. currentmodule:: nvsubquadratic.modules.masks_nd
+
+.. autoclass:: BlockAlignedGaussianModulationND
+   :members:
+   :show-inheritance:

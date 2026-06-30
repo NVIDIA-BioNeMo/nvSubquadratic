@@ -1,0 +1,884 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>The lazy-config system &#8212; nvsubquadratic 0.1.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=631c4e8f" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+
+
+
+    <script src="_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=fd10adb8"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'lazy_config';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+
+    <link rel="icon" href="_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Examples" href="examples/index.html" />
+    <link rel="prev" title="Repository overview" href="repository_overview.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.1" />
+  
+    
+    <script src="_static/searchtools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script src="searchindex.js"></script>
+  
+
+
+  </head>
+
+  <body data-default-mode="">
+
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="nvsubquadratic 0.1.1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="nvsubquadratic 0.1.1 - Home"/>
+  
+  
+    <p class="title logo__title">nvsubquadratic 0.1.1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="index.html">Overview</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="how_hyenand_works.html">How HyenaND Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_overview.html">Repository Overview</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Lazy-Config System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api_reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="ops/README.html">Ops Primer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/ops.html">Ops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/modules.html">Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/networks.html">Networks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/parallel.html">Parallel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/core.html">Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_reference/experiments.html">Experiments</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">The lazy-config system</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="the-lazy-config-system">
+<h1>The lazy-config system<a class="headerlink" href="#the-lazy-config-system" title="Link to this heading">#</a></h1>
+<p>Every training run in this repository is described, end to end, by a single
+Python config file. The network architecture, the dataset, the optimizer,
+the Lightning wrapper, and the schedule are all data, not code wired
+together at the call site. The mechanism that makes this work is the
+<strong>lazy-config</strong> system in <code class="xref py py-mod docutils literal notranslate"><span class="pre">nvsubquadratic.lazy_config</span></code>: a tiny
+deferred-instantiation layer (think of it as a few-hundred-line stand-in for
+Hydra / detectron2 lazy configs) that lets you <em>declare</em> an object (what
+class to build and with what arguments) without <em>building</em> it yet.</p>
+<p>This page explains why we do it this way, how the machinery works, and walks
+through the patterns we actually use in the
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples"><code class="docutils literal notranslate"><span class="pre">examples/</span></code></a>
+configs.</p>
+<section id="why-configs">
+<h2>Why configs?<a class="headerlink" href="#why-configs" title="Link to this heading">#</a></h2>
+<p>We are moving all model building into config files on purpose. Three
+properties motivate it:</p>
+<ul class="simple">
+<li><p><strong>One config per experiment makes research backtrackable.</strong> A run is one
+file, not a pile of CLI flags and a commit hash you have to reconstruct
+months later. Every architectural choice
+(kernel size, number of blocks, whether QK-norm is on, which mixer) lives
+in one place, under version control, next to the runs it produced. To
+reproduce a result you point <code class="docutils literal notranslate"><span class="pre">run.py</span></code> at the same file; to understand what
+a run did you read one file top to bottom.</p></li>
+<li><p><strong>Base configs + overrides make ablations cheap and honest.</strong> You write a
+base config once and define each ablation as a small file that <em>overwrites
+parts of it</em>. A dropout sweep or a mixer swap is its own file, so every run
+still has a complete, self-contained config.
+There is no “remember to also pass <code class="docutils literal notranslate"><span class="pre">--dropout</span> <span class="pre">0.1</span></code>” footgun: the ablation
+is the file. This is exactly how the
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples"><code class="docutils literal notranslate"><span class="pre">examples/</span></code></a>
+configs are organised (see
+<a class="reference internal" href="#the-base-config-and-ablation-pattern">the base-config and ablation pattern</a>
+below).</p></li>
+<li><p><strong>The full architecture is serialisable and diffable.</strong> Because a config
+is plain data (an OmegaConf tree of <code class="docutils literal notranslate"><span class="pre">__target__</span></code> dicts), it can be dumped
+to YAML, logged to W&amp;B, printed as a tree, and <em>diffed</em> against another
+run. “What changed between run A and run B?” becomes a text diff of two
+configs.</p></li>
+</ul>
+<p>The cost is that the config files look a little unusual the first time you
+see one: deeply nested <code class="docutils literal notranslate"><span class="pre">LazyConfig(...)</span></code> calls with <code class="docutils literal notranslate"><span class="pre">&quot;${...}&quot;</span></code> strings
+sprinkled through them. The rest of this page makes that syntax legible.</p>
+</section>
+<section id="the-core-idea-declare-now-build-later">
+<h2>The core idea: declare now, build later<a class="headerlink" href="#the-core-idea-declare-now-build-later" title="Link to this heading">#</a></h2>
+<p>A <a class="reference internal" href="api_reference/generated/nvsubquadratic.lazy_config.LazyConfig.html#nvsubquadratic.lazy_config.LazyConfig" title="nvsubquadratic.lazy_config.LazyConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">LazyConfig</span></code></a> wraps a target class or
+callable. <em>Calling</em> it with keyword arguments does <strong>not</strong> construct the
+object; it produces an OmegaConf <code class="docutils literal notranslate"><span class="pre">DictConfig</span></code> carrying a <code class="docutils literal notranslate"><span class="pre">__target__</span></code> key
+plus the arguments:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nvsubquadratic.lazy_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyConfig</span><span class="p">,</span> <span class="n">instantiate</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">cfg</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">)(</span><span class="n">normalized_shape</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+<span class="c1"># cfg is a DictConfig:</span>
+<span class="c1"># {&quot;__target__&quot;: &quot;torch.nn.LayerNorm&quot;, &quot;normalized_shape&quot;: 768, &quot;eps&quot;: 1e-6}</span>
+
+<span class="n">norm</span> <span class="o">=</span> <span class="n">instantiate</span><span class="p">(</span><span class="n">cfg</span><span class="p">)</span>  <span class="c1"># NOW the LayerNorm is actually built</span>
+<span class="nb">isinstance</span><span class="p">(</span><span class="n">norm</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">)</span>  <span class="c1"># True</span>
+</pre></div>
+</div>
+<p>Two steps, deliberately separated:</p>
+<ol class="arabic simple">
+<li><p><strong>Declare.</strong> <code class="docutils literal notranslate"><span class="pre">LazyConfig(target)(**kwargs)</span></code> records <em>what</em> to build. No
+import of heavy framework code is forced at this point; the target can
+even be a dotted string like <code class="docutils literal notranslate"><span class="pre">&quot;torch.nn.LayerNorm&quot;</span></code>.</p></li>
+<li><p><strong>Build.</strong> <a class="reference internal" href="api_reference/generated/nvsubquadratic.lazy_config.instantiate.html#nvsubquadratic.lazy_config.instantiate" title="nvsubquadratic.lazy_config.instantiate"><code class="xref py py-func docutils literal notranslate"><span class="pre">instantiate()</span></code></a> resolves
+<code class="docutils literal notranslate"><span class="pre">__target__</span></code> via <code class="docutils literal notranslate"><span class="pre">importlib</span></code>, processes the arguments, and calls the
+target.</p></li>
+</ol>
+<p>That separation is the point. Between declare and build, the config is
+just data you can edit, override, interpolate, serialise, and diff.</p>
+</section>
+<section id="nesting">
+<h2>Nesting<a class="headerlink" href="#nesting" title="Link to this heading">#</a></h2>
+<p>Configs nest. A <code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code> result can be passed as an argument to another
+<code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code>, so an entire module tree is one expression:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">block</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">ResidualBlock</span><span class="p">)(</span>
+    <span class="n">sequence_mixer_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">QKVSequenceMixer</span><span class="p">)(</span>
+        <span class="n">hidden_dim</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span>
+        <span class="n">mixer_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">Hyena</span><span class="p">)(</span>
+            <span class="n">global_conv_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">CKConvND</span><span class="p">)(</span><span class="o">...</span><span class="p">),</span>
+            <span class="n">short_conv_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">)(</span><span class="o">...</span><span class="p">),</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">mlp_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">MLP</span><span class="p">)(</span><span class="n">dim</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;glu&quot;</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>When you <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> the outer config, nested configs are resolved
+recursively. There is one subtlety worth knowing
+(<a class="reference internal" href="#deferred-vs-eager-instantiation">deferred vs. eager nesting</a> below): by
+default, nested <strong><code class="docutils literal notranslate"><span class="pre">nn.Module</span></code></strong> configs are passed <em>as config</em> to their
+parent rather than pre-built, so each module constructs its own children and
+can inspect or modify their configs first. Non-module callables (e.g. weight
+init factories) are instantiated eagerly.</p>
+</section>
+<section id="interpolation">
+<h2>Interpolation: <code class="docutils literal notranslate"><span class="pre">&quot;${...}&quot;</span></code><a class="headerlink" href="#interpolation" title="Link to this heading">#</a></h2>
+<p>Configs are OmegaConf trees, so any value can reference another value by its
+dotted path. We use this constantly so that a dimension is written <em>once</em> and
+flows everywhere:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">config</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">ClassificationResNet</span><span class="p">)(</span>
+    <span class="n">hidden_dim</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span>
+    <span class="n">data_dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">in_proj_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">)(</span>
+        <span class="n">in_features</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.in_channels}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="n">out_features</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span>  <span class="c1"># tracks net.hidden_dim</span>
+    <span class="p">),</span>
+    <span class="n">norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">)(</span>
+        <span class="n">normalized_shape</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="o">...</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Change <code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code> in one place and every <code class="docutils literal notranslate"><span class="pre">&quot;${net.hidden_dim}&quot;</span></code> follows.
+Interpolations are resolved at instantiation / override time, not when the
+config is declared, which is why they survive being edited and overridden.</p>
+<p>You can also reference across top-level sections. For example, a kernel’s
+cache length tracks the dataset’s canvas size:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">L_cache</span> <span class="o">=</span> <span class="s2">&quot;$</span><span class="si">{dataset.canvas_size}</span><span class="s2">&quot;</span>
+</pre></div>
+</div>
+<section id="inline-arithmetic">
+<h3>Inline arithmetic<a class="headerlink" href="#inline-arithmetic" title="Link to this heading">#</a></h3>
+<p>Two small conveniences let you do math inside configs:</p>
+<ul>
+<li><p><strong>Plain arithmetic strings</strong> are evaluated by <code class="docutils literal notranslate"><span class="pre">instantiate</span></code>. A value like
+<code class="docutils literal notranslate"><span class="pre">&quot;3</span> <span class="pre">*</span> <span class="pre">${net.hidden_dim}&quot;</span></code> resolves the interpolation and then evaluates
+the arithmetic (<code class="docutils literal notranslate"><span class="pre">&quot;3</span> <span class="pre">*</span> <span class="pre">160&quot;</span></code> → <code class="docutils literal notranslate"><span class="pre">480</span></code>). We use this for the Hyena short
+conv, which operates on a 3×-width tensor:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">short_conv_cfg</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">)(</span>
+    <span class="n">in_channels</span><span class="o">=</span><span class="s2">&quot;3 * $</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span>
+    <span class="n">out_channels</span><span class="o">=</span><span class="s2">&quot;3 * $</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span>
+    <span class="n">groups</span><span class="o">=</span><span class="s2">&quot;3 * $</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span>
+    <span class="o">...</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>The <code class="docutils literal notranslate"><span class="pre">${eval:...}</span></code> resolver</strong> handles arithmetic in CLI overrides and
+trainer interpolations, e.g.
+<code class="docutils literal notranslate"><span class="pre">&quot;${eval:'${trainer.samples_per_epoch}</span> <span class="pre">//</span> <span class="pre">(${train.batch_size}</span> <span class="pre">*</span> <span class="pre">2)'}&quot;</span></code>.
+Only arithmetic on literal numbers is permitted, with no function calls or
+attribute access, so configs stay safe to load. (The <code class="docutils literal notranslate"><span class="pre">${eval:...}</span></code> resolver
+additionally allows <code class="docutils literal notranslate"><span class="pre">**</span></code>; plain arithmetic strings support <code class="docutils literal notranslate"><span class="pre">+</span> <span class="pre">-</span> <span class="pre">*</span> <span class="pre">/</span> <span class="pre">//</span> <span class="pre">%</span></code>
+but not power.)</p></li>
+</ul>
+</section>
+</section>
+<section id="placeholder-a-hole-to-be-filled-later">
+<h2><code class="docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code>: a hole to be filled later<a class="headerlink" href="#placeholder-a-hole-to-be-filled-later" title="Link to this heading">#</a></h2>
+<p><code class="xref py py-data docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code> is a sentinel marking a
+field whose value isn’t known yet at declaration time. It plays two roles:</p>
+<ol class="arabic">
+<li><p><strong>A required slot to be filled later.</strong> A base config marks a field
+<code class="docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code> to say “this <em>must</em> be supplied before the object is built.”
+The hole is filled in one of two ways:</p>
+<ul>
+<li><p><em>By an experiment file, before running.</em> The spatial-recall base config
+sets <code class="docutils literal notranslate"><span class="pre">sequence_mixer_cfg=PLACEHOLDER</span></code>; each ablation file then asserts the
+hole is still empty and plugs in a mixer, a self-documenting contract:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">block_cfg</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">ResidualBlock</span><span class="p">)(</span>
+    <span class="n">sequence_mixer_cfg</span><span class="o">=</span><span class="n">PLACEHOLDER</span><span class="p">,</span> <span class="o">...</span>  <span class="c1"># filled in by the experiment file</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">assert</span> <span class="n">config</span><span class="o">.</span><span class="n">net</span><span class="o">.</span><span class="n">block_cfg</span><span class="o">.</span><span class="n">sequence_mixer_cfg</span> <span class="o">==</span> <span class="n">PLACEHOLDER</span>
+<span class="n">config</span><span class="o">.</span><span class="n">net</span><span class="o">.</span><span class="n">block_cfg</span><span class="o">.</span><span class="n">sequence_mixer_cfg</span> <span class="o">=</span> <span class="n">get_hyena_mixer_cfg</span><span class="p">()</span>
+</pre></div>
+</div>
+</li>
+<li><p><em>By code, at build time.</em> The optimizer is declared with
+<code class="docutils literal notranslate"><span class="pre">params=PLACEHOLDER</span></code> because the parameters don’t exist until the network
+is constructed. The Lightning wrapper fills the slot when it builds the
+optimizer: <code class="docutils literal notranslate"><span class="pre">_build_optimizer</span></code> in
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">experiments.lightning_wrappers.base_lightning_wrapper</span></code> resolves
+the config to a dict and overwrites <code class="docutils literal notranslate"><span class="pre">params</span></code> with the real parameter
+groups. (Note this path constructs the optimizer directly rather than
+through <code class="docutils literal notranslate"><span class="pre">instantiate</span></code>.)</p></li>
+</ul>
+</li>
+<li><p><strong>A “don’t build me yet” guard.</strong> While <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> walks an argument
+tree, any <em>nested</em> config that still contains a <code class="docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code> is left as a
+config dict rather than constructed, so a half-specified subtree is never
+handed to a constructor mid-build. For example, a <code class="docutils literal notranslate"><span class="pre">block_cfg</span></code> whose
+<code class="docutils literal notranslate"><span class="pre">sequence_mixer_cfg</span></code> hole hasn’t been filled is passed through as config
+instead of built. This guard is a check on <em>nested</em> configs only: a bare
+top-level value like the optimizer’s <code class="docutils literal notranslate"><span class="pre">params=PLACEHOLDER</span></code> is not itself
+guarded, which is why that slot is filled in by code (role 1) before the
+object is built.</p></li>
+</ol>
+</section>
+<section id="a-full-example-end-to-end">
+<h2>A full example, end to end<a class="headerlink" href="#a-full-example-end-to-end" title="Link to this heading">#</a></h2>
+<p><a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py"><code class="docutils literal notranslate"><span class="pre">examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py</span></code></a>
+is a complete, self-contained config. Every config file exposes a
+<code class="docutils literal notranslate"><span class="pre">get_config()</span></code> that returns an
+<a class="reference internal" href="api_reference/generated/experiments.default_cfg.ExperimentConfig.html#experiments.default_cfg.ExperimentConfig" title="experiments.default_cfg.ExperimentConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">ExperimentConfig</span></code></a>. The skeleton:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">get_config</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ExperimentConfig</span><span class="p">:</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">ExperimentConfig</span><span class="p">()</span>  <span class="c1"># typed dataclass of sensible defaults</span>
+
+    <span class="c1"># 1. Dataset — a LazyConfig pointing at a LightningDataModule</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">dataset</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">MNISTDataModule</span><span class="p">)(</span>
+        <span class="n">data_dir</span><span class="o">=</span><span class="s2">&quot;.data/mnist&quot;</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span>
+        <span class="n">seed</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+        <span class="n">task</span><span class="o">=</span><span class="s2">&quot;classification&quot;</span><span class="p">,</span>
+        <span class="o">...</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># 2. Network — one big nested LazyConfig tree (the architecture)</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">ClassificationResNet</span><span class="p">)(</span>
+        <span class="n">in_channels</span><span class="o">=</span><span class="n">INPUT_CHANNELS</span><span class="p">,</span>
+        <span class="n">hidden_dim</span><span class="o">=</span><span class="n">NUM_HIDDEN_CHANNELS</span><span class="p">,</span>
+        <span class="n">data_dim</span><span class="o">=</span><span class="n">DATA_DIM</span><span class="p">,</span>
+        <span class="n">in_proj_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">)(</span>
+            <span class="n">in_features</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.in_channels}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span>
+        <span class="p">),</span>
+        <span class="n">norm_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">)(</span><span class="n">normalized_shape</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">),</span>
+        <span class="n">block_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">ResidualBlock</span><span class="p">)(</span>
+            <span class="n">sequence_mixer_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">QKVSequenceMixer</span><span class="p">)(</span>
+                <span class="n">hidden_dim</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">mixer_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">Hyena</span><span class="p">)(</span><span class="o">...</span><span class="p">),</span>
+            <span class="p">),</span>
+            <span class="n">mlp_cfg</span><span class="o">=</span><span class="n">LazyConfig</span><span class="p">(</span><span class="n">MLP</span><span class="p">)(</span><span class="n">dim</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{net.hidden_dim}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;glu&quot;</span><span class="p">,</span> <span class="o">...</span><span class="p">),</span>
+            <span class="o">...</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="c1"># 3. Lightning wrapper, optimizer (note params=PLACEHOLDER)</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">lightning_wrapper_class</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">ClassificationWrapper</span><span class="p">)()</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">LazyConfig</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">)(</span>
+        <span class="n">params</span><span class="o">=</span><span class="n">PLACEHOLDER</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="n">WEIGHT_DECAY</span>
+    <span class="p">)</span>
+
+    <span class="c1"># 4. Plain typed sub-configs for training / schedule / logging</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">train</span> <span class="o">=</span> <span class="n">TrainConfig</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{dataset.batch_size}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">iterations</span><span class="o">=...</span><span class="p">)</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">scheduler</span> <span class="o">=</span> <span class="n">SchedulerConfig</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;cosine&quot;</span><span class="p">,</span> <span class="n">total_iterations</span><span class="o">=</span><span class="s2">&quot;$</span><span class="si">{train.iterations}</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">wandb</span> <span class="o">=</span> <span class="n">WandbConfig</span><span class="p">(</span><span class="n">job_group</span><span class="o">=</span><span class="s2">&quot;mnist_classification&quot;</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">config</span>
+</pre></div>
+</div>
+<p>Notice the mix: <code class="docutils literal notranslate"><span class="pre">dataset</span></code>, <code class="docutils literal notranslate"><span class="pre">net</span></code>, <code class="docutils literal notranslate"><span class="pre">lightning_wrapper_class</span></code>, and <code class="docutils literal notranslate"><span class="pre">optimizer</span></code>
+are <strong><code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code>s</strong> (objects built lazily), while <code class="docutils literal notranslate"><span class="pre">train</span></code>, <code class="docutils literal notranslate"><span class="pre">scheduler</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">wandb</span></code> are <strong>plain typed dataclasses</strong> from
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">experiments.default_cfg</span></code> (values read directly). You only set what
+differs from the defaults.</p>
+<section id="how-run-py-consumes-it">
+<h3>How <code class="docutils literal notranslate"><span class="pre">run.py</span></code> consumes it<a class="headerlink" href="#how-run-py-consumes-it" title="Link to this heading">#</a></h3>
+<p><a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/experiments/run.py"><code class="docutils literal notranslate"><span class="pre">experiments/run.py</span></code></a>
+is the entry point. It:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>experiments/run.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--config<span class="w"> </span>examples/mnist_classification/ccnn_4_160_hyena_rope_qknorm.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>dataset.batch_size<span class="o">=</span><span class="m">64</span><span class="w"> </span>optimizer.lr<span class="o">=</span>3e-4
+</pre></div>
+</div>
+<ol class="arabic">
+<li><p>Loads the file and calls <code class="docutils literal notranslate"><span class="pre">get_config()</span></code>.</p></li>
+<li><p>Applies the <code class="docutils literal notranslate"><span class="pre">key=value</span></code> CLI overrides (after checking none of them clobber
+an interpolated field, as described below).</p></li>
+<li><p>Builds the objects exactly when needed:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">datamodule</span> <span class="o">=</span> <span class="n">instantiate</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">dataset</span><span class="p">)</span>
+<span class="n">network</span> <span class="o">=</span> <span class="n">instantiate</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">net</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">instantiate</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">lightning_wrapper_class</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">,</span> <span class="n">cfg</span><span class="o">=</span><span class="n">config</span><span class="p">)</span>
+</pre></div>
+</div>
+</li>
+</ol>
+<p>The config tree is also serialised and logged to W&amp;B and printed to the
+console as a Rich tree, so the exact specification of every run is captured.</p>
+</section>
+</section>
+<section id="the-base-config-and-ablation-pattern">
+<h2>The base-config and ablation pattern<a class="headerlink" href="#the-base-config-and-ablation-pattern" title="Link to this heading">#</a></h2>
+<p>It is worth studying the
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples/spatial_recall_2d"><code class="docutils literal notranslate"><span class="pre">examples/spatial_recall_2d/</span></code></a>
+directory to see this pattern in practice.
+Instead of copy-pasting a 150-line config per ablation, we factor the shared
+structure into helper functions and keep each experiment file tiny.</p>
+<p><a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/spatial_recall_2d/base_config.py"><code class="docutils literal notranslate"><span class="pre">spatial_recall_2d/base_config.py</span></code></a>
+exposes <code class="docutils literal notranslate"><span class="pre">base_experiment_config(...)</span></code> which returns a fully-formed
+<code class="docutils literal notranslate"><span class="pre">ExperimentConfig</span></code> with the network, optimizer, scheduler, and callbacks all
+wired, but with the sequence mixer and the dataset left as <code class="docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code>.
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/blob/main/examples/spatial_recall_2d/mixer_defaults.py"><code class="docutils literal notranslate"><span class="pre">mixer_defaults.py</span></code></a>
+provides <code class="docutils literal notranslate"><span class="pre">get_hyena_mixer_cfg()</span></code>, <code class="docutils literal notranslate"><span class="pre">get_mamba_mixer_cfg()</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">get_attention_mixer_cfg()</span></code>, each a <code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code> for one mixer family.</p>
+<p>An individual ablation file is then short but still self-contained:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># examples/spatial_recall_2d/emnist_regression_color_selection/ccnn_hyena_s.py</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_config</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ExperimentConfig</span><span class="p">:</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">spatial_recall_2d_base_experiment_config</span><span class="p">(</span>
+        <span class="n">in_channels</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">out_channels</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">hidden_dim</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span>  <span class="c1"># the &quot;S&quot; size</span>
+        <span class="n">training_iterations</span><span class="o">=</span><span class="mi">20_000</span><span class="p">,</span>
+        <span class="n">wandb_job_group</span><span class="o">=</span><span class="s2">&quot;spatial_recall_2d_emnist_color_selection_s&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Fill the mixer hole — swap this line for get_mamba/attention to ablate</span>
+    <span class="k">assert</span> <span class="n">config</span><span class="o">.</span><span class="n">net</span><span class="o">.</span><span class="n">block_cfg</span><span class="o">.</span><span class="n">sequence_mixer_cfg</span> <span class="o">==</span> <span class="n">PLACEHOLDER</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">net</span><span class="o">.</span><span class="n">block_cfg</span><span class="o">.</span><span class="n">sequence_mixer_cfg</span> <span class="o">=</span> <span class="n">get_hyena_mixer_cfg</span><span class="p">()</span>
+
+    <span class="c1"># Fill the dataset hole</span>
+    <span class="k">assert</span> <span class="n">config</span><span class="o">.</span><span class="n">dataset</span> <span class="o">==</span> <span class="n">PLACEHOLDER</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">dataset</span> <span class="o">=</span> <span class="n">base_emnist_spatial_recall_2d_dataset_config</span><span class="p">(</span>
+        <span class="n">target_size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>
+        <span class="n">canvas_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+        <span class="n">use_colored_frames</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">num_items</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="n">placement</span><span class="o">=</span><span class="s2">&quot;random&quot;</span><span class="p">,</span>
+        <span class="n">with_mask</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">normalize_input</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">config</span>
+</pre></div>
+</div>
+<p>To ablate the mixer, you change one line and the filename (<code class="docutils literal notranslate"><span class="pre">ccnn_hyena_s.py</span></code>
+→ <code class="docutils literal notranslate"><span class="pre">ccnn_mamba_xs.py</span></code>). To ablate size, you change <code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code>. Each variant
+is its own file, so each run still carries a <em>complete</em> config, yet the diff
+between any two variants is one or two lines. This is the backtrackable,
+ablation-friendly workflow the config system is built for.</p>
+<p>Because helpers return <code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code> trees built from <code class="docutils literal notranslate"><span class="pre">&quot;${...}&quot;</span></code>
+interpolations, the swapped-in mixer automatically picks up <code class="docutils literal notranslate"><span class="pre">hidden_dim</span></code>,
+<code class="docutils literal notranslate"><span class="pre">data_dim</span></code>, <code class="docutils literal notranslate"><span class="pre">num_blocks</span></code>, and <code class="docutils literal notranslate"><span class="pre">canvas_size</span></code> from the surrounding config, so
+you never restate them.</p>
+</section>
+<section id="overriding-from-the-command-line">
+<h2>Overriding from the command line<a class="headerlink" href="#overriding-from-the-command-line" title="Link to this heading">#</a></h2>
+<p>Any field can be overridden with <code class="docutils literal notranslate"><span class="pre">key=value</span></code> positional arguments to
+<code class="docutils literal notranslate"><span class="pre">run.py</span></code>. Values are auto-typed (<code class="docutils literal notranslate"><span class="pre">int</span></code> → <code class="docutils literal notranslate"><span class="pre">float</span></code> → <code class="docutils literal notranslate"><span class="pre">None</span></code> → <code class="docutils literal notranslate"><span class="pre">bool</span></code> → tuple →
+list → <code class="docutils literal notranslate"><span class="pre">str</span></code>), and dotted paths reach into nested configs:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>experiments/run.py<span class="w"> </span>--config<span class="w"> </span>&lt;file&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>train.batch_size<span class="o">=</span><span class="m">32</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>optimizer.lr<span class="o">=</span>3e-4<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>net.hidden_dim<span class="o">=</span><span class="m">256</span>
+</pre></div>
+</div>
+<p>Two guardrails are worth knowing:</p>
+<ul class="simple">
+<li><p><strong>You cannot override an interpolated field.</strong> If a field’s current value
+is a <code class="docutils literal notranslate"><span class="pre">&quot;${...}&quot;</span></code> string, overriding it directly is rejected
+(<code class="docutils literal notranslate"><span class="pre">verify_no_interpolator_overwrites</span></code>). Override the <em>source</em> of the
+interpolation instead: set <code class="docutils literal notranslate"><span class="pre">net.hidden_dim=256</span></code>, not the dozen places
+that read <code class="docutils literal notranslate"><span class="pre">&quot;${net.hidden_dim}&quot;</span></code>.</p></li>
+<li><p><strong>Add genuinely new keys with <code class="docutils literal notranslate"><span class="pre">+</span></code>.</strong> <code class="docutils literal notranslate"><span class="pre">key=value</span></code> requires the key to exist
+(typo protection); Hydra-style <code class="docutils literal notranslate"><span class="pre">+key=value</span></code> force-adds it.</p></li>
+</ul>
+<p>Overrides also feed the deterministic run name, so a sweep over
+<code class="docutils literal notranslate"><span class="pre">optimizer.lr</span></code> produces distinctly named, individually reproducible runs.</p>
+</section>
+<section id="two-details-that-explain-the-rest">
+<h2>Two details that explain the rest<a class="headerlink" href="#two-details-that-explain-the-rest" title="Link to this heading">#</a></h2>
+<section id="deferred-vs-eager-instantiation">
+<h3>Deferred vs. eager instantiation<a class="headerlink" href="#deferred-vs-eager-instantiation" title="Link to this heading">#</a></h3>
+<p>When <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> walks the argument tree it decides, per nested config,
+whether to build it now or pass it through as config:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> subclasses are passed through as config</strong> (a <code class="docutils literal notranslate"><span class="pre">DictConfig</span></code>),
+not pre-built. The parent module receives the child’s config and
+constructs it itself. This lets a network inspect or tweak block configs
+(injecting <code class="docutils literal notranslate"><span class="pre">drop_path_rate</span></code>, reading <code class="docutils literal notranslate"><span class="pre">&quot;${net.num_blocks}&quot;</span></code>) before building
+them.</p></li>
+<li><p><strong>Non-module callables are instantiated eagerly.</strong> For example, a
+weight-init factory like <code class="docutils literal notranslate"><span class="pre">partial_wang_init_fn_with_num_layers(num_layers=...)</span></code>
+is resolved to a function and handed to the module ready to use.</p></li>
+</ul>
+<p>Passing <code class="docutils literal notranslate"><span class="pre">recursive_instantiate=True</span></code> overrides this and builds everything
+top-down; the default (<code class="docutils literal notranslate"><span class="pre">False</span></code>) is what the module tree relies on.</p>
+</section>
+<section id="serialisation">
+<h3>Serialisation<a class="headerlink" href="#serialisation" title="Link to this heading">#</a></h3>
+<p><code class="xref py py-func docutils literal notranslate"><span class="pre">save_config()</span></code> /
+<code class="xref py py-func docutils literal notranslate"><span class="pre">load_config()</span></code> round-trip a config to
+YAML via OmegaConf, and <code class="docutils literal notranslate"><span class="pre">config_to_dict</span></code> (used by <code class="docutils literal notranslate"><span class="pre">run.py</span></code>) flattens the
+whole tree (<code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code>s, dataclasses, function references) into a
+JSON-serialisable dict for W&amp;B and the console tree. This is what makes a run
+fully recoverable from its logged config.</p>
+</section>
+</section>
+<section id="mental-model-cheat-sheet">
+<h2>Mental model / cheat sheet<a class="headerlink" href="#mental-model-cheat-sheet" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">LazyConfig(Target)(**kwargs)</span></code> → a config dict; nothing is built yet.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">instantiate(cfg)</span></code> → the actual object.</p></li>
+<li><p>Nest <code class="docutils literal notranslate"><span class="pre">LazyConfig</span></code>s to describe a whole module tree as one expression.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;${a.b.c}&quot;</span></code> references another field; resolved at build/override time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;3</span> <span class="pre">*</span> <span class="pre">${net.hidden_dim}&quot;</span></code> does inline arithmetic after interpolation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code> marks a hole that must be filled and blocks premature builds.</p></li>
+<li><p>One file per experiment; a base helper + a one-line swap per ablation.</p></li>
+<li><p>Override with <code class="docutils literal notranslate"><span class="pre">key=value</span></code> on the CLI; never override a <code class="docutils literal notranslate"><span class="pre">&quot;${...}&quot;</span></code> field
+directly. Change its source.</p></li>
+</ul>
+<p>For the bigger picture of where configs sit in the stack, see
+<a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a>; for runnable recipes, the
+<a class="reference external" href="https://github.com/NVIDIA-BioNeMo/nvSubquadratic/tree/main/examples"><code class="docutils literal notranslate"><span class="pre">examples/</span></code></a>
+configs.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="repository_overview.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Repository overview</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="examples/index.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Examples</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#why-configs">Why configs?</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-core-idea-declare-now-build-later">The core idea: declare now, build later</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nesting">Nesting</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#interpolation">Interpolation: <code class="docutils literal notranslate"><span class="pre">"${...}"</span></code></a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#inline-arithmetic">Inline arithmetic</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#placeholder-a-hole-to-be-filled-later"><code class="docutils literal notranslate"><span class="pre">PLACEHOLDER</span></code>: a hole to be filled later</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#a-full-example-end-to-end">A full example, end to end</a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#how-run-py-consumes-it">How <code class="docutils literal notranslate"><span class="pre">run.py</span></code> consumes it</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-base-config-and-ablation-pattern">The base-config and ablation pattern</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#overriding-from-the-command-line">Overriding from the command line</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#two-details-that-explain-the-rest">Two details that explain the rest</a><ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#deferred-vs-eager-instantiation">Deferred vs. eager instantiation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#serialisation">Serialisation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mental-model-cheat-sheet">Mental model / cheat sheet</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2025-2026 NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>
