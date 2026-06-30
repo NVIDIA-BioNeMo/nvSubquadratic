@@ -391,7 +391,7 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
 
         # Construct slice objects to index the grid cache.
         slices = [slice(offset, offset + (seq_len * 2) - 1) for offset, seq_len in zip(offsets, seq_lens)]
-        grid = self.grid_cache[:, *slices]
+        grid = self.grid_cache[(slice(None), *slices)]
 
         # Compute the linear projection. We need to ensure that the linear projection is done in float32.
         linear_dtype = self.linear.weight.dtype
@@ -856,7 +856,7 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
 
         # Construct slice objects to index the grid cache.
         slices = [slice(offset, offset + (seq_len * 2) - 1) for offset, seq_len in zip(offsets, seq_lens)]
-        grid = self.grid_cache[:, *slices]  # type: ignore
+        grid = self.grid_cache[(slice(None), *slices)]  # type: ignore
 
         # Compute the linear projection.
         linear_dtype = self.linear.weight.dtype
@@ -1898,7 +1898,7 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
         # Slice the cached grid to the requested per-axis lengths.
         offsets = [L - sl for L, sl in zip(self.L_cache_per_axis, seq_lens)]
         slices = [slice(off, off + (sl * 2) - 1) for off, sl in zip(offsets, seq_lens)]
-        grid = self.grid_cache[:, *slices]  # type: ignore
+        grid = self.grid_cache[(slice(None), *slices)]  # type: ignore
 
         # ── float32 inner block: linear → multiplier → sin ────────────────
         # We force fp32 for the matmul, the per-row multiplier, and the sine

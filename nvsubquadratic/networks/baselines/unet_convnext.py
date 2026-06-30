@@ -49,8 +49,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from timm.layers import DropPath
 from torch.utils.checkpoint import checkpoint
+
+
+# timm is an optional dependency — only the stochastic-depth DropPath in these
+# ConvNeXt baselines uses it. Import lazily so the module (and the rest of
+# networks.baselines) loads without timm installed; a clear error is raised only
+# if a model is actually built with drop_path > 0. Install: nvsubquadratic[baselines].
+try:
+    from timm.layers import DropPath
+except ImportError:  # pragma: no cover - exercised only when timm is absent
+    DropPath = None
 
 
 conv_modules = {1: nn.Conv1d, 2: nn.Conv2d, 3: nn.Conv3d}
@@ -148,7 +157,15 @@ class _Block(nn.Module):
             if layer_scale_init_value > 0
             else None
         )
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        if drop_path > 0.0:
+            if DropPath is None:
+                raise ImportError(
+                    "timm is required for stochastic depth (drop_path > 0) in the ConvNeXt "
+                    "baselines. Install it with: pip install 'nvsubquadratic[baselines]'"
+                )
+            self.drop_path = DropPath(drop_path)
+        else:
+            self.drop_path = nn.Identity()
 
     def forward(self, x):
         input = x

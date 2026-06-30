@@ -77,3 +77,25 @@ jobs:
           # Runs: trailing-whitespace, check-yaml, ruff, mdformat, detect-secrets, license-header-check
           # Does NOT run pytest-pre-push / torchrun-cp-tests (those are pre-push stage)
           pre-commit run --all-files --hook-stage commit --show-diff-on-failure --color always
+
+  # Guards the `requires-python` floor: byte-compiles the shipped package under
+  # every supported interpreter so version-specific syntax (e.g. PEP 646
+  # star-in-subscript, 3.11+) can't silently break installs on older Pythons.
+  # No deps/GPU needed — compileall only parses + byte-compiles the source.
+  compile:
+    name: Byte-compile (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep in sync with `requires-python` and the classifiers in pyproject.toml.
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Byte-compile shipped package
+        run: python -m compileall -q nvsubquadratic

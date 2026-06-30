@@ -104,7 +104,7 @@ def _get_fft_conv2d():
         except ImportError as exc:
             raise ImportError(
                 "subquadratic_ops_torch is required for fft_backend='subq_ops'. "
-                "Install it with: pip install subquadratic_ops_torch"
+                "Install the accelerated CUDA kernels with: pip install 'nvsubquadratic[cuda]'"
             ) from exc
     return _fft_conv2d
 
@@ -278,7 +278,7 @@ def _get_fft_causal_conv1d():
         except ImportError as exc:
             raise ImportError(
                 "subquadratic_ops_torch is required for fft_backend='subq_ops'. "
-                "Install it with: pip install subquadratic_ops_torch"
+                "Install the accelerated CUDA kernels with: pip install 'nvsubquadratic[cuda]'"
             ) from exc
     return _fft_causal_conv1d
 
