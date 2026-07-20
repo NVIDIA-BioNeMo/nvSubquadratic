@@ -231,9 +231,24 @@ def time_forward(
                 "mem_gb": torch.cuda.max_memory_allocated(device) / (1024**3),
             }
 
+        # ── Adaptive iteration counts ─────────────────────────────────────────
+        # Per-forward cost spans ~1e-3 s (small hyena) to minutes (attention at
+        # multi-M tokens). A fixed count would be noisy for fast ops and run for
+        # hours on slow ones (30 iters x a 5-min forward = 2.5 h for one point).
+        # Scale both warmup and timed counts to the measured cost, keeping each
+        # point within the per-point time budget. num_warmup/num_iters are caps.
+        target_timed_s = 5.0
+        min_timed_iters = 3
+        n_timed = round(target_timed_s / max(first_forward_s, 1e-9))
+        n_timed = max(min_timed_iters, min(num_iters, n_timed))
+        # Never let the timed loop exceed the budget for slow ops.
+        n_timed = min(n_timed, max(1, int(max_seconds / max(first_forward_s, 1e-9))))
+        # Extra warmup only pays off for cheap forwards; skip it for slow ones.
+        extra_warmup = max(0, num_warmup - 1) if first_forward_s < 1.0 else 0
+
         # ── Remaining warmup ──────────────────────────────────────────────────
         with torch.inference_mode(), torch.autocast("cuda", dtype=dtype):
-            for _ in range(max(0, num_warmup - 1)):
+            for _ in range(extra_warmup):
                 _ = module(x)
         torch.cuda.synchronize(device)
 
@@ -243,15 +258,16 @@ def time_forward(
         torch.cuda.synchronize(device)
         start.record()
         with torch.inference_mode(), torch.autocast("cuda", dtype=dtype):
-            for _ in range(num_iters):
+            for _ in range(n_timed):
                 _ = module(x)
         end.record()
         torch.cuda.synchronize(device)
 
         return {
             "status": "ok",
-            "ms": start.elapsed_time(end) / num_iters,
+            "ms": start.elapsed_time(end) / n_timed,
             "mem_gb": torch.cuda.max_memory_allocated(device) / (1024**3),
+            "iters": n_timed,
         }
     except Exception as exc:
         status = "oom" if _is_oom(exc) else "error"
@@ -447,7 +463,11 @@ def main() -> None:
 
                 ms, mem = result.get("ms"), result.get("mem_gb")
                 if result["status"] == "ok":
-                    print(f"   ms/fwd = {ms:9.3f}  |  peak mem = {mem:6.2f} GB  |  wall = {wall:5.1f}s", flush=True)
+                    n = result.get("iters", "?")
+                    print(
+                        f"   ms/fwd = {ms:9.3f} (n={n})  |  peak mem = {mem:6.2f} GB  |  wall = {wall:5.1f}s",
+                        flush=True,
+                    )
                     last_ok = (seq_len, ms)
                 elif result["status"] == "timeout":
                     shown = f"{ms / 1000.0:.1f}s" if ms is not None else "n/a"
@@ -469,6 +489,7 @@ def main() -> None:
                     "status": result["status"],
                     "ms": ms,
                     "mem_gb": mem,
+                    "iters": result.get("iters"),
                 }
                 if "detail" in result:
                     record["detail"] = result["detail"]
