@@ -15,13 +15,22 @@ set -euo pipefail
 PLATFORM="${PLATFORM:-x86_64}"
 
 case "${PLATFORM}" in
-    x86_64) DOCKER_PLATFORM="linux/amd64"; TARGET_HW="H100 (x86-64)"; CUDA_ARCHS="9.0"; MAX_JOBS="" ;;
-    arm64)  DOCKER_PLATFORM="linux/arm64"; TARGET_HW="GB200 (ARM64)"; CUDA_ARCHS="10.0;12.0"; MAX_JOBS="2" ;;
+    x86_64) DOCKER_PLATFORM="linux/amd64"; TARGET_HW="H100 (x86-64)"; CUDA_ARCHS="9.0"; MAX_JOBS_DEFAULT="" ;;
+    arm64)  DOCKER_PLATFORM="linux/arm64"; TARGET_HW="GB200 (ARM64)"; CUDA_ARCHS="10.0;12.0"; MAX_JOBS_DEFAULT="1" ;;
     *)      echo "Error: unknown PLATFORM=${PLATFORM}. Use x86_64 or arm64."; exit 1 ;;
 esac
 
+MAX_JOBS="${MAX_JOBS:-${MAX_JOBS_DEFAULT}}"
+
+if [[ "${PLATFORM}" == "arm64" && "$(uname -m)" != "aarch64" ]]; then
+    echo "Warning: building linux/arm64 on $(uname -m) uses QEMU emulation."
+    echo "         Apex CUDA compilation is slow and may ICE/OOM (gcc segfault)."
+    echo "         Prefer building natively on GB200, or set MAX_JOBS=1 (default)."
+    echo "         Ensure Docker has plenty of RAM (64GB+ recommended)."
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 DOCKER_TAG="${DOCKER_TAG:-nvsubquadratic:${PLATFORM}}"
 OUTPUT_SQSH="${OUTPUT_SQSH:-${SCRIPT_DIR}/nvsubquadratic-${PLATFORM}.sqsh}"
