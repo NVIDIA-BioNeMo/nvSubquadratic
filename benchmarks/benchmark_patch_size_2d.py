@@ -110,7 +110,13 @@ MAMBA_BIDIRECTIONAL = True
 # ─── Mixer config builders (concrete — no OmegaConf interpolation) ────────────
 
 
-def _hyena_mixer_cfg(hidden_dim: int, fft_backend: str) -> LazyConfig:
+def _hyena_mixer_cfg(
+    hidden_dim: int,
+    fft_backend: str,
+    *,
+    canvas_size: int = CANVAS_SIZE,
+    grid_type: str = "double",
+) -> LazyConfig:
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
         mixer_cfg=LazyConfig(Hyena)(
@@ -124,12 +130,12 @@ def _hyena_mixer_cfg(hidden_dim: int, fft_backend: str) -> LazyConfig:
                     num_layers=KERNEL_NUM_LAYERS,
                     embedding_dim=KERNEL_EMBEDDING_DIM,
                     omega_0=KERNEL_OMEGA_0,
-                    L_cache=CANVAS_SIZE,
+                    L_cache=canvas_size,
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double",
+                grid_type=grid_type,
                 fft_padding="zero",
                 fft_backend=fft_backend,
             ),
@@ -144,32 +150,43 @@ def _hyena_mixer_cfg(hidden_dim: int, fft_backend: str) -> LazyConfig:
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
             qk_norm_cfg=None,
-            use_rope=False,
-            rope_base=10000.0,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
     )
 
 
-def _attention_mixer_cfg(hidden_dim: int) -> LazyConfig:
+def _attention_mixer_cfg(
+    hidden_dim: int,
+    *,
+    num_heads: int = ATTN_NUM_HEADS,
+    use_rope: bool = ATTN_USE_ROPE,
+    rope_spatial_dims: tuple[int, ...] | None = None,
+) -> LazyConfig:
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
         mixer_cfg=LazyConfig(Attention)(
             hidden_dim=hidden_dim,
-            num_heads=ATTN_NUM_HEADS,
+            num_heads=num_heads,
             apply_qk_norm=True,
-            use_rope=ATTN_USE_ROPE,
+            use_rope=use_rope,
             is_causal=False,
             rope_base=10000.0,
             attn_dropout=0.0,
+            rope_spatial_dims=rope_spatial_dims,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
     )
 
 
-def _mamba_mixer_cfg(hidden_dim: int) -> LazyConfig:
+def _mamba_mixer_cfg(
+    hidden_dim: int,
+    *,
+    headdim: int = MAMBA_HEADDIM,
+    expand: int = MAMBA_EXPAND,
+    bidirectional: bool = MAMBA_BIDIRECTIONAL,
+) -> LazyConfig:
     from mamba_ssm import Mamba2
 
     from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
@@ -177,10 +194,10 @@ def _mamba_mixer_cfg(hidden_dim: int) -> LazyConfig:
     return LazyConfig(MambaNDMixer)(
         mamba_layer_cfg=LazyConfig(Mamba2)(
             d_model=hidden_dim,
-            headdim=MAMBA_HEADDIM,
-            expand=MAMBA_EXPAND,
+            headdim=headdim,
+            expand=expand,
         ),
-        bidirectional=MAMBA_BIDIRECTIONAL,
+        bidirectional=bidirectional,
     )
 
 

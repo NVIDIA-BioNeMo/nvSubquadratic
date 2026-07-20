@@ -1,6 +1,6 @@
 # slurm/enroot — Container Image Build
 
-Builds the top-level [`Dockerfile`](../../Dockerfile) and converts the result to an enroot `.sqsh` for use with `srun --container-image=...` / `pyxis` on SLURM clusters.
+Builds the top-level [`Dockerfile`](../../../Dockerfile) and converts the result to an enroot `.sqsh` for use with `srun --container-image=...` / `pyxis` on SLURM clusters.
 
 ## Build
 
@@ -14,9 +14,11 @@ The script selects per-platform `--build-arg` values:
 | `PLATFORM` | `TORCH_CUDA_ARCH_LIST` | `MAX_JOBS` | Target HW           |
 | ---------- | ---------------------- | ---------- | ------------------- |
 | `x86_64`   | `9.0`                  | unset      | H100                |
-| `arm64`    | `10.0;12.0`            | `2`        | GB200 (B200 / 5090) |
+| `arm64`    | `10.0;12.0`            | `1`        | GB200 (B200 / 5090) |
 
-`MAX_JOBS=2` on arm64 caps parallel nvcc jobs to avoid OOM under qemu emulation. On x86_64 it stays unset (parallel) for fastest builds.
+`MAX_JOBS=1` on arm64 serializes nvcc jobs to reduce OOM/gcc-ICE failures under QEMU emulation. On x86_64 it stays unset (parallel) for fastest builds. Override with `MAX_JOBS=2` (or unset) if you have ample RAM and a native ARM build host.
+
+**ARM64 on x86 hosts:** `PLATFORM=arm64` cross-builds via QEMU. Apex compilation can take many hours and may fail with `gcc: internal compiler error: Segmentation fault` if the host is memory-constrained. Prefer building on GB200 (or another `aarch64` machine) when possible.
 
 ## Override
 
