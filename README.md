@@ -82,7 +82,7 @@ docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic nvsubqua
 The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Two build-args let you tune the compile:
 
 - `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4).
-- `MAX_JOBS` — number of parallel nvcc jobs. Defaults to unconstrained. Set to a small number (e.g. `2`) if the build OOMs (typical under qemu emulation).
+- `MAX_JOBS` — number of parallel nvcc jobs. Defaults to unconstrained. Set to `1` if the build OOMs or gcc ICEs (typical under qemu emulation for arm64).
 
 ```bash
 docker build \
@@ -98,7 +98,7 @@ For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.s
 # H100 (x86-64, default)
 scripts/slurm/enroot/build_sqsh.sh
 
-# GB200 (ARM64) — uses qemu emulation on an x86 build host
+# GB200 (ARM64) — prefer a native aarch64 host; x86 uses slow QEMU emulation
 PLATFORM=arm64 scripts/slurm/enroot/build_sqsh.sh
 ```
 
