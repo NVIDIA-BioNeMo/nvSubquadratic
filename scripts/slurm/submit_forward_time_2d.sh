@@ -15,25 +15,33 @@ set -x
 # 2D forward-time-vs-resolution benchmark (the 2D analogue of Figure 1, right).
 #
 # Times a single HyenaND / Attention / Mamba2 layer at growing square
-# resolutions on ONE GB200 GPU and writes a JSONL, then renders the paper-style
+# resolutions on ONE GPU and writes a JSONL, then renders the paper-style
 # log-log plot. Single-GPU microbenchmark (no torchrun / CP): we pin
 # CUDA_VISIBLE_DEVICES=0 even on an exclusive multi-GPU node.
 #
-# Usage:
+# Usage (defaults target the GB200 arm64 image + partition below):
 #   sbatch scripts/slurm/submit_forward_time_2d.sh
+#
+#   # H100 instead: use the x86_64 image and a Hopper partition (the defaults
+#   # sweep unchanged — the ~15 GB peak at 2048^2 fits an 80 GB H100, and the
+#   # ceiling is the 4096^2 torch 32-bit-index wall, not memory):
+#   SQSH_PATH=/lustre/.../enroot/nvsubquadratic-x86_64.sqsh \
+#       sbatch --partition=<h100_partition> scripts/slurm/submit_forward_time_2d.sh
 #
 # The defaults sweep 64x64 .. 8192x8192 (4K .. 64M tokens) at hidden_dim=64 with
 # the circular (single-grid) kernel, so a *single* run produces the whole story:
-# the 3-way HyenaND/Attention/Mamba2 comparison where they overlap, and HyenaND
-# continuing alone to 64M tokens after attention (O(L^2)) and Mamba wall out.
-# Adaptive timing keeps the slow high-R points cheap; MAX_SECONDS marks where a
-# point becomes an 'x'.
+# the HyenaND/Attention (+Mamba2 if installed) comparison where they overlap, and
+# HyenaND scaling far past attention's O(L^2) wall. Observed reach at hidden_dim=64
+# is ~2048^2 (4M tokens, ~1200x faster than attention there); at 4096^2+ every
+# operator hits torch's 2^31-element 32-bit-indexing limit and errors (that top-end
+# 'x' is a torch limit, not subq_ops or memory). Adaptive timing keeps the slow
+# high-R points cheap; MAX_SECONDS marks where attention becomes an 'x'.
 #
-# All mixers ALWAYS share one hidden_dim (one comparable plot). hidden_dim=64 is
-# the largest shared value that still fits HyenaND's 8192^2 kernel (~17 GB) on one
-# B200; a bigger dim would OOM HyenaND at the top — the point is to show it
-# surviving. Every parameter is an environment override (one script, not modes);
-# these change the shared value / range for the WHOLE run, they do not mix dims:
+# All mixers ALWAYS share one hidden_dim (one comparable plot). Peak memory at
+# 2048^2 is ~15 GB, so hidden_dim=64 fits an 80 GB H100 and a GB200 alike; the
+# ceiling is the 32-bit-index wall above, not memory. Every parameter is an
+# environment override (one script, not modes); these change the shared value /
+# range for the WHOLE run, they do not mix dims:
 #   # all three at hidden 256, non-circular (whole run) — caps ~4096^2:
 #   HIDDEN_DIM=256 GRID_TYPE=double RESOLUTIONS="64 128 256 512 1024 2048 4096" \
 #       sbatch scripts/slurm/submit_forward_time_2d.sh

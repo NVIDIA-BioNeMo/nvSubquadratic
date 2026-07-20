@@ -270,7 +270,12 @@ def time_forward(
             "iters": n_timed,
         }
     except Exception as exc:
-        status = "oom" if _is_oom(exc) else "error"
+        if isinstance(exc, ImportError):  # e.g. mamba_ssm not installed — not a wall
+            status = "unavailable"
+        elif _is_oom(exc):
+            status = "oom"
+        else:
+            status = "error"
         return {"status": status, "ms": None, "mem_gb": None, "detail": repr(exc)}
     finally:
         del module, x
