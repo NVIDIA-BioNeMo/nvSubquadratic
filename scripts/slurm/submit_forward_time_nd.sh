@@ -20,13 +20,13 @@ set -x
 # CUDA_VISIBLE_DEVICES=0 even on an exclusive multi-GPU node.
 #
 # Usage (defaults target the GB200 arm64 image + partition below):
-#   sbatch scripts/slurm/submit_forward_time_2d.sh
+#   sbatch scripts/slurm/submit_forward_time_nd.sh
 #
 #   # H100 instead: use the x86_64 image and a Hopper partition (the defaults
 #   # sweep unchanged — the ~15 GB peak at 2048^2 fits an 80 GB H100, and the
 #   # ceiling is the 4096^2 torch 32-bit-index wall, not memory):
 #   SQSH_PATH=/lustre/.../enroot/nvsubquadratic-x86_64.sqsh \
-#       sbatch --partition=<h100_partition> scripts/slurm/submit_forward_time_2d.sh
+#       sbatch --partition=<h100_partition> scripts/slurm/submit_forward_time_nd.sh
 #
 # The defaults sweep 64x64 .. 8192x8192 (4K .. 64M tokens) at hidden_dim=64 with
 # the circular (single-grid) kernel, so a *single* run produces the whole story:
@@ -44,15 +44,15 @@ set -x
 # range for the WHOLE run, they do not mix dims:
 #   # all three at hidden 256, non-circular (whole run) — caps ~4096^2:
 #   HIDDEN_DIM=256 GRID_TYPE=double RESOLUTIONS="64 128 256 512 1024 2048 4096" \
-#       sbatch scripts/slurm/submit_forward_time_2d.sh
+#       sbatch scripts/slurm/submit_forward_time_nd.sh
 #   # HyenaND-reach-to-8K, apple-to-apple: all three at hidden 8 (the largest
 #   # shared width whose qkv tensor 3*hidden*R^2 stays under 2^31 at 8192^2), so
 #   # HyenaND continues to 64M while Attention (~16M) and Mamba (~4M) x out at the
 #   # SAME config. num_heads/mamba_headdim reduced to divide hidden 8:
 #   HIDDEN_DIM=8 NUM_HEADS=2 MAMBA_HEADDIM=8 \
-#       sbatch scripts/slurm/submit_forward_time_2d.sh
+#       sbatch scripts/slurm/submit_forward_time_nd.sh
 #   # HyenaND only:
-#   MIXERS=hyena sbatch scripts/slurm/submit_forward_time_2d.sh
+#   MIXERS=hyena sbatch scripts/slurm/submit_forward_time_nd.sh
 #
 # Prerequisites:
 #   * The repo (with these benchmark scripts) is on the cluster at CODE_PATH; it
@@ -72,22 +72,29 @@ MOUNTS="${CODE_PATH}:${CODE_MOUNT}"
 mkdir -p "${RESULTS_HOST}"
 
 # ── Benchmark parameters (override any from the environment) ──────────────────
+DATA_DIM="${DATA_DIM:-2}"          # 1 | 2 | 3   (L = R^DATA_DIM)
 MIXERS="${MIXERS:-attention hyena mamba}"
-HIDDEN_DIM="${HIDDEN_DIM:-64}"
-# Attention/Mamba shape params — must divide hidden_dim. Reduce these with
-# hidden_dim: at hidden 8 use NUM_HEADS=2 (head_dim 4, valid for 2D RoPE) and
-# MAMBA_HEADDIM=8 (d_inner=hidden*2=16 must be divisible by it).
-NUM_HEADS="${NUM_HEADS:-8}"
-MAMBA_HEADDIM="${MAMBA_HEADDIM:-64}"
+# Shared width. hidden 8 (num_heads 2, mamba_headdim 8) keeps the qkv tensor
+# 3*hidden*R^N under torch's 2^31 index limit through ~16M tokens in every dim.
+HIDDEN_DIM="${HIDDEN_DIM:-8}"
+NUM_HEADS="${NUM_HEADS:-2}"
+MAMBA_HEADDIM="${MAMBA_HEADDIM:-8}"
 GRID_TYPE="${GRID_TYPE:-single}"
-RESOLUTIONS="${RESOLUTIONS:-64 128 256 512 1024 2048 4096 8192}"
-FFT_BACKEND="${FFT_BACKEND:-subq_ops}"
+# Per-dim resolution sweep (R), each topping out near 16M tokens. Override with RESOLUTIONS=.
+#   1D: L = R      2D: L = R^2      3D: L = R^3
+case "${DATA_DIM}" in
+    1) RESOLUTIONS="${RESOLUTIONS:-4096 16384 65536 262144 1048576 4194304 16777216}" ;;
+    2) RESOLUTIONS="${RESOLUTIONS:-64 128 256 512 1024 2048 4096}" ;;
+    3) RESOLUTIONS="${RESOLUTIONS:-16 32 64 128 256}" ;;
+    *) echo "DATA_DIM must be 1, 2, or 3 (got '${DATA_DIM}')"; exit 1 ;;
+esac
+FFT_BACKEND="${FFT_BACKEND:-subq_ops}"   # 1D=causal fused, 2D=fused; 3D auto-falls back to torch_fft
 DTYPE="${DTYPE:-bf16}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 NUM_WARMUP="${NUM_WARMUP:-10}"
 NUM_ITERS="${NUM_ITERS:-30}"
 MAX_SECONDS="${MAX_SECONDS:-300}"
-OUT="${OUT:-forward_time_2d}"
+OUT="${OUT:-forward_time_${DATA_DIM}d}"
 
 JSONL="${CODE_MOUNT}/benchmarks/results/${OUT}.jsonl"
 PNG="${CODE_MOUNT}/benchmarks/results/${OUT}.png"
@@ -99,7 +106,7 @@ export CUDA_VISIBLE_DEVICES=0
 cd ${CODE_MOUNT}
 
 echo "======================================================"
-echo "2D forward-time benchmark"
+echo "${DATA_DIM}D forward-time benchmark  (L = R^${DATA_DIM})"
 echo "mixers='${MIXERS}' hidden_dim=${HIDDEN_DIM} grid=${GRID_TYPE} backend=${FFT_BACKEND}"
 echo "resolutions='${RESOLUTIONS}' dtype=${DTYPE} batch=${BATCH_SIZE} max_s=${MAX_SECONDS}"
 echo "======================================================"
@@ -107,7 +114,8 @@ python -c "import torch; print('GPU:', torch.cuda.get_device_name(0))"
 python -c "import subquadratic_ops_torch; print('subq_ops: available')" \
     || echo "WARNING: subquadratic_ops_torch missing — hyena subq_ops points will error."
 
-PYTHONPATH=. python benchmarks/benchmark_forward_time_2d_resolution.py \
+PYTHONPATH=. python benchmarks/benchmark_forward_time_nd_resolution.py \
+    --data-dim ${DATA_DIM} \
     --fft-backend ${FFT_BACKEND} \
     --grid-type ${GRID_TYPE} \
     --dtype ${DTYPE} \
@@ -124,8 +132,8 @@ PYTHONPATH=. python benchmarks/benchmark_forward_time_2d_resolution.py \
 
 # Render the plot in-job (matplotlib ships in the dev image); harmless if absent.
 python -c "import matplotlib" 2>/dev/null \
-    && PYTHONPATH=. python scripts/visualization/visualize_forward_time_2d.py \
-           --input ${JSONL} --out ${PNG} \
+    && PYTHONPATH=. python scripts/visualization/visualize_forward_time_nd.py \
+           --input ${JSONL} --out ${PNG} --no-fail-markers \
     || echo "[plot] matplotlib unavailable — plot on the login node from ${OUT}.jsonl."
 EOF
 

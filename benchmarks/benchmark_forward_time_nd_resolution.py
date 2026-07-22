@@ -13,7 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Forward-time vs 2D-resolution benchmark (the 2D analogue of Figure 1, right).
+"""Forward-time vs resolution benchmark in 1D / 2D / 3D (the ND analogue of Figure 1, right).
+
+Select the dimensionality with ``--data-dim {1,2,3}``; the input is
+``[B, R, ...(N axes)..., C]`` and the token count is ``L = R^N``. Hyena is causal
+in 1D (the fused genomics kernel) and non-causal in 2D/3D; 3D falls back to
+torch_fft (subq_ops has no 3D kernel). The 2D case (the default) is described below.
 
 The paper's Figure 1 (right) plots single-operator forward time against **1D
 sequence length** (4K->1M) for HyenaND (nSubQ) / attention / Mamba2, showing
@@ -43,22 +48,22 @@ reaches R=1024), and removes the confounds of the residual net's projections,
 MLPs and extra norms.
 
 Output is a JSONL file (one row per ``(mixer, resolution)``); plotting is a
-separate step (``scripts/visualization/visualize_forward_time_2d.py``) that
+separate step (``scripts/visualization/visualize_forward_time_nd.py``) that
 reads the JSONL, so the GPU run needs no matplotlib.
 
 Local smoke test (any CUDA GPU, no ``subquadratic_ops_torch`` needed)::
 
-    PYTHONPATH=. python benchmarks/benchmark_forward_time_2d_resolution.py \\
+    PYTHONPATH=. python benchmarks/benchmark_forward_time_nd_resolution.py \\
         --fft-backend torch_fft --no-compile --batch-size 1 \\
         --resolutions 8 16 32 --mixers hyena attention \\
         --num-warmup 2 --num-iters 3 --output /tmp/smoke_2d.jsonl
 
 GB200 production run (fused nSubQ kernels, all three mixers)::
 
-    PYTHONPATH=. python benchmarks/benchmark_forward_time_2d_resolution.py \\
+    PYTHONPATH=. python benchmarks/benchmark_forward_time_nd_resolution.py \\
         --fft-backend subq_ops --dtype bf16 --batch-size 1 --hidden-dim 256 \\
         --resolutions 64 128 256 512 1024 \\
-        --output benchmarks/results/forward_time_2d_resolution.jsonl
+        --output benchmarks/results/forward_time.jsonl
 """
 
 from __future__ import annotations
@@ -96,6 +101,8 @@ from nvsubquadratic.lazy_config import instantiate
 
 MIXER_CHOICES = ("attention", "hyena", "mamba")
 DTYPE_MAP = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
+# 2D axial RoPE needs head_dim divisible by 4; 1D by 2; 3D by 6.
+_ROPE_DIVISOR = {1: 2, 2: 4, 3: 6}
 
 
 # ─── Module construction (fresh per resolution) ───────────────────────────────
@@ -112,29 +119,39 @@ def build_module(
     attn_rope: bool,
     mamba_headdim: int,
     mamba_expand: int,
+    data_dim: int,
 ) -> torch.nn.Module:
-    """Instantiate a single mixer layer sized for a square ``resolution`` grid.
+    """Instantiate a single mixer layer sized for a ``resolution`` grid in ``data_dim`` dims.
 
     Only the resolution-dependent construction args change with ``resolution``:
     the SIREN kernel cache (``L_cache``) for Hyena and the RoPE tables for
     Attention.  Mamba is resolution-independent (it rasterizes at forward time).
+    Hyena is causal in 1D (the fused genomics path) and non-causal in 2D/3D.
     """
     if name == "hyena":
-        cfg = _hyena_mixer_cfg(hidden_dim, fft_backend, canvas_size=resolution, grid_type=grid_type)
+        cfg = _hyena_mixer_cfg(
+            hidden_dim,
+            fft_backend,
+            canvas_size=resolution,
+            grid_type=grid_type,
+            data_dim=data_dim,
+            is_causal=(data_dim == 1),
+        )
     elif name == "attention":
         head_dim = hidden_dim // num_heads
-        use_rope = attn_rope and (head_dim % 4 == 0)
+        div = _ROPE_DIVISOR[data_dim]  # 1D:2, 2D:4, 3D:6
+        use_rope = attn_rope and (head_dim % div == 0)
         if attn_rope and not use_rope:
             print(
-                f"   [warn] disabling 2D RoPE: head_dim={head_dim} "
-                f"(hidden_dim={hidden_dim} / num_heads={num_heads}) is not divisible by 4.",
+                f"   [warn] disabling {data_dim}D RoPE: head_dim={head_dim} "
+                f"(hidden_dim={hidden_dim} / num_heads={num_heads}) not divisible by {div}.",
                 flush=True,
             )
         cfg = _attention_mixer_cfg(
             hidden_dim,
             num_heads=num_heads,
             use_rope=use_rope,
-            rope_spatial_dims=(resolution, resolution) if use_rope else None,
+            rope_spatial_dims=(resolution,) * data_dim if use_rope else None,
         )
     elif name == "mamba":
         cfg = _mamba_mixer_cfg(
@@ -174,6 +191,7 @@ def time_forward(
     attn_rope: bool,
     mamba_headdim: int,
     mamba_expand: int,
+    data_dim: int,
     max_seconds: float,
     device: torch.device,
 ) -> dict[str, Any]:
@@ -206,6 +224,7 @@ def time_forward(
                 attn_rope=attn_rope,
                 mamba_headdim=mamba_headdim,
                 mamba_expand=mamba_expand,
+                data_dim=data_dim,
             )
             .to(device)
             .eval()
@@ -214,7 +233,7 @@ def time_forward(
         if compile_mode is not None:
             module = torch.compile(module, mode=compile_mode)
 
-        x = torch.randn(batch_size, resolution, resolution, hidden_dim, device=device, dtype=torch.float32)
+        x = torch.randn(batch_size, *([resolution] * data_dim), hidden_dim, device=device, dtype=torch.float32)
         torch.cuda.reset_peak_memory_stats(device)
 
         # ── Single wall-timed forward (compile + timeout guard) ──────────────
@@ -319,7 +338,8 @@ def _validate(args: argparse.Namespace) -> None:
             raise SystemExit(
                 f"Mamba2 d_inner=hidden_dim*expand={d_inner} not divisible by mamba_headdim={args.mamba_headdim}."
             )
-    if args.fft_backend == "subq_ops" and "hyena" in args.mixers:
+    # subq_ops (1D/2D only) needs even resolutions; 3D uses torch_fft so it is exempt.
+    if args.fft_backend == "subq_ops" and args.data_dim in (1, 2) and "hyena" in args.mixers:
         odd = [r for r in args.resolutions if r % 2 != 0]
         if odd:
             raise SystemExit(f"subq_ops requires even resolutions; got odd {odd}.")
@@ -332,7 +352,16 @@ def main() -> None:
         nargs="+",
         type=int,
         default=[64, 128, 256, 512, 1024],
-        help="Square spatial resolutions R (H=W). Token count L=R^2. Swept ascending.",
+        help="Per-axis resolution R. Token count L=R^data_dim. Swept ascending.",
+    )
+    parser.add_argument(
+        "--data-dim",
+        type=int,
+        choices=[1, 2, 3],
+        default=2,
+        help="Spatial dimensionality N. Input is [B, R,...(N)..., C], L=R^N. Hyena is causal in 1D "
+        "(the fused genomics kernel) and non-causal in 2D/3D; 3D auto-falls back to torch_fft "
+        "(subq_ops has no 3D kernel).",
     )
     parser.add_argument(
         "--mixers",
@@ -392,7 +421,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=str,
-        default="benchmarks/results/forward_time_2d_resolution.jsonl",
+        default="benchmarks/results/forward_time.jsonl",
         help="Output JSONL path (one row per mixer/resolution).",
     )
     args = parser.parse_args()
@@ -414,11 +443,16 @@ def main() -> None:
     compile_mode = None if args.no_compile else args.compile_mode
     resolutions = sorted(args.resolutions)
     device_name = torch.cuda.get_device_name(device)
+    data_dim = args.data_dim
+    # subq_ops has no 3D kernel — Hyena falls back to torch_fft in 3D.
+    hyena_backend = "torch_fft" if data_dim == 3 and args.fft_backend == "subq_ops" else args.fft_backend
+    if hyena_backend != args.fft_backend:
+        print("[note] data_dim=3: Hyena fft_backend forced to torch_fft (subq_ops is 1D/2D only).")
 
     print(f"Device: {device_name}")
     print(
-        f"Settings: batch_size={args.batch_size} hidden_dim={args.hidden_dim} dtype={args.dtype} "
-        f"compile={compile_mode} fft_backend={args.fft_backend} grid_type={args.grid_type} rope={args.attn_rope} "
+        f"Settings: data_dim={data_dim} batch_size={args.batch_size} hidden_dim={args.hidden_dim} dtype={args.dtype} "
+        f"compile={compile_mode} fft_backend={hyena_backend} grid_type={args.grid_type} rope={args.attn_rope} "
         f"warmup={args.num_warmup} timed={args.num_iters} max_s={args.max_seconds_per_point}"
     )
     print(f"Mixers: {args.mixers}    Resolutions: {resolutions}")
@@ -433,7 +467,7 @@ def main() -> None:
         for mixer in args.mixers:
             last_ok: tuple[int, float] | None = None  # (seq_len, ms) of last ok/timeout point
             for R in resolutions:
-                seq_len = R * R
+                seq_len = R**data_dim
                 label = f"[{mixer:>9s}  R={R:>4d}  L={seq_len:>9d}]"
 
                 # Predictive skip: never launch a point that will clearly blow the budget.
@@ -450,7 +484,8 @@ def main() -> None:
                             "mixer": mixer,
                             "resolution": R,
                             "seq_len": seq_len,
-                            "backend": args.fft_backend if mixer == "hyena" else None,
+                            "data_dim": data_dim,
+                            "backend": hyena_backend if mixer == "hyena" else None,
                             "batch_size": args.batch_size,
                             "hidden_dim": args.hidden_dim,
                             "dtype": args.dtype,
@@ -472,12 +507,13 @@ def main() -> None:
                     num_warmup=args.num_warmup,
                     num_iters=args.num_iters,
                     compile_mode=compile_mode,
-                    fft_backend=args.fft_backend,
+                    fft_backend=hyena_backend,
                     grid_type=args.grid_type,
                     num_heads=args.num_heads,
                     attn_rope=args.attn_rope,
                     mamba_headdim=args.mamba_headdim,
                     mamba_expand=args.mamba_expand,
+                    data_dim=data_dim,
                     max_seconds=args.max_seconds_per_point,
                     device=device,
                 )
@@ -503,7 +539,8 @@ def main() -> None:
                     "mixer": mixer,
                     "resolution": R,
                     "seq_len": seq_len,
-                    "backend": args.fft_backend if mixer == "hyena" else None,
+                    "data_dim": data_dim,
+                    "backend": hyena_backend if mixer == "hyena" else None,
                     "batch_size": args.batch_size,
                     "hidden_dim": args.hidden_dim,
                     "dtype": args.dtype,
@@ -522,11 +559,11 @@ def main() -> None:
     print(f"\n{'=' * 78}")
     print("Forward-time summary (ms/fwd, lower is better; 'oom'/'timeout'/'error' otherwise)")
     print(f"{'=' * 78}")
-    header = f"{'R':>6s} {'L=R^2':>10s}  " + "  ".join(f"{m:>14s}" for m in args.mixers)
+    header = f"{'R':>6s} {f'L=R^{data_dim}':>10s}  " + "  ".join(f"{m:>14s}" for m in args.mixers)
     print(header)
     print("-" * len(header))
     for R in resolutions:
-        seq_len = R * R
+        seq_len = R**data_dim
         row = f"{R:>6d} {seq_len:>10d}  "
         for m in args.mixers:
             res = rows[m].get(seq_len)

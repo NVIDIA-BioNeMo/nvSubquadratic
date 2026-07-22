@@ -106,6 +106,9 @@ MAMBA_HEADDIM = 32
 MAMBA_EXPAND = 2
 MAMBA_BIDIRECTIONAL = True
 
+# Per-dimensionality short depthwise conv (1D/2D/3D).
+_CONV_ND = {1: torch.nn.Conv1d, 2: torch.nn.Conv2d, 3: torch.nn.Conv3d}
+
 
 # ─── Mixer config builders (concrete — no OmegaConf interpolation) ────────────
 
@@ -116,15 +119,17 @@ def _hyena_mixer_cfg(
     *,
     canvas_size: int = CANVAS_SIZE,
     grid_type: str = "double",
+    data_dim: int = DATA_DIM,
+    is_causal: bool = False,
 ) -> LazyConfig:
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
         mixer_cfg=LazyConfig(Hyena)(
             global_conv_cfg=LazyConfig(CKConvND)(
-                data_dim=DATA_DIM,
+                data_dim=data_dim,
                 hidden_dim=hidden_dim,
                 kernel_cfg=LazyConfig(SIRENKernelND)(
-                    data_dim=DATA_DIM,
+                    data_dim=data_dim,
                     out_dim=hidden_dim,
                     mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
                     num_layers=KERNEL_NUM_LAYERS,
@@ -138,8 +143,9 @@ def _hyena_mixer_cfg(
                 grid_type=grid_type,
                 fft_padding="zero",
                 fft_backend=fft_backend,
+                is_causal=is_causal,
             ),
-            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
+            short_conv_cfg=LazyConfig(_CONV_ND[data_dim])(
                 in_channels=3 * hidden_dim,
                 out_channels=3 * hidden_dim,
                 kernel_size=3,
