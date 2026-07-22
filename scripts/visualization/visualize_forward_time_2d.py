@@ -60,6 +60,20 @@ FAIL_STATUS = {"oom", "error", "timeout"}
 FAIL_COLOR = "#2E7D32"  # green "OOM x", as in Figure 1
 
 
+def _is_unavailable(r: dict) -> bool:
+    """True if the point failed because the operator isn't installed (not a wall).
+
+    A missing optional dependency (e.g. mamba_ssm) is an ImportError, not a
+    capacity failure, so it should be omitted rather than drawn as an OOM 'x'.
+    """
+    if r.get("status") == "unavailable":
+        return True
+    detail = r.get("detail") or ""
+    return r.get("status") == "error" and (
+        "No module named" in detail or "ModuleNotFoundError" in detail or "ImportError" in detail
+    )
+
+
 def _format_seq(n: int) -> str:
     if n >= 1024 * 1024:
         v = n / (1024 * 1024)
@@ -114,7 +128,9 @@ def make_plot(rows: list[dict], out_path: Path) -> None:
         raise SystemExit("No successful ('ok') timings in the JSONL — nothing to plot.")
     ceiling = max(ok_ms)  # where OOM/timeout x-marks with no measured ms are parked
 
-    fig, ax = plt.subplots(figsize=(3.4, 3.0), constrained_layout=True)
+    # Widen with the tick count so the two-line "L / R^2" labels don't crowd.
+    fig_w = min(9.0, max(3.6, 0.6 * len(all_seq) + 1.2))
+    fig, ax = plt.subplots(figsize=(fig_w, 3.2), constrained_layout=True)
 
     fail_x, fail_y = [], []
     for mixer in SERIES_ORDER:
@@ -126,6 +142,14 @@ def make_plot(rows: list[dict], out_path: Path) -> None:
 
         ok_x = [x for x in xs if pts[x].get("status") == "ok" and pts[x].get("ms") is not None]
         ok_y = [pts[x]["ms"] for x in ok_x]
+        # Genuine (resource) failures only — a not-installed operator is not a wall.
+        wall_x = [x for x in xs if pts[x].get("status") in FAIL_STATUS and not _is_unavailable(pts[x])]
+
+        # Omit a series that never ran and only "failed" because it isn't installed
+        # (e.g. mamba_ssm absent): no line, no legend entry, no 'x'.
+        if not ok_x and not wall_x:
+            continue
+
         if ok_x:
             ax.plot(
                 ok_x,
@@ -140,7 +164,7 @@ def make_plot(rows: list[dict], out_path: Path) -> None:
                 label=cfg["label"],
             )
         else:
-            # series present but never succeeded — still show it in the legend
+            # ran but never succeeded (all genuine failures) — keep it in the legend
             ax.plot(
                 [],
                 [],
@@ -154,13 +178,12 @@ def make_plot(rows: list[dict], out_path: Path) -> None:
                 label=cfg["label"],
             )
 
-        for x in xs:
+        for x in wall_x:
             r = pts[x]
-            if r.get("status") in FAIL_STATUS:
-                # A wall-timed timeout carries a measured (over-budget) ms; place the
-                # x there. A predictive skip has ms=None; park it at the ceiling.
-                fail_x.append(x)
-                fail_y.append(r["ms"] if r.get("ms") is not None else ceiling)
+            # A wall-timed timeout carries a measured (over-budget) ms; place the
+            # x there. A predictive skip has ms=None; park it at the ceiling.
+            fail_x.append(x)
+            fail_y.append(r["ms"] if r.get("ms") is not None else ceiling)
 
     if fail_x:
         ax.scatter(

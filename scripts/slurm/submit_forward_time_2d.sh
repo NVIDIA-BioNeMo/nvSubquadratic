@@ -45,6 +45,12 @@ set -x
 #   # all three at hidden 256, non-circular (whole run) — caps ~4096^2:
 #   HIDDEN_DIM=256 GRID_TYPE=double RESOLUTIONS="64 128 256 512 1024 2048 4096" \
 #       sbatch scripts/slurm/submit_forward_time_2d.sh
+#   # HyenaND-reach-to-8K, apple-to-apple: all three at hidden 8 (the largest
+#   # shared width whose qkv tensor 3*hidden*R^2 stays under 2^31 at 8192^2), so
+#   # HyenaND continues to 64M while Attention (~16M) and Mamba (~4M) x out at the
+#   # SAME config. num_heads/mamba_headdim reduced to divide hidden 8:
+#   HIDDEN_DIM=8 NUM_HEADS=2 MAMBA_HEADDIM=8 \
+#       sbatch scripts/slurm/submit_forward_time_2d.sh
 #   # HyenaND only:
 #   MIXERS=hyena sbatch scripts/slurm/submit_forward_time_2d.sh
 #
@@ -68,6 +74,11 @@ mkdir -p "${RESULTS_HOST}"
 # ── Benchmark parameters (override any from the environment) ──────────────────
 MIXERS="${MIXERS:-attention hyena mamba}"
 HIDDEN_DIM="${HIDDEN_DIM:-64}"
+# Attention/Mamba shape params — must divide hidden_dim. Reduce these with
+# hidden_dim: at hidden 8 use NUM_HEADS=2 (head_dim 4, valid for 2D RoPE) and
+# MAMBA_HEADDIM=8 (d_inner=hidden*2=16 must be divisible by it).
+NUM_HEADS="${NUM_HEADS:-8}"
+MAMBA_HEADDIM="${MAMBA_HEADDIM:-64}"
 GRID_TYPE="${GRID_TYPE:-single}"
 RESOLUTIONS="${RESOLUTIONS:-64 128 256 512 1024 2048 4096 8192}"
 FFT_BACKEND="${FFT_BACKEND:-subq_ops}"
@@ -102,6 +113,8 @@ PYTHONPATH=. python benchmarks/benchmark_forward_time_2d_resolution.py \
     --dtype ${DTYPE} \
     --batch-size ${BATCH_SIZE} \
     --hidden-dim ${HIDDEN_DIM} \
+    --num-heads ${NUM_HEADS} \
+    --mamba-headdim ${MAMBA_HEADDIM} \
     --mixers ${MIXERS} \
     --resolutions ${RESOLUTIONS} \
     --num-warmup ${NUM_WARMUP} \

@@ -378,6 +378,12 @@ def main() -> None:
         "for that mixer (attention's O(L^2) explosion).",
     )
     parser.add_argument(
+        "--disable-cudnn",
+        action="store_true",
+        help="Turn off cuDNN (Conv2d native fallback; SDPA avoids the cuDNN backend). "
+        "Workaround for images where cuDNN fails to initialize (CUDNN_STATUS_NOT_INITIALIZED).",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="benchmarks/results/forward_time_2d_resolution.jsonl",
@@ -392,6 +398,11 @@ def main() -> None:
     device = torch.device("cuda")
     torch.backends.cudnn.benchmark = True
     torch.set_float32_matmul_precision("high")
+    if args.disable_cudnn:
+        torch.backends.cudnn.enabled = False
+        if hasattr(torch.backends.cuda, "enable_cudnn_sdp"):
+            torch.backends.cuda.enable_cudnn_sdp(False)
+        print("[cudnn] disabled (Conv2d native fallback; SDPA flash/mem-efficient).", flush=True)
 
     dtype = DTYPE_MAP[args.dtype]
     compile_mode = None if args.no_compile else args.compile_mode

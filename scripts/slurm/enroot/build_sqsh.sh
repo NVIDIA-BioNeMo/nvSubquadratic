@@ -9,24 +9,37 @@
 #   PLATFORM     x86_64 (default, H100) | arm64 (GB200)
 #   DOCKER_TAG   image tag    (default: nvsubquadratic:<platform>)
 #   OUTPUT_SQSH  output file  (default: nvsubquadratic-<platform>.sqsh)
+#   MAX_JOBS     parallel nvcc/ninja jobs (arm64 default: 1)
+#   NVCC_THREADS nvcc --threads (arm64 default: 1)
 
 set -euo pipefail
 
 PLATFORM="${PLATFORM:-x86_64}"
 
 case "${PLATFORM}" in
-    x86_64) DOCKER_PLATFORM="linux/amd64"; TARGET_HW="H100 (x86-64)"; CUDA_ARCHS="9.0"; MAX_JOBS_DEFAULT="" ;;
-    arm64)  DOCKER_PLATFORM="linux/arm64"; TARGET_HW="GB200 (ARM64)"; CUDA_ARCHS="10.0;12.0"; MAX_JOBS_DEFAULT="1" ;;
+    x86_64) DOCKER_PLATFORM="linux/amd64"; TARGET_HW="H100 (x86-64)"; CUDA_ARCHS="9.0"; MAX_JOBS_DEFAULT=""; NVCC_THREADS_DEFAULT="4" ;;
+    arm64)  DOCKER_PLATFORM="linux/arm64"; TARGET_HW="GB200 (ARM64)"; CUDA_ARCHS="10.0;12.0"; MAX_JOBS_DEFAULT="1"; NVCC_THREADS_DEFAULT="1" ;;
     *)      echo "Error: unknown PLATFORM=${PLATFORM}. Use x86_64 or arm64."; exit 1 ;;
 esac
 
 MAX_JOBS="${MAX_JOBS:-${MAX_JOBS_DEFAULT}}"
+NVCC_THREADS="${NVCC_THREADS:-${NVCC_THREADS_DEFAULT}}"
 
 if [[ "${PLATFORM}" == "arm64" && "$(uname -m)" != "aarch64" ]]; then
     echo "Warning: building linux/arm64 on $(uname -m) uses QEMU emulation."
-    echo "         Apex CUDA compilation is slow and may ICE/OOM (gcc segfault)."
-    echo "         Prefer building natively on GB200, or set MAX_JOBS=1 (default)."
-    echo "         Ensure Docker has plenty of RAM (64GB+ recommended)."
+    echo "         Apex/mamba CUDA compiles are slow and may ICE/OOM (gcc segfault)."
+    echo "         Defaults: MAX_JOBS=1 NVCC_THREADS=1; mamba gencodes narrowed to ${CUDA_ARCHS}."
+    echo "         Keep plenty of free host RAM+swap (64GB+ combined recommended)."
+fi
+
+# Preflight: free RAM matters more than MAX_JOBS under QEMU (single TUs still spike).
+if command -v free >/dev/null 2>&1; then
+    avail_gb=$(free -g | awk '/^Mem:/{print $7}')
+    swap_gb=$(free -g | awk '/^Swap:/{print $2}')
+    if [[ "${PLATFORM}" == "arm64" && "${avail_gb}" =~ ^[0-9]+$ && "${avail_gb}" -lt 24 ]]; then
+        echo "Warning: only ~${avail_gb}GiB MemAvailable (swap=${swap_gb}GiB)."
+        echo "         Free RAM or add swap before retrying; gcc ICE usually means OOM."
+    fi
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,11 +51,13 @@ OUTPUT_SQSH="${OUTPUT_SQSH:-${SCRIPT_DIR}/nvsubquadratic-${PLATFORM}.sqsh}"
 echo "Platform: ${DOCKER_PLATFORM} (${TARGET_HW})"
 echo "Image:    ${DOCKER_TAG}"
 echo "Output:   ${OUTPUT_SQSH}"
+echo "Arches:   ${CUDA_ARCHS}  MAX_JOBS=${MAX_JOBS:-unset}  NVCC_THREADS=${NVCC_THREADS}"
 
 docker buildx build \
     --platform "${DOCKER_PLATFORM}" \
     --build-arg TORCH_CUDA_ARCH_LIST="${CUDA_ARCHS}" \
     --build-arg MAX_JOBS="${MAX_JOBS}" \
+    --build-arg NVCC_THREADS="${NVCC_THREADS}" \
     -t "${DOCKER_TAG}" \
     -f "${REPO_ROOT}/Dockerfile" \
     --load \

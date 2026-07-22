@@ -11,19 +11,21 @@ PLATFORM=arm64 bash build_sqsh.sh   # GB200 (ARM64, built via qemu emulation)
 
 The script selects per-platform `--build-arg` values:
 
-| `PLATFORM` | `TORCH_CUDA_ARCH_LIST` | `MAX_JOBS` | Target HW           |
-| ---------- | ---------------------- | ---------- | ------------------- |
-| `x86_64`   | `9.0`                  | unset      | H100                |
-| `arm64`    | `10.0;12.0`            | `1`        | GB200 (B200 / 5090) |
+| `PLATFORM` | `TORCH_CUDA_ARCH_LIST` | `MAX_JOBS` | `NVCC_THREADS` | Target HW           |
+| ---------- | ---------------------- | ---------- | -------------- | ------------------- |
+| `x86_64`   | `9.0`                  | unset      | `4`            | H100                |
+| `arm64`    | `10.0;12.0`            | `1`        | `1`            | GB200 (B200 / 5090) |
 
-`MAX_JOBS=1` on arm64 serializes nvcc jobs to reduce OOM/gcc-ICE failures under QEMU emulation. On x86_64 it stays unset (parallel) for fastest builds. Override with `MAX_JOBS=2` (or unset) if you have ample RAM and a native ARM build host.
+`MAX_JOBS=1` / `NVCC_THREADS=1` on arm64 serializes work to reduce OOM/gcc-ICE failures under QEMU. Upstream `mamba-ssm` / `causal-conv1d` ignore `TORCH_CUDA_ARCH_LIST`; the Dockerfile patches their `setup.py` so only the arches above are compiled. On x86_64, `MAX_JOBS` stays unset (parallel) for fastest builds.
 
-**ARM64 on x86 hosts:** `PLATFORM=arm64` cross-builds via QEMU. Apex compilation can take many hours and may fail with `gcc: internal compiler error: Segmentation fault` if the host is memory-constrained. Prefer building on GB200 (or another `aarch64` machine) when possible.
+**ARM64 on x86 hosts:** `PLATFORM=arm64` cross-builds via QEMU. Apex/mamba compilation can take many hours and may fail with `gcc: internal compiler error: Segmentation fault` if the host is memory-constrained. Keep ≥64GB combined free RAM+swap (`free -h`); Docker Engine on Linux uses host memory (no separate VM slider). Prefer a native `aarch64` host when possible.
 
 ## Override
 
-| Env var       | Default                           |
-| ------------- | --------------------------------- |
-| `PLATFORM`    | `x86_64`                          |
-| `DOCKER_TAG`  | `nvsubquadratic:${PLATFORM}`      |
-| `OUTPUT_SQSH` | `nvsubquadratic-${PLATFORM}.sqsh` |
+| Env var        | Default                           |
+| -------------- | --------------------------------- |
+| `PLATFORM`     | `x86_64`                          |
+| `DOCKER_TAG`   | `nvsubquadratic:${PLATFORM}`      |
+| `OUTPUT_SQSH`  | `nvsubquadratic-${PLATFORM}.sqsh` |
+| `MAX_JOBS`     | platform default (see table)      |
+| `NVCC_THREADS` | platform default (see table)      |
