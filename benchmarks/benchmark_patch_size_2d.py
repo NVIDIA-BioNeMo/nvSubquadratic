@@ -187,6 +187,11 @@ def _mamba_mixer_cfg(
     expand: int = MAMBA_EXPAND,
     bidirectional: bool = MAMBA_BIDIRECTIONAL,
 ) -> LazyConfig:
+    # mamba-ssm >= 2.3 eagerly imports Mamba3 in its package __init__, which pulls
+    # in tilelang -> tvm and crashes on this stack (tvm_ffi AttributeError under
+    # py3.12). We only use Mamba2, so make that optional `import tilelang` fail as a
+    # clean ImportError (which mamba_ssm's __init__ skips) by neutering it here.
+    sys.modules.setdefault("tilelang", None)
     from mamba_ssm import Mamba2
 
     from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer

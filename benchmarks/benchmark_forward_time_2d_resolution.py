@@ -69,6 +69,7 @@ import json
 import math
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -276,6 +277,11 @@ def time_forward(
             status = "oom"
         else:
             status = "error"
+        # Print the full traceback to the log for genuine errors (not clean
+        # OOM/unavailable) so failures like Mamba's construction error are
+        # diagnosable without a rerun. Only the repr goes into the JSONL.
+        if status == "error":
+            traceback.print_exc(file=sys.stdout)
         return {"status": status, "ms": None, "mem_gb": None, "detail": repr(exc)}
     finally:
         del module, x
