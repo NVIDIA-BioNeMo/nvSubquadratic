@@ -60,20 +60,6 @@ FAIL_STATUS = {"oom", "error", "timeout"}
 FAIL_COLOR = "#2E7D32"  # green "OOM x", as in Figure 1
 
 
-def _is_unavailable(r: dict) -> bool:
-    """True if the point failed because the operator isn't installed (not a wall).
-
-    A missing optional dependency (e.g. mamba_ssm) is an ImportError, not a
-    capacity failure, so it should be omitted rather than drawn as an OOM 'x'.
-    """
-    if r.get("status") == "unavailable":
-        return True
-    detail = r.get("detail") or ""
-    return r.get("status") == "error" and (
-        "No module named" in detail or "ModuleNotFoundError" in detail or "ImportError" in detail
-    )
-
-
 def _format_seq(n: int) -> str:
     if n >= 1024 * 1024:
         v = n / (1024 * 1024)
@@ -141,49 +127,38 @@ def make_plot(rows: list[dict], out_path: Path) -> None:
         xs = sorted(pts)
 
         ok_x = [x for x in xs if pts[x].get("status") == "ok" and pts[x].get("ms") is not None]
-        ok_y = [pts[x]["ms"] for x in ok_x]
-        # Genuine (resource) failures only — a not-installed operator is not a wall.
-        wall_x = [x for x in xs if pts[x].get("status") in FAIL_STATUS and not _is_unavailable(pts[x])]
 
-        # Omit a series that never ran and only "failed" because it isn't installed
-        # (e.g. mamba_ssm absent): no line, no legend entry, no 'x'.
-        if not ok_x and not wall_x:
+        # A series that never produced a single timing never actually ran here
+        # (missing dep, build/version error, or OOM even at the smallest grid) —
+        # that is a setup failure, not a scaling wall, so omit it entirely rather
+        # than paint a wall of x's across every resolution.
+        if not ok_x:
+            n_fail = sum(1 for x in xs if pts[x].get("status") in FAIL_STATUS)
+            if n_fail:
+                print(f"Omitting '{mixer}': 0/{len(xs)} points ran — {pts[xs[0]].get('detail', '')[:90]}")
             continue
 
-        if ok_x:
-            ax.plot(
-                ok_x,
-                ok_y,
-                color=cfg["color"],
-                marker=cfg["marker"],
-                linestyle="-",
-                linewidth=1.6,
-                markersize=5.5,
-                markeredgecolor="black",
-                markeredgewidth=0.5,
-                label=cfg["label"],
-            )
-        else:
-            # ran but never succeeded (all genuine failures) — keep it in the legend
-            ax.plot(
-                [],
-                [],
-                color=cfg["color"],
-                marker=cfg["marker"],
-                linestyle="-",
-                linewidth=1.6,
-                markersize=5.5,
-                markeredgecolor="black",
-                markeredgewidth=0.5,
-                label=cfg["label"],
-            )
+        ax.plot(
+            ok_x,
+            [pts[x]["ms"] for x in ok_x],
+            color=cfg["color"],
+            marker=cfg["marker"],
+            linestyle="-",
+            linewidth=1.6,
+            markersize=5.5,
+            markeredgecolor="black",
+            markeredgewidth=0.5,
+            label=cfg["label"],
+        )
 
-        for x in wall_x:
-            r = pts[x]
-            # A wall-timed timeout carries a measured (over-budget) ms; place the
-            # x there. A predictive skip has ms=None; park it at the ceiling.
-            fail_x.append(x)
-            fail_y.append(r["ms"] if r.get("ms") is not None else ceiling)
+        # Walls (oom/timeout/error) only for a series that was working — i.e. that
+        # has at least one ok point. A wall-timed timeout carries a measured
+        # (over-budget) ms; place the x there. A predictive skip has ms=None → park
+        # it at the ceiling.
+        for x in xs:
+            if pts[x].get("status") in FAIL_STATUS:
+                fail_x.append(x)
+                fail_y.append(pts[x]["ms"] if pts[x].get("ms") is not None else ceiling)
 
     if fail_x:
         ax.scatter(
