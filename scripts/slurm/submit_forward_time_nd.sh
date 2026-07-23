@@ -52,14 +52,13 @@ set -x
 #   HIDDEN_DIM=8 NUM_HEADS=2 MAMBA_HEADDIM=8 \
 #       sbatch scripts/slurm/submit_forward_time_nd.sh
 #   # Attention-KERNEL comparison (SDPA vs FlexAttention vs FlashAttention-4 vs
-#   # HyenaND). flex/fa4 REQUIRE head_dim >= 16, so this is a SEPARATE run from the
-#   # reach story above: bump the width so head_dim = HIDDEN_DIM/NUM_HEADS >= 16
-#   # (256/8 = 32). Caps ~2048^2 (4M) at the 32-bit-index wall — plenty, since every
-#   # attention kernel walls on time/memory well before that. Needs flash-attn-4 in
-#   # the image for the fa4 series (absent -> it shows 'unavailable' and is omitted):
-#   MIXERS="hyena attention flex fa4" HIDDEN_DIM=256 NUM_HEADS=8 GRID_TYPE=double \
-#       RESOLUTIONS="64 128 256 512 1024 2048" \
-#       sbatch scripts/slurm/submit_forward_time_nd.sh
+#   # HyenaND) — use the ready-made wrapper, which sets head_dim 128 (hidden 512 /
+#   # 4 heads), the regime these flash kernels are OPTIMIZED for. flex/fa4 only
+#   # *accept* head_dim >= 16, but 64/128 is where they (and real models) run fast;
+#   # 16/32 sits on a slow small-tile path. Needs flash-attn-4 in the image for the
+#   # fa4 series (absent -> 'unavailable', omitted from the plot):
+#   scripts/slurm/submit_forward_time_flash_kernels.sh          # 2D, head_dim 128
+#   DATA_DIM=1 scripts/slurm/submit_forward_time_flash_kernels.sh
 #   # HyenaND only:
 #   MIXERS=hyena sbatch scripts/slurm/submit_forward_time_nd.sh
 #
