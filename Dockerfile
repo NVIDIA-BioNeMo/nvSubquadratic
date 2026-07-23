@@ -89,19 +89,29 @@ RUN MAX_JOBS="${MAX_JOBS}" pip install -v --disable-pip-version-check --no-cache
 # torch / nvidia-cudnn-cu12 out from under the 2.10 stack — which breaks cuDNN
 # (CUDNN_STATUS_NOT_INITIALIZED at runtime). Freeze the current torch/nvidia/
 # triton versions into a constraints file so the mamba install cannot touch them.
+# Gated by INSTALL_MAMBA (default false — benchmark-only baseline, not a project dep).
+# Build with --build-arg INSTALL_MAMBA=true for the benchmark image; the default lean
+# build skips the (slow, QEMU-heavy) source compile and the benchmark's Mamba2 series
+# then reports 'unavailable' and is omitted. The patch script is COPYed unconditionally
+# (tiny, harmless if unused; COPY cannot be gated).
 ARG NVCC_THREADS=4
+ARG INSTALL_MAMBA=false
 COPY scripts/docker/patch_mamba_cuda_arches.py /tmp/patch_mamba_cuda_arches.py
-RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' > /tmp/mamba-constraints.txt && \
-    cat /tmp/mamba-constraints.txt && \
-    git clone --depth 1 https://github.com/Dao-AILab/causal-conv1d.git /tmp/causal-conv1d && \
-    git clone --depth 1 https://github.com/state-spaces/mamba.git /tmp/mamba && \
-    python /tmp/patch_mamba_cuda_arches.py /tmp/causal-conv1d/setup.py /tmp/mamba/setup.py && \
-    MAX_JOBS="${MAX_JOBS}" NVCC_THREADS="${NVCC_THREADS}" \
-    CAUSAL_CONV1D_FORCE_BUILD=TRUE MAMBA_FORCE_BUILD=TRUE \
-    pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
-    -c /tmp/mamba-constraints.txt \
-    /tmp/causal-conv1d /tmp/mamba && \
-    rm -rf /tmp/causal-conv1d /tmp/mamba
+RUN if [ "${INSTALL_MAMBA}" != "true" ]; then \
+        echo "INSTALL_MAMBA=${INSTALL_MAMBA} — skipping Mamba baseline (mamba-ssm / causal-conv1d)"; \
+    else \
+        pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' > /tmp/mamba-constraints.txt && \
+        cat /tmp/mamba-constraints.txt && \
+        git clone --depth 1 https://github.com/Dao-AILab/causal-conv1d.git /tmp/causal-conv1d && \
+        git clone --depth 1 https://github.com/state-spaces/mamba.git /tmp/mamba && \
+        python /tmp/patch_mamba_cuda_arches.py /tmp/causal-conv1d/setup.py /tmp/mamba/setup.py && \
+        MAX_JOBS="${MAX_JOBS}" NVCC_THREADS="${NVCC_THREADS}" \
+        CAUSAL_CONV1D_FORCE_BUILD=TRUE MAMBA_FORCE_BUILD=TRUE \
+        pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
+        -c /tmp/mamba-constraints.txt \
+        /tmp/causal-conv1d /tmp/mamba && \
+        rm -rf /tmp/causal-conv1d /tmp/mamba ; \
+    fi
 
 # ── FlashAttention-4 baseline (Blackwell / Hopper) ────────────────────────────
 # Optional baseline for the forward-time benchmark's FlashAttention-4 series
@@ -119,16 +129,27 @@ RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch
 # from the torch/CUDA constraints pin — otherwise a DSL already present in the base
 # image gets frozen to the wrong version and strands FA4 on a mismatched API. The
 # rest of the nvidia/torch/triton stack is still pinned (the cuDNN-clobber guard).
+# Gated by INSTALL_FA4 (default false — benchmark-only baseline, not a project dep).
+# Build with --build-arg INSTALL_FA4=true for the benchmark image; the default lean
+# build skips the alpha flash-attn-4 wheel and the benchmark's FA4 series then reports
+# 'unavailable' and is omitted. When enabled, the install IS fatal on failure (so a bad
+# version pin fails the build loudly); only the post-install import probe is best-effort
+# (braced so its `|| echo` cannot mask an install failure) since importing the CuTe DSL
+# may touch the CUDA driver on a GPU-less build host.
 ARG FLASH_ATTN4_VERSION=4.0.0b23
 ARG CUTLASS_DSL_VERSION=4.6.0.dev0
-RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' \
-      | grep -viE '^nvidia-cutlass-dsl' > /tmp/fa4-constraints.txt && \
-    pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt \
-      "nvidia-cutlass-dsl==${CUTLASS_DSL_VERSION}" "flash-attn-4==${FLASH_ATTN4_VERSION}" && \
-    python -c "import nvidia_cutlass_dsl, flash_attn.cute; from flash_attn.cute import flash_attn_func; \
-print('flash-attn-4', __import__('flash_attn').__version__ if hasattr(__import__('flash_attn'),'__version__') else '?', \
-'/ cutlass-dsl', nvidia_cutlass_dsl.__version__)" \
-    || echo "WARNING: flash-attn-4 import check failed at build (JIT may probe CUDA); verify on-GPU."
+ARG INSTALL_FA4=false
+RUN if [ "${INSTALL_FA4}" != "true" ]; then \
+        echo "INSTALL_FA4=${INSTALL_FA4} — skipping FlashAttention-4 baseline"; \
+    else \
+        pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' \
+          | grep -viE '^nvidia-cutlass-dsl' > /tmp/fa4-constraints.txt && \
+        pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt \
+          "nvidia-cutlass-dsl==${CUTLASS_DSL_VERSION}" "flash-attn-4==${FLASH_ATTN4_VERSION}" && \
+        { python -c "import nvidia_cutlass_dsl as c, flash_attn.cute; from flash_attn.cute import flash_attn_func; \
+print('flash-attn-4 import OK / cutlass-dsl', c.__version__)" \
+          || echo "WARNING: flash-attn-4 import check failed at build (JIT may probe CUDA); verify on-GPU." ; } ; \
+    fi
 
 # ── Dev deps: cached until requirements-dev.txt changes ──────────────────────
 COPY requirements-dev.txt .
