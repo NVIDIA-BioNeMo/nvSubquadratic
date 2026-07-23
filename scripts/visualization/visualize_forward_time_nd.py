@@ -160,8 +160,26 @@ def make_plot(
         return max(1, round(math.log(seq_len) / math.log(res))) if res > 1 else 2
 
     data_dim = _dim_of(rows[0])
-    devices = [r.get("device") for r in rows if r.get("device")]
-    device = max(set(devices), key=devices.count) if devices else None
+
+    def _common(key):  # dominant non-null value (config fields are uniform per run)
+        vals = [r.get(key) for r in rows if r.get(key) is not None]
+        return max(set(vals), key=vals.count) if vals else None
+
+    device = _common("device")
+    # Config subtitle: distinguishes runs that share a title — e.g. the hidden-8
+    # (head_dim 4) reach sweep vs the hidden-512 (head_dim 128) flash comparison.
+    # head_dim is what makes attention flash-eligible, so it explains why the
+    # HyenaND-vs-attention gap differs between the two sets.
+    _hidden, _heads, _dt = _common("hidden_dim"), _common("num_heads"), _common("dtype")
+    _sub = [device] if device else []
+    if _hidden:
+        _cfg = f"hidden {_hidden}"
+        if _heads:
+            _cfg += f", head_dim {_hidden // _heads}"
+        _sub.append(_cfg)
+    if _dt:
+        _sub.append(str(_dt))
+    subtitle = "  ·  ".join(_sub)
 
     # Group by mixer -> {seq_len: row}
     by_mixer: dict[str, dict[int, dict]] = defaultdict(dict)
@@ -312,8 +330,8 @@ def make_plot(
         ylabel = "Peak memory (GB)"
 
     fig.suptitle(title, fontsize=12, fontweight="bold")
-    if device:
-        ax.set_title(device, fontsize=9, fontweight="normal", color="0.4")
+    if subtitle:
+        ax.set_title(subtitle, fontsize=9, fontweight="normal", color="0.4")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xticks(all_seq)
