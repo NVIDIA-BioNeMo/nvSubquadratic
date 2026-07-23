@@ -73,7 +73,7 @@ set -x
 
 # ── Paths (adjust to your cluster layout) ────────────────────────────────────
 SQSH_PATH="${SQSH_PATH:-/lustre/fsw/healthcareeng_bionemo/farhadr/enroot/nvsubquadratic-arm64.sqsh}"
-CODE_PATH="${CODE_PATH:-/lustre/fsw/healthcareeng_bionemo/farhadr/nvsubquadratic_workdir/nvSubquadratic-private}"
+CODE_PATH="${CODE_PATH:-/lustre/fsw/healthcareeng_bionemo/farhadr/nvsubquadratic_workdir/nvSubquadratic}"
 CODE_MOUNT=/workspace/nvsubq
 RESULTS_HOST="${CODE_PATH}/benchmarks/results"
 MOUNTS="${CODE_PATH}:${CODE_MOUNT}"
