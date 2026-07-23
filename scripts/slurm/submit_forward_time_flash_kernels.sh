@@ -17,10 +17,13 @@
 #     At hidden 512 the 32-bit-index wall lands at ~1M tokens (2D), which is far
 #     past where attention time-walls, so the comparison is complete.
 #
-# Runs HyenaND alongside the three attention kernels so the plot keeps the
-# Figure-1 punchline (subquadratic scaling past every attention kernel's wall).
-# The fa4 series needs flash-attn-4 in the image (rebuild the sqsh); absent, it
-# records 'unavailable' and the plotter simply omits it.
+# Runs HyenaND and bidirectional Mamba2 alongside the three attention kernels, so
+# the plot keeps the Figure-1 punchline (subquadratic scaling past every attention
+# kernel's O(L^2) wall, with Mamba2 as the O(L) SSM reference that walls on its
+# causal_conv1d grid limit ~1-2M). The fa4 series needs flash-attn-4 in the image
+# (rebuild the sqsh with the version-locked layer); absent or mismatched, it
+# records 'unavailable'/'error' and the plotter simply omits it. Mamba2 needs
+# mamba-ssm (already in the image); absent, it is likewise omitted.
 #
 # Usage (defaults to 2D; override DATA_DIM / any submit_forward_time_nd.sh var):
 #   scripts/slurm/submit_forward_time_flash_kernels.sh
@@ -34,7 +37,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIM="${DATA_DIM:-2}"
 HIDDEN_DIM="${HIDDEN_DIM:-512}"   # /4 heads => head_dim 128 (flash-optimized)
 NUM_HEADS="${NUM_HEADS:-4}"
-MIXERS="${MIXERS:-hyena attention flex fa4}"
+MAMBA_HEADDIM="${MAMBA_HEADDIM:-64}"   # d_inner = 512*expand(2) = 1024 / 64 => 16 heads
+MIXERS="${MIXERS:-hyena attention flex fa4 mamba}"
 
 # Per-dim reach: largest R keeping 3*HIDDEN_DIM*R^DATA_DIM under 2^31 at hidden 512.
 case "${DATA_DIM}" in
@@ -45,7 +49,7 @@ case "${DATA_DIM}" in
 esac
 
 echo "[flash-kernels] DATA_DIM=${DATA_DIM} hidden=${HIDDEN_DIM} heads=${NUM_HEADS} " \
-     "(head_dim=$((HIDDEN_DIM / NUM_HEADS))) mixers='${MIXERS}'"
+     "(head_dim=$((HIDDEN_DIM / NUM_HEADS))) mamba_headdim=${MAMBA_HEADDIM} mixers='${MIXERS}'"
 echo "[flash-kernels] resolutions='${RESOLUTIONS}'"
 
 # Distinct output stem so results/plots don't clobber the reach sweep's
@@ -56,7 +60,7 @@ OUT="forward_time_flash_${DATA_DIM}d"
 # propagate the whole env with --export=ALL, rather than packing space-containing
 # values (MIXERS, RESOLUTIONS) into an --export=KEY=VAL,... string — Slurm splits
 # that list on commas and mishandles embedded spaces on some versions.
-export DATA_DIM MIXERS HIDDEN_DIM NUM_HEADS RESOLUTIONS OUT
+export DATA_DIM MIXERS HIDDEN_DIM NUM_HEADS MAMBA_HEADDIM RESOLUTIONS OUT
 exec sbatch \
     --job-name="nvsubq-fwd-flash-${DATA_DIM}d" \
     --export=ALL \

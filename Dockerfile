@@ -110,13 +110,25 @@ RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch
 # mamba above — there is NO CUDA source build here: this layer is cheap and
 # QEMU-safe. It needs a Hopper/Blackwell GPU + CUDA >= 12.3 at *run* time (the
 # build host needs no GPU; the JIT fires on the first forward). Alpha release, so
-# --pre. This CUDA 12.9 image uses the default (cu12) wheel; on a CUDA 13 base use
-# `flash-attn-4[cu13]`. Pin torch/nvidia/triton so the install cannot swap the
-# 2.10 stack out from under cuDNN (same failure the mamba layer guards against).
-RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' > /tmp/fa4-constraints.txt && \
-    pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt flash-attn-4 && \
-    python -c "from flash_attn.cute import flash_attn_func; print('flash-attn-4: import OK')" \
-    || echo "WARNING: flash-attn-4 import check skipped/failed (JIT probes CUDA at build?); verify on-GPU."
+# --pre; on a CUDA 13 base use the `[cu13]` extra on both pins below.
+#
+# VERSION LOCK: flash-attn-4 pins an EXACT matching CuTe-DSL dev build (b23 ->
+# nvidia-cutlass-dsl==4.6.0.dev0). A skew between the two crashes the JIT with
+# "fmax() takes 2 positional arguments but 3 given" in flash_attn/cute/softmax.py.
+# So (1) install the matched pair explicitly, and (2) EXCLUDE nvidia-cutlass-dsl
+# from the torch/CUDA constraints pin — otherwise a DSL already present in the base
+# image gets frozen to the wrong version and strands FA4 on a mismatched API. The
+# rest of the nvidia/torch/triton stack is still pinned (the cuDNN-clobber guard).
+ARG FLASH_ATTN4_VERSION=4.0.0b23
+ARG CUTLASS_DSL_VERSION=4.6.0.dev0
+RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' \
+      | grep -viE '^nvidia-cutlass-dsl' > /tmp/fa4-constraints.txt && \
+    pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt \
+      "nvidia-cutlass-dsl==${CUTLASS_DSL_VERSION}" "flash-attn-4==${FLASH_ATTN4_VERSION}" && \
+    python -c "import nvidia_cutlass_dsl, flash_attn.cute; from flash_attn.cute import flash_attn_func; \
+print('flash-attn-4', __import__('flash_attn').__version__ if hasattr(__import__('flash_attn'),'__version__') else '?', \
+'/ cutlass-dsl', nvidia_cutlass_dsl.__version__)" \
+    || echo "WARNING: flash-attn-4 import check failed at build (JIT may probe CUDA); verify on-GPU."
 
 # ── Dev deps: cached until requirements-dev.txt changes ──────────────────────
 COPY requirements-dev.txt .
