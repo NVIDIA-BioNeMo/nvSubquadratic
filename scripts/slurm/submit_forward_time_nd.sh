@@ -51,6 +51,15 @@ set -x
 #   # SAME config. num_heads/mamba_headdim reduced to divide hidden 8:
 #   HIDDEN_DIM=8 NUM_HEADS=2 MAMBA_HEADDIM=8 \
 #       sbatch scripts/slurm/submit_forward_time_nd.sh
+#   # Attention-KERNEL comparison (SDPA vs FlexAttention vs FlashAttention-4 vs
+#   # HyenaND). flex/fa4 REQUIRE head_dim >= 16, so this is a SEPARATE run from the
+#   # reach story above: bump the width so head_dim = HIDDEN_DIM/NUM_HEADS >= 16
+#   # (256/8 = 32). Caps ~2048^2 (4M) at the 32-bit-index wall — plenty, since every
+#   # attention kernel walls on time/memory well before that. Needs flash-attn-4 in
+#   # the image for the fa4 series (absent -> it shows 'unavailable' and is omitted):
+#   MIXERS="hyena attention flex fa4" HIDDEN_DIM=256 NUM_HEADS=8 GRID_TYPE=double \
+#       RESOLUTIONS="64 128 256 512 1024 2048" \
+#       sbatch scripts/slurm/submit_forward_time_nd.sh
 #   # HyenaND only:
 #   MIXERS=hyena sbatch scripts/slurm/submit_forward_time_nd.sh
 #
@@ -98,6 +107,7 @@ OUT="${OUT:-forward_time_${DATA_DIM}d}"
 
 JSONL="${CODE_MOUNT}/benchmarks/results/${OUT}.jsonl"
 PNG="${CODE_MOUNT}/benchmarks/results/${OUT}.png"
+MEM_PNG="${CODE_MOUNT}/benchmarks/results/${OUT}_memory.png"
 
 # ── In-container command ─────────────────────────────────────────────────────
 read -r -d '' COMMAND <<EOF
@@ -130,11 +140,15 @@ PYTHONPATH=. python benchmarks/benchmark_forward_time_nd_resolution.py \
     --max-seconds-per-point ${MAX_SECONDS} \
     --output ${JSONL}
 
-# Render the plot in-job (matplotlib ships in the dev image); harmless if absent.
-python -c "import matplotlib" 2>/dev/null \
-    && PYTHONPATH=. python scripts/visualization/visualize_forward_time_nd.py \
-           --input ${JSONL} --out ${PNG} --no-fail-markers \
-    || echo "[plot] matplotlib unavailable — plot on the login node from ${OUT}.jsonl."
+# Render the time and memory plots in-job (matplotlib ships in the dev image).
+if python -c "import matplotlib" 2>/dev/null; then
+    PYTHONPATH=. python scripts/visualization/visualize_forward_time_nd.py \
+        --input ${JSONL} --out ${PNG} --no-fail-markers
+    PYTHONPATH=. python scripts/visualization/visualize_forward_time_nd.py \
+        --input ${JSONL} --out ${MEM_PNG} --metric memory --no-fail-markers
+else
+    echo "[plot] matplotlib unavailable — plot on the login node from ${OUT}.jsonl."
+fi
 EOF
 
 srun \

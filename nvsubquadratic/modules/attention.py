@@ -121,6 +121,31 @@ from nvsubquadratic.parallel.utils import zigzag_gather_from_group_ranks, zigzag
 from nvsubquadratic.utils import qk_norm, rope
 
 
+def _resolve_fa4_func():
+    """Return the ``flash_attn_func`` callable for the installed FlashAttention.
+
+    FlashAttention-4 (Blackwell/Hopper, ``pip install --pre flash-attn-4``) is a
+    pure-Python CuTe-DSL JIT wheel exposing ``flash_attn.cute.flash_attn_func``.
+    We prefer it, then fall back to the Hopper FA3 build (``flash_attn_interface``)
+    and finally the mainline FA2 wheel (``flash_attn``). All expose a
+    ``flash_attn_func(q, k, v, softmax_scale=, causal=)`` on ``[B, S, H, D]``
+    tensors. Raise a clear error if none is importable.
+    """
+    for mod_name in ("flash_attn.cute", "flash_attn_interface", "flash_attn"):
+        try:
+            mod = __import__(mod_name, fromlist=["flash_attn_func"])
+        except ImportError:
+            continue
+        func = getattr(mod, "flash_attn_func", None)
+        if func is not None:
+            return func
+    raise ImportError(
+        "attn_impl='fa4' needs FlashAttention. Install FA4 (Blackwell/Hopper): "
+        "`pip install --pre flash-attn-4` (exposes flash_attn.cute), or a "
+        "flash_attn_interface / flash_attn build for your GPU arch."
+    )
+
+
 class Attention(torch.nn.Module):
     r"""Multi-head scaled dot-product self-attention for 1D/2D/3D spatial inputs.
 
@@ -227,6 +252,11 @@ class Attention(torch.nn.Module):
             Examples: ``(4096,)`` for 1D, ``(64, 64)`` for 2D,
             ``(8, 64, 64)`` for 3D.  Must match the spatial shape seen
             during ``forward``.
+        attn_impl (str): Attention kernel — ``"sdpa"`` (default; PyTorch
+            ``scaled_dot_product_attention`` auto-selecting cuDNN / flash /
+            fallback), ``"flex"`` (compiled ``torch.nn.attention.flex_attention``),
+            or ``"fa4"`` (FlashAttention-4 via the external ``flash_attn`` package).
+            ``flex``/``fa4`` require ``head_dim >= 16``.
 
     Example::
 
@@ -256,6 +286,7 @@ class Attention(torch.nn.Module):
         attn_dropout: float = 0.0,
         rope_base: float = 10000.0,
         rope_spatial_dims: tuple[int, ...] | None = None,
+        attn_impl: str = "sdpa",
     ):
         """Initialise the Attention module and precompute RoPE buffers.
 
@@ -278,6 +309,9 @@ class Attention(torch.nn.Module):
                 or ``extra_repr``).  The corresponding cos/sin buffers are
                 stored as non-persistent registered buffers (``rope_cos``,
                 ``rope_sin``, etc.).
+            attn_impl (str): Attention kernel — ``"sdpa"`` (default),
+                ``"flex"`` (compiled FlexAttention), or ``"fa4"``
+                (FlashAttention-4).  ``flex``/``fa4`` require ``head_dim >= 16``.
 
         Raises:
             AssertionError: If ``hidden_dim % num_heads != 0``.
@@ -299,6 +333,19 @@ class Attention(torch.nn.Module):
         self.rope_base = rope_base
         self.is_causal = is_causal
         self.attn_dropout = attn_dropout
+        # Attention kernel: "sdpa" (PyTorch auto-select: cuDNN / flash / fallback),
+        # "flex" (compiled FlexAttention), or "fa4" (FlashAttention-4 via flash_attn).
+        # flex/fa4 back-ends are resolved eagerly here so a missing dependency fails
+        # at construction, not mid-forward.
+        self.attn_impl = attn_impl
+        if attn_impl == "flex":
+            from torch.nn.attention.flex_attention import flex_attention
+
+            self._flex_attention = torch.compile(flex_attention)
+        elif attn_impl == "fa4":
+            self._fa4_func = _resolve_fa4_func()
+        elif attn_impl != "sdpa":
+            raise ValueError(f"Unknown attn_impl={attn_impl!r}; use 'sdpa', 'flex', or 'fa4'.")
 
         # ── Precomputed RoPE cos/sin buffers ──────────────────────────────
         #
@@ -550,19 +597,44 @@ class Attention(torch.nn.Module):
         key = rearrange(key, "(b h) t d -> b h t d", h=local_num_heads)
         value = rearrange(value, "(b h) t d -> b h t d", h=local_num_heads)
 
-        # Scaled dot-product attention — let PyTorch auto-select the best
-        # backend (CuDNN on H100, FlashAttention on A100, etc.).
-        # No manual dtype cast: autocast handles precision.
-        out = F.scaled_dot_product_attention(
-            query,
-            key,
-            value,
-            dropout_p=self.attn_dropout if self.training else 0.0,
-            is_causal=self.is_causal,
-            # When QK-norm is applied (cosine attention), disable the default
-            # 1/sqrt(d) scaling — it would flatten the normalised logits.
-            scale=self.scale if not self.apply_qk_norm else 1.0,
-        )
+        # When QK-norm is applied (cosine attention), disable the default
+        # 1/sqrt(d) scaling — it would flatten the normalised logits.
+        scale = self.scale if not self.apply_qk_norm else 1.0
+        dropout_p = self.attn_dropout if self.training else 0.0
+        if self.attn_impl in ("flex", "fa4"):
+            # RoPE / qk_norm can upcast q,k to fp32 while v stays in the autocast
+            # dtype. SDPA's math fallback tolerates the mismatch, but flash-class
+            # kernels (FlexAttention, FA4) require q,k,v to share one dtype.
+            query = query.to(value.dtype)
+            key = key.to(value.dtype)
+        if self.attn_impl == "flex":
+            # Compiled FlexAttention. Non-causal here (no block_mask); is_causal
+            # would need a causal BlockMask, unused by the ND benchmark.
+            out = self._flex_attention(query, key, value, scale=scale)
+        elif self.attn_impl == "fa4":
+            # FlashAttention-4. flash_attn expects [B, S, H, D], not SDPA's [B, H, S, D].
+            # softmax_scale/causal are the args common to FA2/FA3/FA4; dropout_p is
+            # omitted (dropped in FA3+, and 0 here anyway). Some builds return
+            # (out, softmax_lse) — take the first element.
+            out = self._fa4_func(
+                query.transpose(1, 2),
+                key.transpose(1, 2),
+                value.transpose(1, 2),
+                softmax_scale=scale,
+                causal=self.is_causal,
+            )
+            if isinstance(out, tuple):
+                out = out[0]
+            out = out.transpose(1, 2)
+        else:  # sdpa — PyTorch auto-selects cuDNN / flash / fallback.
+            out = F.scaled_dot_product_attention(
+                query,
+                key,
+                value,
+                dropout_p=dropout_p,
+                is_causal=self.is_causal,
+                scale=scale,
+            )
 
         # Merge heads: [B, H, T, D] -> [B, T, H*D]
         out = rearrange(out, "b h t d -> b t (h d)", h=local_num_heads)

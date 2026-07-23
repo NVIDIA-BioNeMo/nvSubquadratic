@@ -168,6 +168,7 @@ def _attention_mixer_cfg(
     num_heads: int = ATTN_NUM_HEADS,
     use_rope: bool = ATTN_USE_ROPE,
     rope_spatial_dims: tuple[int, ...] | None = None,
+    attn_impl: str = "sdpa",
 ) -> LazyConfig:
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
@@ -180,6 +181,7 @@ def _attention_mixer_cfg(
             rope_base=10000.0,
             attn_dropout=0.0,
             rope_spatial_dims=rope_spatial_dims,
+            attn_impl=attn_impl,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),

@@ -79,10 +79,11 @@ docker build -t nvsubquadratic:dev .
 docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic nvsubquadratic:dev
 ```
 
-The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Two build-args let you tune the compile:
+The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Build-args let you tune the compile:
 
-- `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4).
-- `MAX_JOBS` — number of parallel nvcc jobs. Defaults to unconstrained. Set to `1` if the build OOMs or gcc ICEs (typical under qemu emulation for arm64).
+- `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4). Also applied to the patched `mamba-ssm` / `causal-conv1d` source builds (upstream otherwise hardcodes sm_75..sm_120).
+- `MAX_JOBS` — number of parallel nvcc/ninja jobs. Defaults to unconstrained. Set to `1` if the build OOMs or gcc ICEs (typical under qemu emulation for arm64).
+- `NVCC_THREADS` — nvcc `--threads` for the mamba stack (default `4`; use `1` under QEMU).
 
 ```bash
 docker build \
@@ -92,13 +93,13 @@ docker build \
 
 ### Enroot (SLURM clusters)
 
-For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.sh`](scripts/slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
+For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.sh`](scripts/slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST`, `MAX_JOBS`, and `NVCC_THREADS` per platform:
 
 ```bash
 # H100 (x86-64, default)
 scripts/slurm/enroot/build_sqsh.sh
 
-# GB200 (ARM64) — prefer a native aarch64 host; x86 uses slow QEMU emulation
+# GB200 (ARM64) — QEMU on x86: keep ≥64GB free RAM+swap; defaults MAX_JOBS=1 NVCC_THREADS=1
 PLATFORM=arm64 scripts/slurm/enroot/build_sqsh.sh
 ```
 

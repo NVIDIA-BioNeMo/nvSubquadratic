@@ -35,11 +35,21 @@ Three mixers are compared at a shared ``hidden_dim`` (channels-last
 
   * ``hyena``     -- ``QKVSequenceMixer`` wrapping ``Hyena`` with a 2D
     ``CKConvND`` on the ``subq_ops`` CUDA backend (the nSubQ fused FFT-conv).
-  * ``attention`` -- ``QKVSequenceMixer`` wrapping ``Attention`` (SDPA /
-    flash / cuDNN), with 2D axial RoPE.
+  * ``attention`` -- ``QKVSequenceMixer`` wrapping ``Attention`` with the default
+    SDPA kernel (PyTorch auto-selects flash / cuDNN / fallback), 2D axial RoPE.
+  * ``flex``      -- same ``Attention`` layer with the compiled FlexAttention
+    kernel (``torch.nn.attention.flex_attention``).  Requires head_dim >= 16.
+  * ``fa4``       -- same ``Attention`` layer with FlashAttention-4 (the external
+    ``flash-attn-4`` CuTe-DSL wheel).  Requires head_dim >= 16 and a Hopper/
+    Blackwell GPU; if ``flash_attn`` is absent the points show ``unavailable``.
   * ``mamba``     -- a **bare** ``Mamba`` (bidirectional Mamba2) that rasterizes
     the 2D grid into a 1D scan.  Not wrapped in ``QKVSequenceMixer`` (its
     ``forward`` takes a single tensor, not q/k/v).
+
+``attention``/``flex``/``fa4`` are three interchangeable attention *kernels* on
+one shared q/k/v + RoPE path; run them together for an apples-to-apples flash
+comparison (needs head_dim >= 16, so a wider ``hidden_dim`` than the tiny-width
+16M-reach sweep).
 
 The mixer config builders are reused from ``benchmark_patch_size_2d.py``.  We
 time a single layer (not the 4-block ``ResidualNetwork`` that script builds):
@@ -99,7 +109,10 @@ from benchmark_patch_size_2d import (
 from nvsubquadratic.lazy_config import instantiate
 
 
-MIXER_CHOICES = ("attention", "hyena", "mamba")
+MIXER_CHOICES = ("attention", "flex", "fa4", "hyena", "mamba")
+# Attention kernel per mixer key: SDPA (auto cuDNN/flash), compiled FlexAttention,
+# or FlashAttention-4 (external flash_attn). All share the same q/k/v + RoPE path.
+_ATTN_IMPL = {"attention": "sdpa", "flex": "flex", "fa4": "fa4"}
 DTYPE_MAP = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
 # 2D axial RoPE needs head_dim divisible by 4; 1D by 2; 3D by 6.
 _ROPE_DIVISOR = {1: 2, 2: 4, 3: 6}
@@ -137,7 +150,7 @@ def build_module(
             data_dim=data_dim,
             is_causal=(data_dim == 1),
         )
-    elif name == "attention":
+    elif name in _ATTN_IMPL:  # attention (sdpa) / flex / fa4 — shared q/k/v + RoPE path
         head_dim = hidden_dim // num_heads
         div = _ROPE_DIVISOR[data_dim]  # 1D:2, 2D:4, 3D:6
         use_rope = attn_rope and (head_dim % div == 0)
@@ -152,6 +165,7 @@ def build_module(
             num_heads=num_heads,
             use_rope=use_rope,
             rope_spatial_dims=(resolution,) * data_dim if use_rope else None,
+            attn_impl=_ATTN_IMPL[name],
         )
     elif name == "mamba":
         cfg = _mamba_mixer_cfg(
@@ -457,6 +471,43 @@ def main() -> None:
     )
     print(f"Mixers: {args.mixers}    Resolutions: {resolutions}")
 
+    # Attention-kernel eligibility. SDPA (auto cuDNN / flash) needs head_dim % 8 == 0
+    # and is *optimized* for 64/128; below a multiple of 8 it silently falls back to a
+    # weak math / mem-efficient path. FlexAttention and FA4 additionally *require*
+    # head_dim >= 16 — below that they raise, so those points error out (rather than
+    # degrade) at a too-small head_dim.
+    attn_mixers = [m for m in args.mixers if m in _ATTN_IMPL]
+    if attn_mixers:
+        head_dim = args.hidden_dim // args.num_heads
+        print(
+            f"[attn] kernels={attn_mixers}  head_dim={head_dim} (hidden {args.hidden_dim} / heads {args.num_heads})",
+            flush=True,
+        )
+        if head_dim % 8 != 0:
+            print(
+                f"[attn] head_dim={head_dim} is NOT a multiple of 8 → SDPA flash/cuDNN INELIGIBLE "
+                f"(falls back to math/mem-efficient, a weak non-flash baseline).",
+                flush=True,
+            )
+        elif head_dim < 64:
+            print(
+                f"[attn] head_dim={head_dim}: flash eligible but BELOW its optimized regime "
+                f"(flash/FA4 tuned for head_dim 64/128).",
+                flush=True,
+            )
+        else:
+            print(
+                f"[attn] head_dim={head_dim} → flash/cuDNN eligible; SDPA auto-selects the fused kernel.", flush=True
+            )
+        needs16 = sorted({"flex", "fa4"} & set(attn_mixers))
+        if needs16 and head_dim < 16:
+            print(
+                f"[attn] head_dim={head_dim} < 16 → {needs16} will ERROR "
+                f"(FlexAttention/FA4 require head_dim >= 16); those points are marked 'error'. "
+                f"Raise hidden_dim or lower num_heads.",
+                flush=True,
+            )
+
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -488,6 +539,7 @@ def main() -> None:
                             "backend": hyena_backend if mixer == "hyena" else None,
                             "batch_size": args.batch_size,
                             "hidden_dim": args.hidden_dim,
+                            "num_heads": args.num_heads,
                             "dtype": args.dtype,
                             "device": device_name,
                             **result,
@@ -543,6 +595,7 @@ def main() -> None:
                     "backend": hyena_backend if mixer == "hyena" else None,
                     "batch_size": args.batch_size,
                     "hidden_dim": args.hidden_dim,
+                    "num_heads": args.num_heads,
                     "dtype": args.dtype,
                     "device": device_name,
                     "status": result["status"],

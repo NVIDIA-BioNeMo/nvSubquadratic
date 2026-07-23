@@ -74,6 +74,50 @@ RUN MAX_JOBS="${MAX_JOBS}" pip install -v --disable-pip-version-check --no-cache
     --config-settings "--build-option=--cuda_ext" \
     git+https://github.com/NVIDIA/apex.git
 
+# ── Mamba baseline: mamba-ssm + causal-conv1d from source ─────────────────────
+# Optional comparison baseline (e.g. the 2D forward-time benchmark's Mamba2
+# series); NOT a project dependency, so it is installed explicitly here rather
+# than via an extra. Placed before COPY of the full tree so unrelated code
+# changes do not trigger a rebuild. The tiny patch script is copied first so we
+# can rewrite upstream setup.py before compiling.
+#
+# Upstream hardcodes -gencode for sm_75..sm_120 and ignores TORCH_CUDA_ARCH_LIST,
+# which OOMs / gcc-ICEs under QEMU arm64. We clone, patch gencodes to match
+# TORCH_CUDA_ARCH_LIST, and honor NVCC_THREADS (arm64 build sets this to 1).
+#
+# mamba-ssm depends on an unpinned `torch`, so a plain install lets pip swap
+# torch / nvidia-cudnn-cu12 out from under the 2.10 stack — which breaks cuDNN
+# (CUDNN_STATUS_NOT_INITIALIZED at runtime). Freeze the current torch/nvidia/
+# triton versions into a constraints file so the mamba install cannot touch them.
+ARG NVCC_THREADS=4
+COPY scripts/docker/patch_mamba_cuda_arches.py /tmp/patch_mamba_cuda_arches.py
+RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' > /tmp/mamba-constraints.txt && \
+    cat /tmp/mamba-constraints.txt && \
+    git clone --depth 1 https://github.com/Dao-AILab/causal-conv1d.git /tmp/causal-conv1d && \
+    git clone --depth 1 https://github.com/state-spaces/mamba.git /tmp/mamba && \
+    python /tmp/patch_mamba_cuda_arches.py /tmp/causal-conv1d/setup.py /tmp/mamba/setup.py && \
+    MAX_JOBS="${MAX_JOBS}" NVCC_THREADS="${NVCC_THREADS}" \
+    CAUSAL_CONV1D_FORCE_BUILD=TRUE MAMBA_FORCE_BUILD=TRUE \
+    pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
+    -c /tmp/mamba-constraints.txt \
+    /tmp/causal-conv1d /tmp/mamba && \
+    rm -rf /tmp/causal-conv1d /tmp/mamba
+
+# ── FlashAttention-4 baseline (Blackwell / Hopper) ────────────────────────────
+# Optional baseline for the forward-time benchmark's FlashAttention-4 series
+# (attn_impl="fa4"); NOT a project dependency. FA4 is a pure-Python CuTe-DSL wheel
+# that JIT-compiles its kernel at runtime on the target GPU, so — unlike apex /
+# mamba above — there is NO CUDA source build here: this layer is cheap and
+# QEMU-safe. It needs a Hopper/Blackwell GPU + CUDA >= 12.3 at *run* time (the
+# build host needs no GPU; the JIT fires on the first forward). Alpha release, so
+# --pre. This CUDA 12.9 image uses the default (cu12) wheel; on a CUDA 13 base use
+# `flash-attn-4[cu13]`. Pin torch/nvidia/triton so the install cannot swap the
+# 2.10 stack out from under cuDNN (same failure the mamba layer guards against).
+RUN pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' > /tmp/fa4-constraints.txt && \
+    pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt flash-attn-4 && \
+    python -c "from flash_attn.cute import flash_attn_func; print('flash-attn-4: import OK')" \
+    || echo "WARNING: flash-attn-4 import check skipped/failed (JIT probes CUDA at build?); verify on-GPU."
+
 # ── Dev deps: cached until requirements-dev.txt changes ──────────────────────
 COPY requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt
