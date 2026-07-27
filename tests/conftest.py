@@ -24,17 +24,30 @@ import torch
 # ---------------------------------------------------------------------------
 
 
-def _subq_ops_version() -> tuple[int, ...]:
-    """Return the installed subquadratic-ops-torch-cu12 version as an int tuple."""
-    try:
-        from importlib.metadata import version
+# The kernels ship as one distribution per CUDA major version. Query every
+# known name: pinning only one of them silently reports (0, 0, 0) on a machine
+# that has the other installed, which turns the gates below into blanket xfails.
+_SUBQ_OPS_DISTRIBUTIONS = ("subquadratic-ops-torch-cu13", "subquadratic-ops-torch-cu12")
 
-        return tuple(int(x) for x in version("subquadratic-ops-torch-cu12").split(".")[:3])
-    except Exception:
-        return (0, 0, 0)
+
+def _subq_ops_version() -> tuple[int, ...]:
+    """Return the installed subquadratic-ops-torch version as an int tuple.
+
+    Returns ``(0, 0, 0)`` when no known distribution is installed.
+    """
+    from importlib.metadata import version
+
+    for dist in _SUBQ_OPS_DISTRIBUTIONS:
+        try:
+            return tuple(int(x) for x in version(dist).split(".")[:3])
+        except Exception:
+            continue
+    return (0, 0, 0)
 
 
 _SUBQ_OPS_MIN_VERSION = (0, 2, 0)
+# fused_fft_conv2d (the native-dtype single-launch 2D kernel) landed in 0.2.2.
+_SUBQ_OPS_FUSED_MIN_VERSION = (0, 2, 2)
 _subq_installed = _subq_ops_version()
 
 requires_subq_ops_v2 = pytest.mark.xfail(
@@ -44,6 +57,17 @@ requires_subq_ops_v2 = pytest.mark.xfail(
         f"(installed: {'.'.join(str(x) for x in _subq_installed)})"
     ),
     strict=False,
+)
+
+# Unlike requires_subq_ops_v2 this skips rather than xfails: the fused kernel is
+# a strictly newer addition, so an older-but-working install is "not applicable"
+# rather than "expected to fail".
+requires_subq_ops_fused = pytest.mark.skipif(
+    _subq_installed < _SUBQ_OPS_FUSED_MIN_VERSION,
+    reason=(
+        f"subquadratic_ops_torch >= {'.'.join(str(x) for x in _SUBQ_OPS_FUSED_MIN_VERSION)} "
+        f"required for fused_fft_conv2d (installed: {'.'.join(str(x) for x in _subq_installed)})"
+    ),
 )
 
 
