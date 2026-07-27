@@ -13,6 +13,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 - **B2B CausalConv1d**: Back-to-back causal convolutions for striped Hyena architectures
 - **CausalConv1d**: Standard causal convolutions with various kernel sizes (2-256)
 - **FFT CausalConv1d**: FFT-based causal convolutions for large kernel sizes (up to 8K-16M)
+- **Fused FFT Conv2d**: single-launch 2D FFT convolution running natively in fp32/fp16/bf16 (spatial dims up to 64 per axis); requires `subquadratic-ops-torch >= 0.2.2`
 
 **Requirements**:
 
@@ -60,8 +61,15 @@ pip install "nvsubquadratic[all]"          # all of the above
 The accelerated CUDA kernels (`[cuda]`) are a source build that requires `nvcc`,
 so they are kept out of the core install — this is what lets `pip install nvsubquadratic` succeed in environments without the CUDA toolkit (e.g. a
 downstream project's CPU CI). The operators default to the portable `torch.fft`
-backend; selecting `fft_backend="subq_ops"` without `[cuda]` installed raises a
-clear `ImportError` pointing you to the extra.
+backend; selecting `fft_backend="subq_ops"` (or `"subq_ops_fused"`) without
+`[cuda]` installed raises a clear `ImportError` pointing you to the extra.
+
+On 2D problems with spatial dims of at most 64 per axis, `fft_backend="subq_ops_fused"`
+is the fastest option: it fuses the whole FFT-conv pipeline into one launch and
+runs it natively in bf16/fp16 instead of upcasting to fp32, for roughly a 3-4x
+speedup over `torch_fft`. Models already written against `torch_fft` can pick up
+the same kernel under `torch.compile` without a config change — see the
+[torch.compile lowering](docs/ops/README.md#torchcompile-lowering).
 
 ### Package Manager
 
