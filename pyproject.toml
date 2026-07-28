@@ -73,13 +73,16 @@ Repository = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
 Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 
 [project.optional-dependencies]
-# Accelerated CUDA kernels (fused FFT-conv / direct causal-conv). Source-only
-# sdist — building requires nvcc, so this is intentionally NOT a core dep: that
-# is what lets `pip install nvsubquadratic` succeed without the CUDA toolkit
-# (e.g. a downstream project's CPU CI). The operators import it lazily and the
-# default fft_backend="torch_fft" path runs without it; install for the fast path:
-#   pip install nvsubquadratic[cuda]
-cuda = ["subquadratic-ops-torch-cu12>=0.2.0"]
+# Accelerated CUDA-13 kernels (fused FFT-conv / direct causal-conv). An opt-in
+# extra, NOT a core dep, so `pip install nvsubquadratic` still succeeds without the
+# CUDA toolkit (e.g. a downstream project's CPU CI): the operators import it lazily
+# and the default fft_backend="torch_fft" path runs without it. Install for the
+# fast path:  pip install nvsubquadratic[cuda]
+# NOTE: subquadratic-ops-torch-cu13 (>=0.2.2) currently ships on the internal NVIDIA
+# GitLab registry (project 180496) — the Docker image fetches it from there via a
+# build secret; external `pip install nvsubquadratic[cuda]` needs the cu13 wheel
+# published to public PyPI to resolve.
+cuda = ["subquadratic-ops-torch-cu13>=0.2.2"]
 
 # QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
 # On Ampere and older GPUs RMSNorm falls back to pure PyTorch automatically.
@@ -87,7 +90,7 @@ quack = ["quack-kernels"]
 
 # NVIDIA DALI GPU data-loading pipeline, used by the ImageNet / The Well
 # examples. Not required by the importable library; ~400 MB download.
-dali = ["nvidia-dali-cuda120==1.53.0"]
+dali = ["nvidia-dali-cuda130==1.53.0"]
 
 # Megatron parallel state, needed only for context-parallel / distributed
 # training via nvsubquadratic.parallel.utils.init_parallel_state. The operators

@@ -9,7 +9,12 @@
 #   3. requirements-dev.txt               (changes when dev deps change)
 #   4. COPY . . + pip install             (changes on every code push — fast)
 
-FROM nvcr.io/nvidia/cuda:12.9.0-devel-ubuntu22.04
+# CUDA 13.0 toolkit — matched to PyTorch's cu130 (CUDA 13.0) wheels. apex's (and
+# mamba's) build-time check requires the base nvcc CUDA to match torch's CUDA
+# EXACTLY: a 13.2 base fails apex with "Cuda extensions ... compiled with Cuda 13.0"
+# vs nvcc 13.2. torch ships only cu130 (there is no cu132), so CUDA 13.0 is the
+# runtime regardless — pin the base to 13.0.x to build the extensions cleanly.
+FROM nvcr.io/nvidia/cuda:13.0.3-devel-ubuntu22.04
 
 ARG MINIFORGE_NAME=Miniforge3
 ARG MINIFORGE_VERSION=25.3.0-3
@@ -41,10 +46,10 @@ RUN conda install --yes \
     && conda clean --all --yes
 
 RUN pip install --no-cache-dir \
-    torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129 \
-    && pip install --no-cache-dir nvidia-dali-cuda120 \
+    torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu130 \
+    && pip install --no-cache-dir nvidia-dali-cuda130 \
     && pip install --no-cache-dir \
-       torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129 \
+       torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu130 \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
@@ -86,7 +91,7 @@ RUN MAX_JOBS="${MAX_JOBS}" pip install -v --disable-pip-version-check --no-cache
 # TORCH_CUDA_ARCH_LIST, and honor NVCC_THREADS (arm64 build sets this to 1).
 #
 # mamba-ssm depends on an unpinned `torch`, so a plain install lets pip swap
-# torch / nvidia-cudnn-cu12 out from under the 2.10 stack — which breaks cuDNN
+# torch / nvidia-cudnn-cu13 out from under the 2.10 stack — which breaks cuDNN
 # (CUDNN_STATUS_NOT_INITIALIZED at runtime). Freeze the current torch/nvidia/
 # triton versions into a constraints file so the mamba install cannot touch them.
 # Gated by INSTALL_MAMBA (default false — benchmark-only baseline, not a project dep).
@@ -120,7 +125,8 @@ RUN if [ "${INSTALL_MAMBA}" != "true" ]; then \
 # mamba above — there is NO CUDA source build here: this layer is cheap and
 # QEMU-safe. It needs a Hopper/Blackwell GPU + CUDA >= 12.3 at *run* time (the
 # build host needs no GPU; the JIT fires on the first forward). Alpha release, so
-# --pre; on a CUDA 13 base use the `[cu13]` extra on both pins below.
+# --pre. This CUDA-13 image uses the `[cu13]` extra on both pins below; on a CUDA-12
+# base drop `[cu13]` (the default wheel is cu12).
 #
 # VERSION LOCK: flash-attn-4 pins an EXACT matching CuTe-DSL dev build (b23 ->
 # nvidia-cutlass-dsl==4.6.0.dev0). A skew between the two crashes the JIT with
@@ -145,7 +151,7 @@ RUN if [ "${INSTALL_FA4}" != "true" ]; then \
         pip freeze | grep -iE '^(torch|torchvision|torchaudio|nvidia-|triton|pytorch-triton)' \
           | grep -viE '^nvidia-cutlass-dsl' > /tmp/fa4-constraints.txt && \
         pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt \
-          "nvidia-cutlass-dsl==${CUTLASS_DSL_VERSION}" "flash-attn-4==${FLASH_ATTN4_VERSION}" && \
+          "nvidia-cutlass-dsl[cu13]==${CUTLASS_DSL_VERSION}" "flash-attn-4[cu13]==${FLASH_ATTN4_VERSION}" && \
         { python -c "import nvidia_cutlass_dsl as c, flash_attn.cute; from flash_attn.cute import flash_attn_func; \
 print('flash-attn-4 import OK / cutlass-dsl', c.__version__)" \
           || echo "WARNING: flash-attn-4 import check failed at build (JIT may probe CUDA); verify on-GPU." ; } ; \
@@ -165,9 +171,21 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic
 # can run. After the 0.1.1 dependency restructure, megatron-core/timm/etc. are
 # optional extras ([distributed]/[baselines]/...), so a bare install no longer
 # pulls them — [all] restores the complete pre-restructure dependency set.
-RUN pip install --no-cache-dir wheel-stub \
+# The [cuda] extra resolves subquadratic-ops-torch-cu13 (CUDA 13), which lives on
+# the internal GitLab package registry (project 180496), NOT public PyPI — so this
+# build REQUIRES a GitLab token, mounted as a build secret (never baked into the
+# image). gitlab-master is added as an --extra-index-url alongside the pytorch cu130
+# index; everything else still resolves from PyPI. NOTE: the cu13 0.2.2 wheel is
+# aarch64-only, so this resolves for GB200 (arm64) builds; x86_64 needs an x86_64
+# cu13 wheel to exist in the registry.
+ARG SUBQ_OPS_GITLAB_HOST="gitlab-master.nvidia.com"
+ARG SUBQ_OPS_PROJECT_ID="180496"
+RUN --mount=type=secret,id=gitlab_token \
+    pip install --no-cache-dir wheel-stub \
+    && TOKEN="$(cat /run/secrets/gitlab_token 2>/dev/null)" \
     && pip install --no-cache-dir --no-build-isolation ".[all]" \
-       --extra-index-url https://download.pytorch.org/whl/cu129
+       --extra-index-url https://download.pytorch.org/whl/cu130 \
+       --extra-index-url "https://__token__:${TOKEN}@${SUBQ_OPS_GITLAB_HOST}/api/v4/projects/${SUBQ_OPS_PROJECT_ID}/packages/pypi/simple"
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \

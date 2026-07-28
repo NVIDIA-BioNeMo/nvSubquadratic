@@ -19,7 +19,7 @@ All augmentations (ThreeAugment, ColorJitter, normalization) run inside the
 DALI pipeline, eliminating ~25ms of serial GPU augmentation overhead per step.
 
 Based on optimized_plus with the datamodule swapped to DALIImageNetFusedDataModule.
-Requires: pip install nvidia-dali-cuda120
+Requires: pip install nvidia-dali-cuda130
 """
 
 import os

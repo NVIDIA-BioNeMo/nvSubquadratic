@@ -25,11 +25,11 @@ import torch
 
 
 def _subq_ops_version() -> tuple[int, ...]:
-    """Return the installed subquadratic-ops-torch-cu12 version as an int tuple."""
+    """Return the installed subquadratic-ops-torch-cu13 version as an int tuple."""
     try:
         from importlib.metadata import version
 
-        return tuple(int(x) for x in version("subquadratic-ops-torch-cu12").split(".")[:3])
+        return tuple(int(x) for x in version("subquadratic-ops-torch-cu13").split(".")[:3])
     except Exception:
         return (0, 0, 0)
 

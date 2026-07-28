@@ -46,7 +46,7 @@ For an alternative venv-based install:
 python3 -m venv venv
 source venv/bin/activate
 pip install torch==2.10.0 torchvision==0.25.0 \
-    --index-url https://download.pytorch.org/whl/cu129
+    --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements-dev.txt
 pip install --no-build-isolation -e .
 ```
