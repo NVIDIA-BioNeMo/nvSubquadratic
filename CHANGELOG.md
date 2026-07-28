@@ -11,13 +11,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Bumped the CUDA runtime from 12.9 to 13.0.** The Docker image now builds on
   `nvcr.io/nvidia/cuda:13.0.3-devel-ubuntu22.04` with PyTorch `cu130` wheels, and
   the CUDA extras target CUDA 13: `[cuda]` → `subquadratic-ops-torch-cu13`
-  (`>=0.2.2`), `[dali]` → `nvidia-dali-cuda130`. The FlashAttention-4 benchmark
-  baseline uses the `[cu13]` extra. The default `fft_backend="torch_fft"` path is
-  unaffected and still needs no CUDA kernel.
-  NOTE: the cu13 kernel currently ships on the internal NVIDIA GitLab registry
-  (the Docker image fetches it via a build secret); external
-  `pip install 'nvsubquadratic[cuda]'` needs the cu13 wheel published to public
-  PyPI to resolve.
+  (`>=0.2.1`, resolved from public PyPI — wheels for both aarch64 and x86_64),
+  `[dali]` → `nvidia-dali-cuda130`. The FlashAttention-4 benchmark baseline uses
+  the `[cu13]` extra. The default `fft_backend="torch_fft"` path is unaffected and
+  still needs no CUDA kernel.
 
 ## \[0.1.1\]
 

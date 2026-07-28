@@ -170,22 +170,12 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic
 # (distributed/Megatron CP tests, timm baselines, DALI, subq_ops CUDA kernels)
 # can run. After the 0.1.1 dependency restructure, megatron-core/timm/etc. are
 # optional extras ([distributed]/[baselines]/...), so a bare install no longer
-# pulls them — [all] restores the complete pre-restructure dependency set.
-# The [cuda] extra resolves subquadratic-ops-torch-cu13 (CUDA 13), which lives on
-# the internal GitLab package registry (project 180496), NOT public PyPI — so this
-# build REQUIRES a GitLab token, mounted as a build secret (never baked into the
-# image). gitlab-master is added as an --extra-index-url alongside the pytorch cu130
-# index; everything else still resolves from PyPI. NOTE: the cu13 0.2.2 wheel is
-# aarch64-only, so this resolves for GB200 (arm64) builds; x86_64 needs an x86_64
-# cu13 wheel to exist in the registry.
-ARG SUBQ_OPS_GITLAB_HOST="gitlab-master.nvidia.com"
-ARG SUBQ_OPS_PROJECT_ID="180496"
-RUN --mount=type=secret,id=gitlab_token \
-    pip install --no-cache-dir wheel-stub \
-    && TOKEN="$(cat /run/secrets/gitlab_token 2>/dev/null)" \
+# pulls them — [all] restores the complete pre-restructure dependency set. The
+# [cuda] extra resolves subquadratic-ops-torch-cu13 via the normal pip index chain
+# (wheel-stub sdist → prebuilt wheel).
+RUN pip install --no-cache-dir wheel-stub \
     && pip install --no-cache-dir --no-build-isolation ".[all]" \
-       --extra-index-url https://download.pytorch.org/whl/cu130 \
-       --extra-index-url "https://__token__:${TOKEN}@${SUBQ_OPS_GITLAB_HOST}/api/v4/projects/${SUBQ_OPS_PROJECT_ID}/packages/pypi/simple"
+       --extra-index-url https://download.pytorch.org/whl/cu130
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \

@@ -70,15 +70,6 @@ INSTALL_BASELINES="${INSTALL_BASELINES:-false}"
 INSTALL_MAMBA="${INSTALL_MAMBA:-${INSTALL_BASELINES}}"
 INSTALL_FA4="${INSTALL_FA4:-${INSTALL_BASELINES}}"
 
-# The [cuda] extra pulls subquadratic-ops-torch-cu13 from the internal GitLab
-# registry, so the build needs a GitLab token (passed as a build secret, never
-# baked into the image). Export a valid GITLAB_TOKEN before running.
-if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-    echo "ERROR: GITLAB_TOKEN is unset — required to fetch subquadratic-ops-torch-cu13" >&2
-    echo "       from gitlab-master (project 180496). Export a valid token and retry." >&2
-    exit 1
-fi
-
 echo "Platform: ${DOCKER_PLATFORM} (${TARGET_HW})"
 echo "Image:    ${DOCKER_TAG}"
 echo "Output:   ${OUTPUT_SQSH}"
@@ -87,7 +78,6 @@ echo "Baselines: mamba=${INSTALL_MAMBA}  fa4=${INSTALL_FA4}"
 
 docker buildx build \
     --platform "${DOCKER_PLATFORM}" \
-    --secret id=gitlab_token,env=GITLAB_TOKEN \
     --build-arg TORCH_CUDA_ARCH_LIST="${CUDA_ARCHS}" \
     --build-arg MAX_JOBS="${MAX_JOBS}" \
     --build-arg NVCC_THREADS="${NVCC_THREADS}" \

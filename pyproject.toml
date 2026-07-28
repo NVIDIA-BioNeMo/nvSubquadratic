@@ -78,11 +78,10 @@ Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 # CUDA toolkit (e.g. a downstream project's CPU CI): the operators import it lazily
 # and the default fft_backend="torch_fft" path runs without it. Install for the
 # fast path:  pip install nvsubquadratic[cuda]
-# NOTE: subquadratic-ops-torch-cu13 (>=0.2.2) currently ships on the internal NVIDIA
-# GitLab registry (project 180496) — the Docker image fetches it from there via a
-# build secret; external `pip install nvsubquadratic[cuda]` needs the cu13 wheel
-# published to public PyPI to resolve.
-cuda = ["subquadratic-ops-torch-cu13>=0.2.2"]
+# Pinned to >=0.2.1, the newest cu13 on public PyPI, so it resolves with a plain
+# `pip install`. (0.2.2 exists but only on the internal NVIDIA GitLab registry —
+# bump this pin once it is published to public PyPI.)
+cuda = ["subquadratic-ops-torch-cu13>=0.2.1"]
 
 # QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
 # On Ampere and older GPUs RMSNorm falls back to pure PyTorch automatically.
