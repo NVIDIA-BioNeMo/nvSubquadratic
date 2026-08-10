@@ -100,7 +100,10 @@ hyena_cfg = LazyConfig(Hyena)(
         mask_cfg=LazyConfig(torch.nn.Identity)(),
         grid_type="double",  # linear (non-circular) convolution
         fft_padding="zero",
-        fft_backend="torch_fft",  # portable; "subq_ops" uses the fused 2D CUDA kernel
+        # Portable default. "subq_ops" uses the fused 2D CUDA kernel;
+        # "subq_ops_fused" is faster still and runs natively in bf16/fp16,
+        # but caps spatial dims at 64 per axis.
+        fft_backend="torch_fft",
         is_causal=False,
     ),
     # Depthwise short conv on the concatenated [Q; K; V] (3 * H channels).

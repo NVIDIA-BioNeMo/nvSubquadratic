@@ -1,7 +1,10 @@
-# Development Dockerfile for nvSubquadratic
+# Development Dockerfile for nvSubquadratic (CUDA 13.0 / PyTorch cu130)
 #
 # Build instructions:
-#   docker build -t nvsubquadratic:dev .
+#   DOCKER_BUILDKIT=1 docker build -t nvsubquadratic:dev .
+#
+# Requires an NVIDIA driver >= 580 on the host (CUDA 13.x minimum), or the
+# forward-compatibility package. Volta (sm_70) GPUs are no longer supported.
 #
 # Layer order is intentional for CI cache efficiency:
 #   1. Base image + conda + torch + DALI  (never changes)
@@ -12,12 +15,24 @@
 # CUDA 13.0 toolkit — matched to PyTorch's cu130 (CUDA 13.0) wheels. apex's (and
 # mamba's) build-time check requires the base nvcc CUDA to match torch's CUDA
 # EXACTLY: a 13.2 base fails apex with "Cuda extensions ... compiled with Cuda 13.0"
-# vs nvcc 13.2. torch ships only cu130 (there is no cu132), so CUDA 13.0 is the
-# runtime regardless — pin the base to 13.0.x to build the extensions cleanly.
+# vs nvcc 13.2. The benchmark image builds both extensions, so the base is pinned
+# to 13.0.x and the torch pins below stay on cu130 to match.
 FROM nvcr.io/nvidia/cuda:13.0.3-devel-ubuntu22.04
 
 ARG MINIFORGE_NAME=Miniforge3
 ARG MINIFORGE_VERSION=25.3.0-3
+
+# ── CUDA 13.0 toolchain pins ─────────────────────────────────────────────────
+# Parameterised so a cu132 image is a build-arg away, but the defaults must stay
+# consistent with the FROM above: apex/mamba fail to build when the base nvcc
+# CUDA differs from torch's. Moving to cu132 means bumping the base image to
+# 13.2.x and torch to >=2.12.0 (the first release built against CUDA 13.2)
+# together, not one at a time.
+ARG TORCH_VERSION=2.10.0
+ARG TORCHVISION_VERSION=0.25.0
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
+# DALI ships one build per CUDA major version; cuda130 is the CUDA 13.x build.
+ARG DALI_PACKAGE=nvidia-dali-cuda130
 
 ENV CONDA_DIR=/opt/conda
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
@@ -45,11 +60,14 @@ RUN conda install --yes \
     python=3.12 \
     && conda clean --all --yes
 
+# The torch install is repeated after DALI on purpose: DALI pulls its own
+# nvidia-* CUDA runtime wheels and can shuffle the ones torch depends on, so we
+# re-assert the pinned cu130 build afterwards.
 RUN pip install --no-cache-dir \
-    torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu130 \
-    && pip install --no-cache-dir nvidia-dali-cuda130 \
+    torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} --index-url ${TORCH_INDEX_URL} \
+    && pip install --no-cache-dir ${DALI_PACKAGE} \
     && pip install --no-cache-dir \
-       torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu130 \
+       torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} --index-url ${TORCH_INDEX_URL} \
     && conda clean --all --yes
 
 # Create ubuntu user with sudo privileges
@@ -71,7 +89,11 @@ WORKDIR /workspaces/nvSubquadratic
 # ── Heavy build: Apex from source (cached until apex commit changes) ──────────
 # This layer is intentionally placed before COPY so code changes do not
 # trigger a rebuild. Apex does not depend on the project source.
-ARG TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0"
+# CUDA 13 dropped offline compilation for Maxwell/Pascal/Volta — `nvcc
+# --list-gpu-arch` in 13.2 starts at compute_75, so 7.0 must be removed or the
+# apex build fails with "Unsupported gpu architecture 'compute_70'".
+# Newly available in 13.2 if you need them: 8.7, 8.8, 10.3 (B300), 11.0, 12.1.
+ARG TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0;10.0;12.0"
 ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}
 ARG MAX_JOBS=""
 RUN MAX_JOBS="${MAX_JOBS}" pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
@@ -173,9 +195,19 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic
 # pulls them — [all] restores the complete pre-restructure dependency set. The
 # [cuda] extra resolves subquadratic-ops-torch-cu13 via the normal pip index chain
 # (wheel-stub sdist → prebuilt wheel).
-RUN pip install --no-cache-dir wheel-stub \
+#
+# SUBQ_OPS_INDEX_URL: the [cuda] extra pins subquadratic-ops-torch-cu13>=0.2.2 for
+# fused_fft_conv2d, and 0.2.2 is currently published ONLY to the internal NVIDIA
+# GitLab registry (public PyPI tops out at 0.2.1). Pass the tokenised registry URL
+# to build the fused path; leave it empty once 0.2.2 lands on public PyPI:
+#   docker build --secret id=subq_index,env=SUBQ_OPS_INDEX_URL ...
+ARG SUBQ_OPS_INDEX_URL=""
+RUN --mount=type=secret,id=subq_index,required=false \
+    SUBQ_INDEX="$(cat /run/secrets/subq_index 2>/dev/null || echo "${SUBQ_OPS_INDEX_URL}")" \
+    && pip install --no-cache-dir wheel-stub \
     && pip install --no-cache-dir --no-build-isolation ".[all]" \
-       --extra-index-url https://download.pytorch.org/whl/cu130
+       --extra-index-url ${TORCH_INDEX_URL} \
+       ${SUBQ_INDEX:+--extra-index-url "${SUBQ_INDEX}"}
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \
