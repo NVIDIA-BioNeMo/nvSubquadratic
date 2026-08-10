@@ -38,10 +38,10 @@ python3 -c "import urllib.request; urllib.request.urlretrieve('https://bootstrap
 python3 /tmp/get-pip.py
 pip --version
 
-# Install torch cu129
-echo "=== Installing torch cu129 ==="
+# Install torch cu130
+echo "=== Installing torch cu130 ==="
 pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 \
-    --index-url https://download.pytorch.org/whl/cu129
+    --index-url https://download.pytorch.org/whl/cu130
 
 # Verify torch sees the GPU
 echo "=== Verifying torch+CUDA ==="

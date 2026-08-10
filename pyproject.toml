@@ -50,8 +50,9 @@ classifiers = [
 # project's CPU CI). The importable operators only need torch/einops/omegaconf/numpy
 # at runtime; the remaining deps power the training/data/experiment code.
 dependencies = [
-    "torch>=2.10.0,<2.11.0",
-    "torchvision>=0.25.0,<0.26.0",
+    # CUDA 13.2 (cu132) wheels start at torch 2.12.0 / torchvision 0.27.0.
+    "torch>=2.12.0,<2.13.0",
+    "torchvision>=0.27.0,<0.28.0",
     "einops>=0.6.0",
     "numpy>=1.21.0",
     "pyarrow>=14.0.0,<20.0.0",     # Constrained to be compatible with cudf/pylibcudf in NGC containers
@@ -73,13 +74,17 @@ Repository = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic"
 Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 
 [project.optional-dependencies]
-# Accelerated CUDA kernels (fused FFT-conv / direct causal-conv). Source-only
-# sdist — building requires nvcc, so this is intentionally NOT a core dep: that
-# is what lets `pip install nvsubquadratic` succeed without the CUDA toolkit
-# (e.g. a downstream project's CPU CI). The operators import it lazily and the
-# default fft_backend="torch_fft" path runs without it; install for the fast path:
-#   pip install nvsubquadratic[cuda]
-cuda = ["subquadratic-ops-torch-cu12>=0.2.0"]
+# Accelerated CUDA-13 kernels (fused FFT-conv / direct causal-conv). An opt-in
+# extra, NOT a core dep, so `pip install nvsubquadratic` still succeeds without the
+# CUDA toolkit (e.g. a downstream project's CPU CI): the operators import it lazily
+# and the default fft_backend="torch_fft" path runs without it. Install for the
+# fast path:  pip install nvsubquadratic[cuda]
+# >=0.2.2 for fused_fft_conv2d, which backs fft_backend="subq_ops_fused" and the
+# torch.compile lowering. fft_backend="subq_ops" itself still works on 0.2.1.
+# NOTE: 0.2.2 is currently published only to the internal NVIDIA GitLab registry
+# (public PyPI tops out at 0.2.1), so it needs an --index-url pointing there until
+# 0.2.2 is released publicly.
+cuda = ["subquadratic-ops-torch-cu13>=0.2.2"]
 
 # QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
 # On Ampere and older GPUs RMSNorm falls back to pure PyTorch automatically.
@@ -87,7 +92,7 @@ quack = ["quack-kernels"]
 
 # NVIDIA DALI GPU data-loading pipeline, used by the ImageNet / The Well
 # examples. Not required by the importable library; ~400 MB download.
-dali = ["nvidia-dali-cuda120==1.53.0"]
+dali = ["nvidia-dali-cuda130==1.53.0"]
 
 # Megatron parallel state, needed only for context-parallel / distributed
 # training via nvsubquadratic.parallel.utils.init_parallel_state. The operators
