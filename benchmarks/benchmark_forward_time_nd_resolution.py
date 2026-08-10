@@ -133,6 +133,7 @@ def build_module(
     mamba_headdim: int,
     mamba_expand: int,
     data_dim: int,
+    short_conv_backend: str = "subq_ops",
 ) -> torch.nn.Module:
     """Instantiate a single mixer layer sized for a ``resolution`` grid in ``data_dim`` dims.
 
@@ -149,6 +150,7 @@ def build_module(
             grid_type=grid_type,
             data_dim=data_dim,
             is_causal=(data_dim == 1),
+            short_conv_backend=short_conv_backend,
         )
     elif name in _ATTN_IMPL:  # attention (sdpa) / flex / fa4 — shared q/k/v + RoPE path
         head_dim = hidden_dim // num_heads
@@ -206,6 +208,7 @@ def time_forward(
     mamba_headdim: int,
     mamba_expand: int,
     data_dim: int,
+    short_conv_backend: str,
     max_seconds: float,
     device: torch.device,
 ) -> dict[str, Any]:
@@ -239,6 +242,7 @@ def time_forward(
                 mamba_headdim=mamba_headdim,
                 mamba_expand=mamba_expand,
                 data_dim=data_dim,
+                short_conv_backend=short_conv_backend,
             )
             .to(device)
             .eval()
@@ -432,6 +436,17 @@ def main() -> None:
         help="FFT-conv backend for Hyena. Use 'torch_fft' on hosts without the subq_ops CUDA kernels.",
     )
     parser.add_argument(
+        "--short-conv",
+        choices=["subq_ops", "torch"],
+        default="subq_ops",
+        help=(
+            "Backend for Hyena's SHORT conv (distinct from --fft-backend, which is the long "
+            "FFT conv). 'subq_ops' uses the fused subquadratic_ops_torch.causal_conv1d kernel "
+            "on the causal 1D sweeps; 2D/3D are non-causal, where a causal 1D kernel does not "
+            "apply, so they use torch.nn.ConvNd either way."
+        ),
+    )
+    parser.add_argument(
         "--grid-type",
         choices=["double", "single"],
         default="double",
@@ -500,6 +515,21 @@ def main() -> None:
                 continue
             at = [R for R in resolutions if backend_at[R] == eff]
             print(f"[note] Hyena fft_backend '{args.fft_backend}' -> '{eff}' at R={at} (unsupported there).")
+
+    # Hyena's short conv follows the operator's causality: causal (1D) gets a
+    # left-only-padded conv, non-causal (2D/3D) a symmetric one. The fused
+    # subq_ops kernel is causal and 1D, so it only applies to the former.
+    if data_dim == 1:
+        short_conv_eff = "subq_ops_causal_conv1d" if args.short_conv == "subq_ops" else "causal_conv1d_torch"
+    else:
+        short_conv_eff = f"torch_conv{data_dim}d_symmetric"
+        if args.short_conv == "subq_ops":
+            print(
+                f"[note] Hyena short conv: --short-conv=subq_ops needs a causal 1D operator; "
+                f"data_dim={data_dim} is non-causal, so using {short_conv_eff}."
+            )
+    if "hyena" in args.mixers:
+        print(f"Hyena short conv: {short_conv_eff}")
 
     print(f"Device: {device_name}")
     backend_desc = "/".join(dict.fromkeys(backend_at.values()))
@@ -576,6 +606,7 @@ def main() -> None:
                             "seq_len": seq_len,
                             "data_dim": data_dim,
                             "backend": backend_at[R] if mixer == "hyena" else None,
+                            "short_conv": short_conv_eff if mixer == "hyena" else None,
                             "batch_size": args.batch_size,
                             "hidden_dim": args.hidden_dim,
                             "num_heads": args.num_heads,
@@ -599,6 +630,7 @@ def main() -> None:
                     num_iters=args.num_iters,
                     compile_mode=compile_mode,
                     fft_backend=backend_at[R],
+                    short_conv_backend=args.short_conv,
                     grid_type=args.grid_type,
                     num_heads=args.num_heads,
                     attn_rope=args.attn_rope,
@@ -632,6 +664,7 @@ def main() -> None:
                     "seq_len": seq_len,
                     "data_dim": data_dim,
                     "backend": backend_at[R] if mixer == "hyena" else None,
+                            "short_conv": short_conv_eff if mixer == "hyena" else None,
                     "batch_size": args.batch_size,
                     "hidden_dim": args.hidden_dim,
                     "num_heads": args.num_heads,

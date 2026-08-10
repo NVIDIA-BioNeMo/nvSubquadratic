@@ -113,6 +113,72 @@ _CONV_ND = {1: torch.nn.Conv1d, 2: torch.nn.Conv2d, 3: torch.nn.Conv3d}
 # ─── Mixer config builders (concrete — no OmegaConf interpolation) ────────────
 
 
+def _short_conv_cfg(
+    hidden_dim: int,
+    *,
+    data_dim: int,
+    is_causal: bool,
+    backend: str = "subq_ops",
+    kernel_size: int = 3,
+) -> LazyConfig:
+    """Build HyenaND's short-conv config, matching the operator's causality.
+
+    The short conv follows ``is_causal`` rather than always using symmetric
+    padding. Previously the causal 1D config paired a causal long conv with a
+    ``padding=1`` symmetric short conv, which let the operator see one token of
+    future context — causal in the long conv only.
+
+    * ``is_causal=True`` (1D): left-only padding. With ``backend="subq_ops"``
+      this is :class:`SubqOpsCausalConv1d`, the fused
+      ``subquadratic_ops_torch.causal_conv1d`` CUDA kernel — depthwise-only
+      (satisfied here: groups == in_channels == out_channels == 3*hidden_dim),
+      stride/dilation 1, 1D only. Otherwise :class:`CausalConv1D`, the portable
+      ``F.conv1d`` equivalent.
+    * ``is_causal=False`` (2D/3D): symmetric-padded ``torch.nn.ConvNd``, where
+      the full context is meant to be visible. The fused kernel is causal and 1D,
+      so it does not apply; ``backend="subq_ops"`` falls back here.
+
+    Returns:
+        The short-conv ``LazyConfig``.
+
+    Raises:
+        ValueError: If ``backend`` is not ``"torch"`` or ``"subq_ops"``.
+    """
+    if backend not in ("torch", "subq_ops"):
+        raise ValueError(f"short_conv backend must be 'torch' or 'subq_ops'. Got {backend!r}.")
+
+    if not is_causal:
+        return LazyConfig(_CONV_ND[data_dim])(
+            in_channels=3 * hidden_dim,
+            out_channels=3 * hidden_dim,
+            kernel_size=kernel_size,
+            groups=3 * hidden_dim,
+            padding=kernel_size // 2,
+            bias=False,
+        )
+
+    if backend == "subq_ops" and data_dim == 1:
+        from nvsubquadratic.modules.subq_ops_causal_conv1d import SubqOpsCausalConv1d
+
+        return LazyConfig(SubqOpsCausalConv1d)(
+            in_channels=3 * hidden_dim,
+            out_channels=3 * hidden_dim,
+            kernel_size=kernel_size,
+            groups=3 * hidden_dim,
+            bias=False,
+        )
+
+    from nvsubquadratic.modules.causal_conv1d import CausalConv1D
+
+    return LazyConfig(CausalConv1D)(
+        in_channels=3 * hidden_dim,
+        out_channels=3 * hidden_dim,
+        kernel_size=kernel_size,
+        groups=3 * hidden_dim,
+        bias=False,
+    )
+
+
 def _hyena_mixer_cfg(
     hidden_dim: int,
     fft_backend: str,
@@ -121,6 +187,7 @@ def _hyena_mixer_cfg(
     grid_type: str = "double",
     data_dim: int = DATA_DIM,
     is_causal: bool = False,
+    short_conv_backend: str = "subq_ops",
 ) -> LazyConfig:
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
@@ -145,13 +212,11 @@ def _hyena_mixer_cfg(
                 fft_backend=fft_backend,
                 is_causal=is_causal,
             ),
-            short_conv_cfg=LazyConfig(_CONV_ND[data_dim])(
-                in_channels=3 * hidden_dim,
-                out_channels=3 * hidden_dim,
-                kernel_size=3,
-                groups=3 * hidden_dim,
-                padding=1,
-                bias=False,
+            short_conv_cfg=_short_conv_cfg(
+                hidden_dim,
+                data_dim=data_dim,
+                is_causal=is_causal,
+                backend=short_conv_backend,
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
             pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
