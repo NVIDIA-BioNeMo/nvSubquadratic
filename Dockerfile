@@ -23,13 +23,21 @@ ARG MINIFORGE_NAME=Miniforge3
 ARG MINIFORGE_VERSION=25.3.0-3
 
 # ── CUDA 13.0 toolchain pins ─────────────────────────────────────────────────
-# Parameterised so a cu132 image is a build-arg away, but the defaults must stay
-# consistent with the FROM above: apex/mamba fail to build when the base nvcc
-# CUDA differs from torch's. Moving to cu132 means bumping the base image to
-# 13.2.x and torch to >=2.12.0 (the first release built against CUDA 13.2)
-# together, not one at a time.
-ARG TORCH_VERSION=2.10.0
-ARG TORCHVISION_VERSION=0.25.0
+# Two constraints have to hold at once, and they are easy to break separately:
+#
+#   1. The base nvcc CUDA must match torch's CUDA exactly, or apex and mamba fail
+#      to build ("Cuda extensions ... compiled with Cuda 13.0" vs nvcc 13.2).
+#      Hence the 13.0.x base above and the cu130 index here.
+#   2. TORCH_VERSION must satisfy pyproject's own `torch>=2.12.0,<2.13.0`. If it
+#      does not, the build still succeeds but the final `.[all]` step silently
+#      UPGRADES torch — after apex/mamba/causal-conv1d were already compiled
+#      against the older one, leaving extensions built against headers that no
+#      longer match the installed torch.
+#
+# 2.12.1 is published for cu130, so both hold together. Keep this pin and the
+# pyproject floor in sync; changing one alone reintroduces the swap.
+ARG TORCH_VERSION=2.12.1
+ARG TORCHVISION_VERSION=0.27.1
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 # DALI ships one build per CUDA major version; cuda130 is the CUDA 13.x build.
 ARG DALI_PACKAGE=nvidia-dali-cuda130
@@ -174,8 +182,8 @@ RUN if [ "${INSTALL_FA4}" != "true" ]; then \
           | grep -viE '^nvidia-cutlass-dsl' > /tmp/fa4-constraints.txt && \
         pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt \
           "nvidia-cutlass-dsl[cu13]==${CUTLASS_DSL_VERSION}" "flash-attn-4[cu13]==${FLASH_ATTN4_VERSION}" && \
-        { python -c "import nvidia_cutlass_dsl as c, flash_attn.cute; from flash_attn.cute import flash_attn_func; \
-print('flash-attn-4 import OK / cutlass-dsl', c.__version__)" \
+        { python -c "import importlib.metadata as md, flash_attn.cute; from flash_attn.cute import flash_attn_func; \
+print('flash-attn-4 import OK / cutlass-dsl', md.version('nvidia-cutlass-dsl'))" \
           || echo "WARNING: flash-attn-4 import check failed at build (JIT may probe CUDA); verify on-GPU." ; } ; \
     fi
 

@@ -48,9 +48,12 @@ NVCC_THREADS="${NVCC_THREADS:-4}"
 INSTALL_MAMBA="${INSTALL_MAMBA:-true}"
 INSTALL_FA4="${INSTALL_FA4:-true}"
 
-# Pins mirrored from the Dockerfile.
-TORCH_VERSION="${TORCH_VERSION:-2.10.0}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.25.0}"
+# Pins mirrored from the Dockerfile. TORCH_VERSION must satisfy pyproject's
+# `torch>=2.12.0,<2.13.0`: if it does not, step 10's `.[all]` silently upgrades
+# torch after apex/mamba/causal-conv1d have already been compiled against the
+# older one, leaving extensions built against headers that no longer match.
+TORCH_VERSION="${TORCH_VERSION:-2.12.1}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.27.1}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
 DALI_PACKAGE="${DALI_PACKAGE:-nvidia-dali-cuda130}"
 MINIFORGE_VERSION="${MINIFORGE_VERSION:-25.3.0-3}"
@@ -174,7 +177,14 @@ else
     pip install --no-cache-dir --pre -c /tmp/fa4-constraints.txt \
         "nvidia-cutlass-dsl[cu13]==${CUTLASS_DSL_VERSION}" \
         "flash-attn-4[cu13]==${FLASH_ATTN4_VERSION}"
-    { python -c "import nvidia_cutlass_dsl as c, flash_attn.cute; from flash_attn.cute import flash_attn_func; print('flash-attn-4 OK / cutlass-dsl', c.__version__)"; } \
+    # Read the DSL version from package metadata: nvidia_cutlass_dsl exposes no
+    # __version__, so reading the attribute fails and makes a working FA4 install
+    # look broken.
+    { python -c "
+import importlib.metadata as md
+import flash_attn.cute
+from flash_attn.cute import flash_attn_func
+print('flash-attn-4 OK / cutlass-dsl', md.version('nvidia-cutlass-dsl'))"; } \
         || echo "WARNING: flash-attn-4 import check failed at build; verify on-GPU."
 fi
 
@@ -205,6 +215,22 @@ chown -R ubuntu:ubuntu /home/ubuntu
 echo ". ${CONDA_DIR}/etc/profile.d/conda.sh && conda activate base" >> /home/ubuntu/.bashrc
 
 step "verification"
+python - <<PY
+import sys
+import torch
+
+# The extensions above were compiled against TORCH_VERSION. If step 10 resolved a
+# different torch (pyproject's floor not matching this pin), they are now built
+# against headers that do not match the installed torch — which shows up later as
+# an undefined symbol, or worse, as numbers that are quietly wrong. Fail here.
+want = "${TORCH_VERSION}"
+if not torch.__version__.startswith(want):
+    print(f"FATAL: built extensions against torch {want} but {torch.__version__} is installed.")
+    print("       Something in .[all] upgraded torch. Align the TORCH_VERSION pin with")
+    print("       pyproject's torch requirement and rebuild.")
+    sys.exit(1)
+PY
+
 python - <<'PY'
 import importlib.metadata as md
 def v(p):
