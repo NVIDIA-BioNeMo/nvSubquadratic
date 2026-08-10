@@ -40,10 +40,11 @@ NUM_HEADS="${NUM_HEADS:-4}"
 MAMBA_HEADDIM="${MAMBA_HEADDIM:-64}"   # d_inner = 512*expand(2) = 1024 / 64 => 16 heads
 MIXERS="${MIXERS:-hyena attention flex fa4 mamba}"
 
-# Per-dim reach: largest R keeping 3*HIDDEN_DIM*R^DATA_DIM under 2^31 at hidden 512.
+# Powers of two from a 16-wide grid up to the largest R keeping 3*HIDDEN_DIM*R^DATA_DIM
+# under torch's 2^31 index limit at hidden 512 (~1.4M tokens).
 case "${DATA_DIM}" in
-    1) RESOLUTIONS="${RESOLUTIONS:-4096 16384 65536 262144 1048576}" ;;
-    2) RESOLUTIONS="${RESOLUTIONS:-64 128 256 512 1024}" ;;
+    1) RESOLUTIONS="${RESOLUTIONS:-16 32 64 128 256 512 1024 2048 4096 8192 16384 32768 65536 131072 262144 524288 1048576}" ;;
+    2) RESOLUTIONS="${RESOLUTIONS:-16 32 64 128 256 512 1024}" ;;
     3) RESOLUTIONS="${RESOLUTIONS:-16 32 64}" ;;
     *) echo "DATA_DIM must be 1, 2, or 3 (got '${DATA_DIM}')"; exit 1 ;;
 esac

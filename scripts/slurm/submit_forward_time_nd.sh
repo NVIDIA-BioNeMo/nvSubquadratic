@@ -77,6 +77,29 @@ CODE_MOUNT=/workspace/nvsubq
 RESULTS_HOST="${CODE_PATH}/benchmarks/results"
 MOUNTS="${CODE_PATH}:${CODE_MOUNT}"
 
+# Optional kernel override: a host directory of pre-downloaded aarch64 wheels for
+# subquadratic-ops-torch-cu13. The image bakes in whatever the [cuda] extra
+# resolved at build time (0.2.1 from public PyPI); FFT_BACKEND=subq_ops_fused
+# needs >= 0.2.2, which today ships only from the internal NVIDIA GitLab registry.
+# Rather than rebuild the .sqsh (no docker on the login node), stage the wheels
+# once and pip-install them into the container at job start:
+#
+#   pip download --no-deps --only-binary=:all: \
+#       --platform manylinux_2_28_aarch64 --python-version 3.12 --abi cp312 \
+#       -d /lustre/.../subq_ops_wheels 'subquadratic-ops-torch-cu13>=0.2.2' \
+#       --index-url https://__token__:<TOKEN>@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple
+#   SUBQ_OPS_WHEEL_DIR=/lustre/.../subq_ops_wheels sbatch scripts/slurm/submit_forward_time_nd.sh
+#
+# Installed with --no-index so the compute node needs no network access.
+SUBQ_OPS_WHEEL_DIR="${SUBQ_OPS_WHEEL_DIR:-}"
+WHEEL_MOUNT=/workspace/subq_wheels
+if [[ -n "${SUBQ_OPS_WHEEL_DIR}" ]]; then
+    if [[ ! -d "${SUBQ_OPS_WHEEL_DIR}" ]]; then
+        echo "SUBQ_OPS_WHEEL_DIR='${SUBQ_OPS_WHEEL_DIR}' is not a directory"; exit 1
+    fi
+    MOUNTS="${MOUNTS},${SUBQ_OPS_WHEEL_DIR}:${WHEEL_MOUNT}:ro"
+fi
+
 mkdir -p "${RESULTS_HOST}"
 
 # ── Benchmark parameters (override any from the environment) ──────────────────
@@ -88,15 +111,20 @@ HIDDEN_DIM="${HIDDEN_DIM:-8}"
 NUM_HEADS="${NUM_HEADS:-2}"
 MAMBA_HEADDIM="${MAMBA_HEADDIM:-8}"
 GRID_TYPE="${GRID_TYPE:-single}"
-# Per-dim resolution sweep (R), each topping out near 16M tokens. Override with RESOLUTIONS=.
+# Per-dim resolution sweep (R): every power of two from a 16-wide grid up to ~16M
+# tokens. Override with RESOLUTIONS=.
 #   1D: L = R      2D: L = R^2      3D: L = R^3
 case "${DATA_DIM}" in
-    1) RESOLUTIONS="${RESOLUTIONS:-4096 16384 65536 262144 1048576 4194304 16777216}" ;;
-    2) RESOLUTIONS="${RESOLUTIONS:-64 128 256 512 1024 2048 4096}" ;;
+    1) RESOLUTIONS="${RESOLUTIONS:-16 32 64 128 256 512 1024 2048 4096 8192 16384 32768 65536 131072 262144 524288 1048576 2097152 4194304 8388608 16777216}" ;;
+    2) RESOLUTIONS="${RESOLUTIONS:-16 32 64 128 256 512 1024 2048 4096}" ;;
     3) RESOLUTIONS="${RESOLUTIONS:-16 32 64 128 256}" ;;
     *) echo "DATA_DIM must be 1, 2, or 3 (got '${DATA_DIM}')"; exit 1 ;;
 esac
-FFT_BACKEND="${FFT_BACKEND:-subq_ops}"   # 1D=causal fused, 2D=fused; 3D auto-falls back to torch_fft
+# subq_ops_fused is the fused 2D cuFFTDx kernel (subquadratic-ops-torch >= 0.2.2).
+# It is 2D-only and capped at 64 per axis, so the benchmark resolves it PER POINT:
+# 2D R<=64 runs fused, 2D R>=128 and all of 1D fall back to subq_ops, 3D to
+# torch_fft. Set FFT_BACKEND=subq_ops for the pre-0.2.2 behaviour everywhere.
+FFT_BACKEND="${FFT_BACKEND:-subq_ops_fused}"
 DTYPE="${DTYPE:-bf16}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 NUM_WARMUP="${NUM_WARMUP:-10}"
@@ -120,8 +148,33 @@ echo "mixers='${MIXERS}' hidden_dim=${HIDDEN_DIM} grid=${GRID_TYPE} backend=${FF
 echo "resolutions='${RESOLUTIONS}' dtype=${DTYPE} batch=${BATCH_SIZE} max_s=${MAX_SECONDS}"
 echo "======================================================"
 python -c "import torch; print('GPU:', torch.cuda.get_device_name(0))"
+
+# Kernel override, if staged. Offline install so no compute-node network is needed.
+if [ -d "${WHEEL_MOUNT}" ]; then
+    echo "[kernel] installing staged subq_ops wheels from ${WHEEL_MOUNT}"
+    pip install --no-index --find-links "${WHEEL_MOUNT}" --upgrade --no-deps \
+        subquadratic-ops-torch-cu13 || {
+        echo "[kernel] ERROR: staged wheel install failed — aborting rather than"
+        echo "[kernel]        silently benchmarking the image's older kernel."
+        exit 1
+    }
+fi
+
 python -c "import subquadratic_ops_torch; print('subq_ops: available')" \
     || echo "WARNING: subquadratic_ops_torch missing — hyena subq_ops points will error."
+python -c "
+from importlib.metadata import version
+v = version('subquadratic-ops-torch-cu13')
+print('subq_ops version:', v)
+" || echo "WARNING: could not read subq_ops version."
+# subq_ops_fused needs >= 0.2.2; fail loudly instead of silently benchmarking a fallback.
+if [ "${FFT_BACKEND}" = "subq_ops_fused" ]; then
+    python -c "
+import sys
+from subquadratic_ops_torch.fused_fft_conv2d import fused_fft_conv2d  # noqa: F401
+print('subq_ops: fused_fft_conv2d available')
+" || { echo "ERROR: FFT_BACKEND=subq_ops_fused but fused_fft_conv2d is missing (needs >= 0.2.2)."; exit 1; }
+fi
 
 PYTHONPATH=. python benchmarks/benchmark_forward_time_nd_resolution.py \
     --data-dim ${DATA_DIM} \

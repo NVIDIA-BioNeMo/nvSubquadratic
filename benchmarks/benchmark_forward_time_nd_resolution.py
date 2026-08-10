@@ -353,10 +353,43 @@ def _validate(args: argparse.Namespace) -> None:
                 f"Mamba2 d_inner=hidden_dim*expand={d_inner} not divisible by mamba_headdim={args.mamba_headdim}."
             )
     # subq_ops (1D/2D only) needs even resolutions; 3D uses torch_fft so it is exempt.
-    if args.fft_backend == "subq_ops" and args.data_dim in (1, 2) and "hyena" in args.mixers:
+    if args.fft_backend.startswith("subq_ops") and args.data_dim in (1, 2) and "hyena" in args.mixers:
         odd = [r for r in args.resolutions if r % 2 != 0]
         if odd:
             raise SystemExit(f"subq_ops requires even resolutions; got odd {odd}.")
+
+
+# The fused 2D kernel's largest FFT tile is 128 and it requires
+# max(X, Y) <= fft_size // 2, so it tops out at a 64-per-axis grid. Kept as a
+# literal (not an import of fused_fftconv2d_max_spatial) so the sweep can be
+# planned on a login node without subquadratic_ops_torch installed.
+_FUSED_MAX_SPATIAL = 64
+
+
+def resolve_hyena_backend(requested: str, data_dim: int, resolution: int) -> str:
+    """Effective Hyena FFT backend for one point of the sweep.
+
+    The subq_ops backends do not cover the whole (data_dim, resolution) grid, so a
+    single ``--fft-backend`` choice has to degrade per point rather than fail the
+    run.  Each fallback goes to the fastest backend that *does* cover the point:
+
+    * 3D — no CUDA FFT-conv kernel at all, so ``torch_fft``.
+    * ``subq_ops_fused`` in 1D/3D — no fused kernel outside 2D, so ``subq_ops``
+      (which in turn becomes ``torch_fft`` in 3D).
+    * ``subq_ops_fused`` in 2D above ``_FUSED_MAX_SPATIAL`` — outside the fused
+      kernel's tile range, so ``subq_ops``.
+
+    Returns:
+        The backend to construct this point's Hyena layer with.
+    """
+    if data_dim == 3 and requested.startswith("subq_ops"):
+        return "torch_fft"
+    if requested == "subq_ops_fused":
+        if data_dim != 2:
+            return "subq_ops"
+        if resolution > _FUSED_MAX_SPATIAL:
+            return "subq_ops"
+    return requested
 
 
 def main() -> None:
@@ -394,7 +427,7 @@ def main() -> None:
     parser.add_argument("--dtype", choices=list(DTYPE_MAP), default="bf16", help="Autocast dtype.")
     parser.add_argument(
         "--fft-backend",
-        choices=["subq_ops", "torch_fft"],
+        choices=["subq_ops", "subq_ops_fused", "torch_fft"],
         default="subq_ops",
         help="FFT-conv backend for Hyena. Use 'torch_fft' on hosts without the subq_ops CUDA kernels.",
     )
@@ -458,15 +491,21 @@ def main() -> None:
     resolutions = sorted(args.resolutions)
     device_name = torch.cuda.get_device_name(device)
     data_dim = args.data_dim
-    # subq_ops has no 3D kernel — Hyena falls back to torch_fft in 3D.
-    hyena_backend = "torch_fft" if data_dim == 3 and args.fft_backend == "subq_ops" else args.fft_backend
-    if hyena_backend != args.fft_backend:
-        print("[note] data_dim=3: Hyena fft_backend forced to torch_fft (subq_ops is 1D/2D only).")
+    # The requested backend does not cover every point; resolve it per resolution
+    # and report the plan up front so the coverage is visible before the sweep runs.
+    backend_at = {R: resolve_hyena_backend(args.fft_backend, data_dim, R) for R in resolutions}
+    if "hyena" in args.mixers:
+        for eff in dict.fromkeys(backend_at.values()):
+            if eff == args.fft_backend:
+                continue
+            at = [R for R in resolutions if backend_at[R] == eff]
+            print(f"[note] Hyena fft_backend '{args.fft_backend}' -> '{eff}' at R={at} (unsupported there).")
 
     print(f"Device: {device_name}")
+    backend_desc = "/".join(dict.fromkeys(backend_at.values()))
     print(
         f"Settings: data_dim={data_dim} batch_size={args.batch_size} hidden_dim={args.hidden_dim} dtype={args.dtype} "
-        f"compile={compile_mode} fft_backend={hyena_backend} grid_type={args.grid_type} rope={args.attn_rope} "
+        f"compile={compile_mode} fft_backend={backend_desc} grid_type={args.grid_type} rope={args.attn_rope} "
         f"warmup={args.num_warmup} timed={args.num_iters} max_s={args.max_seconds_per_point}"
     )
     print(f"Mixers: {args.mixers}    Resolutions: {resolutions}")
@@ -536,7 +575,7 @@ def main() -> None:
                             "resolution": R,
                             "seq_len": seq_len,
                             "data_dim": data_dim,
-                            "backend": hyena_backend if mixer == "hyena" else None,
+                            "backend": backend_at[R] if mixer == "hyena" else None,
                             "batch_size": args.batch_size,
                             "hidden_dim": args.hidden_dim,
                             "num_heads": args.num_heads,
@@ -559,7 +598,7 @@ def main() -> None:
                     num_warmup=args.num_warmup,
                     num_iters=args.num_iters,
                     compile_mode=compile_mode,
-                    fft_backend=hyena_backend,
+                    fft_backend=backend_at[R],
                     grid_type=args.grid_type,
                     num_heads=args.num_heads,
                     attn_rope=args.attn_rope,
@@ -592,7 +631,7 @@ def main() -> None:
                     "resolution": R,
                     "seq_len": seq_len,
                     "data_dim": data_dim,
-                    "backend": hyena_backend if mixer == "hyena" else None,
+                    "backend": backend_at[R] if mixer == "hyena" else None,
                     "batch_size": args.batch_size,
                     "hidden_dim": args.hidden_dim,
                     "num_heads": args.num_heads,
