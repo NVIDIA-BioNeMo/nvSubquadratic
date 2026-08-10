@@ -196,14 +196,19 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic
 # [cuda] extra resolves subquadratic-ops-torch-cu13 via the normal pip index chain
 # (wheel-stub sdist → prebuilt wheel).
 #
-# SUBQ_OPS_INDEX_URL: the [cuda] extra pins subquadratic-ops-torch-cu13>=0.2.2 for
-# fused_fft_conv2d, and 0.2.2 is currently published ONLY to the internal NVIDIA
-# GitLab registry (public PyPI tops out at 0.2.1). Pass the tokenised registry URL
-# to build the fused path; leave it empty once 0.2.2 lands on public PyPI:
-#   docker build --secret id=subq_index,env=SUBQ_OPS_INDEX_URL ...
-ARG SUBQ_OPS_INDEX_URL=""
+# The [cuda] extra pins subquadratic-ops-torch-cu13>=0.2.2 for fused_fft_conv2d,
+# and 0.2.2 is published ONLY to the internal NVIDIA GitLab registry (public PyPI
+# tops out at 0.2.1), so this install FAILS without an extra index pointing there.
+# Pass the tokenised registry URL as a BuildKit secret — never a --build-arg, which
+# would bake the token into the image's layer history:
+#
+#   SUBQ_OPS_INDEX_URL="https://__token__:<TOKEN>@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple" \
+#       docker buildx build --secret id=subq_index,env=SUBQ_OPS_INDEX_URL ...
+#
+# scripts/slurm/enroot/build_sqsh.sh wires this up from GITLAB_TOKEN. Drop the
+# secret once 0.2.2 reaches public PyPI.
 RUN --mount=type=secret,id=subq_index,required=false \
-    SUBQ_INDEX="$(cat /run/secrets/subq_index 2>/dev/null || echo "${SUBQ_OPS_INDEX_URL}")" \
+    SUBQ_INDEX="$(cat /run/secrets/subq_index 2>/dev/null || true)" \
     && pip install --no-cache-dir wheel-stub \
     && pip install --no-cache-dir --no-build-isolation ".[all]" \
        --extra-index-url ${TORCH_INDEX_URL} \

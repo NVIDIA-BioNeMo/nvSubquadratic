@@ -17,6 +17,15 @@
 #                  QEMU source build; false → benchmark's Mamba2 series 'unavailable')
 #   INSTALL_FA4    build the FlashAttention-4 baseline (default: INSTALL_BASELINES;
 #                  the alpha flash-attn-4 wheel)
+#   GITLAB_TOKEN   NVIDIA GitLab personal access token (scope: read_api), used to
+#                  reach subquadratic-ops-torch-cu13 0.2.2. REQUIRED until 0.2.2 is
+#                  published to public PyPI: pyproject's [cuda] extra pins >=0.2.2
+#                  (for fused_fft_conv2d / fft_backend="subq_ops_fused") and public
+#                  PyPI only has 0.2.1, so `.[all]` fails without it. Read from the
+#                  environment or from ~/.gitlab_token. Passed as a BuildKit secret,
+#                  never a --build-arg, so it stays out of the image history.
+#   SUBQ_OPS_INDEX_URL  Full tokenised index URL, if you'd rather set it directly
+#                  than have it built from GITLAB_TOKEN.
 
 set -euo pipefail
 
@@ -70,19 +79,47 @@ INSTALL_BASELINES="${INSTALL_BASELINES:-false}"
 INSTALL_MAMBA="${INSTALL_MAMBA:-${INSTALL_BASELINES}}"
 INSTALL_FA4="${INSTALL_FA4:-${INSTALL_BASELINES}}"
 
+# ── Internal package index for subquadratic-ops-torch-cu13 >= 0.2.2 ──────────
+# pyproject's [cuda] extra pins >=0.2.2 (fused_fft_conv2d), which public PyPI does
+# not carry, so the `.[all]` layer fails without this. Build the index URL from
+# GITLAB_TOKEN (env, else ~/.gitlab_token) and hand it to BuildKit as a secret so
+# the token never lands in the image history.
+SUBQ_OPS_INDEX_URL="${SUBQ_OPS_INDEX_URL:-}"
+if [[ -z "${SUBQ_OPS_INDEX_URL}" ]]; then
+    if [[ -z "${GITLAB_TOKEN:-}" && -r "${HOME}/.gitlab_token" ]]; then
+        # shellcheck disable=SC1090,SC2046
+        eval "$(grep -E '^[[:space:]]*(export[[:space:]]+)?GITLAB_TOKEN=' "${HOME}/.gitlab_token" | tail -1)"
+    fi
+    if [[ -n "${GITLAB_TOKEN:-}" ]]; then
+        SUBQ_OPS_INDEX_URL="https://__token__:${GITLAB_TOKEN}@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple"
+    fi
+fi
+if [[ -z "${SUBQ_OPS_INDEX_URL}" ]]; then
+    echo "Error: no GITLAB_TOKEN / SUBQ_OPS_INDEX_URL."
+    echo "       pyproject pins subquadratic-ops-torch-cu13>=0.2.2, which is only on the"
+    echo "       internal GitLab registry, so the '.[all]' layer will fail without it."
+    echo "       Create a token (scope: read_api) at"
+    echo "         https://gitlab-master.nvidia.com/-/user_settings/personal_access_tokens"
+    echo "       then:  echo 'export GITLAB_TOKEN=glpat-...' > ~/.gitlab_token && chmod 600 ~/.gitlab_token"
+    exit 1
+fi
+export SUBQ_OPS_INDEX_URL
+
 echo "Platform: ${DOCKER_PLATFORM} (${TARGET_HW})"
 echo "Image:    ${DOCKER_TAG}"
 echo "Output:   ${OUTPUT_SQSH}"
 echo "Arches:   ${CUDA_ARCHS}  MAX_JOBS=${MAX_JOBS:-unset}  NVCC_THREADS=${NVCC_THREADS}"
 echo "Baselines: mamba=${INSTALL_MAMBA}  fa4=${INSTALL_FA4}"
+echo "subq_ops index: gitlab-master (token supplied via BuildKit secret)"
 
-docker buildx build \
+DOCKER_BUILDKIT=1 docker buildx build \
     --platform "${DOCKER_PLATFORM}" \
     --build-arg TORCH_CUDA_ARCH_LIST="${CUDA_ARCHS}" \
     --build-arg MAX_JOBS="${MAX_JOBS}" \
     --build-arg NVCC_THREADS="${NVCC_THREADS}" \
     --build-arg INSTALL_MAMBA="${INSTALL_MAMBA}" \
     --build-arg INSTALL_FA4="${INSTALL_FA4}" \
+    --secret id=subq_index,env=SUBQ_OPS_INDEX_URL \
     -t "${DOCKER_TAG}" \
     -f "${REPO_ROOT}/Dockerfile" \
     --load \
