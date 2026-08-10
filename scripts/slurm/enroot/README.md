@@ -22,10 +22,29 @@ The script selects per-platform `--build-arg` values:
 
 ## Override
 
-| Env var        | Default                           |
-| -------------- | --------------------------------- |
-| `PLATFORM`     | `x86_64`                          |
-| `DOCKER_TAG`   | `nvsubquadratic:${PLATFORM}`      |
-| `OUTPUT_SQSH`  | `nvsubquadratic-${PLATFORM}.sqsh` |
-| `MAX_JOBS`     | platform default (see table)      |
-| `NVCC_THREADS` | platform default (see table)      |
+| Env var              | Default                           |
+| -------------------- | --------------------------------- |
+| `PLATFORM`           | `x86_64`                          |
+| `DOCKER_TAG`         | `nvsubquadratic:${PLATFORM}`      |
+| `OUTPUT_SQSH`        | `nvsubquadratic-${PLATFORM}.sqsh` |
+| `MAX_JOBS`           | platform default (see table)      |
+| `NVCC_THREADS`       | platform default (see table)      |
+| `INSTALL_BASELINES`  | `false` (turns on mamba + fa4)    |
+| `GITLAB_TOKEN`       | read from `~/.gitlab_token`       |
+| `SUBQ_OPS_INDEX_URL` | derived from `GITLAB_TOKEN`       |
+
+## Required: `GITLAB_TOKEN`
+
+`pyproject.toml`'s `[cuda]` extra pins `subquadratic-ops-torch-cu13>=0.2.2` (for
+`fused_fft_conv2d` / `fft_backend="subq_ops_fused"`). Public PyPI only carries
+0.2.1, so the `.[all]` layer **fails without an internal index**. Create a token
+with scope `read_api` at
+<https://gitlab-master.nvidia.com/-/user_settings/personal_access_tokens>, then:
+
+```bash
+echo 'export GITLAB_TOKEN=glpat-...' > ~/.gitlab_token && chmod 600 ~/.gitlab_token
+```
+
+`build_sqsh.sh` picks it up and passes it to BuildKit as a `--secret`, so it is
+never written into the image's layer history. Remove this step once 0.2.2 is
+published to public PyPI.
