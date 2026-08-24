@@ -102,6 +102,7 @@ for _p in (str(_BENCH_DIR), str(_PROJECT_ROOT)):
 # module import after the sys.path insert above.
 from benchmark_patch_size_2d import (
     _attention_mixer_cfg,
+    _gdp_mixer_cfg,
     _hyena_mixer_cfg,
     _mamba_mixer_cfg,
 )
@@ -109,7 +110,7 @@ from benchmark_patch_size_2d import (
 from nvsubquadratic.lazy_config import instantiate
 
 
-MIXER_CHOICES = ("attention", "flex", "fa4", "hyena", "mamba")
+MIXER_CHOICES = ("attention", "flex", "fa4", "hyena", "mamba", "gdp")
 # Attention kernel per mixer key: SDPA (auto cuDNN/flash), compiled FlexAttention,
 # or FlashAttention-4 (external flash_attn). All share the same q/k/v + RoPE path.
 _ATTN_IMPL = {"attention": "sdpa", "flex": "flex", "fa4": "fa4"}
@@ -134,6 +135,10 @@ def build_module(
     mamba_expand: int,
     data_dim: int,
     short_conv_backend: str = "subq_ops",
+    mamba_d_state: int | None = None,
+    mamba_ngroups: int | None = None,
+    mamba_bidirectional: bool = True,
+    gdp_householder: int = 3,
 ) -> torch.nn.Module:
     """Instantiate a single mixer layer sized for a ``resolution`` grid in ``data_dim`` dims.
 
@@ -174,7 +179,20 @@ def build_module(
             hidden_dim,
             headdim=mamba_headdim,
             expand=mamba_expand,
-            bidirectional=True,
+            bidirectional=mamba_bidirectional,
+            d_state=mamba_d_state,
+            ngroups=mamba_ngroups,
+        )
+    elif name == "gdp":
+        # GDP reads the same mamba_* knobs upstream, so it is sized from them here too:
+        # that is exactly what a drop-in --spec swap of a Mamba-2 layer produces.
+        cfg = _gdp_mixer_cfg(
+            hidden_dim,
+            num_householder=gdp_householder,
+            d_state=mamba_d_state if mamba_d_state is not None else 128,
+            headdim=mamba_headdim,
+            ngroups=mamba_ngroups if mamba_ngroups is not None else 8,
+            expand=mamba_expand,
         )
     else:  # pragma: no cover - guarded by argparse choices
         raise ValueError(f"unknown mixer '{name}'")
@@ -209,6 +227,10 @@ def time_forward(
     mamba_expand: int,
     data_dim: int,
     short_conv_backend: str,
+    mamba_d_state: int | None,
+    mamba_ngroups: int | None,
+    mamba_bidirectional: bool,
+    gdp_householder: int,
     max_seconds: float,
     device: torch.device,
 ) -> dict[str, Any]:
@@ -243,6 +265,10 @@ def time_forward(
                 mamba_expand=mamba_expand,
                 data_dim=data_dim,
                 short_conv_backend=short_conv_backend,
+                mamba_d_state=mamba_d_state,
+                mamba_ngroups=mamba_ngroups,
+                mamba_bidirectional=mamba_bidirectional,
+                gdp_householder=gdp_householder,
             )
             .to(device)
             .eval()
@@ -255,6 +281,31 @@ def time_forward(
         torch.cuda.reset_peak_memory_stats(device)
 
         # ── Single wall-timed forward (compile + timeout guard) ──────────────
+        # ── Priming forward, then a sizing forward ────────────────────────────
+        # The iteration count below is derived from a measured forward, so that
+        # measurement must reflect steady state. For a JIT-compiled operator it does
+        # not: fla's GDP kernels (and torch.compile'd FlexAttention) spend seconds
+        # compiling on the first call at each new shape. Sizing off that gives the
+        # floor of 3 iterations AND zero warmup — a JIT operator was being timed with
+        # 3 unwarmed samples while eager ones got 30, which is not a fair comparison.
+        #
+        # So: one untimed forward to absorb compilation, then time the second one for
+        # sizing. The priming pass is itself budget-checked, so a hopeless point still
+        # bails after one forward rather than paying for two.
+        torch.cuda.synchronize(device)
+        t0 = time.perf_counter()
+        with torch.inference_mode(), torch.autocast("cuda", dtype=dtype):
+            _ = module(x)
+        torch.cuda.synchronize(device)
+        prime_s = time.perf_counter() - t0
+
+        if prime_s > max_seconds:
+            return {
+                "status": "timeout",
+                "ms": prime_s * 1000.0,
+                "mem_gb": torch.cuda.max_memory_allocated(device) / (1024**3),
+            }
+
         torch.cuda.synchronize(device)
         t0 = time.perf_counter()
         with torch.inference_mode(), torch.autocast("cuda", dtype=dtype):
@@ -426,6 +477,46 @@ def main() -> None:
     parser.add_argument("--num-heads", type=int, default=8, help="Attention heads (head_dim=hidden_dim/num_heads).")
     parser.add_argument("--mamba-headdim", type=int, default=64, help="Mamba2 head dim.")
     parser.add_argument("--mamba-expand", type=int, default=2, help="Mamba2 expansion factor.")
+    # Shared by mamba and gdp: upstream GDP reads the same mamba_* TransformerConfig
+    # fields, so a drop-in --spec swap inherits whatever the Mamba-2 layer was set to.
+    parser.add_argument(
+        "--mamba-state-dim",
+        type=int,
+        default=None,
+        help=(
+            "SSM state dim for mamba and gdp (Megatron 'mamba_state_dim'). Unset uses "
+            "mamba-ssm's own default for mamba, and 128 for gdp. Nemotron uses 128."
+        ),
+    )
+    parser.add_argument(
+        "--mamba-ngroups",
+        type=int,
+        default=None,
+        help=(
+            "Key/value groups for mamba and gdp (Megatron 'mamba_num_groups'). Unset uses "
+            "mamba-ssm's default of 1 for mamba, and 8 for gdp. Nemotron uses 8 — leaving "
+            "this unset benchmarks a narrower Mamba-2 than Nemotron actually runs."
+        ),
+    )
+    parser.add_argument(
+        "--mamba-causal",
+        action="store_true",
+        help=(
+            "Run Mamba2 unidirectionally, as a language model does. The default is "
+            "bidirectional, which is right for the vision/ND sweeps but not for a "
+            "Nemotron comparison."
+        ),
+    )
+    parser.add_argument(
+        "--gdp-householder",
+        type=int,
+        default=3,
+        help=(
+            "GDP householder products per token (M). 3 matches "
+            "gated_delta_product_original_v4.py, 2 the _nh2 variant. Hardcoded upstream "
+            "rather than a config field; it drives in_proj width and the kernel's L*M rows."
+        ),
+    )
     parser.add_argument("--num-warmup", type=int, default=10, help="Warmup iterations (also covers compile).")
     parser.add_argument("--num-iters", type=int, default=30, help="Timed iterations.")
     parser.add_argument("--dtype", choices=list(DTYPE_MAP), default="bf16", help="Autocast dtype.")
@@ -631,6 +722,10 @@ def main() -> None:
                     compile_mode=compile_mode,
                     fft_backend=backend_at[R],
                     short_conv_backend=args.short_conv,
+                    mamba_d_state=args.mamba_state_dim,
+                    mamba_ngroups=args.mamba_ngroups,
+                    mamba_bidirectional=not args.mamba_causal,
+                    gdp_householder=args.gdp_householder,
                     grid_type=args.grid_type,
                     num_heads=args.num_heads,
                     attn_rope=args.attn_rope,

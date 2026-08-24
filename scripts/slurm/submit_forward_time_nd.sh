@@ -131,6 +131,13 @@ NUM_WARMUP="${NUM_WARMUP:-10}"
 NUM_ITERS="${NUM_ITERS:-30}"
 MAX_SECONDS="${MAX_SECONDS:-300}"
 OUT="${OUT:-forward_time_${DATA_DIM}d}"
+SHORT_CONV="${SHORT_CONV:-subq_ops}"
+# Extra flags appended verbatim to the benchmark invocation (submit_nemotron_1d.sh
+# uses this for the shared mamba/gdp config knobs).
+EXTRA_ARGS="${EXTRA_ARGS:-}"
+# The gdp mixer needs flash-linear-attention, which is not in the image. Set
+# NEEDS_FLA=1 to pip-install it at job start (compute nodes have network access).
+NEEDS_FLA="${NEEDS_FLA:-0}"
 
 JSONL="${CODE_MOUNT}/benchmarks/results/${OUT}.jsonl"
 PNG="${CODE_MOUNT}/benchmarks/results/${OUT}.png"
@@ -160,6 +167,22 @@ if [ -d "${WHEEL_MOUNT}" ]; then
     }
 fi
 
+# flash-linear-attention for the gdp mixer. Constrained so it cannot pull a
+# different torch/triton out from under the image's compiled extensions.
+if [ "${NEEDS_FLA}" = "1" ]; then
+    echo "[gdp] installing flash-linear-attention"
+    pip freeze 2>/dev/null | grep -iE "^(torch|triton)==" > /tmp/fla-constraints.txt
+    pip install --no-cache-dir -c /tmp/fla-constraints.txt flash-linear-attention \
+        || { echo "ERROR: flash-linear-attention install failed — gdp cannot run."; exit 1; }
+    python -c "
+import sys
+sys.modules.setdefault('tilelang', None)
+from fla.ops.gated_delta_product import chunk_gated_delta_product
+import importlib.metadata as md
+print('fla:', md.version('flash-linear-attention'), '- chunk_gated_delta_product OK')
+" || { echo "ERROR: fla installed but the GDP kernel does not import."; exit 1; }
+fi
+
 python -c "import subquadratic_ops_torch; print('subq_ops: available')" \
     || echo "WARNING: subquadratic_ops_torch missing — hyena subq_ops points will error."
 python -c "
@@ -179,6 +202,8 @@ fi
 PYTHONPATH=. python benchmarks/benchmark_forward_time_nd_resolution.py \
     --data-dim ${DATA_DIM} \
     --fft-backend ${FFT_BACKEND} \
+    --short-conv ${SHORT_CONV} \
+    ${EXTRA_ARGS} \
     --grid-type ${GRID_TYPE} \
     --dtype ${DTYPE} \
     --batch-size ${BATCH_SIZE} \

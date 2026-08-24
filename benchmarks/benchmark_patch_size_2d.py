@@ -259,7 +259,16 @@ def _mamba_mixer_cfg(
     headdim: int = MAMBA_HEADDIM,
     expand: int = MAMBA_EXPAND,
     bidirectional: bool = MAMBA_BIDIRECTIONAL,
+    d_state: int | None = None,
+    ngroups: int | None = None,
 ) -> LazyConfig:
+    """Build the Mamba2 baseline mixer.
+
+    ``d_state``/``ngroups`` default to mamba-ssm's own defaults when ``None``. Pass them
+    to match a specific deployment: Nemotron runs ``state_dim 128, num_groups 8``, and
+    mamba-ssm defaults ``ngroups=1``, so leaving it unset silently benchmarks a narrower
+    layer than Nemotron's.
+    """
     # mamba-ssm >= 2.3 eagerly imports Mamba3 in its package __init__, which pulls
     # in tilelang -> tvm and crashes on this stack (tvm_ffi AttributeError under
     # py3.12). We only use Mamba2, so make that optional `import tilelang` fail as a
@@ -269,13 +278,49 @@ def _mamba_mixer_cfg(
 
     from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
 
+    mamba_kwargs = dict(d_model=hidden_dim, headdim=headdim, expand=expand)
+    if d_state is not None:
+        mamba_kwargs["d_state"] = d_state
+    if ngroups is not None:
+        mamba_kwargs["ngroups"] = ngroups
+
     return LazyConfig(MambaNDMixer)(
-        mamba_layer_cfg=LazyConfig(Mamba2)(
-            d_model=hidden_dim,
-            headdim=headdim,
-            expand=expand,
-        ),
+        mamba_layer_cfg=LazyConfig(Mamba2)(**mamba_kwargs),
         bidirectional=bidirectional,
+    )
+
+
+def _gdp_mixer_cfg(
+    hidden_dim: int,
+    *,
+    num_householder: int = 3,
+    d_state: int = 128,
+    headdim: int = 64,
+    ngroups: int = 8,
+    nheads: int | None = None,
+    expand: int = 2,
+) -> LazyConfig:
+    """Build the Gated Delta Product baseline — the mixer Nemotron may adopt over Mamba-2.
+
+    Defaults mirror ``TransformerConfig``'s ``mamba_*`` fields, which is what GDP reads:
+    ``mamba_state_dim=128``, ``mamba_head_dim=64``, ``mamba_num_groups=8``, and
+    ``mamba_num_heads`` falling back to ``hidden*expand // head_dim``. ``num_householder``
+    is NOT a config field upstream — it is hardcoded per source file (3 in
+    ``gated_delta_product_original_v4.py``, 2 in ``_nh2``) — so a drop-in ``--spec`` swap
+    inherits the Mamba-2 config and widens ``in_proj`` by the householder count.
+    """
+    from gated_delta_product_ref import GatedDeltaProduct, GatedDeltaProductNDMixer
+
+    return LazyConfig(GatedDeltaProductNDMixer)(
+        mixer_cfg=LazyConfig(GatedDeltaProduct)(
+            d_model=hidden_dim,
+            num_householder=num_householder,
+            d_state=d_state,
+            headdim=headdim,
+            ngroups=ngroups,
+            nheads=nheads,
+            expand=expand,
+        )
     )
 
 
