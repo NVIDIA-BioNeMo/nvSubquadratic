@@ -110,7 +110,7 @@ from benchmark_patch_size_2d import (
 from nvsubquadratic.lazy_config import instantiate
 
 
-MIXER_CHOICES = ("attention", "flex", "fa4", "hyena", "mamba", "gdp")
+MIXER_CHOICES = ("attention", "flex", "fa4", "hyena", "mamba", "mamba_causal", "gdp")
 # Attention kernel per mixer key: SDPA (auto cuDNN/flash), compiled FlexAttention,
 # or FlashAttention-4 (external flash_attn). All share the same q/k/v + RoPE path.
 _ATTN_IMPL = {"attention": "sdpa", "flex": "flex", "fa4": "fa4"}
@@ -137,8 +137,8 @@ def build_module(
     short_conv_backend: str = "subq_ops",
     mamba_d_state: int | None = None,
     mamba_ngroups: int | None = None,
-    mamba_bidirectional: bool = True,
     gdp_householder: int = 3,
+    hyena_expansion: float = 1.0,
 ) -> torch.nn.Module:
     """Instantiate a single mixer layer sized for a ``resolution`` grid in ``data_dim`` dims.
 
@@ -156,6 +156,7 @@ def build_module(
             data_dim=data_dim,
             is_causal=(data_dim == 1),
             short_conv_backend=short_conv_backend,
+            expansion=hyena_expansion,
         )
     elif name in _ATTN_IMPL:  # attention (sdpa) / flex / fa4 — shared q/k/v + RoPE path
         head_dim = hidden_dim // num_heads
@@ -174,12 +175,16 @@ def build_module(
             rope_spatial_dims=(resolution,) * data_dim if use_rope else None,
             attn_impl=_ATTN_IMPL[name],
         )
-    elif name == "mamba":
+    elif name in ("mamba", "mamba_causal"):
+        # Two series, not a flag: 'mamba' is bidirectional (two scans, the right
+        # vision/ND baseline) and 'mamba_causal' is unidirectional (one scan, what a
+        # language model runs). Bidirectional does ~2x the work, so which one a plot
+        # uses changes the Hyena comparison's sign — run both and let the reader pick.
         cfg = _mamba_mixer_cfg(
             hidden_dim,
             headdim=mamba_headdim,
             expand=mamba_expand,
-            bidirectional=mamba_bidirectional,
+            bidirectional=(name == "mamba"),
             d_state=mamba_d_state,
             ngroups=mamba_ngroups,
         )
@@ -229,8 +234,8 @@ def time_forward(
     short_conv_backend: str,
     mamba_d_state: int | None,
     mamba_ngroups: int | None,
-    mamba_bidirectional: bool,
     gdp_householder: int,
+    hyena_expansion: float,
     max_seconds: float,
     device: torch.device,
 ) -> dict[str, Any]:
@@ -267,8 +272,8 @@ def time_forward(
                 short_conv_backend=short_conv_backend,
                 mamba_d_state=mamba_d_state,
                 mamba_ngroups=mamba_ngroups,
-                mamba_bidirectional=mamba_bidirectional,
                 gdp_householder=gdp_householder,
+                hyena_expansion=hyena_expansion,
             )
             .to(device)
             .eval()
@@ -499,12 +504,14 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--mamba-causal",
-        action="store_true",
+        "--hyena-expansion",
+        type=float,
+        default=1.0,
         help=(
-            "Run Mamba2 unidirectionally, as a language model does. The default is "
-            "bidirectional, which is right for the vision/ND sweeps but not for a "
-            "Nemotron comparison."
+            "Hyena inner-width multiplier 'e' (qkv h->3*e*h, mixer on e*h, out e*h->h). "
+            "1.0 is evo2's default, which FLOPS_MATCHING.md measures at 0.423x a Mamba-2 "
+            "layer -- so e=1 comparisons against mamba/gdp are NOT FLOP-matched. Use 2.36 "
+            "for parity with a Mamba-2 layer."
         ),
     )
     parser.add_argument(
@@ -724,8 +731,8 @@ def main() -> None:
                     short_conv_backend=args.short_conv,
                     mamba_d_state=args.mamba_state_dim,
                     mamba_ngroups=args.mamba_ngroups,
-                    mamba_bidirectional=not args.mamba_causal,
                     gdp_householder=args.gdp_householder,
+                    hyena_expansion=args.hyena_expansion,
                     grid_type=args.grid_type,
                     num_heads=args.num_heads,
                     attn_rope=args.attn_rope,

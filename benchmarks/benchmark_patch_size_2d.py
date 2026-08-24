@@ -120,6 +120,7 @@ def _short_conv_cfg(
     is_causal: bool,
     backend: str = "subq_ops",
     kernel_size: int = 3,
+    inner_dim: int | None = None,
 ) -> LazyConfig:
     """Build HyenaND's short-conv config, matching the operator's causality.
 
@@ -144,6 +145,9 @@ def _short_conv_cfg(
     Raises:
         ValueError: If ``backend`` is not ``"torch"`` or ``"subq_ops"``.
     """
+    # The short conv runs on the mixer's INNER width (3 * e * hidden_dim when
+    # expanded), not on hidden_dim.
+    hidden_dim = hidden_dim if inner_dim is None else inner_dim
     if backend not in ("torch", "subq_ops"):
         raise ValueError(f"short_conv backend must be 'torch' or 'subq_ops'. Got {backend!r}.")
 
@@ -188,16 +192,28 @@ def _hyena_mixer_cfg(
     data_dim: int = DATA_DIM,
     is_causal: bool = False,
     short_conv_backend: str = "subq_ops",
+    expansion: float = 1.0,
 ) -> LazyConfig:
+    """Build the HyenaND mixer.
+
+    ``expansion`` is the ``e`` of the FLOP-matching analysis: the mixer runs at an
+    inner width ``e * hidden_dim`` (``qkv_proj: h -> 3*e*h``, long conv and short conv
+    on ``e*h`` channels, ``out_proj: e*h -> h``). ``e = 1`` is evo2's default, which
+    FLOPS_MATCHING.md measures at only **0.423x a Mamba-2 layer** — so comparisons
+    against Mamba-2 or GDP at ``e = 1`` are NOT FLOP-matched and understate Hyena's
+    cost. That document derives ``e = 2.36`` for parity.
+    """
+    inner_dim = int(round(expansion * hidden_dim))
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
+        inner_dim=inner_dim,
         mixer_cfg=LazyConfig(Hyena)(
             global_conv_cfg=LazyConfig(CKConvND)(
                 data_dim=data_dim,
-                hidden_dim=hidden_dim,
+                hidden_dim=inner_dim,
                 kernel_cfg=LazyConfig(SIRENKernelND)(
                     data_dim=data_dim,
-                    out_dim=hidden_dim,
+                    out_dim=inner_dim,
                     mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
                     num_layers=KERNEL_NUM_LAYERS,
                     embedding_dim=KERNEL_EMBEDDING_DIM,
@@ -217,9 +233,10 @@ def _hyena_mixer_cfg(
                 data_dim=data_dim,
                 is_causal=is_causal,
                 backend=short_conv_backend,
+                inner_dim=inner_dim,
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-            pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
+            pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=inner_dim),
             qk_norm_cfg=None,
         ),
         init_method_in=small_init,

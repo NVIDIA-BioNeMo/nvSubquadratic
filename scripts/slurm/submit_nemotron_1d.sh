@@ -25,17 +25,18 @@
 # consequently wider: 10336 vs Mamba-2's 5144 at M=3 (2.01x) — an arithmetic fact
 # about GEMM width. Whether that becomes 2x *time* is what this benchmark measures.
 #
-# Mamba runs UNIDIRECTIONAL here (--mamba-causal). The other sweeps use
-# bidirectional, which suits vision but is wrong for a language model.
+# Hyena runs FLOP-matched at HYENA_EXPANSION (default e = 2.36), the value
+# FLOPS_MATCHING.md derives for parity with a Mamba-2 layer: qkv h -> 3*e*h, long and
+# short conv on e*h channels, out_proj e*h -> h. Set HYENA_EXPANSION=1 for evo2's
+# default, which is only 0.423x an M layer and therefore NOT a matched comparison.
 #
-# !! Hyena is NOT FLOP-matched here. `_hyena_mixer_cfg` hardcodes a 3*hidden_dim
-# mixer with no expansion knob, i.e. evo2's default e = 1, which FLOPS_MATCHING.md
-# measures at **0.423x a Mamba-2 layer**. So the hyena column is a materially
-# SMALLER layer than the mamba and gdp columns, and its timings are not a like-for-
-# like comparison against them. FLOPS_MATCHING.md derives e = 2.36 for parity;
-# implementing it needs an expansion parameter threaded through _hyena_mixer_cfg
-# (in_proj h -> 3*e*h, long conv on e*h channels, out_proj e*h -> h). Until then,
-# read hyena-vs-mamba/gdp as indicative only.
+# BOTH Mamba-2 directions are run, as separate series, because the choice flips the
+# result: 'mamba' is bidirectional (two scans -- the right vision/ND baseline) and
+# 'mamba_causal' is unidirectional (one scan -- what a language model runs, and the
+# correct baseline here). Bidirectional does ~2x the work: measured at L=8192 it is
+# 1.98x slower at hidden 8 and 2.22x at hidden 768, which is enough to reverse the
+# sign of the Hyena comparison. Earlier 1D sweeps compared causal Hyena against
+# BIDIRECTIONAL Mamba-2 and so overstated Hyena's advantage by roughly 2x.
 #
 # The gdp-vs-mamba pairing IS like-for-like: both are sized from the same mamba_*
 # config, which is exactly what a drop-in --spec swap produces.
@@ -59,12 +60,15 @@ MAMBA_HEADDIM="${MAMBA_HEADDIM:-64}"
 MAMBA_NGROUPS="${MAMBA_NGROUPS:-8}"
 MAMBA_EXPAND="${MAMBA_EXPAND:-2}"
 GDP_HOUSEHOLDER="${GDP_HOUSEHOLDER:-3}"
+# FLOP-matched inner width for Hyena. FLOPS_MATCHING.md derives e=2.36 for parity
+# with a Mamba-2 layer; e=1 (evo2 default) is only 0.423x an M layer.
+HYENA_EXPANSION="${HYENA_EXPANSION:-2.36}"
 
 # Sweep around Nemotron's 8192, wide enough to show both the operating point and
 # where each operator walls. L = R in 1D.
 SEQ_LENS="${SEQ_LENS:-1024 2048 4096 8192 16384 32768 65536 131072 262144}"
 
-MIXERS="${MIXERS:-hyena mamba gdp}"
+MIXERS="${MIXERS:-hyena mamba_causal mamba gdp}"
 
 # Attention needs hidden/num_heads to divide by 2 for 1D RoPE; 768/12 = 64.
 NUM_HEADS="${NUM_HEADS:-12}"
@@ -81,7 +85,7 @@ echo "[nemotron-1d] mixers='${MIXERS}'  L='${SEQ_LENS}'  (Nemotron pretrains at 
 export DATA_DIM MIXERS HIDDEN_DIM NUM_HEADS MAMBA_HEADDIM MAMBA_EXPAND OUT FFT_BACKEND SHORT_CONV
 export MAMBA_STATE_DIM MAMBA_NGROUPS GDP_HOUSEHOLDER
 export RESOLUTIONS="${SEQ_LENS}"
-export EXTRA_ARGS="--mamba-state-dim ${MAMBA_STATE_DIM} --mamba-ngroups ${MAMBA_NGROUPS} --mamba-causal --gdp-householder ${GDP_HOUSEHOLDER}"
+export EXTRA_ARGS="--mamba-state-dim ${MAMBA_STATE_DIM} --mamba-ngroups ${MAMBA_NGROUPS} --gdp-householder ${GDP_HOUSEHOLDER} --hyena-expansion ${HYENA_EXPANSION}"
 export NEEDS_FLA=1
 
 exec sbatch \
