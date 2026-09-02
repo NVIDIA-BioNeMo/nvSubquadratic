@@ -59,6 +59,25 @@ repos:
         pass_filenames: true
         always_run: false
         description: Ensure all .py/.rs files have proper NVIDIA license headers (bionemo pattern).
+      - id: version-pin-check
+        name: Version pin check
+        entry: scripts/check_version_pins.py
+        language: script
+        pass_filenames: false
+        # Only the files that hard-code a torch version or a CUDA wheel index.
+        files: >-
+          (?x)^(
+            pyproject\.toml
+            |Dockerfile
+            |setup_conda_env\.sh
+            |README\.md
+            |docs/getting_started\.md
+            |scripts/slurm/setup_env\.sh
+            |scripts/slurm/enroot/build_sqsh_slurm\.sh
+            |\.github/workflows/install-matrix\.yml
+            |scripts/check_version_pins\.py
+          )$
+        description: Ensure every hard-coded torch/CUDA pin agrees with the pyproject.toml range.
       # Pre-push hooks disabled — GPU tests now run in CI (GitHub Actions).
       # Uncomment to re-enable local pre-push testing (requires a GPU in your dev environment).
       # - id: pytest-pre-push

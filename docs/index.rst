@@ -102,8 +102,15 @@ Optional extras:
 The accelerated CUDA kernels (``[cuda]``) are a source build requiring ``nvcc``
 and are kept out of core, so ``pip install nvsubquadratic`` also succeeds in
 environments without the CUDA toolkit. The operators default to the portable
-``torch.fft`` backend; ``fft_backend="subq_ops"`` without ``[cuda]`` raises a
-clear ``ImportError``.
+``torch.fft`` backend; ``fft_backend="subq_ops"`` (or ``"subq_ops_fused"``)
+without ``[cuda]`` raises a clear ``ImportError``.
+
+On 2D problems with spatial dims of at most 64 per axis,
+``fft_backend="subq_ops_fused"`` is the fastest option: it fuses the whole
+FFT-conv pipeline into one launch and runs it natively in bf16/fp16 instead of
+upcasting to fp32. Extents above 32 per axis need compute capability 9.0+
+(Hopper/Blackwell). Models already written against ``torch_fft`` can pick up
+the same kernel under ``torch.compile`` — see :ref:`ops-fftconv-lowering`.
 
 For development (editable install from source):
 
@@ -115,8 +122,8 @@ Requirements
 ------------
 
 - Python 3.10 or higher
-- For GPU execution: a CUDA-compatible NVIDIA GPU and CUDA Toolkit 12.0+
-- For the accelerated kernels (``[cuda]``): ``nvcc`` to build ``subquadratic-ops-torch-cu12``
+- For GPU execution: a CUDA-compatible NVIDIA GPU and CUDA Toolkit 13.0+
+- For the accelerated kernels (``[cuda]``): ``nvcc`` to build ``subquadratic-ops-torch-cu13``
 
 Where to go next
 ----------------
