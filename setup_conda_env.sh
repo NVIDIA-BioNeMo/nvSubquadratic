@@ -15,8 +15,8 @@ set -euo pipefail
 ENV_NAME=nvsubquadratic
 PYTHON_VERSION=3.12
 TORCH_INDEX=https://download.pytorch.org/whl/cu130
-TORCH_VERSION=2.12.1
-TORCHVISION_VERSION=0.27.1
+TORCH_VERSION=2.14.0
+TORCHVISION_VERSION=0.29.0
 
 # ── 1. Create or recreate the conda environment ───────────────────────────────
 if conda env list | grep -qE "^${ENV_NAME}[[:space:]]"; then

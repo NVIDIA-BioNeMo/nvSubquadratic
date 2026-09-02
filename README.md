@@ -13,12 +13,12 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 - **B2B CausalConv1d**: Back-to-back causal convolutions for striped Hyena architectures
 - **CausalConv1d**: Standard causal convolutions with various kernel sizes (2-256)
 - **FFT CausalConv1d**: FFT-based causal convolutions for large kernel sizes (up to 8K-16M)
-- **Fused FFT Conv2d**: single-launch 2D FFT convolution running natively in fp32/fp16/bf16 (spatial dims up to 64 per axis); requires `subquadratic-ops-torch >= 0.3.0`
+- **Fused FFT Conv2d**: single-launch 2D FFT convolution running natively in fp32/fp16/bf16 (spatial dims up to 64 per axis); requires `subquadratic-ops-torch >= 0.3.0`, and compute capability 9.0+ (Hopper/Blackwell) for extents above 32 per axis
 
 **Requirements**:
 
 - CUDA-compatible NVIDIA GPU (Ampere or newer)
-- CUDA Toolkit 12.0 or higher
+- CUDA Toolkit 13.0 or higher
 - Python 3.10 or higher
 
 **quack-kernels (optional)**:
@@ -134,7 +134,7 @@ bash setup_conda_env.sh
 conda activate nvsubquadratic
 ```
 
-This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.12 (CUDA 13.0), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
+This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.14 (CUDA 13.0), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
 
 ### Local Installation (venv)
 
@@ -144,7 +144,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install PyTorch with CUDA support first (before package dependencies)
-pip install torch==2.12.1 torchvision==0.27.1 --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cu130
 
 # Install development dependencies
 pip install -r requirements-dev.txt

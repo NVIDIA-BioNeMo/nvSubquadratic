@@ -50,13 +50,16 @@ classifiers = [
 # project's CPU CI). The importable operators only need torch/einops/omegaconf/numpy
 # at runtime; the remaining deps power the training/data/experiment code.
 dependencies = [
-    # Pinned to the 2.12.x line the CUDA 13 Docker image ships (torch 2.12.1 /
-    # torchvision 0.27.1, cu130). Also the floor for cu132 wheels, which start at
-    # torch 2.12.0. Keep in sync with Dockerfile, setup_conda_env.sh and the
+    # 2.14 is the floor for the [cuda] extra, not a preference: torch pins
+    # nvidia-cudnn-cu13 EXACTLY, and subquadratic-ops-torch-cu13>=0.3.0 requires
+    # cudnn>=9.24.0.43. torch 2.12/2.13 pin cudnn==9.20.0.48, which makes
+    # `pip install nvsubquadratic[cuda]` unresolvable; 2.14 pins ==9.24.0.43 and
+    # satisfies both. Keep in sync with Dockerfile, setup_conda_env.sh and the
     # documented venv install — a mismatch silently re-resolves torch from PyPI
     # and replaces a CUDA-matched wheel after apex/mamba are already compiled.
-    "torch>=2.12.0,<2.13.0",
-    "torchvision>=0.27.0,<0.28.0",
+    # scripts/check_version_pins.py enforces that agreement in pre-commit and CI.
+    "torch>=2.14.0,<2.15.0",
+    "torchvision>=0.29.0,<0.30.0",
     "einops>=0.6.0",
     "numpy>=1.21.0",
     "pyarrow>=14.0.0,<20.0.0",     # Constrained to be compatible with cudf/pylibcudf in NGC containers

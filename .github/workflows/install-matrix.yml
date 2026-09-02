@@ -108,7 +108,7 @@ jobs:
           /tmp/lean/bin/pip install --no-deps dist/*.whl
           /tmp/lean/bin/pip install \
             --index-url https://download.pytorch.org/whl/cpu \
-            "torch>=2.12.0,<2.13.0" "torchvision>=0.27.0,<0.28.0"
+            "torch>=2.14.0,<2.15.0" "torchvision>=0.29.0,<0.30.0"
           /tmp/lean/bin/pip install einops omegaconf numpy
           /tmp/lean/bin/python -c "import nvsubquadratic; \
             import nvsubquadratic.lazy_config, nvsubquadratic.modules.hyena_nd, \

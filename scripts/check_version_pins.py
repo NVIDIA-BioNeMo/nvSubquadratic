@@ -17,7 +17,7 @@
 
 """Assert every hard-coded torch / CUDA pin agrees with ``pyproject.toml``.
 
-``pyproject.toml`` declares the supported range (``torch>=2.12.0,<2.13.0``), but the
+``pyproject.toml`` declares the supported range (``torch>=2.14.0,<2.15.0``), but the
 Docker image, the conda bootstrap, the SLURM builders and the install docs each
 repeat a *concrete* version and wheel index.  Nothing links them: the SLURM builder
 replays the Dockerfile rather than parsing it, and the docs are prose.  They drift

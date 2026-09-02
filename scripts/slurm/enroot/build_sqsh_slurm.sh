@@ -50,11 +50,11 @@ INSTALL_MAMBA="${INSTALL_MAMBA:-true}"
 INSTALL_FA4="${INSTALL_FA4:-true}"
 
 # Pins mirrored from the Dockerfile. TORCH_VERSION must satisfy pyproject's
-# `torch>=2.12.0,<2.13.0`: if it does not, step 10's `.[all]` silently upgrades
+# `torch>=2.14.0,<2.15.0`: if it does not, step 10's `.[all]` silently upgrades
 # torch after apex/mamba/causal-conv1d have already been compiled against the
 # older one, leaving extensions built against headers that no longer match.
-TORCH_VERSION="${TORCH_VERSION:-2.12.1}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.27.1}"
+TORCH_VERSION="${TORCH_VERSION:-2.14.0}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.29.0}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
 DALI_PACKAGE="${DALI_PACKAGE:-nvidia-dali-cuda130}"
 MINIFORGE_VERSION="${MINIFORGE_VERSION:-25.3.0-3}"

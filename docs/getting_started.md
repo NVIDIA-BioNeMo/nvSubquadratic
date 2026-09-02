@@ -7,7 +7,7 @@ Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNe
 ## Requirements
 
 - CUDA-compatible NVIDIA GPU
-- CUDA Toolkit 12.0 or higher
+- CUDA Toolkit 13.0 or higher
 - Python 3.10 or higher
 
 The optional fused RMSNorm kernel (`quack-kernels`) requires Hopper or
@@ -36,7 +36,7 @@ bash setup_conda_env.sh
 conda activate nvsubquadratic
 ```
 
-This creates an environment with Python 3.12 and PyTorch 2.12 (CUDA
+This creates an environment with Python 3.12 and PyTorch 2.14 (CUDA
 13.0), installs the dev dependencies, builds NVIDIA Apex from source,
 and installs `quack-kernels`.
 
@@ -45,7 +45,7 @@ For an alternative venv-based install:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install torch==2.12.1 torchvision==0.27.1 \
+pip install torch==2.14.0 torchvision==0.29.0 \
     --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements-dev.txt
 pip install --no-build-isolation -e .

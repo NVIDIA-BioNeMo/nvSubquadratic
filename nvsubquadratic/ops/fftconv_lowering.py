@@ -101,6 +101,7 @@ import torch
 from torch._inductor.custom_graph_pass import CustomGraphPass
 
 from nvsubquadratic.ops.fftconv_custom import (
+    FUSED_FFT_SIZE_128_MIN_ARCH,
     fused_fftconv2d_bhl,
     load_fused_fft_conv2d,
     resolve_fused_fft_size,
@@ -114,11 +115,10 @@ logger = logging.getLogger(__name__)
 # change to this file.
 _PASS_VERSION = "1"
 
-# The fused kernel's 128-tile needs more per-block shared memory than SM80/SM86
-# provide (the forward already fails on SM86; the backward fails on both). The
-# kernel raises at runtime, which is fine for an explicit backend choice but not
-# for a silent rewrite — so gate the largest tile on SM90+.
-_FFT_SIZE_128_MIN_ARCH = (9, 0)
+# Shared with the eager backend, which raises on the same condition; a silent
+# graph rewrite must skip rather than raise, so the check is duplicated in
+# behaviour but not in definition.
+_FFT_SIZE_128_MIN_ARCH = FUSED_FFT_SIZE_128_MIN_ARCH
 
 _SUPPORTED_DTYPES = (torch.float32, torch.float16, torch.bfloat16)
 

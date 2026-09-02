@@ -40,6 +40,8 @@ import torch
 
 from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl, fftconv2d_fp32_blh
 from nvsubquadratic.ops.fftconv_custom import (
+    FUSED_FFT_SIZE_128_MIN_ARCH,
+    fused_fftconv2d_arch_supported,
     fused_fftconv2d_bhl,
     fused_fftconv2d_bhl_chunked,
     fused_fftconv2d_blh,
@@ -306,3 +308,36 @@ def test_rejects_oversized_input():
     kernel = torch.randn(1, 4, 129, 129, device="cuda")
     with pytest.raises(ValueError, match="too large for the fused 2D FFT kernel"):
         fused_fftconv2d_bhl(x, kernel)
+
+
+def test_arch_predicate_matches_device_capability():
+    """The 128 tile is gated on SM90+; smaller tiles run on any supported GPU."""
+    device = torch.device("cuda:0")
+    is_sm90plus = torch.cuda.get_device_capability(0) >= FUSED_FFT_SIZE_128_MIN_ARCH
+
+    assert fused_fftconv2d_arch_supported(device, 64) is True
+    assert fused_fftconv2d_arch_supported(device, 128) is is_sm90plus
+
+
+def test_128_tile_raises_below_sm90():
+    """A shape that needs the 128 tile fails loudly on SM80/SM86 rather than in the kernel.
+
+    32x32 fits the 64 tile and must work everywhere; 64x64 escalates to the 128
+    tile, which needs more shared memory than pre-Hopper parts provide. Both
+    branches are asserted so this stays meaningful on either class of runner.
+    """
+    kernel = torch.randn(1, 4, 5, 5, device="cuda")
+
+    # Always within reach: resolves to the 64 tile.
+    small = torch.randn(1, 4, 32, 32, device="cuda")
+    assert resolve_fused_fft_size(32, 32, 5, 5) == 64
+    fused_fftconv2d_bhl(small, kernel)
+
+    large = torch.randn(1, 4, 64, 64, device="cuda")
+    assert resolve_fused_fft_size(64, 64, 5, 5) == 128
+
+    if torch.cuda.get_device_capability(0) >= FUSED_FFT_SIZE_128_MIN_ARCH:
+        fused_fftconv2d_bhl(large, kernel)
+    else:
+        with pytest.raises(RuntimeError, match="requires compute capability"):
+            fused_fftconv2d_bhl(large, kernel)

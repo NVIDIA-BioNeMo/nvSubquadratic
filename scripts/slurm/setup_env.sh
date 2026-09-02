@@ -40,7 +40,7 @@ pip --version
 
 # Install torch cu130
 echo "=== Installing torch cu130 ==="
-pip install torch==2.12.1 torchvision==0.27.1 torchaudio==2.12.1 \
+pip install torch==2.14.0 torchvision==0.29.0 \
     --index-url https://download.pytorch.org/whl/cu130
 
 # Verify torch sees the GPU

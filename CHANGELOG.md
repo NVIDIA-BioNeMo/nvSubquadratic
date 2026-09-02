@@ -20,7 +20,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   128 and it requires `max(X, Y) <= fft_size // 2`. The spatial cap is enforced
   on the first forward pass rather than at construction, because the input size
   is not known when the module is built. Per-sample (FiLM) kernels are
-  supported. Requires `subquadratic-ops-torch >= 0.3.0`.
+  supported. Requires `subquadratic-ops-torch >= 0.3.0`. Note the spatial cap is
+  not the only hardware constraint: extents above 32 per axis resolve to the 128
+  FFT tile, which needs more shared memory than SM80/SM86 provide, so those
+  shapes require compute capability 9.0+ and raise a clear error below it.
 
   The upstream kernel crops the 'same' window at `fft_size // 2` whereas
   `fftconv.py` crops at `K // 2`; the wrapper pre-pads the filter's top/left by
@@ -62,10 +65,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   above), `[dali]` → `nvidia-dali-cuda130`. The default `fft_backend="torch_fft"`
   path is unaffected and still needs no CUDA kernel.
 
-- **Raised the PyTorch floor to `>=2.12.0,<2.13.0`** (`torchvision >=0.27.0`),
-  the first release with `cu130`/`cu132` wheels. The documented conda/venv
-  installs now pin `torch==2.12.1` / `torchvision==0.27.1` to match the Docker
-  image, so extensions built during the image build match the torch that ships.
+- **Raised the PyTorch floor to `>=2.14.0,<2.15.0`** (`torchvision >=0.29.0`).
+  This is a hard requirement of the `[cuda]` extra, not a preference: torch pins
+  `nvidia-cudnn-cu13` *exactly*, and `subquadratic-ops-torch-cu13 >= 0.3.0`
+  requires `nvidia-cudnn-cu13 >= 9.24.0.43`. torch 2.12 and 2.13 both pin
+  `==9.20.0.48`, which makes `pip install nvsubquadratic[cuda]` unresolvable;
+  torch 2.14 pins `==9.24.0.43` and satisfies both.
+
+  The documented conda/venv installs now pin `torch==2.14.0` /
+  `torchvision==0.29.0` to match the Docker image, so extensions built during
+  the image build match the torch that ships. `scripts/check_version_pins.py`
+  enforces that agreement in pre-commit and CI across all 14 pin sites.
 
 ## \[0.1.1\]
 

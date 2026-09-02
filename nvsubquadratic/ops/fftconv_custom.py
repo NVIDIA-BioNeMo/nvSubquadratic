@@ -79,6 +79,7 @@ from __future__ import annotations
 
 
 __all__ = [
+    "FUSED_FFT_SIZE_128_MIN_ARCH",
     "causal_fftconv1d_bhl",
     "causal_fftconv1d_bhl_chunked",
     "causal_fftconv1d_bhl_w_reshape",
@@ -91,6 +92,7 @@ __all__ = [
     "fftconv2d_bhl_w_reshape_chunked",
     "fftconv2d_blh",
     "fftconv2d_blh_chunked",
+    "fused_fftconv2d_arch_supported",
     "fused_fftconv2d_bhl",
     "fused_fftconv2d_bhl_chunked",
     "fused_fftconv2d_bhl_w_reshape",
@@ -308,6 +310,17 @@ _FUSED_FFT_SIZES = (8, 16, 32, 64, 128)
 # (128) caps the spatial extent at 64x64.
 _FUSED_MAX_SPATIAL = max(_FUSED_FFT_SIZES) // 2
 
+# The 128 tile needs more per-block shared memory than SM80/SM86 provide: the
+# forward already fails on SM86 and the backward fails on both. Anything above
+# 32 per axis resolves to the 128 tile, so a 64x64 input is unusable below SM90
+# even though it is within the documented spatial cap. Guarding here turns an
+# opaque kernel-side failure into a message that names the real constraint.
+FUSED_FFT_SIZE_128_MIN_ARCH = (9, 0)
+
+# Largest spatial extent that still fits the 64 tile, i.e. the point above which
+# resolve_fused_fft_size escalates to 128 and the SM90+ requirement kicks in.
+_FUSED_MAX_SPATIAL_BELOW_128 = _FUSED_FFT_SIZES[-2] // 2
+
 
 def _get_fused_fft_conv2d():
     """Return the ``fused_fft_conv2d`` callable, importing on first call."""
@@ -413,6 +426,31 @@ def resolve_fused_fft_size(
     return fft_size
 
 
+def fused_fftconv2d_arch_supported(device: torch.device | None = None, fft_size: int = 128) -> bool:
+    """Whether ``device`` can run the fused 2D kernel at this FFT tile size.
+
+    Tiles below 128 run on any CUDA device the kernel supports; the 128 tile
+    additionally needs SM90+ (see :data:`FUSED_FFT_SIZE_128_MIN_ARCH`).
+
+    Args:
+        device: CUDA device to probe. Defaults to the current device.
+        fft_size: Tile size to check, as returned by
+            :func:`resolve_fused_fft_size`.
+
+    Returns:
+        ``True`` if the device can run that tile, ``False`` otherwise
+        (including on CPU or when CUDA is unavailable).
+    """
+    if not torch.cuda.is_available():
+        return False
+    if device is not None and device.type != "cuda":
+        return False
+    if fft_size < 128:
+        return True
+    index = device.index if device is not None else None
+    return torch.cuda.get_device_capability(index) >= FUSED_FFT_SIZE_128_MIN_ARCH
+
+
 def fused_fftconv2d_supported(x_dim: int, y_dim: int, k_x: int, k_y: int) -> bool:
     """Whether the fused 2D kernel can handle this input/kernel shape combination.
 
@@ -448,6 +486,16 @@ def _fused_conv2d_bhl(x: torch.Tensor, kernel: torch.Tensor, fft_size: int | Non
     _B, _H, x_dim, y_dim = x.shape
     k_x, k_y = kernel.shape[-2], kernel.shape[-1]
     fft_size = resolve_fused_fft_size(x_dim, y_dim, k_x, k_y, fft_size)
+
+    if not fused_fftconv2d_arch_supported(x.device, fft_size):
+        major, minor = torch.cuda.get_device_capability(x.device.index) if x.is_cuda else (0, 0)
+        raise RuntimeError(
+            f"The fused 2D FFT kernel needs fft_size={fft_size} for input {(x_dim, y_dim)} with "
+            f"kernel {(k_x, k_y)}, and that tile requires compute capability "
+            f"{'.'.join(map(str, FUSED_FFT_SIZE_128_MIN_ARCH))}+ (Hopper/Blackwell); this device "
+            f"reports {major}.{minor}. Spatial extents above {_FUSED_MAX_SPATIAL_BELOW_128} per "
+            "axis select the 128 tile. Use fft_backend='subq_ops' or 'torch_fft' on this GPU."
+        )
 
     pad_x = fft_size // 2 - k_x // 2
     pad_y = fft_size // 2 - k_y // 2

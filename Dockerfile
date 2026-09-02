@@ -28,17 +28,17 @@ ARG MINIFORGE_VERSION=25.3.0-3
 #   1. The base nvcc CUDA must match torch's CUDA exactly, or apex and mamba fail
 #      to build ("Cuda extensions ... compiled with Cuda 13.0" vs nvcc 13.2).
 #      Hence the 13.0.x base above and the cu130 index here.
-#   2. TORCH_VERSION must satisfy pyproject's own `torch>=2.12.0,<2.13.0`. If it
+#   2. TORCH_VERSION must satisfy pyproject's own `torch>=2.14.0,<2.15.0`. If it
 #      does not, the build still succeeds but the final `.[all]` step silently
 #      UPGRADES torch — after apex/mamba/causal-conv1d were already compiled
 #      against the older one, leaving extensions built against headers that no
 #      longer match the installed torch.
 #
-# 2.12.1 is published for cu130, so both hold together. Changing this pin without
+# 2.14.0 is published for cu130, so both hold together. Changing this pin without
 # the pyproject floor (or the other install paths) reintroduces the swap, so
 # scripts/check_version_pins.py enforces the agreement in pre-commit and CI.
-ARG TORCH_VERSION=2.12.1
-ARG TORCHVISION_VERSION=0.27.1
+ARG TORCH_VERSION=2.14.0
+ARG TORCHVISION_VERSION=0.29.0
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 # DALI ships one build per CUDA major version; cuda130 is the CUDA 13.x build.
 ARG DALI_PACKAGE=nvidia-dali-cuda130
