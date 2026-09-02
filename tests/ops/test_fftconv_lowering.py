@@ -41,7 +41,7 @@ from nvsubquadratic.ops.fftconv_lowering import (
     lowering_stats,
     reset_lowering_stats,
 )
-from tests.conftest import requires_subq_ops_fused
+from tests.conftest import requires_sm90, requires_subq_ops_fused
 
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -128,7 +128,7 @@ def test_rewrites_without_shortcut():
     _assert_l2_close(out, expected, torch.float32)
 
 
-@pytest.mark.parametrize("spatial", [8, 16, 32, 64])
+@pytest.mark.parametrize("spatial", [8, 16, 32, pytest.param(64, marks=requires_sm90)])
 def test_rewrites_across_supported_spatial_sizes(spatial):
     x, kernel, shortcut = _bhl_inputs(spatial=spatial, kernel_size=2 * spatial - 1, channels=4, batch=1)
     expected = fftconv2d_fp32_bhl(x, kernel, shortcut)

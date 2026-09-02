@@ -50,7 +50,7 @@ from nvsubquadratic.ops.fftconv_custom import (
     fused_fftconv2d_supported,
     resolve_fused_fft_size,
 )
-from tests.conftest import requires_subq_ops_fused
+from tests.conftest import requires_sm90, requires_subq_ops_fused
 
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -155,7 +155,7 @@ class TestResolveFftSize:
 class TestForwardMatchesReference:
     """The fused path reproduces fftconv2d_fp32_bhl up to dtype roundoff."""
 
-    @pytest.mark.parametrize("spatial", [7, 8, 16, 32, 64])
+    @pytest.mark.parametrize("spatial", [7, 8, 16, 32, pytest.param(64, marks=requires_sm90)])
     def test_double_grid_kernel(self, spatial, dtype):
         """K = 2N-1, the kernel size CKConvND generates on a double grid."""
         x, kernel, shortcut = _inputs(spatial, 2 * spatial - 1, dtype)

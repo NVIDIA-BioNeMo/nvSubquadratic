@@ -73,6 +73,29 @@ requires_subq_ops_fused = pytest.mark.skipif(
 )
 
 
+# ---------------------------------------------------------------------------
+# Compute-capability gate for the fused 2D kernel
+# ---------------------------------------------------------------------------
+
+
+# The fused kernel's 128 FFT tile needs more per-block shared memory than
+# SM80/SM86 provide, and resolve_fused_fft_size escalates to that tile for any
+# spatial extent above 32 per axis. So 64x64 cases are Hopper/Blackwell-only
+# even though they sit inside the documented 64-per-axis cap — on Ampere the
+# effective cap is 32. Mark just those parameters, not whole test files:
+#
+#     @pytest.mark.parametrize("spatial", [16, 32, pytest.param(64, marks=requires_sm90)])
+_FUSED_128_MIN_ARCH = (9, 0)
+
+requires_sm90 = pytest.mark.skipif(
+    not (torch.cuda.is_available() and torch.cuda.get_device_capability() >= _FUSED_128_MIN_ARCH),
+    reason=(
+        "the fused kernel's 128 FFT tile (spatial extent > 32 per axis) requires "
+        "compute capability 9.0+ (Hopper/Blackwell)"
+    ),
+)
+
+
 @pytest.fixture
 def device():
     """Get CUDA device if available, otherwise CPU."""

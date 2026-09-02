@@ -31,7 +31,7 @@ import torch
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from tests.conftest import requires_subq_ops_fused
+from tests.conftest import requires_sm90, requires_subq_ops_fused
 
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -168,7 +168,7 @@ def test_backward_matches_torch_fft(grid_type):
         _assert_l2_close(param.grad, want, torch.float32, tol_table=L2_TOL_GRAD, name=name)
 
 
-@pytest.mark.parametrize("spatial", [7, 16, 32, 64])
+@pytest.mark.parametrize("spatial", [7, 16, 32, pytest.param(64, marks=requires_sm90)])
 def test_spatial_sizes_within_cap(spatial):
     """Every supported spatial size, including the 64 boundary and a non-power-of-2."""
     torch.manual_seed(42)
