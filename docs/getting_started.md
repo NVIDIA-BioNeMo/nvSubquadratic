@@ -36,8 +36,8 @@ bash setup_conda_env.sh
 conda activate nvsubquadratic
 ```
 
-This creates an environment with Python 3.12 and PyTorch 2.10 (CUDA
-12.9), installs the dev dependencies, builds NVIDIA Apex from source,
+This creates an environment with Python 3.12 and PyTorch 2.12 (CUDA
+13.0), installs the dev dependencies, builds NVIDIA Apex from source,
 and installs `quack-kernels`.
 
 For an alternative venv-based install:
@@ -45,8 +45,8 @@ For an alternative venv-based install:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install torch==2.10.0 torchvision==0.25.0 \
-    --index-url https://download.pytorch.org/whl/cu129
+pip install torch==2.12.1 torchvision==0.27.1 \
+    --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements-dev.txt
 pip install --no-build-isolation -e .
 ```
@@ -100,7 +100,10 @@ hyena_cfg = LazyConfig(Hyena)(
         mask_cfg=LazyConfig(torch.nn.Identity)(),
         grid_type="double",  # linear (non-circular) convolution
         fft_padding="zero",
-        fft_backend="torch_fft",  # portable; "subq_ops" uses the fused 2D CUDA kernel
+        # Portable default. "subq_ops" uses the fused 2D CUDA kernel;
+        # "subq_ops_fused" is faster still and runs natively in bf16/fp16,
+        # but caps spatial dims at 64 per axis.
+        fft_backend="torch_fft",
         is_causal=False,
     ),
     # Depthwise short conv on the concatenated [Q; K; V] (3 * H channels).

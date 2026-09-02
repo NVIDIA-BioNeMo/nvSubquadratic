@@ -6,17 +6,17 @@
 #
 # Prerequisites:
 #   - conda (Miniforge / Miniconda / Anaconda)
-#   - NVIDIA GPU with CUDA 12.9 drivers
+#   - NVIDIA GPU with CUDA 13.0 drivers
 #   - nvcc on PATH (included in the nvcr.io CUDA devel image; on bare metal
-#     install the CUDA 12.9 toolkit separately)
+#     install the CUDA 13.0 toolkit separately)
 
 set -euo pipefail
 
 ENV_NAME=nvsubquadratic
 PYTHON_VERSION=3.12
-TORCH_INDEX=https://download.pytorch.org/whl/cu129
-TORCH_VERSION=2.10.0
-TORCHVISION_VERSION=0.25.0
+TORCH_INDEX=https://download.pytorch.org/whl/cu130
+TORCH_VERSION=2.12.1
+TORCHVISION_VERSION=0.27.1
 
 # ── 1. Create or recreate the conda environment ───────────────────────────────
 if conda env list | grep -qE "^${ENV_NAME}[[:space:]]"; then
@@ -32,7 +32,7 @@ ENV_PREFIX=$(conda env list | grep -E "^${ENV_NAME}[[:space:]]" | awk '{print $N
 PIP="${ENV_PREFIX}/bin/pip"
 
 # ── 2. Install PyTorch ────────────────────────────────────────────────────────
-echo "Installing PyTorch ${TORCH_VERSION} (CUDA 12.9)..."
+echo "Installing PyTorch ${TORCH_VERSION} (CUDA 13.0)..."
 "${PIP}" install --no-cache-dir \
     "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
     --index-url "${TORCH_INDEX}"

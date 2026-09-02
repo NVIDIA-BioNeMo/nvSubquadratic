@@ -13,6 +13,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 - **B2B CausalConv1d**: Back-to-back causal convolutions for striped Hyena architectures
 - **CausalConv1d**: Standard causal convolutions with various kernel sizes (2-256)
 - **FFT CausalConv1d**: FFT-based causal convolutions for large kernel sizes (up to 8K-16M)
+- **Fused FFT Conv2d**: single-launch 2D FFT convolution running natively in fp32/fp16/bf16 (spatial dims up to 64 per axis); requires `subquadratic-ops-torch >= 0.3.0`
 
 **Requirements**:
 
@@ -60,8 +61,15 @@ pip install "nvsubquadratic[all]"          # all of the above
 The accelerated CUDA kernels (`[cuda]`) are a source build that requires `nvcc`,
 so they are kept out of the core install — this is what lets `pip install nvsubquadratic` succeed in environments without the CUDA toolkit (e.g. a
 downstream project's CPU CI). The operators default to the portable `torch.fft`
-backend; selecting `fft_backend="subq_ops"` without `[cuda]` installed raises a
-clear `ImportError` pointing you to the extra.
+backend; selecting `fft_backend="subq_ops"` (or `"subq_ops_fused"`) without
+`[cuda]` installed raises a clear `ImportError` pointing you to the extra.
+
+On 2D problems with spatial dims of at most 64 per axis, `fft_backend="subq_ops_fused"`
+is the fastest option: it fuses the whole FFT-conv pipeline into one launch and
+runs it natively in bf16/fp16 instead of upcasting to fp32, for roughly a 3-4x
+speedup over `torch_fft`. Models already written against `torch_fft` can pick up
+the same kernel under `torch.compile` without a config change — see the
+[torch.compile lowering](docs/ops/README.md#torchcompile-lowering).
 
 ### Package Manager
 
@@ -79,10 +87,11 @@ docker build -t nvsubquadratic:dev .
 docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic nvsubquadratic:dev
 ```
 
-The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Two build-args let you tune the compile:
+The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Turing through Blackwell). Build-args let you tune the compile:
 
-- `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4).
-- `MAX_JOBS` — number of parallel nvcc jobs. Defaults to unconstrained. Set to a small number (e.g. `2`) if the build OOMs (typical under qemu emulation).
+- `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4). Also applied to the patched `mamba-ssm` / `causal-conv1d` source builds (upstream otherwise hardcodes sm_75..sm_120).
+- `MAX_JOBS` — number of parallel nvcc/ninja jobs. Defaults to unconstrained. Set to `1` if the build OOMs or gcc ICEs (typical under qemu emulation for arm64).
+- `NVCC_THREADS` — nvcc `--threads` for the mamba stack (default `4`; use `1` under QEMU).
 
 ```bash
 docker build \
@@ -92,13 +101,13 @@ docker build \
 
 ### Enroot (SLURM clusters)
 
-For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.sh`](scripts/slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST` and `MAX_JOBS` per platform:
+For SLURM deployments that use enroot/pyxis, [`scripts/slurm/enroot/build_sqsh.sh`](scripts/slurm/enroot/build_sqsh.sh) builds the Docker image and converts it to an enroot `.sqsh` in one step. It selects the right `TORCH_CUDA_ARCH_LIST`, `MAX_JOBS`, and `NVCC_THREADS` per platform:
 
 ```bash
 # H100 (x86-64, default)
 scripts/slurm/enroot/build_sqsh.sh
 
-# GB200 (ARM64) — uses qemu emulation on an x86 build host
+# GB200 (ARM64) — QEMU on x86: keep ≥64GB free RAM+swap; defaults MAX_JOBS=1 NVCC_THREADS=1
 PLATFORM=arm64 scripts/slurm/enroot/build_sqsh.sh
 ```
 
@@ -125,7 +134,7 @@ bash setup_conda_env.sh
 conda activate nvsubquadratic
 ```
 
-This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.10 (CUDA 12.9), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
+This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.12 (CUDA 13.0), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
 
 ### Local Installation (venv)
 
@@ -135,7 +144,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install PyTorch with CUDA support first (before package dependencies)
-pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu129
+pip install torch==2.12.1 torchvision==0.27.1 --index-url https://download.pytorch.org/whl/cu130
 
 # Install development dependencies
 pip install -r requirements-dev.txt
