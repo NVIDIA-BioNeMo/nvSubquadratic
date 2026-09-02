@@ -28,7 +28,9 @@
 #   INSTALL_MAMBA / INSTALL_FA4         (default: true — this is the benchmark image)
 #
 # Keep the pins below in sync with the Dockerfile — this replays it, it does not
-# parse it, so the two drift silently if only one is edited.
+# parse it, so nothing links the two at runtime. They no longer drift silently:
+# scripts/check_version_pins.py fails pre-commit/CI if this file, the Dockerfile,
+# setup_conda_env.sh or the install docs disagree with pyproject's torch range.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

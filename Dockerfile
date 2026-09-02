@@ -34,8 +34,9 @@ ARG MINIFORGE_VERSION=25.3.0-3
 #      against the older one, leaving extensions built against headers that no
 #      longer match the installed torch.
 #
-# 2.12.1 is published for cu130, so both hold together. Keep this pin and the
-# pyproject floor in sync; changing one alone reintroduces the swap.
+# 2.12.1 is published for cu130, so both hold together. Changing this pin without
+# the pyproject floor (or the other install paths) reintroduces the swap, so
+# scripts/check_version_pins.py enforces the agreement in pre-commit and CI.
 ARG TORCH_VERSION=2.12.1
 ARG TORCHVISION_VERSION=0.27.1
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
