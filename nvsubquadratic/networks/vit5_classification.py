@@ -103,6 +103,10 @@ class ViT5ClassificationNet(nn.Module):
             ``"gap"``: global average pooling over patch tokens.
             ``"register_concat"``: gather register tokens after all blocks,
             compress each via a shared neck linear, concatenate, and project.
+            ``"corner"``: read out the bottom-right patch token at flat index
+            ``(grid_h - 1) * grid_w + (grid_w - 1)``.  Requires
+            ``num_registers=0`` and no CLS token.  Use for spatial recall tasks
+            where the model must route information to the bottom-right corner.
         neck_compression_ratio: Compression ratio for ``register_concat`` readout.
             Required when ``readout="register_concat"``.
         reg_init: Initialization strategy for register tokens.
@@ -135,7 +139,7 @@ class ViT5ClassificationNet(nn.Module):
         image_size: int,
         num_registers: int,
         norm_cfg: LazyConfig,
-        readout: Literal["cls", "gap", "register_concat"],
+        readout: Literal["cls", "gap", "register_concat", "corner"],
         block_cfg: LazyConfig | None = None,
         dropout_rate: float = 0.0,
         neck_compression_ratio: int | None = None,
@@ -166,8 +170,8 @@ class ViT5ClassificationNet(nn.Module):
             num_registers: Number of learnable register tokens ``R`` appended
                 after the CLS token.
             norm_cfg: LazyConfig for the output normalisation layer.
-            readout: Token aggregation strategy — ``"cls"``, ``"gap"``, or
-                ``"register_concat"`` (see class docstring).
+            readout: Token aggregation strategy — ``"cls"``, ``"gap"``,
+                ``"register_concat"``, or ``"corner"`` (see class docstring).
             block_cfg: Single LazyConfig replicated ``N`` times (homogeneous
                 mode).  Mutually exclusive with ``layer_pattern``.
             dropout_rate: Dropout probability applied between the norm and the
@@ -200,6 +204,10 @@ class ViT5ClassificationNet(nn.Module):
         self.readout = readout
         self.use_cls_token = readout == "cls"
 
+        if self.readout == "corner":
+            if num_registers != 0:
+                raise ValueError("readout='corner' requires num_registers=0")
+
         if self.readout == "register_concat":
             if neck_compression_ratio is None:
                 raise ValueError("neck_compression_ratio is required when readout='register_concat'")
@@ -214,6 +222,8 @@ class ViT5ClassificationNet(nn.Module):
         num_patches_w = image_size // patch_size
         self.num_patches = num_patches_h * num_patches_w
         self._grid_w = num_patches_w
+        # Flat index of bottom-right patch token; only used when readout="corner".
+        self._corner_idx = (num_patches_h - 1) * num_patches_w + (num_patches_w - 1)
 
         # Patch embedding (non-overlapping Conv2d, no bias — pos_embed absorbs the offset)
         self.patch_embed = nn.Conv2d(
@@ -377,11 +387,11 @@ class ViT5ClassificationNet(nn.Module):
             flops += self.num_registers * 2 * D * self.neck_dim
             head_dim = self.num_registers * self.neck_dim
             flops += self.out_norm.flop_count(1)
-        elif not self.use_cls_token:
-            flops += num_patches * D  # GAP: mean over patch tokens
+        elif self.readout == "gap":
+            flops += num_patches * D  # mean over patch tokens
             head_dim = D
             flops += self.out_norm.flop_count(1)
-        else:
+        else:  # "cls" or "corner": single-token readout
             head_dim = D
             flops += self.out_norm.flop_count(1)
 
@@ -443,6 +453,8 @@ class ViT5ClassificationNet(nn.Module):
             out = self.register_neck(regs).flatten(start_dim=1)  # [B, R * neck_dim]
         elif self.use_cls_token:
             out = x[:, self.num_patches]  # CLS is right after patches
+        elif self.readout == "corner":
+            out = x[:, self._corner_idx]  # bottom-right patch token
         else:
             out = x[:, : self.num_patches].mean(dim=1)  # GAP over patches only
 
