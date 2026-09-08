@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## \[Unreleased\]
 
+## \[0.2.0\] - 2026-09-08
+
 ### Added
 
 - **`fft_backend="subq_ops_fused"` on `CKConvND`**, backed by
@@ -24,6 +26,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not the only hardware constraint: extents above 32 per axis resolve to the 128
   FFT tile, which needs more shared memory than SM80/SM86 provide, so those
   shapes require compute capability 9.0+ and raise a clear error below it.
+  CI validates extents up to 32 per axis (the 64 FFT tile) on SM86 hardware; the
+  64-per-axis path (128 tile, SM90+) is covered only by its arch guard and has
+  not yet been exercised on Hopper/Blackwell.
 
   The upstream kernel crops the 'same' window at `fft_size // 2` whereas
   `fftconv.py` crops at `K // 2`; the wrapper pre-pads the filter's top/left by
@@ -44,11 +49,29 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   The pass only fires on an exact match of the reference recipe (padding rule,
   crop offset, shape limits, CUDA device, and a compute capability that
-  supports the required FFT tile — the 128 tile needs SM90+). `lowering_stats()`
-  reports rewrite and per-reason skip counts, since a silent pass is otherwise
-  hard to tell apart from one that never fired.
+  supports the required FFT tile — the 128 tile needs SM90+). It additionally
+  declines whenever rewriting would change what the graph observes: when a
+  spectrum or the multiply result is consumed outside the chain, when the
+  kernel's dtype or device differs from the input's, when the chain's output
+  dtype or device would not match, on a non-default FFT `norm`, on an in-place
+  `mul_` ordered after the `irfft2`, and on symbolic slice bounds under dynamic
+  shapes. Because every intermediate is verified private to the chain before
+  the rewrite, the replaced nodes are erased individually rather than by
+  whole-graph dead-code elimination, which cannot distinguish an unrelated
+  in-place op from a dead one. `lowering_stats()` reports rewrite and
+  per-reason skip counts, since a silent pass is otherwise hard to tell apart
+  from one that never fired.
 
 ### Fixed
+
+- **`SubqOpsCausalConv1d` could not run under `torch.autocast`.** The fused
+  kernel picks its specialisation from the *input* dtype and then requires every
+  tensor to match it exactly, so an autocast region — where activations arrive
+  as bf16/fp16 while parameters stay fp32 — raised
+  `ValueError: in_w expected dtype (code=4, bits=16) but got (code=2, bits=32)`.
+  The weight and bias are now narrowed to the input dtype at call time, mirroring
+  what autocast does for the built-in conv ops. The fp32 master parameters are
+  untouched; only the values handed to the kernel are cast.
 
 - `tests/conftest.py` only queried the `subquadratic-ops-torch-cu12`
   distribution when resolving the installed kernel version. On a
