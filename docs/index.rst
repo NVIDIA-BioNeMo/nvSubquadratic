@@ -138,6 +138,9 @@ Where to go next
   the base-config + ablation workflow.
 - :doc:`Benchmarks <benchmarks>`: FLOP scaling, kernel speedups, and a
   worked ViT-5-Small ImageNet training optimization case study.
+- :doc:`Mamba-2 Sequence-Length Limits <mamba2_limits>`: why the Mamba-2
+  baseline stops early in the forward-time sweeps — two measured implementation
+  limits, neither of them memory.
 - :doc:`Reports <reports>`: long-form technical reports backed by
   reproducible scripts and figures.
 - :doc:`Glossary <glossary>`: quick definitions for SIREN, FiLM, implicit
@@ -182,6 +185,7 @@ CUDA kernels live in a separate library:
    Lazy-Config System <lazy_config>
    Examples <examples/index>
    Benchmarks <benchmarks>
+   Mamba-2 Sequence-Length Limits <mamba2_limits>
    Reports <reports>
    Glossary <glossary>
    API Reference <api_reference/index>
