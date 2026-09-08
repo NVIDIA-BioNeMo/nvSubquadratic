@@ -14,10 +14,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `subquadratic_ops_torch.fused_fft_conv2d`. It runs the whole
   rfft2 → multiply → irfft2 pipeline in a single cuFFTDx launch and, unlike
   every other FFT path, **natively in fp32/fp16/bf16** instead of upcasting to
-  fp32. Measured at 3.6–3.9× over `torch_fft` and 1.2–2.4× over `subq_ops` on an
-  H200 at batch 8, hidden 768, forward+backward, bf16. Speedups are shape- and
-  hardware-dependent; that configuration is the one the numbers come from, not a
-  guarantee across the supported range.
+  fp32. Measured on an H100 at batch 8, hidden 768, forward+backward, bf16:
+
+  | spatial | FFT tile | vs `torch_fft` | vs `subq_ops` |
+  | ------- | -------- | -------------- | ------------- |
+  | 16      | 32       | 1.9×           | 1.4×          |
+  | 32      | 64       | 4.4×           | 2.5×          |
+  | 64      | 128      | 4.9×           | 1.3×          |
+
+  The margin over `torch_fft` grows with spatial extent; the margin over
+  `subq_ops` does not vary monotonically. Speedups are shape- and
+  hardware-dependent — reproduce with `benchmarks/ops/bench_fused_fftconv2d.py`
+  rather than assuming these figures transfer to another GPU or shape.
 
   Restricted to `data_dim=2`, `is_causal=False`, `fft_padding="zero"`, and
   spatial extents of at most **64 per axis** — the kernel's largest FFT tile is

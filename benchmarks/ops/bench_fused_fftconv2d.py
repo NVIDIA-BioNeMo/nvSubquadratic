@@ -15,10 +15,18 @@
 
 """Fused vs subq_ops vs torch_fft, 2D — the comparison behind the published claim.
 
-The README/CHANGELOG/docs claim 3.6-3.9x over torch_fft and 1.2-2.4x over
-subq_ops, measured on H200 at B=8, hidden=768, forward+backward, bf16. Nothing
-in benchmarks/ reproduces that: bench_fftconv2d.py covers torch_fft and
-subq_ops only. This script closes that gap.
+This is the script behind the speedup figures in the README, CHANGELOG,
+docs/ops/README.md and the CKConvND docstring. bench_fftconv2d.py compares
+torch_fft against subq_ops and never touches the fused kernel, so before this
+those numbers were not reproducible from the tree.
+
+Reference run — H100 80GB, torch 2.14.0+cu130, subquadratic-ops-torch-cu13
+0.3.0, defaults below (B=8, hidden=768, bf16, fwd+bwd, median of 100):
+
+    spatial   tile   torch_fft   subq_ops     fused   vs torch   vs subq
+         16     32     0.620ms    0.466ms   0.329ms      1.88x     1.42x
+         32     64     2.124ms    1.214ms   0.482ms      4.41x     2.52x
+         64    128     8.266ms    2.248ms   1.689ms      4.89x     1.33x
 
 Run on an SM90+ node (spatial 64 needs the 128 FFT tile):
 
@@ -149,10 +157,10 @@ def main() -> None:
             f"{n:>7} {k:>5} {tile:>5} {t_ref:>10.3f}ms {subq_str} {t_fused:>10.3f}ms {vs_torch:>8.2f}x {vs_subq_str}"
         )
 
-    print("\nPublished claim: 3.6-3.9x over torch_fft, 1.2-2.4x over subq_ops")
-    print("(H200, B=8, hidden=768, fwd+bwd, bf16). If these numbers disagree, the")
-    print("four sites to correct are README.md:70, CHANGELOG.md:17,")
-    print("docs/ops/README.md:127 and nvsubquadratic/modules/ckconv_nd.py:621.")
+    print("\nH100 reference (see module docstring): 1.88x / 4.41x / 4.89x vs torch_fft")
+    print("and 1.42x / 2.52x / 1.33x vs subq_ops at spatial 16 / 32 / 64.")
+    print("Speedups are shape- and hardware-dependent; the docs cite these as a")
+    print("range rather than a single figure.")
 
 
 if __name__ == "__main__":
