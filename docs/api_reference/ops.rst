@@ -49,6 +49,59 @@ fp32 reference ops above.
    ~ops.fftconv_custom.causal_fftconv1d_bhl
    ~ops.fftconv_custom.causal_fftconv1d_bhl_w_reshape
 
+.. _ops-fftconv-fused:
+
+Fused 2D FFT convolutions (native dtype)
+-----------------------------------------
+
+Wrappers around ``subquadratic_ops_torch.fused_fft_conv2d``, which fuses the
+whole rfft2/multiply/irfft2 pipeline into one launch and runs it in the input
+dtype (fp32/fp16/bf16) rather than upcasting to fp32.  Spatial dims are capped
+at 64 per axis.  Selected on ``CKConvND`` via ``fft_backend="subq_ops_fused"``.
+
+.. note::
+   Spatial extents above 32 per axis select the 128 FFT tile, which requires compute capability 9.0+ (Hopper/Blackwell); SM80/SM86 raise a clear error.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~ops.fftconv_custom.fused_fftconv2d_blh
+   ~ops.fftconv_custom.fused_fftconv2d_bhl
+   ~ops.fftconv_custom.fused_fftconv2d_bhl_w_reshape
+   ~ops.fftconv_custom.fused_fftconv2d_bhl_chunked
+   ~ops.fftconv_custom.fused_fftconv2d_blh_chunked
+   ~ops.fftconv_custom.fused_fftconv2d_bhl_w_reshape_chunked
+   ~ops.fftconv_custom.resolve_fused_fft_size
+   ~ops.fftconv_custom.fused_fftconv2d_supported
+   ~ops.fftconv_custom.fused_fftconv2d_max_spatial
+   ~ops.fftconv_custom.fused_fftconv2d_arch_supported
+   ~ops.fftconv_custom.load_fused_fft_conv2d
+
+.. _ops-fftconv-lowering:
+
+torch.compile lowering
+-----------------------
+
+Inductor pre-grad pass that rewrites the reference 2D FFT-conv chain onto the
+fused CUDA kernel, so an existing ``fft_backend="torch_fft"`` model picks it up
+without a config change.
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~ops.fftconv_lowering.fused_fftconv2d_options
+   ~ops.fftconv_lowering.fused_fftconv2d_lowering
+   ~ops.fftconv_lowering.lowering_stats
+   ~ops.fftconv_lowering.reset_lowering_stats
+
+.. autosummary::
+   :toctree: generated/
+   :template: class_template.rst
+
+   ~ops.fftconv_lowering.FusedFFTConv2dLowering
+
 .. _ops-causal-conv1d:
 
 Direct 1D causal convolutions (CUDA-accelerated)

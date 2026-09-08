@@ -4,6 +4,141 @@ All notable changes to nvSubquadratic are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[Unreleased\]
+
+## \[0.2.0\] - 2026-09-08
+
+### Added
+
+- **`fft_backend="subq_ops_fused"` on `CKConvND`**, backed by
+  `subquadratic_ops_torch.fused_fft_conv2d`. It runs the whole
+  rfft2 → multiply → irfft2 pipeline in a single cuFFTDx launch and, unlike
+  every other FFT path, **natively in fp32/fp16/bf16** instead of upcasting to
+  fp32. Measured on an H100 at batch 8, hidden 768, forward+backward, bf16:
+
+  | spatial | FFT tile | vs `torch_fft` | vs `subq_ops` |
+  | ------- | -------- | -------------- | ------------- |
+  | 16      | 32       | 1.9×           | 1.4×          |
+  | 32      | 64       | 4.4×           | 2.5×          |
+  | 64      | 128      | 4.9×           | 1.3×          |
+
+  The margin over `torch_fft` grows with spatial extent; the margin over
+  `subq_ops` does not vary monotonically. Speedups are shape- and
+  hardware-dependent — reproduce with `benchmarks/ops/bench_fused_fftconv2d.py`
+  rather than assuming these figures transfer to another GPU or shape.
+
+  Restricted to `data_dim=2`, `is_causal=False`, `fft_padding="zero"`, and
+  spatial extents of at most **64 per axis** — the kernel's largest FFT tile is
+  128 and it requires `max(X, Y) <= fft_size // 2`. The spatial cap is enforced
+  on the first forward pass rather than at construction, because the input size
+  is not known when the module is built. Per-sample (FiLM) kernels are
+  supported. Requires `subquadratic-ops-torch >= 0.3.0`. Note the spatial cap is
+  not the only hardware constraint: extents above 32 per axis resolve to the 128
+  FFT tile, which needs more shared memory than SM80/SM86 provide, so those
+  shapes require compute capability 9.0+ and raise a clear error below it.
+  CI validates extents up to 32 per axis (the 64 FFT tile) on SM86 hardware; the
+  64-per-axis path (128 tile, SM90+) is covered only by its arch guard and has
+  not yet been exercised on Hopper/Blackwell.
+
+  The upstream kernel crops the 'same' window at `fft_size // 2` whereas
+  `fftconv.py` crops at `K // 2`; the wrapper pre-pads the filter's top/left by
+  the difference so results are interchangeable with the other backends
+  (verified to ~3e-7 normwise in fp32). Without that pre-pad the output is
+  shifted by `fft_size // 2 - K // 2` pixels.
+
+- **`nvsubquadratic.ops.fftconv_lowering`** — a `torch.compile` pre-grad pass
+  that detects `fftconv.py`'s 2D FFT-conv chain and rewrites it onto the fused
+  kernel, so a model already on `fft_backend="torch_fft"` picks it up without a
+  config change. This matters because inductor cannot generate code for complex
+  operators and otherwise falls back to eager cuFFT for the entire chain.
+
+  Enable it per-callable with
+  `torch.compile(model, options=fused_fftconv2d_options())`, or globally for a
+  scope with the `fused_fftconv2d_lowering()` context manager when a framework
+  owns the `torch.compile` call.
+
+  The pass only fires on an exact match of the reference recipe (padding rule,
+  crop offset, shape limits, CUDA device, and a compute capability that
+  supports the required FFT tile — the 128 tile needs SM90+). It additionally
+  declines whenever rewriting would change what the graph observes: when a
+  spectrum or the multiply result is consumed outside the chain, when the
+  kernel's dtype or device differs from the input's, when the chain's output
+  dtype or device would not match, on a non-default FFT `norm`, on an in-place
+  `mul_` ordered after the `irfft2`, and on symbolic slice bounds under dynamic
+  shapes. Because every intermediate is verified private to the chain before
+  the rewrite, the replaced nodes are erased individually rather than by
+  whole-graph dead-code elimination, which cannot distinguish an unrelated
+  in-place op from a dead one. `lowering_stats()` reports rewrite and
+  per-reason skip counts, since a silent pass is otherwise hard to tell apart
+  from one that never fired.
+
+### Fixed
+
+- **`SubqOpsCausalConv1d` could not run under `torch.autocast`.** The fused
+  kernel picks its specialisation from the *input* dtype and then requires every
+  tensor to match it exactly, so an autocast region — where activations arrive
+  as bf16/fp16 while parameters stay fp32 — raised
+  `ValueError: in_w expected dtype (code=4, bits=16) but got (code=2, bits=32)`.
+  The weight and bias are now narrowed to the input dtype at call time, mirroring
+  what autocast does for the built-in conv ops. The fp32 master parameters are
+  untouched; only the values handed to the kernel are cast.
+
+- `tests/conftest.py` only queried the `subquadratic-ops-torch-cu12`
+  distribution when resolving the installed kernel version. On a
+  `-cu13` install (what `pyproject.toml` pins) it resolved to `(0, 0, 0)`,
+  which silently turned `requires_subq_ops_v2` into a blanket `xfail` and hid
+  every `subq_ops` test result. It now checks both distributions.
+
+### Changed
+
+- **Bumped the CUDA runtime from 12.9 to 13.0.** The Docker image now builds on
+  `nvcr.io/nvidia/cuda:13.0.3-devel-ubuntu22.04` with PyTorch `cu130` wheels, and
+  the CUDA extras target CUDA 13: `[cuda]` → `subquadratic-ops-torch-cu13`
+  (`>=0.3.0`, the first public release carrying `fused_fft_conv2d` — see Added
+  above), `[dali]` → `nvidia-dali-cuda130`. The default `fft_backend="torch_fft"`
+  path is unaffected and still needs no CUDA kernel.
+
+- **Raised the PyTorch floor to `>=2.14.0,<2.15.0`** (`torchvision >=0.29.0`).
+  This is a hard requirement of the `[cuda]` extra, not a preference: torch pins
+  `nvidia-cudnn-cu13` *exactly*, and `subquadratic-ops-torch-cu13 >= 0.3.0`
+  requires `nvidia-cudnn-cu13 >= 9.24.0.43`. torch 2.12 and 2.13 both pin
+  `==9.20.0.48`, which makes `pip install nvsubquadratic[cuda]` unresolvable;
+  torch 2.14 pins `==9.24.0.43` and satisfies both.
+
+  The documented conda/venv installs now pin `torch==2.14.0` /
+  `torchvision==0.29.0` to match the Docker image, so extensions built during
+  the image build match the torch that ships. `scripts/check_version_pins.py`
+  enforces that agreement in pre-commit and CI across all 14 pin sites.
+
+- The `[quack]` extra now installs `quack-kernels[cu13]`, selecting
+  `nvidia-cutlass-dsl`'s CUDA 13 runtime libraries to match this release. Install
+  it with `pip`, not `uv` — quack's README documents a `uv` ordering race on its
+  cu13 path ([NVIDIA/cutlass#3259](https://github.com/NVIDIA/cutlass/issues/3259)).
+
+### Notes
+
+- **Upgrading an existing GPU environment from 0.1.1 requires uninstalling the
+  CUDA 12 packages first.** `subquadratic-ops-torch-cu12` and
+  `subquadratic-ops-torch-cu13` both install a top-level `subquadratic_ops_torch/`
+  package, and `nvidia-dali-cuda120` / `nvidia-dali-cuda130` both install
+  `nvidia/`. A plain `pip install -U` therefore overwrites files without removing
+  the old distribution, and later uninstalling either one leaves the other
+  broken. Run:
+
+  ```bash
+  pip uninstall -y subquadratic-ops-torch-cu12 nvidia-dali-cuda120
+  pip install -U "nvsubquadratic[cuda]"
+  ```
+
+  A fresh environment needs none of this. Note also that CUDA 13 requires an
+  NVIDIA driver >= 580 on the host (or the CUDA forward-compatibility package).
+
+- A plain `pip install nvsubquadratic[cuda]` resolves entirely from public PyPI:
+  torch 2.14.0 on PyPI is already a CUDA 13.0 build. The
+  `--index-url https://download.pytorch.org/whl/cu130` route is only needed for
+  environments that compile Apex/mamba against a specific torch build (the
+  Dockerfile and the SLURM/enroot scripts).
+
 ## \[0.1.1\]
 
 ### Changed
