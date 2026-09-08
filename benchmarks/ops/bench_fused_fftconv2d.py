@@ -22,9 +22,9 @@ subq_ops only. This script closes that gap.
 
 Run on an SM90+ node (spatial 64 needs the 128 FFT tile):
 
-    python bench_fused_2d.py                    # the claim's exact config
-    python bench_fused_2d.py --hidden 256 --batch 4
-    python bench_fused_2d.py --dtype float16
+    python benchmarks/ops/bench_fused_fftconv2d.py                    # the claim's exact config
+    python benchmarks/ops/bench_fused_fftconv2d.py --hidden 256 --batch 4
+    python benchmarks/ops/bench_fused_fftconv2d.py --dtype float16
 
 Requires SM90+ for the spatial-64 row (128 FFT tile); 16 and 32 run anywhere.
 """
@@ -41,11 +41,19 @@ import torch
 # The reference path is the fftconv.py one; importing the wrong module silently
 # benchmarks the chunked implementation instead.
 from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl
+
+# fftconv2d_bhl is the repo's subq_ops wrapper, and the only correct way to time
+# subq_ops here. Do NOT call subquadratic_ops_torch.fft_conv2d directly: that raw
+# op is fp32-only and raises NotImplementedError on bf16/fp16, which is exactly
+# the dtype this comparison is about. The wrapper is a documented drop-in for
+# fftconv2d_fp32_bhl — it handles the fp32 round-trip and takes the same
+# [1|B, H, Kx, Ky] kernel shape as the other two paths.
+from nvsubquadratic.ops.fftconv_custom import fftconv2d_bhl as subq_fftconv2d_bhl
 from nvsubquadratic.ops.fftconv_custom import fused_fftconv2d_bhl, resolve_fused_fft_size
 
 
 try:
-    from subquadratic_ops_torch.fft_conv2d import fft_conv2d as subq_fft_conv2d
+    import subquadratic_ops_torch  # noqa: F401  (probe only; the wrapper imports lazily)
 
     HAVE_SUBQ = True
 except Exception as exc:  # pragma: no cover - environment dependent
@@ -126,10 +134,10 @@ def main() -> None:
 
         t_subq = float("nan")
         if HAVE_SUBQ:
-            # subq_ops takes the kernel WITHOUT the leading batch-1 dim: [H, Kx, Ky].
-            k_subq = k_bhl.detach()[0].clone().requires_grad_()
             try:
-                t_subq = _time_fwd_bwd(lambda a, b: subq_fft_conv2d(a, b), (x, k_subq), args.warmup, args.iters)
+                t_subq = _time_fwd_bwd(
+                    lambda a, b: subq_fftconv2d_bhl(a, b, None), (x, k_bhl), args.warmup, args.iters
+                )
             except Exception as exc:
                 print(f"    (subq_ops failed at spatial={n}: {exc!r})")
 
