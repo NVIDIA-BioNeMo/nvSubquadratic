@@ -67,8 +67,9 @@ backend; selecting `fft_backend="subq_ops"` (or `"subq_ops_fused"`) without
 
 On 2D problems with spatial dims of at most 64 per axis, `fft_backend="subq_ops_fused"`
 is the fastest option: it fuses the whole FFT-conv pipeline into one launch and
-runs it natively in bf16/fp16 instead of upcasting to fp32, for roughly a 3-4x
-speedup over `torch_fft`. Models already written against `torch_fft` can pick up
+runs it natively in bf16/fp16 instead of upcasting to fp32 — measured at 3.6-3.9x
+over `torch_fft` and 1.2-2.4x over `subq_ops` on an H200 (batch 8, hidden 768,
+forward+backward, bf16). Models already written against `torch_fft` can pick up
 the same kernel under `torch.compile` without a config change — see the
 [torch.compile lowering](docs/ops/README.md#torchcompile-lowering).
 

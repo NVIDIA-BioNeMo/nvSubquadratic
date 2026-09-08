@@ -618,8 +618,9 @@ class CKConvND(torch.nn.Module):
                   kernel from ``subquadratic_ops_torch``, which runs the whole
                   rfft2 → multiply → irfft2 pipeline in a single launch and
                   **natively in the input dtype** (fp32/fp16/bf16) instead of
-                  upcasting to fp32.  Roughly 3-4x faster than ``"torch_fft"``
-                  end-to-end in bf16.  Restricted to ``data_dim=2``,
+                  upcasting to fp32.  Measured at 3.6-3.9x over ``"torch_fft"``
+                  and 1.2-2.4x over ``"subq_ops"`` on an H200 (batch 8, hidden
+                  768, forward+backward, bf16).  Restricted to ``data_dim=2``,
                   ``is_causal=False``, ``fft_padding="zero"``, and spatial
                   extents of at most 64 per axis (the kernel's largest FFT tile
                   is 128 and it requires ``max(X, Y) <= fft_size // 2``).  The
