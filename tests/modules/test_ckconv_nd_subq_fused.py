@@ -31,7 +31,7 @@ import torch
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
-from tests.conftest import requires_sm90, requires_subq_ops_fused
+from tests.conftest import assert_l2_close, requires_sm90, requires_subq_ops_fused
 
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -41,21 +41,9 @@ pytestmark = [requires_subq_ops_fused, requires_cuda]
 HIDDEN_DIM = 32
 SPATIAL = 8
 
-# Normwise relative-error budgets against the fp32 torch_fft backend.
-L2_TOL = {torch.float32: 1e-6, torch.float16: 1e-3, torch.bfloat16: 8e-3}
+# Gradients through the full CKConvND stack (kernel net included) accumulate
+# more error than the bare op, so this table is looser than conftest's.
 L2_TOL_GRAD = {torch.float32: 1e-5, torch.float16: 3e-3, torch.bfloat16: 2e-2}
-
-
-def _l2_rel(pred, ref):
-    pred64, ref64 = pred.double(), ref.double()
-    den = ref64.norm()
-    return ((pred64 - ref64).norm() / den).item() if den > 0 else (pred64 - ref64).norm().item()
-
-
-def _assert_l2_close(pred, ref, dtype, tol_table=None, name=""):
-    tol = (tol_table or L2_TOL)[dtype]
-    rel = _l2_rel(pred, ref)
-    assert rel < tol, f"{name} L2 rel error {rel:.3e} exceeds tol {tol:.1e}"
 
 
 def _make_ckconv(grid_type, fft_backend, use_chunked=False, spatial=SPATIAL, data_dim=2, **kw):
@@ -103,13 +91,13 @@ class TestForwardMatchesTorchFft:
         torch.manual_seed(42)
         reference, fused = _paired_models(grid_type, use_chunked)
         x = torch.randn(2, SPATIAL, SPATIAL, HIDDEN_DIM, device="cuda")
-        _assert_l2_close(fused(x), reference(x), torch.float32)
+        assert_l2_close(fused(x), reference(x), torch.float32)
 
     def test_bhl_layout(self, grid_type, use_chunked):
         torch.manual_seed(42)
         reference, fused = _paired_models(grid_type, use_chunked)
         x = torch.randn(2, HIDDEN_DIM, SPATIAL, SPATIAL, device="cuda")
-        _assert_l2_close(fused(x, is_bhl_input=True), reference(x, is_bhl_input=True), torch.float32)
+        assert_l2_close(fused(x, is_bhl_input=True), reference(x, is_bhl_input=True), torch.float32)
 
 
 def _cast_params(model, dtype):
@@ -144,7 +132,7 @@ def test_forward_native_dtype(dtype):
 
     out = fused(x)
     assert out.dtype == dtype
-    _assert_l2_close(out, reference(x), dtype)
+    assert_l2_close(out, reference(x), dtype)
 
 
 @pytest.mark.parametrize("grid_type", ["single", "double"])
@@ -165,7 +153,7 @@ def test_backward_matches_torch_fft(grid_type):
         if want is None:
             assert param.grad is None, f"{name}: fused produced a grad where torch_fft did not"
             continue
-        _assert_l2_close(param.grad, want, torch.float32, tol_table=L2_TOL_GRAD, name=name)
+        assert_l2_close(param.grad, want, torch.float32, tol_table=L2_TOL_GRAD, name=name)
 
 
 @pytest.mark.parametrize("spatial", [7, 16, 32, pytest.param(64, marks=requires_sm90)])
@@ -174,7 +162,7 @@ def test_spatial_sizes_within_cap(spatial):
     torch.manual_seed(42)
     reference, fused = _paired_models("double", spatial=spatial)
     x = torch.randn(1, spatial, spatial, HIDDEN_DIM, device="cuda")
-    _assert_l2_close(fused(x), reference(x), torch.float32)
+    assert_l2_close(fused(x), reference(x), torch.float32)
 
 
 # ---------------------------------------------------------------------------

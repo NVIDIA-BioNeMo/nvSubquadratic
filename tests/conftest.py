@@ -96,6 +96,33 @@ requires_sm90 = pytest.mark.skipif(
 )
 
 
+# ---------------------------------------------------------------------------
+# Normwise error budgets, shared by the fused-kernel test files
+# ---------------------------------------------------------------------------
+
+
+# Calibrated against the observed error of the fused kernel vs the fp32 torch
+# reference (fp32 ~3e-7, fp16 ~3e-4, bf16 ~3e-3) with ~3x headroom. Gradients
+# accumulate over the batch, so they get more room. Callers needing a looser
+# table pass their own via ``tol_table``.
+L2_TOL = {torch.float32: 1e-6, torch.float16: 1e-3, torch.bfloat16: 8e-3}
+L2_TOL_GRAD = {torch.float32: 1e-6, torch.float16: 2e-3, torch.bfloat16: 1.5e-2}
+
+
+def l2_rel(pred: torch.Tensor, ref: torch.Tensor) -> float:
+    """Normwise relative error, computed in fp64 so the metric adds no roundoff."""
+    pred64, ref64 = pred.double(), ref.double()
+    den = ref64.norm()
+    return ((pred64 - ref64).norm() / den).item() if den > 0 else (pred64 - ref64).norm().item()
+
+
+def assert_l2_close(pred, ref, dtype, tol_table=None, name=""):
+    """Assert ``pred`` matches ``ref`` within the normwise budget for ``dtype``."""
+    tol = (tol_table or L2_TOL)[dtype]
+    rel = l2_rel(pred, ref)
+    assert rel < tol, f"{name} L2 rel error {rel:.3e} exceeds tol {tol:.1e}"
+
+
 @pytest.fixture
 def device():
     """Get CUDA device if available, otherwise CPU."""

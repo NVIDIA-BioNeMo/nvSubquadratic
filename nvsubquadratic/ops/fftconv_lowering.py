@@ -69,6 +69,11 @@ A rewrite only happens when every one of these holds:
 * ``S == (min(X + (Kx+1)//2, 2X), min(Y + (Ky+1)//2, 2Y))`` — the exact padding
   recipe from ``fftconv.py``, so an unrelated FFT conv is never touched.
 * ``a == Kx // 2`` and ``b == Ky // 2`` — the reference's 'same' crop.
+* All three FFTs use the default (``"backward"``) normalisation.
+* The spectra and the product are consumed only inside the chain, and the
+  optional casts are plain same-device upcasts to fp32.
+* ``x`` and ``k`` share a dtype and device, and the chain's output has that
+  dtype and device too (the fused kernel returns what it was given).
 * The shapes fit the fused kernel (spatial <= 64 per axis; see
   :func:`~nvsubquadratic.ops.fftconv_custom.resolve_fused_fft_size`).
 * The device is CUDA and the compute capability supports the required FFT tile.
@@ -98,7 +103,7 @@ import operator
 from typing import Any
 
 import torch
-from torch._inductor.custom_graph_pass import CustomGraphPass
+from torch._inductor.custom_graph_pass import CustomGraphPass, get_hash_for_files
 
 from nvsubquadratic.ops.fftconv_custom import (
     FUSED_FFT_SIZE_128_MIN_ARCH,
@@ -109,11 +114,6 @@ from nvsubquadratic.ops.fftconv_custom import (
 
 
 logger = logging.getLogger(__name__)
-
-# Bumped whenever the matching or replacement logic changes. Inductor mixes this
-# into its cache key, so a stale compiled artifact is never reused across a
-# change to this file.
-_PASS_VERSION = "1"
 
 # Shared with the eager backend, which raises on the same condition; a silent
 # graph rewrite must skip rather than raise, so the check is duplicated in
@@ -177,16 +177,24 @@ def _unwrap_cast(node: torch.fx.Node) -> torch.fx.Node:
 
     The reference upcasts both operands before the FFT; the fused kernel takes
     the original dtype directly, so the cast is exactly what we want to drop.
+    Only a same-device upcast to fp32 qualifies. Any other ``.to`` (fp64, a
+    device move, a layout change) is semantically load-bearing and is kept, in
+    which case the recipe check runs against the cast's own output.
     """
-    if node.op == "call_method" and node.target in ("to", "float") and node.args:
-        source = node.args[0]
-        if isinstance(source, torch.fx.Node):
-            return source
-    if node.op == "call_function" and node.target is torch.Tensor.to and node.args:
-        source = node.args[0]
-        if isinstance(source, torch.fx.Node):
-            return source
-    return node
+    is_cast = (node.op == "call_method" and node.target in ("to", "float")) or (
+        node.op == "call_function" and node.target is torch.Tensor.to
+    )
+    if not is_cast or not node.args:
+        return node
+    source = node.args[0]
+    if not isinstance(source, torch.fx.Node):
+        return node
+    cast_meta, source_meta = _meta_tensor(node), _meta_tensor(source)
+    if cast_meta is None or source_meta is None:
+        return node
+    if cast_meta.dtype is not torch.float32 or cast_meta.device != source_meta.device:
+        return node
+    return source
 
 
 def _is_fft(node: Any, target) -> bool:
@@ -200,6 +208,21 @@ def _fft_kwarg(node: torch.fx.Node, name: str, position: int) -> Any:
     return node.args[position] if len(node.args) > position else None
 
 
+def _fft_input(node: torch.fx.Node) -> torch.fx.Node | None:
+    """The tensor operand of an FFT node, whether positional or ``input=``."""
+    value = _fft_kwarg(node, "input", 0)
+    return value if isinstance(value, torch.fx.Node) else None
+
+
+def _is_reference_fft_call(node: torch.fx.Node, fft_shape: tuple[int, int]) -> bool:
+    """Whether an FFT node uses the reference's ``s``, ``dim`` and default norm."""
+    return (
+        _as_int_pair(_fft_kwarg(node, "s", 1)) == fft_shape
+        and _as_int_pair(_fft_kwarg(node, "dim", 2)) == (2, 3)
+        and _fft_kwarg(node, "norm", 3) in (None, "backward")
+    )
+
+
 def _as_int_pair(value: Any) -> tuple[int, int] | None:
     if isinstance(value, (tuple, list)) and len(value) == 2:
         try:
@@ -209,24 +232,42 @@ def _as_int_pair(value: Any) -> tuple[int, int] | None:
     return None
 
 
-def _find_spectrum_operands(irfft: torch.fx.Node) -> tuple[torch.fx.Node, torch.fx.Node] | None:
-    """Recover the two ``rfft2`` nodes feeding an ``irfft2``.
+def _precedes(first: torch.fx.Node, second: torch.fx.Node) -> bool:
+    """Whether ``first`` comes before ``second`` in graph order."""
+    node = first
+    while node.op != "output":
+        node = node.next
+        if node is second:
+            return True
+    return False
+
+
+def _find_spectrum_operands(
+    irfft: torch.fx.Node,
+) -> tuple[torch.fx.Node, torch.fx.Node, torch.fx.Node] | None:
+    """Recover the two ``rfft2`` nodes and multiply feeding an ``irfft2``.
 
     Handles both multiply spellings the reference can produce: the default
     in-place ``fft_x.mul_(fft_kernel)`` (where ``irfft2``'s own input is the
     *input* spectrum, mutated in place) and an out-of-place ``a * b``.
+
+    Returns:
+        The two ``rfft2`` nodes and their in-place or out-of-place multiply,
+        or ``None`` if the expected product is not present.
     """
-    spectrum = irfft.args[0] if irfft.args else irfft.kwargs.get("input")
-    if not isinstance(spectrum, torch.fx.Node):
+    spectrum = _fft_input(irfft)
+    if spectrum is None:
         return None
 
-    # In-place: irfft2 reads the mutated input spectrum directly.
+    # In-place: irfft2 reads the mutated input spectrum directly. The mutation
+    # only feeds the irfft2 if it is ordered before it; ``users`` is unordered,
+    # so that has to be checked explicitly.
     if _is_fft(spectrum, torch.fft.rfft2):
         for user in spectrum.users:
             if user.op == "call_method" and user.target == "mul_" and user.args and user.args[0] is spectrum:
                 other = user.args[1] if len(user.args) > 1 else None
-                if _is_fft(other, torch.fft.rfft2):
-                    return spectrum, other
+                if _is_fft(other, torch.fft.rfft2) and _precedes(user, irfft):
+                    return spectrum, other, user
         return None
 
     # Out-of-place: irfft2 reads the product node.
@@ -236,7 +277,7 @@ def _find_spectrum_operands(irfft: torch.fx.Node) -> tuple[torch.fx.Node, torch.
     if is_mul and len(spectrum.args) == 2:
         lhs, rhs = spectrum.args
         if _is_fft(lhs, torch.fft.rfft2) and _is_fft(rhs, torch.fft.rfft2):
-            return lhs, rhs
+            return lhs, rhs, spectrum
     return None
 
 
@@ -265,8 +306,18 @@ def _parse_crop(irfft: torch.fx.Node) -> tuple[torch.fx.Node, int, int, int, int
     if any(v is None for v in (slice_x.start, slice_x.stop, slice_y.start, slice_y.stop)):
         return None
 
-    start_x, start_y = int(slice_x.start), int(slice_y.start)
-    return getitem, start_x, int(slice_x.stop) - start_x, start_y, int(slice_y.stop) - start_y
+    try:
+        start_x, stop_x = int(slice_x.start), int(slice_x.stop)
+        start_y, stop_y = int(slice_y.start), int(slice_y.stop)
+    except (TypeError, ValueError):
+        # Symbolic bounds under dynamic shapes arrive as fx.Node/SymInt.
+        return None
+    return getitem, start_x, stop_x - start_x, start_y, stop_y - start_y
+
+
+def _same_dtype_and_device(meta: torch.Tensor | None, like: torch.Tensor) -> bool:
+    """Whether ``meta`` has the dtype and device the fused kernel returns for input ``like``."""
+    return meta is not None and meta.dtype == like.dtype and meta.device == like.device
 
 
 def _arch_supports(device: torch.device, fft_size: int) -> bool:
@@ -278,20 +329,38 @@ def _arch_supports(device: torch.device, fft_size: int) -> bool:
     return torch.cuda.get_device_capability(device.index) >= _FFT_SIZE_128_MIN_ARCH
 
 
+def _erase_chain(graph: torch.fx.Graph, nodes: list[torch.fx.Node]) -> None:
+    """Erase the replaced chain, given consumers-first.
+
+    This is deliberately not ``Graph.eliminate_dead_code``. Whole-graph DCE
+    treats an unrelated in-place ``call_method`` (``state.add_(1)``) as pure
+    and deletes it when its result is unused. Its ``is_impure_node`` hook could
+    protect those, but it still recurses into child modules with the default
+    heuristic, and the chain's members and their order are already known here.
+    """
+    seen: set[torch.fx.Node] = set()
+    for node in nodes:
+        if node not in seen:
+            seen.add(node)
+            graph.erase_node(node)
+
+
 def _try_rewrite(graph: torch.fx.Graph, irfft: torch.fx.Node, allow_reduced_precision: bool) -> bool:
     """Attempt to replace one ``rfft2/mul/irfft2/crop`` chain. Returns whether it fired."""
-    if _as_int_pair(_fft_kwarg(irfft, "dim", 2)) != (2, 3):
-        _skip("irfft-dim-not-2-3")
-        return False
     fft_shape = _as_int_pair(_fft_kwarg(irfft, "s", 1))
     if fft_shape is None:
         _skip("irfft-dynamic-shape")
         return False
+    if not _is_reference_fft_call(irfft, fft_shape):
+        _skip("irfft-args-mismatch")
+        return False
 
-    operands = _find_spectrum_operands(irfft)
-    if operands is None:
+    spectrum_match = _find_spectrum_operands(irfft)
+    if spectrum_match is None:
         _skip("no-rfft2-product")
         return False
+    first_rfft, second_rfft, multiply = spectrum_match
+    operands = (first_rfft, second_rfft)
 
     crop = _parse_crop(irfft)
     if crop is None:
@@ -304,7 +373,7 @@ def _try_rewrite(graph: torch.fx.Graph, irfft: torch.fx.Node, allow_reduced_prec
     # off shapes covers the out-of-place spelling too.)
     x_rfft = kernel_rfft = None
     for candidate, other in (operands, operands[::-1]):
-        meta = _meta_tensor(candidate.args[0] if candidate.args else None)
+        meta = _meta_tensor(_fft_input(candidate))
         if meta is not None and meta.ndim == 4 and tuple(meta.shape[-2:]) == (out_x, out_y):
             x_rfft, kernel_rfft = candidate, other
             break
@@ -312,13 +381,27 @@ def _try_rewrite(graph: torch.fx.Graph, irfft: torch.fx.Node, allow_reduced_prec
         _skip("operand-roles-ambiguous")
         return False
 
-    for rfft in (x_rfft, kernel_rfft):
-        if _as_int_pair(_fft_kwarg(rfft, "s", 1)) != fft_shape or _as_int_pair(_fft_kwarg(rfft, "dim", 2)) != (2, 3):
-            _skip("rfft-args-mismatch")
-            return False
+    if not all(_is_reference_fft_call(rfft, fft_shape) for rfft in operands):
+        _skip("rfft-args-mismatch")
+        return False
 
-    x_node = _unwrap_cast(x_rfft.args[0])
-    kernel_node = _unwrap_cast(kernel_rfft.args[0])
+    # Every intermediate must be private to the chain. An extra consumer of a
+    # spectrum (or of the in-place multiply's result) means the graph observes
+    # values the fused kernel never materialises, so the chain cannot be
+    # replaced wholesale. This also makes the erase below unconditional.
+    if not (
+        set(x_rfft.users) <= {multiply, irfft}
+        and set(kernel_rfft.users) == {multiply}
+        and set(multiply.users) <= {irfft}
+    ):
+        _skip("spectrum-has-other-users")
+        return False
+
+    x_input, kernel_input = _fft_input(x_rfft), _fft_input(kernel_rfft)
+    if x_input is None or kernel_input is None:
+        _skip("missing-shape-metadata")
+        return False
+    x_node, kernel_node = _unwrap_cast(x_input), _unwrap_cast(kernel_input)
     x_meta, kernel_meta = _meta_tensor(x_node), _meta_tensor(kernel_node)
     if x_meta is None or kernel_meta is None:
         _skip("missing-shape-metadata")
@@ -346,6 +429,11 @@ def _try_rewrite(graph: torch.fx.Graph, irfft: torch.fx.Node, allow_reduced_prec
     if x_meta.dtype not in _SUPPORTED_DTYPES:
         _skip("unsupported-dtype")
         return False
+    if kernel_meta.dtype != x_meta.dtype or kernel_meta.device != x_meta.device:
+        # The fused kernel casts the kernel to x's dtype before the FFT; the
+        # reference keeps both operands fp32 and rounds only the output.
+        _skip("kernel-dtype-or-device-mismatch")
+        return False
     if not allow_reduced_precision and x_meta.dtype is not torch.float32:
         _skip("reduced-precision-disabled")
         return False
@@ -367,13 +455,24 @@ def _try_rewrite(graph: torch.fx.Graph, irfft: torch.fx.Node, allow_reduced_prec
     if len(consumers) == 1 and consumers[0].op == "call_method" and consumers[0].target == "to":
         cast = consumers[0]
         cast_meta = _meta_tensor(cast)
-        if cast_meta is not None and cast_meta.dtype == x_meta.dtype:
+        if cast_meta is not None and _same_dtype_and_device(cast_meta, x_meta):
             replace_target = cast
+    if not _same_dtype_and_device(_meta_tensor(replace_target), x_meta):
+        # The fused kernel returns x's dtype on x's device; without a matching
+        # cast to swallow, the rewrite would change what the graph observes.
+        _skip("output-dtype-or-device-mismatch")
+        return False
 
     with graph.inserting_before(replace_target):
         fused = graph.call_function(fused_fftconv2d_bhl, args=(x_node, kernel_node))
     fused.meta.update(replace_target.meta)
     replace_target.replace_all_uses_with(fused)
+
+    # Consumers first, so every node has no users by the time it is erased. The
+    # privacy gate above is what guarantees that.
+    chain = [replace_target, getitem, irfft, multiply, x_rfft, kernel_rfft]
+    chain += [c for c in (x_input, kernel_input) if c not in (x_node, kernel_node)]
+    _erase_chain(graph, chain)
 
     _bump("rewritten")
     logger.debug(
@@ -422,20 +521,19 @@ class FusedFFTConv2dLowering(CustomGraphPass):
 
     def __call__(self, graph: torch.fx.Graph) -> torch.fx.Graph:
         """Rewrite every matching FFT-conv chain in ``graph``, in place."""
-        candidates = [n for n in graph.nodes if _is_fft(n, torch.fft.irfft2)]
-        if not candidates:
-            return graph
-
-        if any(_try_rewrite(graph, node, self.allow_reduced_precision) for node in candidates):
-            # Drops the now-unused rfft2/mul/irfft2/crop nodes. The in-place
-            # ``mul_`` is dead too: its only consumer was the irfft2 we replaced.
-            graph.eliminate_dead_code()
-            graph.lint()
+        # Snapshot first: a rewrite erases nodes while we iterate. Inductor
+        # lints and recompiles the graph right after this pass returns.
+        for node in [n for n in graph.nodes if _is_fft(n, torch.fft.irfft2)]:
+            _try_rewrite(graph, node, self.allow_reduced_precision)
         return graph
 
-    def uuid(self) -> str:
-        """Cache key contribution, so inductor never reuses artifacts across changes here."""
-        return f"nvsubquadratic-fused-fftconv2d-lowering-v{_PASS_VERSION}-rp{int(self.allow_reduced_precision)}"
+    def uuid(self) -> bytes:
+        """Cache key contribution, so inductor never reuses artifacts across changes here.
+
+        Hashing this file's contents means any edit to the matcher invalidates
+        cached artifacts without anyone remembering to bump a version string.
+        """
+        return get_hash_for_files((__file__,), extra=f"rp{int(self.allow_reduced_precision)}")
 
 
 def fused_fftconv2d_options(allow_reduced_precision: bool = True) -> dict[str, Any]:

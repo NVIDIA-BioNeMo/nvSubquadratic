@@ -32,6 +32,7 @@ Usage (requires GPU — run inside SLURM):
 
 import pytest
 import torch
+from torch._inductor.custom_graph_pass import CustomGraphPass
 
 from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl
 from nvsubquadratic.ops.fftconv_lowering import (
@@ -41,27 +42,12 @@ from nvsubquadratic.ops.fftconv_lowering import (
     lowering_stats,
     reset_lowering_stats,
 )
-from tests.conftest import requires_sm90, requires_subq_ops_fused
+from tests.conftest import L2_TOL_GRAD, assert_l2_close, requires_sm90, requires_subq_ops_fused
 
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 pytestmark = [requires_subq_ops_fused, requires_cuda]
-
-L2_TOL = {torch.float32: 1e-6, torch.float16: 1e-3, torch.bfloat16: 8e-3}
-L2_TOL_GRAD = {torch.float32: 1e-6, torch.float16: 2e-3, torch.bfloat16: 1.5e-2}
-
-
-def _l2_rel(pred, ref):
-    pred64, ref64 = pred.double(), ref.double()
-    den = ref64.norm()
-    return ((pred64 - ref64).norm() / den).item() if den > 0 else (pred64 - ref64).norm().item()
-
-
-def _assert_l2_close(pred, ref, dtype, tol_table=None, name=""):
-    tol = (tol_table or L2_TOL)[dtype]
-    rel = _l2_rel(pred, ref)
-    assert rel < tol, f"{name} L2 rel error {rel:.3e} exceeds tol {tol:.1e}"
 
 
 @pytest.fixture(autouse=True)
@@ -93,6 +79,42 @@ def _compile_with_lowering(fn, *args, allow_reduced_precision=True):
     return torch.compile(fn, fullgraph=True, options=options)(*args)
 
 
+class _RecordingPass(CustomGraphPass):
+    """Wrap the real pass and keep the node targets it left behind.
+
+    The counters prove a rewrite *happened*; this proves the old chain is
+    *gone*. Both matter: a pass that inserts the fused node but fails to erase
+    the cuFFT chain still reports ``rewritten`` and still passes numerics.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.remaining_targets: list = []
+
+    def __call__(self, graph):
+        graph = self.inner(graph)
+        self.remaining_targets = [n.target for n in graph.nodes if n.op.startswith("call")]
+        return graph
+
+    def uuid(self):
+        return f"recording-{self.inner.uuid()}"
+
+
+_FFT_CHAIN_TARGETS = (torch.fft.rfft2, torch.fft.irfft2, "mul_")
+
+
+def _compile_and_record(fn, *args):
+    """Compile with the pass and return ``(output, targets_left_in_graph)``."""
+    recorder = _RecordingPass(FusedFFTConv2dLowering())
+    out = torch.compile(fn, fullgraph=True, options={"pre_grad_custom_pass": recorder})(*args)
+    return out, recorder.remaining_targets
+
+
+def _assert_chain_erased(targets):
+    leftover = [t for t in targets if t in _FFT_CHAIN_TARGETS]
+    assert not leftover, f"FFT chain nodes survived the rewrite: {leftover}"
+
+
 def _bhl_inputs(spatial=16, kernel_size=31, dtype=torch.float32, channels=8, batch=2, kernel_batch=1):
     torch.manual_seed(0)
     x = torch.randn(batch, channels, spatial, spatial, device="cuda", dtype=dtype)
@@ -111,10 +133,11 @@ def test_rewrites_and_matches_eager(dtype):
     x, kernel, shortcut = _bhl_inputs(dtype=dtype)
     expected = fftconv2d_fp32_bhl(x, kernel, shortcut)
 
-    out = _compile_with_lowering(fftconv2d_fp32_bhl, x, kernel, shortcut)
+    out, remaining = _compile_and_record(fftconv2d_fp32_bhl, x, kernel, shortcut)
 
     assert lowering_stats().get("rewritten") == 1
-    _assert_l2_close(out, expected, dtype)
+    _assert_chain_erased(remaining)
+    assert_l2_close(out, expected, dtype)
 
 
 def test_rewrites_without_shortcut():
@@ -125,7 +148,7 @@ def test_rewrites_without_shortcut():
     out = _compile_with_lowering(fftconv2d_fp32_bhl, x, kernel)
 
     assert lowering_stats().get("rewritten") == 1
-    _assert_l2_close(out, expected, torch.float32)
+    assert_l2_close(out, expected, torch.float32)
 
 
 @pytest.mark.parametrize("spatial", [8, 16, 32, pytest.param(64, marks=requires_sm90)])
@@ -136,7 +159,7 @@ def test_rewrites_across_supported_spatial_sizes(spatial):
     out = _compile_with_lowering(fftconv2d_fp32_bhl, x, kernel, shortcut)
 
     assert lowering_stats().get("rewritten") == 1
-    _assert_l2_close(out, expected, torch.float32)
+    assert_l2_close(out, expected, torch.float32)
 
 
 def test_rewrites_film_per_sample_kernel():
@@ -146,7 +169,69 @@ def test_rewrites_film_per_sample_kernel():
     out = _compile_with_lowering(fftconv2d_fp32_bhl, x, kernel, shortcut)
 
     assert lowering_stats().get("rewritten") == 1
-    _assert_l2_close(out, expected, torch.float32)
+    assert_l2_close(out, expected, torch.float32)
+
+
+def test_rewrites_every_matching_chain():
+    """One graph may contain multiple independent FFT-conv chains."""
+    x, kernel_a, _ = _bhl_inputs()
+    kernel_b = torch.randn_like(kernel_a) * 0.05
+
+    def two_convs(x, kernel_a, kernel_b):
+        return fftconv2d_fp32_bhl(x, kernel_a), fftconv2d_fp32_bhl(x, kernel_b)
+
+    expected = two_convs(x, kernel_a, kernel_b)
+    out, remaining = _compile_and_record(two_convs, x, kernel_a, kernel_b)
+
+    assert lowering_stats().get("rewritten") == 2
+    _assert_chain_erased(remaining)
+    for actual, want in zip(out, expected):
+        assert_l2_close(actual, want, torch.float32)
+
+
+def test_rewrite_preserves_unrelated_inplace_call_method():
+    """Cleanup must not prune mutations outside the matched FFT-conv chain."""
+    x, kernel, _ = _bhl_inputs()
+
+    def conv_and_mutate(x, kernel, state):
+        state.add_(1)
+        return fftconv2d_fp32_bhl(x, kernel), state
+
+    expected_state = torch.zeros((), device="cuda")
+    expected_out, _ = conv_and_mutate(x, kernel, expected_state)
+    actual_state = torch.zeros((), device="cuda")
+    actual_out, _ = _compile_with_lowering(conv_and_mutate, x, kernel, actual_state)
+
+    assert lowering_stats().get("rewritten") == 1
+    assert_l2_close(actual_out, expected_out, torch.float32)
+    torch.testing.assert_close(actual_state, expected_state, atol=0, rtol=0)
+
+
+def _reference_recipe(x, kernel, *, multiply):
+    """The reference padding/crop recipe with a pluggable spectrum multiply."""
+    dim_x, dim_y = x.shape[-2:]
+    k_x, k_y = kernel.shape[-2:]
+    s = (min(dim_x + (k_x + 1) // 2, 2 * dim_x), min(dim_y + (k_y + 1) // 2, 2 * dim_y))
+    spec_x = torch.fft.rfft2(x.float(), s=s, dim=(2, 3))
+    spec_k = torch.fft.rfft2(kernel.float(), s=s, dim=(2, 3))
+    product = multiply(spec_x, spec_k)
+    out = torch.fft.irfft2(product, s=s, dim=(2, 3))
+    return out[..., k_x // 2 : k_x // 2 + dim_x, k_y // 2 : k_y // 2 + dim_y].to(x.dtype)
+
+
+def test_rewrites_out_of_place_multiply():
+    """``a * b`` is the second spelling the matcher accepts; it must fully erase too."""
+    x, kernel, _ = _bhl_inputs()
+
+    def conv(x, kernel):
+        return _reference_recipe(x, kernel, multiply=lambda a, b: a * b)
+
+    expected = conv(x, kernel)
+    out, remaining = _compile_and_record(conv, x, kernel)
+
+    assert lowering_stats().get("rewritten") == 1
+    _assert_chain_erased(remaining)
+    assert_l2_close(out, expected, torch.float32)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
@@ -171,7 +256,7 @@ def test_backward_through_lowered_graph(dtype):
 
     assert lowering_stats().get("rewritten") == 1
     for actual, want, name in zip(got, expected, ("grad_x", "grad_kernel", "grad_shortcut")):
-        _assert_l2_close(actual, want, dtype, tol_table=L2_TOL_GRAD, name=name)
+        assert_l2_close(actual, want, dtype, tol_table=L2_TOL_GRAD, name=name)
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +280,7 @@ def _assert_declined(fn, args, reason):
     stats = lowering_stats()
     assert stats.get("rewritten", 0) == 0, f"expected no rewrite, got {stats}"
     assert stats.get(f"skipped:{reason}") == 1, f"expected skip reason {reason!r}, got {stats}"
-    _assert_l2_close(out, expected, out.dtype, name="declined-path")
+    assert_l2_close(out, expected, out.dtype, name="declined-path")
 
 
 @pytest.mark.parametrize("spatial", [65, 96, 128])
@@ -228,6 +313,124 @@ def test_declines_a_different_crop_convention():
     _assert_declined(other_crop, (x, kernel), "not-the-reference-recipe")
 
 
+def test_declines_when_spectrum_has_other_users():
+    """Extra math on the spectrum is not part of the recipe and must block the rewrite.
+
+    Rewriting here would silently drop the extra scale, since the fused kernel
+    never materialises the spectrum.
+    """
+    x, kernel, _ = _bhl_inputs()
+
+    def scaled(x, kernel):
+        def multiply(a, b):
+            a.mul_(b)
+            a.mul_(2.0)
+            return a
+
+        return _reference_recipe(x, kernel, multiply=multiply)
+
+    _assert_declined(scaled, (x, kernel), "spectrum-has-other-users")
+
+
+def test_declines_inplace_multiply_after_irfft():
+    """A ``mul_`` ordered after the ``irfft2`` does not feed it; eager is not a convolution."""
+    x, kernel, _ = _bhl_inputs()
+
+    def misordered(x, kernel):
+        dim_x, dim_y = x.shape[-2:]
+        k_x, k_y = kernel.shape[-2:]
+        s = (min(dim_x + (k_x + 1) // 2, 2 * dim_x), min(dim_y + (k_y + 1) // 2, 2 * dim_y))
+        spec_x = torch.fft.rfft2(x.float(), s=s, dim=(2, 3))
+        spec_k = torch.fft.rfft2(kernel.float(), s=s, dim=(2, 3))
+        out = torch.fft.irfft2(spec_x, s=s, dim=(2, 3))
+        out = out[..., k_x // 2 : k_x // 2 + dim_x, k_y // 2 : k_y // 2 + dim_y].to(x.dtype)
+        spec_x.mul_(spec_k)
+        return out
+
+    _assert_declined(misordered, (x, kernel), "no-rfft2-product")
+
+
+def test_declines_non_fp32_upcast():
+    """An fp64 conv is a precision choice, not the reference's fp32 upcast; keep it."""
+    x, kernel, _ = _bhl_inputs()
+
+    def fp64_conv(x, kernel):
+        dim_x, dim_y = x.shape[-2:]
+        k_x, k_y = kernel.shape[-2:]
+        s = (min(dim_x + (k_x + 1) // 2, 2 * dim_x), min(dim_y + (k_y + 1) // 2, 2 * dim_y))
+        spec_x = torch.fft.rfft2(x.double(), s=s, dim=(2, 3))
+        spec_k = torch.fft.rfft2(kernel.double(), s=s, dim=(2, 3))
+        spec_x.mul_(spec_k)
+        out = torch.fft.irfft2(spec_x, s=s, dim=(2, 3))
+        return out[..., k_x // 2 : k_x // 2 + dim_x, k_y // 2 : k_y // 2 + dim_y].to(x.dtype)
+
+    _assert_declined(fp64_conv, (x, kernel), "unsupported-dtype")
+
+
+def test_declines_non_default_norm():
+    """``norm="ortho"`` rescales by 1/sqrt(N); the fused kernel is backward-normalised only."""
+    x, kernel, _ = _bhl_inputs()
+
+    def ortho_conv(x, kernel):
+        dim_x, dim_y = x.shape[-2:]
+        k_x, k_y = kernel.shape[-2:]
+        s = (min(dim_x + (k_x + 1) // 2, 2 * dim_x), min(dim_y + (k_y + 1) // 2, 2 * dim_y))
+        spec_x = torch.fft.rfft2(x.float(), s=s, dim=(2, 3), norm="ortho")
+        spec_k = torch.fft.rfft2(kernel.float(), s=s, dim=(2, 3), norm="ortho")
+        spec_x.mul_(spec_k)
+        out = torch.fft.irfft2(spec_x, s=s, dim=(2, 3), norm="ortho")
+        return out[..., k_x // 2 : k_x // 2 + dim_x, k_y // 2 : k_y // 2 + dim_y].to(x.dtype)
+
+    _assert_declined(ortho_conv, (x, kernel), "irfft-args-mismatch")
+
+
+def test_declines_kernel_dtype_mismatch():
+    """An fp32 kernel with bf16 activations stays fp32 through the reference FFT.
+
+    The fused kernel would round it to bf16 first, which the reference never does.
+    """
+    x, _, _ = _bhl_inputs(dtype=torch.bfloat16)
+    _, kernel, _ = _bhl_inputs(dtype=torch.float32)
+    _assert_declined(fftconv2d_fp32_bhl, (x, kernel), "kernel-dtype-or-device-mismatch")
+
+
+def test_declines_when_output_is_not_cast_back():
+    """Without the trailing ``.to(x.dtype)`` the graph observes an fp32 result; keep it."""
+    x, kernel, _ = _bhl_inputs(dtype=torch.bfloat16)
+
+    def uncast(x, kernel):
+        dim_x, dim_y = x.shape[-2:]
+        k_x, k_y = kernel.shape[-2:]
+        s = (min(dim_x + (k_x + 1) // 2, 2 * dim_x), min(dim_y + (k_y + 1) // 2, 2 * dim_y))
+        spec = torch.fft.rfft2(x.float(), s=s, dim=(2, 3)) * torch.fft.rfft2(kernel.float(), s=s, dim=(2, 3))
+        out = torch.fft.irfft2(spec, s=s, dim=(2, 3))
+        return out[..., k_x // 2 : k_x // 2 + dim_x, k_y // 2 : k_y // 2 + dim_y]
+
+    _assert_declined(uncast, (x, kernel), "output-dtype-or-device-mismatch")
+
+
+def test_rewrites_keyword_input_spelling():
+    """``rfft2(input=...)`` is the same chain; it must neither crash nor be missed."""
+    x, kernel, _ = _bhl_inputs()
+
+    def keyword_conv(x, kernel):
+        dim_x, dim_y = x.shape[-2:]
+        k_x, k_y = kernel.shape[-2:]
+        s = (min(dim_x + (k_x + 1) // 2, 2 * dim_x), min(dim_y + (k_y + 1) // 2, 2 * dim_y))
+        spec_x = torch.fft.rfft2(input=x.float(), s=s, dim=(2, 3))
+        spec_k = torch.fft.rfft2(input=kernel.float(), s=s, dim=(2, 3))
+        spec_x.mul_(spec_k)
+        out = torch.fft.irfft2(input=spec_x, s=s, dim=(2, 3))
+        return out[..., k_x // 2 : k_x // 2 + dim_x, k_y // 2 : k_y // 2 + dim_y].to(x.dtype)
+
+    expected = keyword_conv(x, kernel)
+    out, remaining = _compile_and_record(keyword_conv, x, kernel)
+
+    assert lowering_stats().get("rewritten") == 1
+    _assert_chain_erased(remaining)
+    assert_l2_close(out, expected, torch.float32)
+
+
 def test_declines_a_different_fft_size():
     """Right crop offset, wrong padding recipe — still not ours."""
 
@@ -255,7 +458,7 @@ def test_declines_reduced_precision_when_disabled():
     # two paths here: both round the result to bf16 at the end, and that final
     # cast alone accounts for ~3e-3 normwise — the same order as the native-bf16
     # kernel's own error.
-    _assert_l2_close(out, expected, torch.bfloat16)
+    assert_l2_close(out, expected, torch.bfloat16)
 
 
 def test_fp32_still_rewritten_when_reduced_precision_disabled():
@@ -266,7 +469,7 @@ def test_fp32_still_rewritten_when_reduced_precision_disabled():
     out = _compile_with_lowering(fftconv2d_fp32_bhl, x, kernel, shortcut, allow_reduced_precision=False)
 
     assert lowering_stats().get("rewritten") == 1
-    _assert_l2_close(out, expected, torch.float32)
+    assert_l2_close(out, expected, torch.float32)
 
 
 def test_no_fft_in_graph_is_untouched():
@@ -309,7 +512,7 @@ class TestRegistration:
             out = torch.compile(fftconv2d_fp32_bhl, fullgraph=True)(x, kernel, shortcut)
 
         assert lowering_stats().get("rewritten") == 1
-        _assert_l2_close(out, expected, torch.float32)
+        assert_l2_close(out, expected, torch.float32)
 
     def test_options_carries_the_precision_flag(self):
         options = fused_fftconv2d_options(allow_reduced_precision=False)
@@ -349,4 +552,4 @@ class TestRegistration:
         out = torch.compile(fftconv2d_fp32_bhl, fullgraph=True)(x, kernel, shortcut)
 
         assert lowering_stats() == {}
-        _assert_l2_close(out, expected, torch.float32)
+        assert_l2_close(out, expected, torch.float32)
