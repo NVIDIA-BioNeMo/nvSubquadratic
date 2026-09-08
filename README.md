@@ -19,6 +19,7 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 
 - CUDA-compatible NVIDIA GPU (Ampere or newer)
 - CUDA Toolkit 13.0 or higher
+- NVIDIA driver >= 580 (the CUDA 13.x minimum), or the CUDA forward-compatibility package
 - Python 3.10 or higher
 
 **quack-kernels (optional)**:

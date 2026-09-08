@@ -100,6 +100,35 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the image build match the torch that ships. `scripts/check_version_pins.py`
   enforces that agreement in pre-commit and CI across all 14 pin sites.
 
+- The `[quack]` extra now installs `quack-kernels[cu13]`, selecting
+  `nvidia-cutlass-dsl`'s CUDA 13 runtime libraries to match this release. Install
+  it with `pip`, not `uv` — quack's README documents a `uv` ordering race on its
+  cu13 path ([NVIDIA/cutlass#3259](https://github.com/NVIDIA/cutlass/issues/3259)).
+
+### Notes
+
+- **Upgrading an existing GPU environment from 0.1.1 requires uninstalling the
+  CUDA 12 packages first.** `subquadratic-ops-torch-cu12` and
+  `subquadratic-ops-torch-cu13` both install a top-level `subquadratic_ops_torch/`
+  package, and `nvidia-dali-cuda120` / `nvidia-dali-cuda130` both install
+  `nvidia/`. A plain `pip install -U` therefore overwrites files without removing
+  the old distribution, and later uninstalling either one leaves the other
+  broken. Run:
+
+  ```bash
+  pip uninstall -y subquadratic-ops-torch-cu12 nvidia-dali-cuda120
+  pip install -U "nvsubquadratic[cuda]"
+  ```
+
+  A fresh environment needs none of this. Note also that CUDA 13 requires an
+  NVIDIA driver >= 580 on the host (or the CUDA forward-compatibility package).
+
+- A plain `pip install nvsubquadratic[cuda]` resolves entirely from public PyPI:
+  torch 2.14.0 on PyPI is already a CUDA 13.0 build. The
+  `--index-url https://download.pytorch.org/whl/cu130` route is only needed for
+  environments that compile Apex/mamba against a specific torch build (the
+  Dockerfile and the SLURM/enroot scripts).
+
 ## \[0.1.1\]
 
 ### Changed

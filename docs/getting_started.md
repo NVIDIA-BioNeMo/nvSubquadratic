@@ -8,6 +8,7 @@ Apptainer, conda, venv) see the project [README](https://github.com/NVIDIA-BioNe
 
 - CUDA-compatible NVIDIA GPU
 - CUDA Toolkit 13.0 or higher
+- NVIDIA driver >= 580 (the CUDA 13.x minimum), or the CUDA forward-compatibility package
 - Python 3.10 or higher
 
 The optional fused RMSNorm kernel (`quack-kernels`) requires Hopper or

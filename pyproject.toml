@@ -90,9 +90,13 @@ Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 # torch.compile lowering. fft_backend="subq_ops" itself still works on 0.2.1.
 cuda = ["subquadratic-ops-torch-cu13>=0.3.0"]
 
-# QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
-# On Ampere and older GPUs RMSNorm falls back to pure PyTorch automatically.
-quack = ["quack-kernels"]
+# QuACK fused RMSNorm + GEMM/activation kernels (Hopper/Blackwell only: H100,
+# B200, B300). On Ampere and older GPUs RMSNorm falls back to pure PyTorch
+# automatically. The [cu13] extra selects nvidia-cutlass-dsl's CUDA 13 runtime
+# libraries, matching this release's CUDA 13 target; without it the CuTe-DSL
+# JIT path resolves only the CUDA 12 libraries. Note quack's README warns
+# against installing its cu13 path with `uv` (NVIDIA/cutlass#3259) — use pip.
+quack = ["quack-kernels[cu13]"]
 
 # NVIDIA DALI GPU data-loading pipeline, used by the ImageNet / The Well
 # examples. Not required by the importable library; ~400 MB download.

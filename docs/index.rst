@@ -123,7 +123,10 @@ Requirements
 
 - Python 3.10 or higher
 - For GPU execution: a CUDA-compatible NVIDIA GPU and CUDA Toolkit 13.0+
-- For the accelerated kernels (``[cuda]``): ``nvcc`` to build ``subquadratic-ops-torch-cu13``
+- NVIDIA driver >= 580 (the CUDA 13.x minimum), or the CUDA forward-compatibility package
+- For the accelerated kernels (``[cuda]``): nothing extra to build —
+  ``subquadratic-ops-torch-cu13`` ships prebuilt ``manylinux`` wheels for
+  x86_64 and aarch64, so no ``nvcc`` or CUDA Toolkit is needed to install it
 
 Where to go next
 ----------------
