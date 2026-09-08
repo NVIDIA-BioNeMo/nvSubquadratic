@@ -106,81 +106,238 @@ MAMBA_HEADDIM = 32
 MAMBA_EXPAND = 2
 MAMBA_BIDIRECTIONAL = True
 
+# Per-dimensionality short depthwise conv (1D/2D/3D).
+_CONV_ND = {1: torch.nn.Conv1d, 2: torch.nn.Conv2d, 3: torch.nn.Conv3d}
+
 
 # ─── Mixer config builders (concrete — no OmegaConf interpolation) ────────────
 
 
-def _hyena_mixer_cfg(hidden_dim: int, fft_backend: str) -> LazyConfig:
+def _short_conv_cfg(
+    hidden_dim: int,
+    *,
+    data_dim: int,
+    is_causal: bool,
+    backend: str = "subq_ops",
+    kernel_size: int = 3,
+    inner_dim: int | None = None,
+) -> LazyConfig:
+    """Build HyenaND's short-conv config, matching the operator's causality.
+
+    The short conv follows ``is_causal`` rather than always using symmetric
+    padding. Previously the causal 1D config paired a causal long conv with a
+    ``padding=1`` symmetric short conv, which let the operator see one token of
+    future context — causal in the long conv only.
+
+    * ``is_causal=True`` (1D): left-only padding. With ``backend="subq_ops"``
+      this is :class:`SubqOpsCausalConv1d`, the fused
+      ``subquadratic_ops_torch.causal_conv1d`` CUDA kernel — depthwise-only
+      (satisfied here: groups == in_channels == out_channels == 3*hidden_dim),
+      stride/dilation 1, 1D only. Otherwise :class:`CausalConv1D`, the portable
+      ``F.conv1d`` equivalent.
+    * ``is_causal=False`` (2D/3D): symmetric-padded ``torch.nn.ConvNd``, where
+      the full context is meant to be visible. The fused kernel is causal and 1D,
+      so it does not apply; ``backend="subq_ops"`` falls back here.
+
+    Returns:
+        The short-conv ``LazyConfig``.
+
+    Raises:
+        ValueError: If ``backend`` is not ``"torch"`` or ``"subq_ops"``.
+    """
+    # The short conv runs on the mixer's INNER width (3 * e * hidden_dim when
+    # expanded), not on hidden_dim.
+    hidden_dim = hidden_dim if inner_dim is None else inner_dim
+    if backend not in ("torch", "subq_ops"):
+        raise ValueError(f"short_conv backend must be 'torch' or 'subq_ops'. Got {backend!r}.")
+
+    if not is_causal:
+        return LazyConfig(_CONV_ND[data_dim])(
+            in_channels=3 * hidden_dim,
+            out_channels=3 * hidden_dim,
+            kernel_size=kernel_size,
+            groups=3 * hidden_dim,
+            padding=kernel_size // 2,
+            bias=False,
+        )
+
+    if backend == "subq_ops" and data_dim == 1:
+        from nvsubquadratic.modules.subq_ops_causal_conv1d import SubqOpsCausalConv1d
+
+        return LazyConfig(SubqOpsCausalConv1d)(
+            in_channels=3 * hidden_dim,
+            out_channels=3 * hidden_dim,
+            kernel_size=kernel_size,
+            groups=3 * hidden_dim,
+            bias=False,
+        )
+
+    from nvsubquadratic.modules.causal_conv1d import CausalConv1D
+
+    return LazyConfig(CausalConv1D)(
+        in_channels=3 * hidden_dim,
+        out_channels=3 * hidden_dim,
+        kernel_size=kernel_size,
+        groups=3 * hidden_dim,
+        bias=False,
+    )
+
+
+def _hyena_mixer_cfg(
+    hidden_dim: int,
+    fft_backend: str,
+    *,
+    canvas_size: int = CANVAS_SIZE,
+    grid_type: str = "double",
+    data_dim: int = DATA_DIM,
+    is_causal: bool = False,
+    short_conv_backend: str = "subq_ops",
+    expansion: float = 1.0,
+) -> LazyConfig:
+    """Build the HyenaND mixer.
+
+    ``expansion`` is the ``e`` of the FLOP-matching analysis: the mixer runs at an
+    inner width ``e * hidden_dim`` (``qkv_proj: h -> 3*e*h``, long conv and short conv
+    on ``e*h`` channels, ``out_proj: e*h -> h``). ``e = 1`` is evo2's default, which
+    FLOPS_MATCHING.md measures at only **0.423x a Mamba-2 layer** — so comparisons
+    against Mamba-2 or GDP at ``e = 1`` are NOT FLOP-matched and understate Hyena's
+    cost. That document derives ``e = 2.36`` for parity.
+    """
+    inner_dim = int(round(expansion * hidden_dim))
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
+        inner_dim=inner_dim,
         mixer_cfg=LazyConfig(Hyena)(
             global_conv_cfg=LazyConfig(CKConvND)(
-                data_dim=DATA_DIM,
-                hidden_dim=hidden_dim,
+                data_dim=data_dim,
+                hidden_dim=inner_dim,
                 kernel_cfg=LazyConfig(SIRENKernelND)(
-                    data_dim=DATA_DIM,
-                    out_dim=hidden_dim,
+                    data_dim=data_dim,
+                    out_dim=inner_dim,
                     mlp_hidden_dim=KERNEL_MLP_HIDDEN_DIM,
                     num_layers=KERNEL_NUM_LAYERS,
                     embedding_dim=KERNEL_EMBEDDING_DIM,
                     omega_0=KERNEL_OMEGA_0,
-                    L_cache=CANVAS_SIZE,
+                    L_cache=canvas_size,
                     use_bias=True,
                     hidden_omega_0=KERNEL_HIDDEN_OMEGA_0,
                 ),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double",
+                grid_type=grid_type,
                 fft_padding="zero",
                 fft_backend=fft_backend,
+                is_causal=is_causal,
             ),
-            short_conv_cfg=LazyConfig(torch.nn.Conv2d)(
-                in_channels=3 * hidden_dim,
-                out_channels=3 * hidden_dim,
-                kernel_size=3,
-                groups=3 * hidden_dim,
-                padding=1,
-                bias=False,
+            short_conv_cfg=_short_conv_cfg(
+                hidden_dim,
+                data_dim=data_dim,
+                is_causal=is_causal,
+                backend=short_conv_backend,
+                inner_dim=inner_dim,
             ),
             gate_nonlinear_cfg=LazyConfig(torch.nn.Identity)(),
-            pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=hidden_dim),
+            pixelhyena_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=inner_dim),
             qk_norm_cfg=None,
-            use_rope=False,
-            rope_base=10000.0,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
     )
 
 
-def _attention_mixer_cfg(hidden_dim: int) -> LazyConfig:
+def _attention_mixer_cfg(
+    hidden_dim: int,
+    *,
+    num_heads: int = ATTN_NUM_HEADS,
+    use_rope: bool = ATTN_USE_ROPE,
+    rope_spatial_dims: tuple[int, ...] | None = None,
+    attn_impl: str = "sdpa",
+) -> LazyConfig:
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
         mixer_cfg=LazyConfig(Attention)(
             hidden_dim=hidden_dim,
-            num_heads=ATTN_NUM_HEADS,
+            num_heads=num_heads,
             apply_qk_norm=True,
-            use_rope=ATTN_USE_ROPE,
+            use_rope=use_rope,
             is_causal=False,
             rope_base=10000.0,
             attn_dropout=0.0,
+            rope_spatial_dims=rope_spatial_dims,
+            attn_impl=attn_impl,
         ),
         init_method_in=small_init,
         init_method_out=LazyConfig(partial_wang_init_fn_with_num_layers)(num_layers=NUM_BLOCKS),
     )
 
 
-def _mamba_mixer_cfg(hidden_dim: int) -> LazyConfig:
+def _mamba_mixer_cfg(
+    hidden_dim: int,
+    *,
+    headdim: int = MAMBA_HEADDIM,
+    expand: int = MAMBA_EXPAND,
+    bidirectional: bool = MAMBA_BIDIRECTIONAL,
+    d_state: int | None = None,
+    ngroups: int | None = None,
+) -> LazyConfig:
+    """Build the Mamba2 baseline mixer.
+
+    ``d_state``/``ngroups`` default to mamba-ssm's own defaults when ``None``. Pass them
+    to match a specific deployment: Nemotron runs ``state_dim 128, num_groups 8``, and
+    mamba-ssm defaults ``ngroups=1``, so leaving it unset silently benchmarks a narrower
+    layer than Nemotron's.
+    """
+    # mamba-ssm >= 2.3 eagerly imports Mamba3 in its package __init__, which pulls
+    # in tilelang -> tvm and crashes on this stack (tvm_ffi AttributeError under
+    # py3.12). We only use Mamba2, so make that optional `import tilelang` fail as a
+    # clean ImportError (which mamba_ssm's __init__ skips) by neutering it here.
+    sys.modules.setdefault("tilelang", None)
     from mamba_ssm import Mamba2
 
     from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
 
+    mamba_kwargs = dict(d_model=hidden_dim, headdim=headdim, expand=expand)
+    if d_state is not None:
+        mamba_kwargs["d_state"] = d_state
+    if ngroups is not None:
+        mamba_kwargs["ngroups"] = ngroups
+
     return LazyConfig(MambaNDMixer)(
-        mamba_layer_cfg=LazyConfig(Mamba2)(
+        mamba_layer_cfg=LazyConfig(Mamba2)(**mamba_kwargs),
+        bidirectional=bidirectional,
+    )
+
+
+def _gdp_mixer_cfg(
+    hidden_dim: int,
+    *,
+    num_householder: int = 3,
+    d_state: int = 128,
+    headdim: int = 64,
+    ngroups: int = 8,
+    nheads: int | None = None,
+    expand: int = 2,
+) -> LazyConfig:
+    """Build the Gated Delta Product baseline — the mixer Nemotron may adopt over Mamba-2.
+
+    Defaults mirror ``TransformerConfig``'s ``mamba_*`` fields, which is what GDP reads:
+    ``mamba_state_dim=128``, ``mamba_head_dim=64``, ``mamba_num_groups=8``, and
+    ``mamba_num_heads`` falling back to ``hidden*expand // head_dim``. ``num_householder``
+    is NOT a config field upstream — it is hardcoded per source file (3 in
+    ``gated_delta_product_original_v4.py``, 2 in ``_nh2``) — so a drop-in ``--spec`` swap
+    inherits the Mamba-2 config and widens ``in_proj`` by the householder count.
+    """
+    from gated_delta_product_ref import GatedDeltaProduct, GatedDeltaProductNDMixer
+
+    return LazyConfig(GatedDeltaProductNDMixer)(
+        mixer_cfg=LazyConfig(GatedDeltaProduct)(
             d_model=hidden_dim,
-            headdim=MAMBA_HEADDIM,
-            expand=MAMBA_EXPAND,
-        ),
-        bidirectional=MAMBA_BIDIRECTIONAL,
+            num_householder=num_householder,
+            d_state=d_state,
+            headdim=headdim,
+            ngroups=ngroups,
+            nheads=nheads,
+            expand=expand,
+        )
     )
 
 

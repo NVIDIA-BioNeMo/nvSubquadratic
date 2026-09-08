@@ -497,8 +497,8 @@ class CKConvND(torch.nn.Module):
             convolution.  Only valid when ``data_dim=1``.
         use_chunked_fftconv (bool): Whether to process channels in chunks to
             reduce peak GPU memory.
-        fft_backend (str): FFT backend identifier, ``"torch_fft"`` or
-            ``"subq_ops"``.
+        fft_backend (str): FFT backend identifier, ``"torch_fft"``,
+            ``"subq_ops"``, or ``"subq_ops_fused"``.
         grid_type (str or None): Kernel grid size mode (``"single"``,
             ``"double"``, or ``None`` for per-axis auto-derivation).
         kernel (nn.Module): Implicit kernel generator (produces
@@ -531,7 +531,7 @@ class CKConvND(torch.nn.Module):
         fft_padding: "Literal['zero', 'circular'] | str | Sequence[str]",
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
-        fft_backend: Literal["torch_fft", "subq_ops"] = "torch_fft",
+        fft_backend: Literal["torch_fft", "subq_ops", "subq_ops_fused"] = "torch_fft",
     ):
         """Construct a CKConvND operator.
 
@@ -614,6 +614,19 @@ class CKConvND(torch.nn.Module):
                   Does not support fp16 FFT, per-axis ``fft_padding``, or
                   ``data_dim=3``.
 
+                * ``"subq_ops_fused"``: the fused ``fused_fft_conv2d`` CUDA
+                  kernel from ``subquadratic_ops_torch``, which runs the whole
+                  rfft2 → multiply → irfft2 pipeline in a single launch and
+                  **natively in the input dtype** (fp32/fp16/bf16) instead of
+                  upcasting to fp32.  Roughly 3-4x faster than ``"torch_fft"``
+                  end-to-end in bf16.  Restricted to ``data_dim=2``,
+                  ``is_causal=False``, ``fft_padding="zero"``, and spatial
+                  extents of at most 64 per axis (the kernel's largest FFT tile
+                  is 128 and it requires ``max(X, Y) <= fft_size // 2``).  The
+                  spatial cap is enforced on the first forward pass, not at
+                  construction, since the input size is not known here.
+                  Per-sample (FiLM) batched kernel weights are supported.
+
         Raises:
             AssertionError: If ``fft_backend`` is not one of the recognised
                 values, or if a constraint between ``grid_type``,
@@ -625,8 +638,8 @@ class CKConvND(torch.nn.Module):
                 or if the resolved ``(fft_padding, data_dim)`` combination
                 has no registered FFT function.
         """
-        assert fft_backend in ["torch_fft", "subq_ops"], (
-            f"Invalid fft_backend: {fft_backend!r}. Must be 'torch_fft' or 'subq_ops'."
+        assert fft_backend in ["torch_fft", "subq_ops", "subq_ops_fused"], (
+            f"Invalid fft_backend: {fft_backend!r}. Must be 'torch_fft', 'subq_ops', or 'subq_ops_fused'."
         )
 
         # ---- Normalise fft_padding & grid_type --------------------------------
@@ -698,13 +711,34 @@ class CKConvND(torch.nn.Module):
             )
 
         # subq_ops backend constraints
-        if fft_backend == "subq_ops":
+        if fft_backend in ("subq_ops", "subq_ops_fused"):
             if _is_tuple_mode:
                 raise ValueError(
-                    "fft_backend='subq_ops' does not support a per-axis fft_padding. "
+                    f"fft_backend='{fft_backend}' does not support a per-axis fft_padding. "
                     "The CUDA kernel implements zero-padded conv only. "
                     "Use fft_backend='torch_fft' for mixed boundary conditions."
                 )
+
+        # The fused kernel is 2D-only: there is no 1D or 3D fused variant.
+        # Its spatial cap (<= 64 per axis) depends on the input size, which is
+        # unknown until forward(), so it is enforced by resolve_fused_fft_size
+        # inside the op wrapper.
+        if fft_backend == "subq_ops_fused":
+            if data_dim != 2:
+                raise AssertionError(
+                    f"fft_backend='subq_ops_fused' only supports data_dim=2 "
+                    f"(no fused 1D/3D kernel exists). Got data_dim={data_dim}. "
+                    "Use fft_backend='subq_ops' for 1D causal."
+                )
+            assert not is_causal, (
+                "fft_backend='subq_ops_fused' does not support causal convolutions (causal is 1D only)."
+            )
+            assert fft_padding == "zero", (
+                "fft_backend='subq_ops_fused' only supports zero-padded convolutions. "
+                f"Got fft_padding='{fft_padding}'."
+            )
+
+        if fft_backend == "subq_ops":
             if data_dim == 1:
                 assert is_causal, (
                     "fft_backend='subq_ops' on 1D requires is_causal=True "
@@ -829,6 +863,22 @@ class CKConvND(torch.nn.Module):
                     f"fft_backend='subq_ops' dispatch reached unexpected data_dim={data_dim}; "
                     "the constraint block above should have rejected this."
                 )
+        elif fft_backend == "subq_ops_fused":
+            # 2D-only (enforced above). The fused op keeps the input dtype end
+            # to end, so unlike the "subq_ops" path there is no fp32 round-trip.
+            from nvsubquadratic.ops.fftconv_custom import (
+                fused_fftconv2d_bhl,
+                fused_fftconv2d_bhl_chunked,
+                fused_fftconv2d_bhl_w_reshape,
+                fused_fftconv2d_bhl_w_reshape_chunked,
+            )
+
+            if use_chunked_fftconv:
+                self.fftconv_fn = fused_fftconv2d_bhl_w_reshape_chunked
+                self.fftconv_fn_bhl_input = fused_fftconv2d_bhl_chunked
+            else:
+                self.fftconv_fn = fused_fftconv2d_bhl_w_reshape
+                self.fftconv_fn_bhl_input = fused_fftconv2d_bhl
         elif self._is_tuple_mode:
             # Per-axis ``fft_padding`` (list of mode strings, e.g.
             # ["circular", "zero"]): route through the unified

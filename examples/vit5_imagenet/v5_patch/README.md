@@ -33,7 +33,7 @@ Attention does not use prepend_registers, so T = 1 + 4 + `num_patches` (no paddi
 ```bash
 git clone <repo-url> && cd nvSubquadratic
 
-# PyTorch with CUDA 12.8
+# PyTorch with CUDA 13.0
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 # Core dependencies
@@ -47,7 +47,7 @@ DALI provides fused decode + crop + augmentations on the GPU, significantly
 speeding up data loading for ImageNet.
 
 ```bash
-pip install nvidia-dali-cuda120
+pip install nvidia-dali-cuda130
 ```
 
 ### 3. Install Apex (FusedLAMB optimizer)

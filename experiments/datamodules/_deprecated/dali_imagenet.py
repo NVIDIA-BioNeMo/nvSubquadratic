@@ -20,7 +20,7 @@ GPU-pipelined JPEG decode, random-resized-crop, and horizontal flip.
 Remaining augmentations (ThreeAugment, ColorJitter) run as batched PyTorch
 ops on uniform-sized GPU tensors.
 
-Requires: ``pip install nvidia-dali-cuda120``
+Requires: ``pip install nvidia-dali-cuda130``
 """
 
 import os
