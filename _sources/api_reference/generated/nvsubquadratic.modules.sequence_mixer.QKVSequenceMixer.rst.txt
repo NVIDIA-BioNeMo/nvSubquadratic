@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+QKVSequenceMixer
+================
+
+.. currentmodule:: nvsubquadratic.modules.sequence_mixer
+
+.. autoclass:: QKVSequenceMixer
+   :members:
+   :show-inheritance:

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+init\_parallel\_state
+=====================
+
+.. currentmodule:: nvsubquadratic.parallel.utils
+
+.. autofunction:: init_parallel_state

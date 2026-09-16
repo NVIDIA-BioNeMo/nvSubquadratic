@@ -1,0 +1,7 @@
+/* Custom CSS overrides for nvidia_sphinx_theme. */
+
+/* Add a touch more space around math blocks so LaTeX in docstrings reads cleanly. */
+div.math {
+    margin-top: 0.6em;
+    margin-bottom: 0.6em;
+}

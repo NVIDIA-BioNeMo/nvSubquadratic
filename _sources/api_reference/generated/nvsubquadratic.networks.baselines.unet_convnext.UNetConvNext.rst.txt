@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+UNetConvNext
+============
+
+.. currentmodule:: nvsubquadratic.networks.baselines.unet_convnext
+
+.. autoclass:: UNetConvNext
+   :members:
+   :show-inheritance:

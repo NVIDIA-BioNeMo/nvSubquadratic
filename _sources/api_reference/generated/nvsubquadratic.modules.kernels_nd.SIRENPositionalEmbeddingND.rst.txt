@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+SIRENPositionalEmbeddingND
+==========================
+
+.. currentmodule:: nvsubquadratic.modules.kernels_nd
+
+.. autoclass:: SIRENPositionalEmbeddingND
+   :members:
+   :show-inheritance:

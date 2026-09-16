@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ValidationImageGridCallback
+===========================
+
+.. currentmodule:: experiments.callbacks.image_grid_val_visualization
+
+.. autoclass:: ValidationImageGridCallback
+   :members:
+   :show-inheritance:

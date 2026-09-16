@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+AllToAllSingleFunction
+======================
+
+.. currentmodule:: nvsubquadratic.parallel.a2a_comms
+
+.. autoclass:: AllToAllSingleFunction
+   :members:
+   :show-inheritance:

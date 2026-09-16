@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+FusedFFTConv2dLowering
+======================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_lowering
+
+.. autoclass:: FusedFFTConv2dLowering
+   :members:
+   :show-inheritance:

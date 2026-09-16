@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+cuda\_supports\_quack
+=====================
+
+.. currentmodule:: nvsubquadratic.utils.quack_utils
+
+.. autofunction:: cuda_supports_quack

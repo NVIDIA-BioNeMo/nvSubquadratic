@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ViT5Attention
+=============
+
+.. currentmodule:: nvsubquadratic.modules.vit5_attention
+
+.. autoclass:: ViT5Attention
+   :members:
+   :show-inheritance:

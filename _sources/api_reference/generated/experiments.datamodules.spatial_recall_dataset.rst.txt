@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+experiments.datamodules.spatial\_recall\_dataset
+================================================
+
+.. currentmodule:: experiments.datamodules.spatial_recall_dataset
+
+.. autoclass:: experiments.datamodules.spatial_recall_dataset
+   :members:
+   :show-inheritance:

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+resolve\_fused\_fft\_size
+=========================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_custom
+
+.. autofunction:: resolve_fused_fft_size

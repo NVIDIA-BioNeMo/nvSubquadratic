@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ViT5ResidualBlock
+=================
+
+.. currentmodule:: nvsubquadratic.modules.vit5_residual_block
+
+.. autoclass:: ViT5ResidualBlock
+   :members:
+   :show-inheritance:

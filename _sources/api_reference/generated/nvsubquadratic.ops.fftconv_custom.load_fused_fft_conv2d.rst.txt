@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+load\_fused\_fft\_conv2d
+========================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_custom
+
+.. autofunction:: load_fused_fft_conv2d

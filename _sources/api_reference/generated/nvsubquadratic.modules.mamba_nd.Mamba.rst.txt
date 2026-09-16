@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+Mamba
+=====
+
+.. currentmodule:: nvsubquadratic.modules.mamba_nd
+
+.. autoclass:: Mamba
+   :members:
+   :show-inheritance:

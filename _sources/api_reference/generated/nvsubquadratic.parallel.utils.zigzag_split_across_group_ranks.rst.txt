@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+zigzag\_split\_across\_group\_ranks
+===================================
+
+.. currentmodule:: nvsubquadratic.parallel.utils
+
+.. autofunction:: zigzag_split_across_group_ranks

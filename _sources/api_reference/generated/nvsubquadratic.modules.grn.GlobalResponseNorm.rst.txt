@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+GlobalResponseNorm
+==================
+
+.. currentmodule:: nvsubquadratic.modules.grn
+
+.. autoclass:: GlobalResponseNorm
+   :members:
+   :show-inheritance:
