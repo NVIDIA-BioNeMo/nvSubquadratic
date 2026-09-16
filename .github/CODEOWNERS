@@ -24,3 +24,28 @@
 
 # Documentation source.
 /docs/                         @farhadrgh @saeepaliwal
+
+# subquadratic-ops kernel bindings.
+#
+# @moradza maintains the upstream subquadratic-ops package these files bind to,
+# so a change to the wrapper layer, its dtype/shape marshalling, or the
+# torch.compile lowering should reach him automatically rather than by memory.
+#
+# He is listed ALONGSIDE the default owners, not instead of them: GitHub
+# requires an approval from at least one codeowner per changed file, so this
+# auto-requests his review without making him a hard blocker when he is
+# unavailable. To make his approval mandatory for these paths, list @moradza
+# alone on the line — note that would also stop @farhadrgh self-approving
+# kernel changes.
+/nvsubquadratic/ops/fftconv_custom.py               @farhadrgh @saeepaliwal @moradza
+/nvsubquadratic/ops/fftconv_lowering.py             @farhadrgh @saeepaliwal @moradza
+/nvsubquadratic/ops/causal_conv1d_custom.py         @farhadrgh @saeepaliwal @moradza
+/nvsubquadratic/modules/subq_ops_causal_conv1d.py   @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fused_fftconv2d.py                  @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_lowering.py                 @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_custom.py                   @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_custom_1d.py                @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_causal_conv1d_custom.py             @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_subq_ops_fft_conv2d.py              @farhadrgh @saeepaliwal @moradza
+/tests/modules/test_subq_ops_causal_conv1d.py       @farhadrgh @saeepaliwal @moradza
+/tests/modules/test_ckconv_nd_subq.py               @farhadrgh @saeepaliwal @moradza
