@@ -26,89 +26,195 @@ reviews:
     enabled: false
 
   path_instructions:
+    - path: "nvsubquadratic/ops/**/*.py"
+      instructions: |
+        Numerical kernels. Failures here are silent — the output is finite,
+        correctly shaped, and wrong. Library code reaches the accelerated
+        kernels only through the `ops/*_custom.py` wrappers; the raw
+        `subquadratic_ops_torch` entry points are fp32-only and take the kernel
+        unbatched in the shared case, and owning that marshalling is why the wrappers exist.
+
+        - An op may upcast internally but must return `x.dtype`, and the cast
+          back must precede the shortcut term so `shortcut * x` is evaluated in
+          the caller's dtype. Leaking fp32 to a bf16 caller changes behaviour
+          under autocast and no fp32-reference parity test will notice.
+          `shortcut` is a per-channel scale `[H]` computing
+          `y <- y + shortcut ⊙ x`, not a generic skip connection; a kernel's
+          leading dim is `1` (shared) or `B` (per-sample/FiLM) and anything
+          else must be rejected, not broadcast.
+        - Transform length and crop offset are ONE contract. Non-causal nD pads
+          per axis to `min(N + ceil(K/2), 2N)` and crops from `K // 2`; causal
+          1D pads to `min(L + K, 2L)` and crops the leading `L`. Change one
+          without the other and the output is merely shifted a few samples —
+          still smooth, still finite, and still passing any test whose probe
+          kernel is symmetric. New or edited ops need an asymmetric probe (an
+          off-centre impulse is cheapest).
+        - `COMPILE_COMPATIBLE` (ops/fftconv.py) and the chunking flags
+          (ops/fftconv_chunked.py) are flipped at RUNTIME by callers, after
+          import. Consumers outside the defining module must read them as
+          module attributes — `import nvsubquadratic.ops.fftconv as
+          _fftconv_module` then `_fftconv_module.COMPILE_COMPATIBLE`, as
+          circular_fftconv.py and mixed_fftconv.py do. A `from ... import` of
+          such a flag snapshots it, the runtime flip silently does nothing, and
+          the op keeps emitting the in-place complex `mul_` Inductor cannot
+          codegen.
+        - fftconv_chunked.py re-defines fftconv.py's public names on purpose, as
+          chunking-aware shims; that shadowing is the design, not a collision
+          to flag. Flag drift instead: a new public op in fftconv.py with no
+          matching shim and `__all__` entry in fftconv_chunked.py silently
+          loses chunking for everyone importing the chunked module. `ops/__init__.py` re-exports nothing, so the import path IS the implementation
+          choice — keep it obvious at the call site.
+
     - path: "nvsubquadratic/**/*.py"
       instructions: |
-        Library code. Prioritise numerical correctness and hardware gating.
+        Repo-wide conventions that are invisible in a single-file diff.
 
-        - The fused FFT-conv2d path requires compute capability 9.0+ whenever a
-          spatial extent exceeds 32 per axis, because resolve_fused_fft_size
-          escalates to the 128 FFT tile, which needs more shared memory than
-          SM80/SM86 provide. Any new call site must be guarded, and the guard
-          constant must be shared rather than duplicated.
-        - `fftconv2d_fp32_bhl` is defined in BOTH ops/fftconv.py and
-          ops/fftconv_chunked.py. Importing the wrong one silently exercises the
-          chunked implementation. Flag ambiguous imports.
-        - The raw `subquadratic_ops_torch.fft_conv2d` op is fp32-only and raises
-          on bf16/fp16. Use the repo wrapper `ops.fftconv_custom.fftconv2d_bhl`,
-          which handles the upcast/downcast.
-        - Kernel shape conventions differ: the repo wrappers and the torch
-          reference take `[1|B, H, Kx, Ky]`; the raw subq_ops op takes
-          `[H, Kx, Ky]` with no leading batch dim.
-        - Ops should return the input dtype. Flag silent upcasts that change what
-          the caller observes.
-        - torch.fx passes must not call `graph.eliminate_dead_code()` without an
-          `is_impure_node` override: `Node.is_impure()` never inspects
-          `call_method`, so in-place ops elsewhere in the graph can be deleted.
-        - New nn.Module parameters that are 1-D norms or biases need
-          `p._no_weight_decay = True`, or the optimizer will decay them.
+        - Sequence mixers are selected by config, so their signature is a
+          contract: `QKVSequenceMixer` calls
+          `self.mixer(q, k, v, cp_group, **mixer_kwargs)` with `cp_group`
+          POSITIONAL. A new mixer declaring `forward(self, q, k, v, **kwargs)`
+          and reading `cp_group` from `kwargs` gets `None`, runs with no
+          cross-rank communication, and looks correct on one GPU. Mixers must
+          also accept and ignore unrecognised `**mixer_kwargs` and use
+          channels-last `[B, *spatial, C]` in and out.
+        - New 1-D parameters (norm weights, biases, scales, per-axis
+          embeddings) need `p._no_weight_decay = True`, or `p._weight_decay =
+          <float>` for a deliberate custom group; the optimiser-group builder
+          in experiments/lightning_wrappers/ groups on those attributes. Its
+          detector for untagged 1-D params only warns at training start, so a
+          miss just quietly decays the parameter.
+        - Tensors derived from config rather than learned (RoPE tables, SIREN
+          coordinate grids, register-token pads, constant factors) are
+          registered with `persistent=False` throughout this package: they are
+          rebuilt from `__init__` args, so keeping them out of the state dict
+          is what lets old checkpoints load after a resolution change. Omitting
+          it breaks every prior checkpoint. Also flag such a buffer being
+          reallocated with an input-dependent shape in `forward` — several of
+          these modules are documented CUDA-graph-safe compile targets.
+        - Values arriving through a `LazyConfig` have been round-tripped
+          through OmegaConf, which wraps lists as `ListConfig` and dicts as
+          `DictConfig` — neither subclasses `list`/`dict`. So
+          `isinstance(v, (list, tuple))` is silently False for a
+          config-supplied list and the code takes the wrong branch; see the
+          comment in `CKConvND.__init__` on testing `fft_padding` with
+          `collections.abc.Sequence`. Tests passing plain Python containers do
+          not reproduce it. Same class: an `int` check that does not reject
+          `bool` first.
+        - Where an implementation is chosen from a combination of flags
+          (`fft_padding` x `grid_type` x `is_causal` x `fft_backend`, dtype x
+          spatial rank), an unsupported combination must RAISE in `__init__`
+          naming the supported alternative, never fall through to the nearest
+          working op: dispatching a causal request to a non-causal op returns a
+          plausible tensor that leaks future positions. These configs launch
+          multi-hour runs, so validation belongs at construction, not step 1.
+        - Only torch, einops, omegaconf and numpy may be imported at module
+          scope. `subquadratic_ops_torch`, `megatron.core`, `timm`, `quack` and
+          DALI are opt-in extras: import them inside the function that needs
+          them, behind a cached getter that re-raises as an `ImportError`
+          naming the extra (see `_get_fft_conv2d`, `init_parallel_state`). A
+          module-scope import breaks `pip install nvsubquadratic` without a
+          CUDA toolkit and breaks the docs build, which installs `--no-deps` on
+          a CPU runner and imports every module — so a genuinely new
+          third-party import also needs an `autodoc_mock_imports` entry in
+          docs/conf.py.
+
+    - path: "{examples/**/*.py,experiments/**/*.py}"
+      instructions: |
+        Experiment configuration. Nothing here is executed by CI (lint and docstring checks still run), and every
+        failure below is a wrong number rather than an error.
+
+        - A field that becomes an `nn.Module` must hold a `LazyConfig`, never a
+          constructed module. run.py calls `seed_everything` before
+          `instantiate(config.net)`, so an eagerly built module is initialised
+          outside the seed, gets deep-copied whole, and is logged to W&B as a
+          bare class string, which also makes `--net.*` overrides impossible.
+        - Conversely `instantiate()` is not recursive by default: a nested
+          module config arrives as a `DictConfig`, so a module taking a
+          sub-module config must call `instantiate()` on it and tolerate either
+          form (ResidualBlock, QKVSequenceMixer, CKConvND). It also evaluates
+          any string of digits and arithmetic characters (`"160 * 3"` -> 480),
+          so a numeric-looking field that must stay a string gets coerced.
+        - With gradient accumulation enabled, iterations-per-epoch must divide
+          the dataset size by the EFFECTIVE batch
+          (`batch_size * num_gpus * accum_steps`) — Lightning counts
+          `max_steps` as optimizer steps, and the repo convention is a named
+          `EFFECTIVE_BATCH_SIZE`. Dividing by the micro-batch inflates the
+          epoch budget by `accum_steps` and invalidates any A/B comparison. Do
+          not flag configs where `accumulate_grad_steps` is 1.
 
     - path: "experiments/datamodules/**/*.py"
       instructions: |
-        - Do NOT set `worker_init_fn` on a DataLoader. Lightning only installs
-          its rank-aware `pl_worker_init_function` when `worker_init_fn is None`,
-          so a custom one silently disables rank-aware seeding and every DDP rank
-          draws the identical augmentation stream. The repo convention is to rely
-          on `seed_everything(..., workers=True)`; see
-          experiments/datamodules/mnist.py.
-        - Derive `input_channels`/`output_channels` from the wrapped base
-          datamodule rather than hardcoding, or validate and raise at
-          construction. Hardcoding to 1 breaks any 3-channel base.
-        - Flag augmentation defaults inherited silently from a third-party
-          library (e.g. timm Mixup's `label_smoothing=0.1`) that are neither set
-          explicitly nor documented.
-
-    - path: "examples/**/*.py"
-      instructions: |
-        - `config.net` must be a `LazyConfig`, never an already-instantiated
-          `nn.Module`. Instantiating at config time runs weight init before
-          `seed_everything` (breaking reproducibility), causes a deepcopy of the
-          whole model, and collapses the architecture to a bare class string in
-          the W&B record, which also makes `--net.*` CLI overrides impossible.
-        - Iterations-per-epoch must divide the dataset size by the EFFECTIVE
-          batch (`batch_size * accum_steps`), since Lightning counts `max_steps`
-          as optimizer steps. Dividing by the micro-batch silently multiplies the
-          epoch budget by `accum_steps` and invalidates any A/B comparison.
+        - Lightning installs its rank-aware `pl_worker_init_function` only when
+          `worker_init_fn is None`, so setting your own displaces rank-aware
+          seeding and ranks can draw identical streams. Prefer setting nothing
+          and relying on `seed_everything(..., workers=True)`. A custom
+          `worker_init_fn` must fold in the global rank itself — deriving from
+          `get_worker_info().seed` is NOT sufficient when the DataLoader's
+          `generator` was seeded rank-independently
+          (`torch.Generator().manual_seed(seed)`), because the base seed is
+          then identical on every rank.
+        - A datamodule that WRAPS another must derive
+          `input_channels`/`output_channels` from the wrapped instance, or
+          validate and raise at construction; a literal makes the wrapper
+          silently wrong for a base with a different channel count. Leaf
+          datamodules that own their dataset may assign literals — ImageNet is
+          3-channel, EMNIST is 1-channel; do not flag those.
+        - Flag third-party augmentation or loss defaults (timm, DALI) reaching
+          training without being surfaced in one of this repo's own config
+          dataclasses or documented in the datamodule docstring. A silently
+          inherited default that alters the target distribution — label
+          smoothing, mix probability, normalisation stats — invalidates an A/B
+          comparison with no error and no failing test.
 
     - path: "tests/**/*.py"
       instructions: |
-        - Fused-kernel cases with a spatial extent above 32 per axis must carry
-          the shared `requires_sm90` marker from tests/conftest.py, applied to the
-          individual parameter rather than the whole file, so sub-64 coverage
-          still runs on Ampere.
-        - Use the shared `assert_l2_close` / `L2_TOL` helpers in tests/conftest.py
-          rather than redefining tolerance tables per file.
         - Check that a parametrization actually exercises the case its name or
-          docstring claims. Past misses: a "ragged last chunk" test whose chunk
-          sizes all divided evenly, and a padding test asserting on a zero-width
-          slice.
+          docstring claims: that a "ragged" case is genuinely ragged, that a
+          padding assertion is not on a zero-width slice, that a dtype case is
+          not upcast before the comparison. A vacuous test is green.
+        - CI's pytest invocation is `pytest nvsubquadratic/ tests/` (plus a torchrun CP job under tests/) on a self-hosted 2xA40
+          runner (compute capability 8.6) using an image built with
+          `TORCH_CUDA_ARCH_LIST=9.0`. So a test added under experiments/,
+          examples/ or benchmarks/ never runs, and a test gated on SM 9.0
+          contributes ZERO coverage — code behind such a gate also needs a
+          shape/contract test that runs on Ampere, or a note in the PR that it
+          was validated on H100. Gate fused-kernel tests on device capability,
+          not on import success: importing an extra says nothing about whether
+          its kernels were compiled for the runner's architecture.
 
-    - path: "docs/ops/**/*.md"
+    - path: "{nvsubquadratic/**/*.py,experiments/**/*.py,docs/**}"
       instructions: |
-        Never place display math (`$$`) nested underneath a `-` bullet in this
-        directory. mdformat-myst is non-idempotent on that layout and the
-        pre-commit hook loops forever. Keep `$$` blocks at column 0.
+        - A new file in `nvsubquadratic/` or `experiments/` needs a row in
+          docs-tracker.md (CONVENTIONS.md §4), and a new public class needs an
+          entry in the relevant docs/api_reference/*.rst. Those use
+          hand-maintained `autosummary` lists with no globbing, and conf.py is
+          neither nitpicky nor running a coverage extension, so an
+          unreferenced class renders nowhere and the `-W` build still passes.
+          Flag a tracker row marked done whose class is unreachable from any
+          .rst.
+        - A renamed or deleted public symbol, by contrast, breaks the `-W`
+          build hard — and the docs workflow is path-filtered to `docs/**`,
+          `nvsubquadratic/**`, `pyproject.toml` and the workflow file itself, so it does not run on a PR
+          touching only `experiments/`, even though
+          docs/api_reference/experiments.rst autodocuments `experiments.run`,
+          `experiments.trainer` and the `default_cfg` dataclasses. Such a
+          rename passes every check on the PR and breaks the deploy on main.
 
-    - path: "{pyproject.toml,Dockerfile,setup_conda_env.sh,scripts/slurm/**}"
+    - path: "**/*.md"
       instructions: |
-        torch/torchvision/CUDA versions are mirrored across 14 pin sites and
-        enforced by scripts/check_version_pins.py in pre-commit and CI. Any
-        version change must be applied consistently everywhere, and the CUDA
-        major must agree across the `[cuda]` and `[dali]` extras and every PyTorch
-        wheel index URL.
+        Never place display math (`$$`) nested underneath a `-` bullet.
+        mdformat-myst is non-idempotent on that layout and the pre-commit hook
+        loops forever instead of failing cleanly. Keep `$$` blocks at column 0.
 
-    - path: "{nvsubquadratic/**/*.py,docs/**}"
+    - path: "{pyproject.toml,Pipfile,Dockerfile,nvsubquadratic.def,setup_conda_env.sh,scripts/slurm/**,docs/getting_started.md,README.md}"
       instructions: |
-        A new public class or module requires BOTH a row in docs-tracker.md and
-        an entry in the Sphinx API reference under docs/api_reference/. Flag a
-        tracker row marked done whose class does not actually render in the docs.
-        All .py and .rs files need the NVIDIA SPDX Apache-2.0 header.
+        torch/torchvision/CUDA versions are mirrored BY HAND across every
+        packaging and launch surface — pyproject dependencies and extras,
+        Pipfile, Dockerfile, the Apptainer .def base image, setup_conda_env.sh,
+        the SLURM/enroot builders and the install docs. Nothing links them, so
+        a diff touching one is almost never complete. Check that the CUDA major
+        agrees across the `[cuda]` and `[dali]` extras, every PyTorch wheel
+        index URL, and the container base tags: an index disagreeing with the
+        pinned torch makes a later `pip install -e .` re-resolve torch from
+        PyPI and replace the CUDA-matched wheel after apex/mamba were compiled
+        against it, which fails only at import time on the cluster.
