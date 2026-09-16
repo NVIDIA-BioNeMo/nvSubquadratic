@@ -29,3 +29,33 @@ For every new or modified public symbol in `nvsubquadratic/` or `experiments/`:
 - [ ] If a new file was added, a row has been added to [`docs-tracker.md`](../docs-tracker.md) with status `[x]`.
 
 > See [`CONVENTIONS.md`](../CONVENTIONS.md) for the full style guide.
+
+## Review
+
+CodeRabbit is configured for **on-request review only** — it does not comment
+automatically. Ask for a first pass before requesting human review, so a
+codeowner spends their time on design rather than on what a bot would have
+caught:
+
+- [ ] Requested an AI first pass by commenting `@coderabbitai review` on this PR
+  (use `@coderabbitai full review` to re-review the whole diff rather than
+  just the latest changes), and addressed or replied to its findings.
+- [ ] Requested review from a [codeowner](CODEOWNERS).
+
+A CodeRabbit review does **not** satisfy the branch ruleset: `main` requires one
+approving review from a codeowner, and nobody can bypass it. Note also that
+unresolved review threads block merge, so resolve or reply to each one.
+
+Other useful CodeRabbit commands, as a PR comment:
+
+| Command                          | Effect                                   |
+| -------------------------------- | ---------------------------------------- |
+| `@coderabbitai review`           | Incremental review of the latest changes |
+| `@coderabbitai full review`      | Re-review the entire diff from scratch   |
+| `@coderabbitai pause` / `resume` | Stop / restart reviews on this PR        |
+| `@coderabbitai resolve`          | Resolve all CodeRabbit-authored threads  |
+| `@coderabbitai help`             | Full command list                        |
+
+> Repo-specific review guidance lives in [`.coderabbit.yaml`](../.coderabbit.yaml).
+> If the bot gives advice that contradicts this repo's conventions, fix it there
+> rather than repeating the correction on every PR.
