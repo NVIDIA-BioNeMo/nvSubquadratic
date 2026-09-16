@@ -766,7 +766,7 @@ def main() -> None:
                     "seq_len": seq_len,
                     "data_dim": data_dim,
                     "backend": backend_at[R] if mixer == "hyena" else None,
-                            "short_conv": short_conv_eff if mixer == "hyena" else None,
+                    "short_conv": short_conv_eff if mixer == "hyena" else None,
                     "batch_size": args.batch_size,
                     "hidden_dim": args.hidden_dim,
                     "num_heads": args.num_heads,

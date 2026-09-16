@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Build a single self-contained results digest from the six forward-time JSONL sweeps.
 
 Everything numeric is derived from the JSONL rows, not transcribed, so the digest
@@ -9,6 +24,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from pathlib import Path
+
 
 RESULTS = Path("/lustre/fsw/healthcareeng_bionemo/farhadr/nvsubquadratic_workdir/nvSubquadratic/benchmarks/results")
 
@@ -80,7 +96,7 @@ def sweep_section(stem: str, title: str, dim: int, jobid: str) -> list[str]:
     out += [header, sep]
     for R in resolutions:
         cells = [cell(by_mixer_res.get((m, R))) for m in mixers]
-        out.append(f"| {fmt_int(R)} | {fmt_int(R ** dim)} | " + " | ".join(cells) + " |")
+        out.append(f"| {fmt_int(R)} | {fmt_int(R**dim)} | " + " | ".join(cells) + " |")
     out.append("")
     out.append("All values are ms per forward pass, lower is better.")
     out.append("")
@@ -211,7 +227,7 @@ def main() -> None:
         "### 3. Mamba's `error` points are kernel limits, NOT out-of-memory",
         "",
         "No point in any sweep ran out of memory. The `error` entries here are",
-        "`cudaErrorInvalidValue` raised by Dao-AILab\'s `causal_conv1d`: its channels-last path",
+        "`cudaErrorInvalidValue` raised by Dao-AILab's `causal_conv1d`: its channels-last path",
         "tiles the sequence at 64 elements per block and hits the CUDA grid-dimension cap of",
         "65,535, giving a hard ceiling of **4,194,240 tokens**. That is a launch-configuration",
         "limit, so it occurs on any GPU regardless of memory (peak use here was under 5 GB).",
@@ -305,6 +321,11 @@ def main() -> None:
     out_path = RESULTS / "BENCHMARK_RESULTS.md"
     out_path.write_text("\n".join(doc) + "\n")
     print(f"wrote {out_path} ({len(doc)} lines, {out_path.stat().st_size / 1024:.1f} KB)")
+    # The tables above are emitted unaligned ("| a | b |") and square brackets
+    # are left unescaped, both of which mdformat rewrites. The committed file is
+    # therefore NOT byte-identical to this output, and regenerating it will fail
+    # the lint job until the hook is re-run:
+    print(f"NOTE: run `pre-commit run --files {out_path}` before committing — mdformat will reformat it.")
 
 
 if __name__ == "__main__":

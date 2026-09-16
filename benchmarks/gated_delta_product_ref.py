@@ -158,8 +158,7 @@ class GatedDeltaProduct(nn.Module):
 
         if self.nheads % self.ngroups != 0:
             raise ValueError(
-                f"nheads ({self.nheads}) must be divisible by ngroups ({self.ngroups}) "
-                "for the q/k repeat_interleave."
+                f"nheads ({self.nheads}) must be divisible by ngroups ({self.ngroups}) for the q/k repeat_interleave."
             )
 
         M = num_householder
@@ -167,9 +166,7 @@ class GatedDeltaProduct(nn.Module):
 
         # z | V (M copies) | K (M copies) | Q | b (M per head) | a (1 per head).
         # Width formula copied verbatim from the upstream in_proj construction.
-        in_width = (
-            self.d_inner * (1 + M) + self.ngroups * self.d_state * (M + 1) + self.nheads * (M + 1)
-        )
+        in_width = self.d_inner * (1 + M) + self.ngroups * self.d_state * (M + 1) + self.nheads * (M + 1)
         self.in_proj = nn.Linear(d_model, in_width, bias=bias, **factory)
 
         # Short conv spans V and K (M copies each) plus one Q — not z, and not b/a.
@@ -190,8 +187,7 @@ class GatedDeltaProduct(nn.Module):
         # dt_bias init so softplus(dt_bias) lands in [dt_min, dt_max]; A_log stays fp32
         # or A can underflow to -inf in fp16 (upstream's comment).
         dt = torch.exp(
-            torch.rand(self.nheads, device=device) * (math.log(dt_max) - math.log(dt_min))
-            + math.log(dt_min)
+            torch.rand(self.nheads, device=device) * (math.log(dt_max) - math.log(dt_min)) + math.log(dt_min)
         ).clamp(min=dt_init_floor)
         self.dt_bias = nn.Parameter(dt + torch.log(-torch.expm1(-dt)))
         A = torch.empty(self.nheads, dtype=torch.float32, device=device).uniform_(*A_init_range)
@@ -241,9 +237,7 @@ class GatedDeltaProduct(nn.Module):
         )
         VKQ = rearrange(VKQ, "b d l -> b l d").contiguous()
 
-        value, key, query = torch.split(
-            VKQ, [self.d_inner * M, G * S * M, G * S], dim=-1
-        )
+        value, key, query = torch.split(VKQ, [self.d_inner * M, G * S * M, G * S], dim=-1)
         b, a = torch.split(ba, [H * M, H], dim=-1)
 
         # The M householder copies are folded into the sequence axis: the kernel sees

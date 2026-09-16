@@ -203,7 +203,7 @@ def _hyena_mixer_cfg(
     against Mamba-2 or GDP at ``e = 1`` are NOT FLOP-matched and understate Hyena's
     cost. That document derives ``e = 2.36`` for parity.
     """
-    inner_dim = int(round(expansion * hidden_dim))
+    inner_dim = round(expansion * hidden_dim)
     return LazyConfig(QKVSequenceMixer)(
         hidden_dim=hidden_dim,
         inner_dim=inner_dim,
@@ -295,7 +295,7 @@ def _mamba_mixer_cfg(
 
     from nvsubquadratic.modules.mamba_nd import Mamba as MambaNDMixer
 
-    mamba_kwargs = dict(d_model=hidden_dim, headdim=headdim, expand=expand)
+    mamba_kwargs = {"d_model": hidden_dim, "headdim": headdim, "expand": expand}
     if d_state is not None:
         mamba_kwargs["d_state"] = d_state
     if ngroups is not None:
