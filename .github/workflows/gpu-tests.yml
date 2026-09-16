@@ -32,11 +32,72 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Needed to diff against the PR base for the scope check below.
+          fetch-depth: 0
+
+      # The job itself must ALWAYS run so the required status is reported (see
+      # the note at the top of this file). What it may skip is the expensive
+      # part: a ~36-minute image build + GPU suite is wasted on a PR that only
+      # touches docs or config.
+      #
+      # Fail-safe by construction: the suite is skipped ONLY when every changed
+      # file matches a known-inert pattern. Anything unrecognised runs the full
+      # job, so a new source directory can never be silently skipped.
+      - name: Decide whether the GPU suite is needed
+        id: scope
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Not a pull_request (${{ github.event_name }}) - running in full."
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE='${{ github.event.pull_request.base.sha }}'
+          CHANGED="$(git diff --name-only "$BASE"...HEAD)"
+          if [ -z "$CHANGED" ]; then
+            echo "No changed files detected - running in full (fail-safe)."
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Changed files:"; echo "$CHANGED" | sed 's/^/  /'
+          # Inert: documentation and repo/review config that cannot affect the
+          # image or the tests. Uses shell `case` globs rather than a regex:
+          # portable, and no dependency on which grep implementation the runner
+          # happens to provide.
+          #
+          # Deliberately NOT inert - each can change what the suite does:
+          #   this workflow, Dockerfile, pyproject.toml, requirements*.txt,
+          #   and every source/test path.
+          NEEDED=false
+          OLD_IFS=$IFS
+          IFS=$'\n'   # split on newlines only, so paths with spaces survive
+          for f in $CHANGED; do
+            case "$f" in
+              docs/*|*.md|.coderabbit.yaml|.gitignore|.github/CODEOWNERS|LICENSE|THIRD_PARTY_NOTICES.txt)
+                ;;
+              *)
+                echo "Source-affecting change: $f"
+                NEEDED=true
+                break
+                ;;
+            esac
+          done
+          IFS=$OLD_IFS
+          if [ "$NEEDED" = true ]; then
+            echo "Running the GPU suite."
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "All changes are documentation/config - skipping the GPU suite."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
+        if: steps.scope.outputs.needed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.scope.outputs.needed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -44,12 +105,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure build cache
+        if: steps.scope.outputs.needed == 'true'
         uses: int128/docker-build-cache-config-action@v1
         id: cache
         with:
           image: ghcr.io/nvidia-bionemo/nvsubquadratic/ci-cache
 
       - name: Build image
+        if: steps.scope.outputs.needed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -65,12 +128,14 @@ jobs:
           cache-to: ${{ steps.cache.outputs.cache-to }}
 
       - name: Run pytest
+        if: steps.scope.outputs.needed == 'true'
         run: |
           docker run --rm --gpus all \
             nvsubquadratic-ci:${{ github.sha }} \
             python -m pytest nvsubquadratic/ tests/ -v --tb=short
 
       - name: Run distributed CP tests
+        if: steps.scope.outputs.needed == 'true'
         run: |
           GPU_COUNT=$(docker run --rm --gpus all \
             nvsubquadratic-ci:${{ github.sha }} \
