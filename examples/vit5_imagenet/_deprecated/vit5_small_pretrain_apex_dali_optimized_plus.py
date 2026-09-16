@@ -18,7 +18,7 @@
 Based on optimized_v2 with additional training-loop improvements:
 - check_val_every_n_epoch=4 (validate every 4 epochs → fewer DALI pipeline disruptions)
 - local_staging_dir=/scratch/imagenet_folder (stage data to node-local NVMe)
-- Requires: pip install nvidia-dali-cuda120
+- Requires: pip install nvidia-dali-cuda130
 """
 
 import os

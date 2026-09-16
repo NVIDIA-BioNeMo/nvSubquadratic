@@ -22,7 +22,7 @@ only does Mixup/CutMix (which needs labels) and the final layout permute.
 This eliminates the ~25-33 ms of serial GPU augmentation that blocks the
 training loop in ``dali_imagenet_optimized.py``.
 
-Requires: ``pip install nvidia-dali-cuda120``
+Requires: ``pip install nvidia-dali-cuda130``
 """
 
 import math

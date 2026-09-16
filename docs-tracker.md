@@ -36,15 +36,16 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 
 ### `nvsubquadratic/ops/` — FFT convolution primitives
 
-| File                      | Status | Notes                                                                                               |
-| ------------------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| `README.md`               | \[x\]  | Folder overview, decision tree, math primer (new file)                                              |
-| `fftconv.py`              | \[x\]  | Module + key per-fn docstrings rewritten with math                                                  |
-| `circular_fftconv.py`     | \[x\]  | Already strong; left as-is                                                                          |
-| `fftconv_chunked.py`      | \[x\]  | Already strong; left as-is                                                                          |
-| `fftconv_custom.py`       | \[x\]  | Module docstring expanded with motivation; 1D causal wrappers added in 1D PR                        |
-| `causal_conv1d_custom.py` | \[x\]  | New (1D PR): thin wrappers for direct `causal_conv1d` + fused `b2b_causal_conv1d`                   |
-| `mixed_fftconv.py`        | \[x\]  | New (#120): per-axis mixed boundary-condition FFT conv; see `docs/ops/mixed_boundary_conditions.md` |
+| File                      | Status | Notes                                                                                                  |
+| ------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| `README.md`               | \[x\]  | Folder overview, decision tree, math primer (new file)                                                 |
+| `fftconv.py`              | \[x\]  | Module + key per-fn docstrings rewritten with math                                                     |
+| `circular_fftconv.py`     | \[x\]  | Already strong; left as-is                                                                             |
+| `fftconv_chunked.py`      | \[x\]  | Already strong; left as-is                                                                             |
+| `fftconv_custom.py`       | \[x\]  | Module docstring expanded with motivation; 1D causal wrappers; hosts the `fused_fftconv2d_*` family    |
+| `causal_conv1d_custom.py` | \[x\]  | New (1D PR): thin wrappers for direct `causal_conv1d` + fused `b2b_causal_conv1d`                      |
+| `mixed_fftconv.py`        | \[x\]  | New (#120): per-axis mixed boundary-condition FFT conv; see `docs/ops/mixed_boundary_conditions.md`    |
+| `fftconv_lowering.py`     | \[x\]  | torch.compile pre-grad pass rewriting the 2D FFT-conv chain onto `fused_fft_conv2d`; stats + SM90 gate |
 
 ### `nvsubquadratic/modules/` — Building blocks
 

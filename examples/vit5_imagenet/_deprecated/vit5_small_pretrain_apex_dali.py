@@ -17,7 +17,7 @@
 
 Identical to vit5_small_pretrain_apex.py except:
 - Uses DALIImageNetDataModule for GPU-pipelined data loading
-- Requires: pip install nvidia-dali-cuda120
+- Requires: pip install nvidia-dali-cuda130
 """
 
 import os

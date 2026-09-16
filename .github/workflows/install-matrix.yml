@@ -1,0 +1,127 @@
+name: Install Matrix
+
+on:
+  pull_request:
+    paths:
+      - "nvsubquadratic/**"
+      - "pyproject.toml"
+      - "VERSION"
+      - ".github/workflows/install-matrix.yml"
+  push:
+    branches: [main]
+    paths:
+      - "nvsubquadratic/**"
+      - "pyproject.toml"
+      - "VERSION"
+      - ".github/workflows/install-matrix.yml"
+  workflow_dispatch:
+
+# Cancel in-flight runs for the same PR/branch when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the pure-Python wheel once; all matrix legs share the same artifact.
+  # This catches sdist/wheel-build regressions independently of the install check.
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build distribution
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*.whl
+          retention-days: 1
+
+  # Stronger than compileall: tests a real wheel install into a fresh venv,
+  # not just byte-compilation. Catches broken core deps, missing extras, and
+  # import-graph regressions (e.g. CUDA kernel leaking into core).
+  install-clean:
+    name: Install clean (py${{ matrix.python-version }})
+    needs: build-wheel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep in sync with `requires-python` and the classifiers in pyproject.toml.
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # ── Step 2 ── install the built wheel (not `pip install .`) into a fresh venv.
+      # torch/torchvision are fetched from the PyTorch CPU index so the install
+      # succeeds on a CPU-only runner without the CUDA toolkit.
+      - name: Install wheel into clean venv (core deps, CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install --upgrade pip
+          /tmp/clean/bin/pip install \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            dist/*.whl
+
+      # ── Step 3 ── import the public operator surface from the clean venv.
+      - name: Import public surface
+        run: |
+          /tmp/clean/bin/python -c "import nvsubquadratic; \
+            import nvsubquadratic.lazy_config, nvsubquadratic.modules.hyena_nd, \
+            nvsubquadratic.modules.ckconv_nd, nvsubquadratic.modules.kernels_nd, \
+            nvsubquadratic.modules.masks_nd; print(nvsubquadratic.__version__)"
+
+      # ── Step 4 ── assert the CUDA kernel was NOT pulled in by the core install.
+      # subquadratic-ops-torch-cu13 lives in the [cuda] extra (requires nvcc);
+      # finding it in a core install means the extra boundary was broken.
+      - name: Assert CUDA kernel absent from core install
+        run: |
+          /tmp/clean/bin/python -c "import importlib.util, sys; \
+            sys.exit(1) if importlib.util.find_spec('subquadratic_ops_torch') else None"
+
+      # ── Step 5 ── lean-path check: only torch + einops + omegaconf + numpy.
+      # Asserts the importable operator surface genuinely needs nothing heavier
+      # than these four runtime deps (no datasets, pytorch-lightning, wandb, …).
+      # This is exactly the dep footprint that downstream projects (e.g. MONAI) rely on.
+      - name: Lean-path import (torch + einops + omegaconf + numpy only)
+        run: |
+          python -m venv /tmp/lean
+          /tmp/lean/bin/pip install --upgrade pip
+          /tmp/lean/bin/pip install --no-deps dist/*.whl
+          /tmp/lean/bin/pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            "torch>=2.14.0,<2.15.0" "torchvision>=0.29.0,<0.30.0"
+          /tmp/lean/bin/pip install einops omegaconf numpy
+          /tmp/lean/bin/python -c "import nvsubquadratic; \
+            import nvsubquadratic.lazy_config, nvsubquadratic.modules.hyena_nd, \
+            nvsubquadratic.modules.ckconv_nd, nvsubquadratic.modules.kernels_nd, \
+            nvsubquadratic.modules.masks_nd; print(nvsubquadratic.__version__)"
+
+      # ── Step 6 ── [cuda] extra: metadata/resolution smoke (informational).
+      # We do NOT build the kernel (no nvcc). The goal is to catch metadata
+      # breakage (e.g. the extra disappearing from wheel METADATA), not to
+      # compile the extension. Resolution failure because the sdist isn't on a
+      # reachable index is expected and logged, not treated as a job failure.
+      - name: "[cuda] extra metadata smoke (informational, no nvcc)"
+        run: |
+          /tmp/clean/bin/pip install --upgrade "pip>=23.1"
+          /tmp/clean/bin/pip install --dry-run --find-links dist/ "nvsubquadratic[cuda]" \
+            || echo "NOTE: [cuda] resolution incomplete — expected if subquadratic-ops-torch-cu13 is not on a reachable index or requires nvcc to build"

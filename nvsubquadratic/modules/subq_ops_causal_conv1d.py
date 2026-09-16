@@ -75,9 +75,27 @@ class SubqOpsCausalConv1d(torch.nn.Conv1d):
         self.activation = activation
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
-        """Run causal depthwise conv; input shape ``[B, C, L]``."""
+        """Run causal depthwise conv; input shape ``[B, C, L]``.
+
+        Casts the weight and bias to ``input``'s dtype when they differ. The fused
+        kernel selects its specialisation from the INPUT dtype and then requires
+        every tensor to match it exactly, so under ``torch.autocast`` — where
+        activations arrive as bf16/fp16 while parameters stay fp32 — passing the
+        parameters through unchanged raises::
+
+            ValueError: in_w expected dtype (code=4, bits=16) but got (code=2, bits=32)
+
+        Casting here mirrors what autocast does for the built-in conv ops: the
+        fp32 master parameters are untouched, only the values handed to the kernel
+        are narrowed.
+        """
         from nvsubquadratic.ops.causal_conv1d_custom import causal_conv1d
 
         # nn.Conv1d depthwise weight is [C, 1, K]; upstream kernel expects [C, K].
         weight_2d = self.weight.squeeze(1)
-        return causal_conv1d(input, weight_2d, self.bias, self.activation)
+        if weight_2d.dtype != input.dtype:
+            weight_2d = weight_2d.to(input.dtype)
+        bias = self.bias
+        if bias is not None and bias.dtype != input.dtype:
+            bias = bias.to(input.dtype)
+        return causal_conv1d(input, weight_2d, bias, self.activation)

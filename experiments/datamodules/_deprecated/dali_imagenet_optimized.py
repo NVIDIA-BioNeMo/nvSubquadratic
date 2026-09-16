@@ -26,7 +26,7 @@ optimizations in the post-DALI augmentation pipeline:
 6. ``torch.compile``-friendly augmentation modules
 7. Optional NCHW output (``channels_first=True``) to skip redundant permute
 
-Requires: ``pip install nvidia-dali-cuda120``
+Requires: ``pip install nvidia-dali-cuda130``
 """
 
 import os

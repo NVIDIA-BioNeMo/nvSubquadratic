@@ -105,6 +105,50 @@ class TestForward:
         torch.testing.assert_close(fast(x), F.silu(ref(x)), atol=ATOL, rtol=RTOL)
 
 
+class TestAutocast:
+    """Mixed precision, where the module previously could not run at all.
+
+    Every other test here feeds fp32 activations to fp32 parameters, so all
+    tensors happen to agree and the kernel's dtype check passes. Under
+    ``torch.autocast`` the activations are bf16/fp16 while the parameters stay
+    fp32, and the kernel — which selects its specialisation from the *input*
+    dtype and then requires an exact match — aborted with
+    ``ValueError: in_w expected dtype (code=4, bits=16) but got (code=2, bits=32)``.
+    """
+
+    @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+    def test_runs_under_autocast(self, dtype):
+        SubqOpsCausalConv1d = _import_module()
+        torch.manual_seed(42)
+        C, L, K = 36, 256, 3
+        fast = SubqOpsCausalConv1d(C, C, K, groups=C, bias=False).cuda()
+        x = torch.randn(2, C, L, device="cuda", dtype=torch.float32)
+
+        with torch.autocast("cuda", dtype=dtype):
+            out = fast(x.to(dtype))
+
+        assert out.dtype is dtype
+        # fp32 master parameters must survive: only the kernel's inputs are narrowed.
+        assert fast.weight.dtype is torch.float32
+
+    @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+    def test_autocast_matches_reference(self, dtype):
+        SubqOpsCausalConv1d = _import_module()
+        torch.manual_seed(42)
+        C, L, K = 36, 256, 3
+        ref = CausalConv1D(C, C, K, groups=C, bias=False).cuda()
+        fast = SubqOpsCausalConv1d(C, C, K, groups=C, bias=False).cuda()
+        fast.load_state_dict(ref.state_dict())
+        x = torch.randn(2, C, L, device="cuda", dtype=torch.float32)
+
+        with torch.autocast("cuda", dtype=dtype):
+            got = fast(x.to(dtype))
+
+        # Tolerance follows the narrowed dtype, not the fp32 ATOL above.
+        tol = 5e-2 if dtype is torch.bfloat16 else 5e-3
+        torch.testing.assert_close(got.float(), ref(x).float(), atol=tol, rtol=tol)
+
+
 class TestBackward:
     def test_grad_matches_causal_conv1d(self):
         SubqOpsCausalConv1d = _import_module()
