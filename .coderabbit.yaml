@@ -1,0 +1,114 @@
+# CodeRabbit configuration for nvSubquadratic.
+#
+# NVIDIA runs CodeRabbit self-hosted (coderabbit.nvidia.com); install the app via
+# https://github-onboarding.nvidia.com/install-github-app, not the public
+# Marketplace. Manual triggers remain available regardless of auto_review:
+#   @coderabbitai review        - standard
+#   @coderabbitai full review   - comprehensive
+#
+# Schema reference: https://docs.coderabbit.ai/reference/configuration
+
+# Both settings below deliberately match the in-org precedent,
+# NVIDIA-BioNeMo/bionemo-recipes, whose entire config is these four lines.
+#
+#   profile: chill       - balanced feedback. `assertive` gives more, but reads
+#                          as nitpicky, which is the fastest way to get an AI
+#                          reviewer muted on a repo with two CODEOWNERS.
+#   auto_review: false   - review on request only. Nothing is lost: the manual
+#                          triggers above work on any PR, and this keeps the tool
+#                          opt-in while the team forms a view of its signal.
+#
+# Both are one-word changes if we later decide we want more.
+reviews:
+  profile: chill
+
+  auto_review:
+    enabled: false
+
+  path_instructions:
+    - path: "nvsubquadratic/**/*.py"
+      instructions: |
+        Library code. Prioritise numerical correctness and hardware gating.
+
+        - The fused FFT-conv2d path requires compute capability 9.0+ whenever a
+          spatial extent exceeds 32 per axis, because resolve_fused_fft_size
+          escalates to the 128 FFT tile, which needs more shared memory than
+          SM80/SM86 provide. Any new call site must be guarded, and the guard
+          constant must be shared rather than duplicated.
+        - `fftconv2d_fp32_bhl` is defined in BOTH ops/fftconv.py and
+          ops/fftconv_chunked.py. Importing the wrong one silently exercises the
+          chunked implementation. Flag ambiguous imports.
+        - The raw `subquadratic_ops_torch.fft_conv2d` op is fp32-only and raises
+          on bf16/fp16. Use the repo wrapper `ops.fftconv_custom.fftconv2d_bhl`,
+          which handles the upcast/downcast.
+        - Kernel shape conventions differ: the repo wrappers and the torch
+          reference take `[1|B, H, Kx, Ky]`; the raw subq_ops op takes
+          `[H, Kx, Ky]` with no leading batch dim.
+        - Ops should return the input dtype. Flag silent upcasts that change what
+          the caller observes.
+        - torch.fx passes must not call `graph.eliminate_dead_code()` without an
+          `is_impure_node` override: `Node.is_impure()` never inspects
+          `call_method`, so in-place ops elsewhere in the graph can be deleted.
+        - New nn.Module parameters that are 1-D norms or biases need
+          `p._no_weight_decay = True`, or the optimizer will decay them.
+
+    - path: "experiments/datamodules/**/*.py"
+      instructions: |
+        - Do NOT set `worker_init_fn` on a DataLoader. Lightning only installs
+          its rank-aware `pl_worker_init_function` when `worker_init_fn is None`,
+          so a custom one silently disables rank-aware seeding and every DDP rank
+          draws the identical augmentation stream. The repo convention is to rely
+          on `seed_everything(..., workers=True)`; see
+          experiments/datamodules/mnist.py.
+        - Derive `input_channels`/`output_channels` from the wrapped base
+          datamodule rather than hardcoding, or validate and raise at
+          construction. Hardcoding to 1 breaks any 3-channel base.
+        - Flag augmentation defaults inherited silently from a third-party
+          library (e.g. timm Mixup's `label_smoothing=0.1`) that are neither set
+          explicitly nor documented.
+
+    - path: "examples/**/*.py"
+      instructions: |
+        - `config.net` must be a `LazyConfig`, never an already-instantiated
+          `nn.Module`. Instantiating at config time runs weight init before
+          `seed_everything` (breaking reproducibility), causes a deepcopy of the
+          whole model, and collapses the architecture to a bare class string in
+          the W&B record, which also makes `--net.*` CLI overrides impossible.
+        - Iterations-per-epoch must divide the dataset size by the EFFECTIVE
+          batch (`batch_size * accum_steps`), since Lightning counts `max_steps`
+          as optimizer steps. Dividing by the micro-batch silently multiplies the
+          epoch budget by `accum_steps` and invalidates any A/B comparison.
+
+    - path: "tests/**/*.py"
+      instructions: |
+        - Fused-kernel cases with a spatial extent above 32 per axis must carry
+          the shared `requires_sm90` marker from tests/conftest.py, applied to the
+          individual parameter rather than the whole file, so sub-64 coverage
+          still runs on Ampere.
+        - Use the shared `assert_l2_close` / `L2_TOL` helpers in tests/conftest.py
+          rather than redefining tolerance tables per file.
+        - Check that a parametrization actually exercises the case its name or
+          docstring claims. Past misses: a "ragged last chunk" test whose chunk
+          sizes all divided evenly, and a padding test asserting on a zero-width
+          slice.
+
+    - path: "docs/ops/**/*.md"
+      instructions: |
+        Never place display math (`$$`) nested underneath a `-` bullet in this
+        directory. mdformat-myst is non-idempotent on that layout and the
+        pre-commit hook loops forever. Keep `$$` blocks at column 0.
+
+    - path: "{pyproject.toml,Dockerfile,setup_conda_env.sh,scripts/slurm/**}"
+      instructions: |
+        torch/torchvision/CUDA versions are mirrored across 14 pin sites and
+        enforced by scripts/check_version_pins.py in pre-commit and CI. Any
+        version change must be applied consistently everywhere, and the CUDA
+        major must agree across the `[cuda]` and `[dali]` extras and every PyTorch
+        wheel index URL.
+
+    - path: "{nvsubquadratic/**/*.py,docs/**}"
+      instructions: |
+        A new public class or module requires BOTH a row in docs-tracker.md and
+        an entry in the Sphinx API reference under docs/api_reference/. Flag a
+        tracker row marked done whose class does not actually render in the docs.
+        All .py and .rs files need the NVIDIA SPDX Apache-2.0 header.
