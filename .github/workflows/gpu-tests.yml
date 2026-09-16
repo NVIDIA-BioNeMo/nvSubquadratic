@@ -66,9 +66,30 @@ jobs:
 
       - name: Run pytest
         run: |
+          # pytest runs inside the container, so coverage has to be written to a
+          # bind mount or it disappears with --rm. The image runs as USER ubuntu
+          # (Dockerfile:218), whose uid need not match the runner's, hence 777.
+          mkdir -p "${{ github.workspace }}/coverage"
+          chmod 777 "${{ github.workspace }}/coverage"
           docker run --rm --gpus all \
+            -v "${{ github.workspace }}/coverage:/coverage" \
             nvsubquadratic-ci:${{ github.sha }} \
-            python -m pytest nvsubquadratic/ tests/ -v --tb=short
+            python -m pytest nvsubquadratic/ tests/ -v --tb=short \
+              --cov-report=xml:/coverage/coverage.xml
+          # --cov and --cov-report=term already come from pyproject addopts; this
+          # only adds the machine-readable report Codecov needs.
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: always()
+        continue-on-error: true
+        with:
+          files: ${{ github.workspace }}/coverage/coverage.xml
+          # Never let a Codecov outage or a missing token fail the job this
+          # workflow exists for. gpu-tests is a required status check and takes
+          # ~36 minutes; coverage reporting is not worth blocking a merge over.
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Run distributed CP tests
         run: |
