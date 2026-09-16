@@ -27,6 +27,7 @@ Supports:
     - Optional mask channel to indicate target location
     - Colored frames mode: RGB canvas with colored bounding boxes around items
     - Multiple items (distractors) on the canvas
+    - 3D motion recall: Moving-image video blocks on cubic canvases, with depth as time
 
 Usage:
     # 2D mode
@@ -36,8 +37,10 @@ Usage:
     PYTHONPATH=. python experiments/datamodules/spatial_recall_dataset.py --mode 1d
 """
 
+import math
 from typing import Literal, Optional, Tuple
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from einops import rearrange
@@ -1938,6 +1941,591 @@ class SpatialRecall3DDataModule(pl.LightningDataModule):
             x = rearrange(x, "b c d h w -> b (d h w) c")
             # Label: [B, C, H, W] -> [B, H*W, C]
             y = rearrange(y, "b c h w -> b (h w) c")
+        else:
+            raise ValueError(f"Unsupported data_type: {self.data_type}")
+
+        return {"input": x, "label": y, "condition": None}
+
+
+def _random_sweep_offsets(
+    length: int,
+    limit: int,
+    max_step: float,
+    generator: torch.Generator,
+) -> Tensor:
+    """Generate a monotone eased sweep over ``[0, limit]``, rounded to voxels.
+
+    A random direction and speed profile determine the continuous path. If
+    its largest step exceeds ``max_step``, its span shrinks about the centre.
+    Rounding to integer voxels can increase a step to ``ceil(max_step)``.
+    The path need not visit both endpoints or produce nonempty image slices.
+
+    Args:
+        length: Number of time steps (= depth slices of the block).
+        limit: Largest allowed offset; the sweep spans ``[0, limit]``.
+        max_step: Cap on the continuous slice-to-slice step, before voxel rounding.  Spans too
+            wide to sweep within the cap are shrunk around their centre.
+        generator: Random generator for reproducibility.
+
+    Returns:
+        Long tensor of ``length`` integer offsets in ``[0, limit]``.
+    """
+    if limit == 0:
+        return torch.zeros(length, dtype=torch.long)
+    gamma = 0.7 + float(torch.rand(1, generator=generator)) * 0.8  # random speed profile
+    s = torch.linspace(0.0, 1.0, length) ** gamma
+    ease = s * s * (3.0 - 2.0 * s)  # smoothstep: gentle start/stop, monotone
+    x = limit * ease
+    if float(torch.rand(1, generator=generator)) < 0.5:
+        x = limit - x  # random sweep direction
+    if length > 1:
+        step = float((x[1:] - x[:-1]).abs().max())
+        if step > max_step:
+            # Shrink wide sweeps about their centre before voxel rounding.
+            centre = limit / 2.0
+            x = centre + (x - centre) * (max_step / step)
+    offsets = torch.clamp(torch.round(x), 0, limit).long()
+    # Half-to-even ties can expand an integer-sized step by one voxel.
+    # Clamp rounded increments as well, preserving monotonicity and bounds.
+    cap = min(math.ceil(max_step), limit)
+    steps = offsets.diff().clamp(min=-cap, max=cap)
+    return torch.cat((offsets[:1], offsets[:1] + steps.cumsum(dim=0)))
+
+
+def _make_motion_block(
+    img: Tensor,
+    digit_size: int,
+    block_size: int,
+    generator: torch.Generator,
+    max_step: float,
+    spin: bool,
+) -> Tensor:
+    """Build a ``[C, b, b, b]`` motion block from a ``[C, H, W]`` image.
+
+    The image is stamped (resized to ``digit_size²``) on every depth slice
+    ``t`` at offset ``(h(t), w(t))`` given by two independent monotone sweep
+    paths (see :func:`_random_sweep_offsets`), and optionally spun in-plane in
+    exact 90° turns via ``torch.rot90`` — a random initial orientation
+    (0/90/180/270°), then 1-3 evenly spaced quarter turns across the tube in a
+    random direction.  Being pure pixel permutations, quarter turns stay
+    perfectly crisp at any stamp size.
+
+    The motion range is *ink-aware*: the constraint is that the digit's ink
+    (pixels above a small threshold over the background) stays inside the
+    block at every step — the stamp's bounding box may clip at the block edges
+    (low-intensity pixels below the ink threshold may be clipped).  Narrow digits (e.g. a "1") therefore get more
+    room to move than digits that fill their stamp (e.g. a "0"), and the
+    in-plane spin is unconstrained: the safe range accounts for every rotated
+    frame, so the ink never leaves the block at any angle.
+
+    The block is filled with the image's own background value (its per-channel
+    minimum), so the moving digit blends seamlessly — there is no visible
+    stamp-box boundary between image background and block background.
+
+    Args:
+        img: ``[C, H, W]`` source image (e.g. a normalised EMNIST digit).
+        digit_size: Size the image is resized to before stamping.
+        block_size: Edge length of the cubic block (= number of time steps).
+        generator: Random generator for reproducibility.
+        max_step: Continuous per-axis step cap; integer steps can reach ``ceil(max_step)``.
+        spin: If True, turn the image in-plane in 90° steps.
+
+    Returns:
+        ``[C, block_size, block_size, block_size]`` motion tube.
+    """
+    b = block_size
+    t_sz = digit_size
+
+    q0 = n_turns = direction = 0
+    if spin:
+        q0 = int(torch.randint(0, 4, (1,), generator=generator))
+        n_turns = 1 + int(torch.randint(0, min(3, max(b - 1, 1)), (1,), generator=generator))
+        direction = 1 if float(torch.rand(1, generator=generator)) < 0.5 else -1
+
+    # Pre-render the (rotated) stamp for every time step.
+    stamps = []
+    for t in range(b):
+        if spin:
+            q = (q0 + direction * ((t * n_turns) // max(b - 1, 1))) % 4
+            frame = torch.rot90(img, k=q, dims=(1, 2))
+        else:
+            frame = img
+        stamps.append(
+            torch.nn.functional.interpolate(
+                frame.unsqueeze(0), size=(t_sz, t_sz), mode="bilinear", align_corners=False
+            ).squeeze(0)
+        )
+
+    # Ink-aware safe offset range per axis: intersect, over all steps, the
+    # offsets that keep that step's ink bounding box inside the block.
+    bg = float(img.min())
+    ink_thresh = bg + 0.15 * (float(img.max()) - bg)
+    lo_h, hi_h = -(t_sz - 1), b - 1
+    lo_w, hi_w = -(t_sz - 1), b - 1
+    for stamp in stamps:
+        mask = stamp.amax(dim=0) > ink_thresh
+        if not bool(mask.any()):
+            continue
+        rows = mask.any(dim=1).nonzero()
+        cols = mask.any(dim=0).nonzero()
+        r0, r1 = int(rows[0]), int(rows[-1])
+        c0, c1 = int(cols[0]), int(cols[-1])
+        lo_h, hi_h = max(lo_h, -r0), min(hi_h, b - 1 - r1)
+        lo_w, hi_w = max(lo_w, -c0), min(hi_w, b - 1 - c1)
+    if hi_h < lo_h or hi_w < lo_w:  # Fall back to the stamp-box range.
+        lo_h = lo_w = 0
+        hi_h = hi_w = b - t_sz
+
+    hs = lo_h + _random_sweep_offsets(b, hi_h - lo_h, max_step, generator)
+    ws = lo_w + _random_sweep_offsets(b, hi_w - lo_w, max_step, generator)
+
+    # Background-matched block: filled with the image's own background so the
+    # stamp boundary is invisible (per-channel minimum of the source image).
+    bg_per_channel = img.amin(dim=(1, 2)).view(-1, 1, 1, 1)
+    block = bg_per_channel.expand(img.shape[0], b, b, b).clone().to(dtype=img.dtype, device=img.device)
+    for t, stamp in enumerate(stamps):
+        h0, w0 = int(hs[t]), int(ws[t])
+        # Clipped paste: the stamp box may stick out of the block, the ink never does.
+        hd0, hd1 = max(0, h0), min(b, h0 + t_sz)
+        wd0, wd1 = max(0, w0), min(b, w0 + t_sz)
+        block[:, t, hd0:hd1, wd0:wd1] = stamp[:, hd0 - h0 : hd1 - h0, wd0 - w0 : wd1 - w0]
+    return block
+
+
+def _validate_motion_geometry(
+    digit_size: int, block_size: int, canvas_size: int, placement: str, max_step: float
+) -> None:
+    """Reject invalid geometry and motion bounds before loading source data."""
+    if not 0 < digit_size <= block_size:
+        raise ValueError("Require 0 < digit_size <= block_size.")
+    if canvas_size < 2 * block_size:
+        raise ValueError("canvas_size must be >= 2 * block_size to separate source and readout.")
+    if placement not in ("fixed", "random"):
+        raise ValueError("placement must be 'fixed' or 'random'.")
+    if not 0 <= max_step < float("inf"):
+        raise ValueError("max_step must be finite and nonnegative.")
+
+
+class SpatialRecall3DMotionDataset(Dataset):
+    """3D *motion* spatial recall dataset (moving-digit copy task).
+
+    A 2D image is stamped on every depth slice of a ``block_size³`` cube
+    (depth = time) while translating along a random continuous path and
+    optionally turning in-plane — a spatio-temporal tube (see
+    :func:`_make_motion_block`).  The block is placed on a cubic
+    ``canvas_size³`` volume and must be recalled at the back-bottom-right
+    ``block_size³`` readout corner.
+
+    Args:
+        base_dataset: Base dataset providing (image, label) pairs.
+        digit_size: Positive size the 2D image is resized to before stamping.
+            Must be ``<= block_size``. Motion bounds use the resized ink mask,
+            which can allow the stamp background to extend beyond the block.
+        block_size: Edge length of the cubic motion block (= number of time
+            steps).
+        canvas_size: Edge length of the cubic canvas.
+        generator: Random generator for reproducibility.
+        placement: "fixed" (front-top-left corner) or "random".
+        readout_value: Value to fill the readout region with (default 0.0).
+        max_step: Continuous per-axis step cap; integer steps can reach ``ceil(max_step)``.
+        spin: If True (default), turn the digit in-plane in 90° steps — see
+            :func:`_make_motion_block`.
+    """
+
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        digit_size: int,
+        block_size: int,
+        canvas_size: int,
+        generator: torch.Generator,
+        placement: Literal["fixed", "random"] = "fixed",
+        readout_value: float = 0.0,
+        max_step: float = 2.0,
+        spin: bool = True,
+    ) -> None:
+        """Initialize the SpatialRecall3DMotionDataset."""
+        super().__init__()
+
+        _validate_motion_geometry(digit_size, block_size, canvas_size, placement, max_step)
+
+        self.base_dataset = base_dataset
+        self.digit_size = digit_size
+        self.block_size = block_size
+        self.canvas_size = canvas_size
+        self.generator = generator
+        self.placement = placement
+        self.readout_value = readout_value
+        self.max_step = max_step
+        self.spin = spin
+
+        if placement == "random":
+            self._precompute_valid_positions()
+
+    def _precompute_valid_positions(self) -> None:
+        """Precompute cubic-block start positions that don't overlap the readout.
+
+        A position is invalid iff all three coordinates are ``> S - 2b``,
+        where S is the canvas size and b is the block size.
+        """
+        S = self.canvas_size
+        b = self.block_size
+        starts = torch.arange(0, S - b + 1, dtype=torch.long)
+        grid_d, grid_y, grid_x = torch.meshgrid(starts, starts, starts, indexing="ij")
+        invalid_start = S - 2 * b
+        invalid = (grid_d > invalid_start) & (grid_y > invalid_start) & (grid_x > invalid_start)
+        valid = ~invalid
+        self.valid_positions = torch.stack([grid_d[valid], grid_y[valid], grid_x[valid]], dim=1)
+
+    def __len__(self) -> int:
+        """Return the number of source samples.
+
+        Returns:
+            int: Length of the wrapped base dataset.
+        """
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor]:
+        """Build one sample.
+
+        Args:
+            idx: Index into the base dataset (selects the digit).
+
+        Returns:
+            ``(canvas, label)``: the ``[C, S, S, S]`` cubic canvas containing
+            the motion tube, and the ``[C, b, b, b]`` tube itself (the recall
+            target at the readout corner).
+        """
+        img, _ = self.base_dataset[idx]
+        # img: [C, H, W] from base dataset
+
+        b = self.block_size
+        S = self.canvas_size
+
+        block = _make_motion_block(
+            img,
+            self.digit_size,
+            b,
+            self.generator,
+            self.max_step,
+            self.spin,
+        )
+        num_channels = block.shape[0]
+
+        # Cubic canvas.
+        canvas = torch.zeros((num_channels, S, S, S), dtype=block.dtype, device=block.device)
+
+        # Determine placement position (d, y, x).
+        if self.placement == "fixed":
+            d0, y0, x0 = 0, 0, 0  # front-top-left corner
+        else:  # random
+            num_pos = self.valid_positions.shape[0]
+            idx_pos = int(torch.randint(low=0, high=num_pos, size=(1,), generator=self.generator).item())
+            d0, y0, x0 = self.valid_positions[idx_pos].tolist()
+
+        canvas[:, d0 : d0 + b, y0 : y0 + b, x0 : x0 + b] = block
+
+        # Fill the readout region (back-bottom-right cube) with readout_value.
+        if self.readout_value != 0.0:
+            canvas[:, S - b :, S - b :, S - b :] = self.readout_value
+
+        # Label is the motion block, to be recalled at the readout location.
+        label = block
+
+        return canvas, label
+
+
+def _seed_motion_worker(worker_id: int) -> None:
+    """Seed a worker's motion generator from PyTorch's unique worker seed."""
+    worker = torch.utils.data.get_worker_info()
+    if worker is not None:
+        worker.dataset.generator.manual_seed(worker.seed)
+
+
+class SpatialRecall3DMotionDataModule(pl.LightningDataModule):
+    """DataModule for the 3D motion spatial recall (moving-digit copy) task.
+
+    Wraps an image base datamodule (EMNIST, MNIST, ...) to produce cubic
+    ``canvas_size³`` volumes containing a moving-digit ``block_size³`` tube
+    that must be recalled at the readout corner.
+
+    Args:
+        base_datamodule_cfg: A LazyConfig for the base datamodule.
+        digit_size: Size the 2D image is resized to before stamping.
+        block_size: Edge length of the cubic motion block (= time steps).
+        canvas_size: Edge length of the cubic canvas.
+        data_type: "volume" ([B, D, H, W, C]) or "sequence" ([B, D*H*W, C]).
+        placement: "fixed" or "random" block placement.
+        readout_value: Value to fill the readout region with.
+        max_step: Continuous per-axis step cap; integer steps can reach ``ceil(max_step)``.
+        spin: Turn the digit in-plane in 90° steps.
+    """
+
+    def __init__(
+        self,
+        base_datamodule_cfg: LazyConfig,
+        digit_size: int,
+        block_size: int,
+        canvas_size: int,
+        data_type: Literal["sequence", "volume"] = "volume",
+        placement: Literal["fixed", "random"] = "fixed",
+        readout_value: float = 0.0,
+        max_step: float = 2.0,
+        spin: bool = True,
+    ) -> None:
+        """Initialize the SpatialRecall3DMotionDataModule."""
+        super().__init__()
+
+        if data_type not in ("sequence", "volume"):
+            raise ValueError("data_type must be 'sequence' or 'volume'.")
+        # Validate before setup/download, using the same contract as the dataset.
+        _validate_motion_geometry(digit_size, block_size, canvas_size, placement, max_step)
+
+        self._base_datamodule_cfg = base_datamodule_cfg
+        self._base_datamodule: Optional[pl.LightningDataModule] = None
+
+        self.digit_size = digit_size
+        self.block_size = block_size
+        self.canvas_size = canvas_size
+        self.data_type = data_type
+        self.placement = placement
+        self.readout_value = readout_value
+        self.max_step = max_step
+        self.spin = spin
+
+        # Computed property.
+        self.canvas_volume = canvas_size * canvas_size * canvas_size
+
+        # Properties from base datamodule.
+        self._batch_size: Optional[int] = None
+        self._num_workers: Optional[int] = None
+        self._pin_memory: Optional[bool] = None
+        self._seed: Optional[int] = None
+
+        # Generators.
+        self._generator: Optional[torch.Generator] = None
+        self._train_generator: Optional[torch.Generator] = None
+        self._val_generator: Optional[torch.Generator] = None
+        self._test_generator: Optional[torch.Generator] = None
+
+        # Datasets.
+        self.train_dataset: Optional[Dataset] = None
+        self.val_dataset: Optional[Dataset] = None
+        self.test_dataset: Optional[Dataset] = None
+
+    def _instantiate_base_datamodule(self) -> pl.LightningDataModule:
+        """Instantiate the base datamodule from LazyConfig."""
+        if self._base_datamodule is None:
+            self._base_datamodule = instantiate(self._base_datamodule_cfg)
+        return self._base_datamodule
+
+    def _extract_base_properties(self) -> None:
+        """Extract properties from the base datamodule."""
+        base = self._base_datamodule
+        self._batch_size = base.batch_size
+        self._num_workers = base.num_workers
+        self._pin_memory = base.pin_memory
+        self._seed = base.seed
+
+        # Include rank for both DataLoader worker seeds and num_workers=0.
+        # Keep the base seed unchanged: dataset splits must agree across ranks.
+        rank = self.trainer.global_rank if self.trainer is not None else 0
+        if self.trainer is None and torch.distributed.is_initialized():
+            rank = torch.distributed.get_rank()
+
+        def generator(stream: int) -> torch.Generator:
+            seed = int(np.random.SeedSequence([self._seed, rank, stream]).generate_state(1, dtype=np.uint64)[0])
+            return torch.Generator().manual_seed(seed)
+
+        self._generator = generator(0)
+        self._train_generator = generator(1)
+        self._val_generator = generator(2)
+        self._test_generator = generator(3)
+
+    @property
+    def input_channels(self) -> int:
+        """Read source image channels, available before setup or download.
+
+        Returns:
+            Number of image channels advertised by the base datamodule.
+        """
+        return self._instantiate_base_datamodule().input_channels
+
+    @property
+    def output_channels(self) -> int:
+        """Read the recall target's channel count.
+
+        Returns:
+            Source image channels; the base class-label count is irrelevant.
+        """
+        return self.input_channels
+
+    @property
+    def batch_size(self) -> int:
+        """Read the batch size.
+
+        Returns:
+            Batch size from the initialized base datamodule.
+        """
+        if self._batch_size is None:
+            raise RuntimeError("Call setup() before accessing batch_size.")
+        return self._batch_size
+
+    @property
+    def num_workers(self) -> int:
+        """Read the worker count.
+
+        Returns:
+            Worker count from the initialized base datamodule.
+        """
+        if self._num_workers is None:
+            raise RuntimeError("Call setup() before accessing num_workers.")
+        return self._num_workers
+
+    @property
+    def pin_memory(self) -> bool:
+        """Read the pinned-memory setting.
+
+        Returns:
+            Pinned-memory setting from the initialized base datamodule.
+        """
+        if self._pin_memory is None:
+            raise RuntimeError("Call setup() before accessing pin_memory.")
+        return self._pin_memory
+
+    @property
+    def seed(self) -> int:
+        """Read the base random seed.
+
+        Returns:
+            Base random seed from the initialized base datamodule.
+        """
+        if self._seed is None:
+            raise RuntimeError("Call setup() before accessing seed.")
+        return self._seed
+
+    def prepare_data(self) -> None:
+        """Delegate source-data preparation to the base datamodule.
+
+        Returns:
+            None. The base datamodule may download data.
+        """
+        base = self._instantiate_base_datamodule()
+        base.prepare_data()
+
+    def _make_dataset(self, base_dataset: Dataset, generator: torch.Generator) -> Dataset:
+        """Construct a SpatialRecall3DMotionDataset over ``base_dataset``.
+
+        Args:
+            base_dataset: Split-specific base dataset (train/val/test).
+            generator: Split-specific random generator.
+
+        Returns:
+            The wrapped motion recall dataset.
+        """
+        return SpatialRecall3DMotionDataset(
+            base_dataset,
+            self.digit_size,
+            self.block_size,
+            self.canvas_size,
+            generator,
+            self.placement,
+            self.readout_value,
+            self.max_step,
+            self.spin,
+        )
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        """Set up datasets and seeded generators for the requested stage.
+
+        Args:
+            stage: Lightning stage: "fit", "validate", "test", or None for all.
+
+        Returns:
+            None. Populates the corresponding dataset attributes.
+        """
+        base = self._instantiate_base_datamodule()
+        # MNIST/EMNIST initialize their validation split during fit setup.
+        base.setup("fit" if stage == "validate" else stage)
+        self._extract_base_properties()
+
+        if stage in ("fit", None):
+            self.train_dataset = self._make_dataset(base.train_dataset, self._train_generator)
+        if stage in ("fit", "validate", None):
+            self.val_dataset = self._make_dataset(base.val_dataset, self._val_generator)
+
+        if stage in ("test", None):
+            self.test_dataset = self._make_dataset(base.test_dataset, self._test_generator)
+
+    def _build_loader(self, dataset: Dataset, shuffle: bool, drop_last: bool = False) -> DataLoader:
+        """Build a DataLoader."""
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=drop_last,
+            generator=self._generator,
+            persistent_workers=self.num_workers > 0,
+            worker_init_fn=_seed_motion_worker,
+        )
+
+    def train_dataloader(self) -> DataLoader:
+        """Create the training dataloader.
+
+        Returns:
+            DataLoader: Batches of canvases [B, C, S, S, S] and targets
+            [B, C, b, b, b], before the batch-transfer hook.
+        """
+        if self.train_dataset is None:
+            raise RuntimeError("Call setup('fit') before requesting train dataloader.")
+        return self._build_loader(self.train_dataset, shuffle=True, drop_last=True)
+
+    def val_dataloader(self) -> DataLoader:
+        """Create the validation dataloader.
+
+        Returns:
+            DataLoader: Batches of canvases [B, C, S, S, S] and targets
+            [B, C, b, b, b], before the batch-transfer hook.
+        """
+        if self.val_dataset is None:
+            raise RuntimeError("Call setup('fit') or setup('validate') before requesting val dataloader.")
+        return self._build_loader(self.val_dataset, shuffle=False, drop_last=False)
+
+    def test_dataloader(self) -> DataLoader:
+        """Create the test dataloader.
+
+        Returns:
+            DataLoader: Batches of canvases [B, C, S, S, S] and targets
+            [B, C, b, b, b], before the batch-transfer hook.
+        """
+        if self.test_dataset is None:
+            raise RuntimeError("Call setup('test') before requesting test dataloader.")
+        return self._build_loader(self.test_dataset, shuffle=False, drop_last=False)
+
+    def on_before_batch_transfer(self, batch, dataloader_idx) -> dict:
+        """Rearrange batch tensors to the expected format.
+
+        For volume: input [B, C, D, H, W] -> [B, D, H, W, C]; label
+        [B, C, b, b, b] -> [B, b, b, b, C].
+        For sequence: input -> [B, D*H*W, C]; label -> [B, b*b*b, C].
+
+        Args:
+            batch: Canvas/target tensors [B, C, S, S, S] and [B, C, b, b, b].
+            dataloader_idx: Lightning loader index; unused.
+
+        Returns:
+            dict: Channels-last or flattened input and label, plus condition=None.
+        """
+        x, y = batch
+
+        if self.data_type == "volume":
+            x = rearrange(x, "b c d h w -> b d h w c")
+            y = rearrange(y, "b c d h w -> b d h w c")
+        elif self.data_type == "sequence":
+            x = rearrange(x, "b c d h w -> b (d h w) c")
+            y = rearrange(y, "b c d h w -> b (d h w) c")
         else:
             raise ValueError(f"Unsupported data_type: {self.data_type}")
 
