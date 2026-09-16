@@ -6,7 +6,7 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## \[Unreleased\]
 
-## \[0.2.0\] - 2026-09-08
+## \[0.2.0\] - 2026-09-16
 
 ### Added
 
@@ -71,6 +71,24 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in-place op from a dead one. `lowering_stats()` reports rewrite and
   per-reason skip counts, since a silent pass is otherwise hard to tell apart
   from one that never fired.
+
+- **Hierarchical patch merging** (#141). `nvsubquadratic.modules.patch_merging`
+  adds `PatchMerging` (1D token sequences with an optional register row),
+  `PatchMerging2D` and `PatchEmbedHierarchical`; `ViT5HierarchicalNet` (with
+  `StageSpec`) and `ViT5HierarchicalClassificationNet` build multi-stage,
+  progressively-downsampled ViT5 variants on top of them. Ships with experiment
+  recipes under `examples/patch_merging/cifar10/` and
+  `examples/vit5_imagenet/{v5_patchmerge,v6_hierarchical,local_comparison}/`,
+  plus two CIFAR-10 datamodules — `experiments/datamodules/cifar10.py`
+  (torchvision) and `cifar10_hf.py` (HuggingFace, with `MixupConfig` /
+  `AugmentConfig`).
+
+- **3D motion spatial-recall dataset** (#140).
+  `SpatialRecall3DMotionDataset` and `SpatialRecall3DMotionDataModule` in
+  `experiments/datamodules/spatial_recall_dataset.py` sweep a digit stamp
+  through a 3D volume along a bounded, monotone path, with optional quarter-turn
+  spin per depth slice and a reserved readout cube. Example configs under
+  `examples/spatial_recall_v2/motion_3d/`.
 
 ### Fixed
 
