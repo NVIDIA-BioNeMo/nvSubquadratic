@@ -50,9 +50,16 @@ classifiers = [
 # project's CPU CI). The importable operators only need torch/einops/omegaconf/numpy
 # at runtime; the remaining deps power the training/data/experiment code.
 dependencies = [
-    # CUDA 13.2 (cu132) wheels start at torch 2.12.0 / torchvision 0.27.0.
-    "torch>=2.12.0,<2.13.0",
-    "torchvision>=0.27.0,<0.28.0",
+    # 2.14 is the floor for the [cuda] extra, not a preference: torch pins
+    # nvidia-cudnn-cu13 EXACTLY, and subquadratic-ops-torch-cu13>=0.3.0 requires
+    # cudnn>=9.24.0.43. torch 2.12/2.13 pin cudnn==9.20.0.48, which makes
+    # `pip install nvsubquadratic[cuda]` unresolvable; 2.14 pins ==9.24.0.43 and
+    # satisfies both. Keep in sync with Dockerfile, setup_conda_env.sh and the
+    # documented venv install — a mismatch silently re-resolves torch from PyPI
+    # and replaces a CUDA-matched wheel after apex/mamba are already compiled.
+    # scripts/check_version_pins.py enforces that agreement in pre-commit and CI.
+    "torch>=2.14.0,<2.15.0",
+    "torchvision>=0.29.0,<0.30.0",
     "einops>=0.6.0",
     "numpy>=1.21.0",
     "pyarrow>=14.0.0,<20.0.0",     # Constrained to be compatible with cudf/pylibcudf in NGC containers
@@ -79,16 +86,19 @@ Issues = "https://github.com/NVIDIA-BioNeMo/nvSubquadratic/issues"
 # CUDA toolkit (e.g. a downstream project's CPU CI): the operators import it lazily
 # and the default fft_backend="torch_fft" path runs without it. Install for the
 # fast path:  pip install nvsubquadratic[cuda]
-# >=0.2.2 for fused_fft_conv2d, which backs fft_backend="subq_ops_fused" and the
+# >=0.3.0 for fused_fft_conv2d, which backs fft_backend="subq_ops_fused" and the
 # torch.compile lowering. fft_backend="subq_ops" itself still works on 0.2.1.
-# NOTE: 0.2.2 is currently published only to the internal NVIDIA GitLab registry
-# (public PyPI tops out at 0.2.1), so it needs an --index-url pointing there until
-# 0.2.2 is released publicly.
-cuda = ["subquadratic-ops-torch-cu13>=0.2.2"]
+cuda = ["subquadratic-ops-torch-cu13>=0.3.0"]
 
-# QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300).
-# On Ampere and older GPUs RMSNorm falls back to pure PyTorch automatically.
-quack = ["quack-kernels"]
+# QuACK fused RMSNorm kernel (Hopper/Blackwell only: H100, B200, B300), used by
+# RMSNorm and RMSNormChannelFirst. On Ampere and older GPUs they fall back to
+# pure PyTorch automatically. MLP(backend="quack") also imports quack.linear,
+# but that path raises NotImplementedError at init and is not reachable.
+# The [cu13] extra selects nvidia-cutlass-dsl's CUDA 13 runtime libraries,
+# matching this release's CUDA 13 target; without it the CuTe-DSL JIT path
+# resolves only the CUDA 12 libraries. Note quack's README warns against
+# installing its cu13 path with `uv` (NVIDIA/cutlass#3259) — use pip.
+quack = ["quack-kernels[cu13]"]
 
 # NVIDIA DALI GPU data-loading pipeline, used by the ImageNet / The Well
 # examples. Not required by the importable library; ~400 MB download.

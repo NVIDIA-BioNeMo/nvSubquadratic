@@ -90,7 +90,7 @@ jobs:
             nvsubquadratic.modules.masks_nd; print(nvsubquadratic.__version__)"
 
       # ── Step 4 ── assert the CUDA kernel was NOT pulled in by the core install.
-      # subquadratic-ops-torch-cu12 lives in the [cuda] extra (requires nvcc);
+      # subquadratic-ops-torch-cu13 lives in the [cuda] extra (requires nvcc);
       # finding it in a core install means the extra boundary was broken.
       - name: Assert CUDA kernel absent from core install
         run: |
@@ -108,7 +108,7 @@ jobs:
           /tmp/lean/bin/pip install --no-deps dist/*.whl
           /tmp/lean/bin/pip install \
             --index-url https://download.pytorch.org/whl/cpu \
-            "torch>=2.10.0,<2.11.0" "torchvision>=0.25.0,<0.26.0"
+            "torch>=2.14.0,<2.15.0" "torchvision>=0.29.0,<0.30.0"
           /tmp/lean/bin/pip install einops omegaconf numpy
           /tmp/lean/bin/python -c "import nvsubquadratic; \
             import nvsubquadratic.lazy_config, nvsubquadratic.modules.hyena_nd, \
@@ -124,4 +124,4 @@ jobs:
         run: |
           /tmp/clean/bin/pip install --upgrade "pip>=23.1"
           /tmp/clean/bin/pip install --dry-run --find-links dist/ "nvsubquadratic[cuda]" \
-            || echo "NOTE: [cuda] resolution incomplete — expected if subquadratic-ops-torch-cu12 is not on a reachable index or requires nvcc to build"
+            || echo "NOTE: [cuda] resolution incomplete — expected if subquadratic-ops-torch-cu13 is not on a reachable index or requires nvcc to build"

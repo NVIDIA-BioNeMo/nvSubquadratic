@@ -28,16 +28,17 @@ ARG MINIFORGE_VERSION=25.3.0-3
 #   1. The base nvcc CUDA must match torch's CUDA exactly, or apex and mamba fail
 #      to build ("Cuda extensions ... compiled with Cuda 13.0" vs nvcc 13.2).
 #      Hence the 13.0.x base above and the cu130 index here.
-#   2. TORCH_VERSION must satisfy pyproject's own `torch>=2.12.0,<2.13.0`. If it
+#   2. TORCH_VERSION must satisfy pyproject's own `torch>=2.14.0,<2.15.0`. If it
 #      does not, the build still succeeds but the final `.[all]` step silently
 #      UPGRADES torch — after apex/mamba/causal-conv1d were already compiled
 #      against the older one, leaving extensions built against headers that no
 #      longer match the installed torch.
 #
-# 2.12.1 is published for cu130, so both hold together. Keep this pin and the
-# pyproject floor in sync; changing one alone reintroduces the swap.
-ARG TORCH_VERSION=2.12.1
-ARG TORCHVISION_VERSION=0.27.1
+# 2.14.0 is published for cu130, so both hold together. Changing this pin without
+# the pyproject floor (or the other install paths) reintroduces the swap, so
+# scripts/check_version_pins.py enforces the agreement in pre-commit and CI.
+ARG TORCH_VERSION=2.14.0
+ARG TORCHVISION_VERSION=0.29.0
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 # DALI ships one build per CUDA major version; cuda130 is the CUDA 13.x build.
 ARG DALI_PACKAGE=nvidia-dali-cuda130
@@ -201,26 +202,11 @@ RUN git config --global --add safe.directory /workspaces/nvSubquadratic
 # can run. After the 0.1.1 dependency restructure, megatron-core/timm/etc. are
 # optional extras ([distributed]/[baselines]/...), so a bare install no longer
 # pulls them — [all] restores the complete pre-restructure dependency set. The
-# [cuda] extra resolves subquadratic-ops-torch-cu13 via the normal pip index chain
-# (wheel-stub sdist → prebuilt wheel).
-#
-# The [cuda] extra pins subquadratic-ops-torch-cu13>=0.2.2 for fused_fft_conv2d,
-# and 0.2.2 is published ONLY to the internal NVIDIA GitLab registry (public PyPI
-# tops out at 0.2.1), so this install FAILS without an extra index pointing there.
-# Pass the tokenised registry URL as a BuildKit secret — never a --build-arg, which
-# would bake the token into the image's layer history:
-#
-#   SUBQ_OPS_INDEX_URL="https://__token__:<TOKEN>@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple" \
-#       docker buildx build --secret id=subq_index,env=SUBQ_OPS_INDEX_URL ...
-#
-# scripts/slurm/enroot/build_sqsh.sh wires this up from GITLAB_TOKEN. Drop the
-# secret once 0.2.2 reaches public PyPI.
-RUN --mount=type=secret,id=subq_index,required=false \
-    SUBQ_INDEX="$(cat /run/secrets/subq_index 2>/dev/null || true)" \
-    && pip install --no-cache-dir wheel-stub \
+# [cuda] extra resolves subquadratic-ops-torch-cu13 from public PyPI via the normal
+# pip index chain (wheel-stub sdist → prebuilt wheel).
+RUN pip install --no-cache-dir wheel-stub \
     && pip install --no-cache-dir --no-build-isolation ".[all]" \
-       --extra-index-url ${TORCH_INDEX_URL} \
-       ${SUBQ_INDEX:+--extra-index-url "${SUBQ_INDEX}"}
+       --extra-index-url ${TORCH_INDEX_URL}
 
 # Set up ubuntu user's home directory and permissions
 RUN chown -R ubuntu:ubuntu /workspaces && \

@@ -26,10 +26,11 @@
 #   MAX_JOBS      parallel build jobs   (default: 32)
 #   NVCC_THREADS  nvcc --threads        (default: 4)
 #   INSTALL_MAMBA / INSTALL_FA4         (default: true — this is the benchmark image)
-#   GITLAB_TOKEN  read from ~/.gitlab_token if unset; REQUIRED (see build_sqsh.sh)
 #
 # Keep the pins below in sync with the Dockerfile — this replays it, it does not
-# parse it, so the two drift silently if only one is edited.
+# parse it, so nothing links the two at runtime. They no longer drift silently:
+# scripts/check_version_pins.py fails pre-commit/CI if this file, the Dockerfile,
+# setup_conda_env.sh or the install docs disagree with pyproject's torch range.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,32 +50,17 @@ INSTALL_MAMBA="${INSTALL_MAMBA:-true}"
 INSTALL_FA4="${INSTALL_FA4:-true}"
 
 # Pins mirrored from the Dockerfile. TORCH_VERSION must satisfy pyproject's
-# `torch>=2.12.0,<2.13.0`: if it does not, step 10's `.[all]` silently upgrades
+# `torch>=2.14.0,<2.15.0`: if it does not, step 10's `.[all]` silently upgrades
 # torch after apex/mamba/causal-conv1d have already been compiled against the
 # older one, leaving extensions built against headers that no longer match.
-TORCH_VERSION="${TORCH_VERSION:-2.12.1}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.27.1}"
+TORCH_VERSION="${TORCH_VERSION:-2.14.0}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.29.0}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
 DALI_PACKAGE="${DALI_PACKAGE:-nvidia-dali-cuda130}"
 MINIFORGE_VERSION="${MINIFORGE_VERSION:-25.3.0-3}"
 MINIFORGE_NAME="${MINIFORGE_NAME:-Miniforge3}"
 FLASH_ATTN4_VERSION="${FLASH_ATTN4_VERSION:-4.0.0b23}"
 CUTLASS_DSL_VERSION="${CUTLASS_DSL_VERSION:-4.6.0.dev0}"
-
-# ── Token (same resolution order as build_sqsh.sh) ───────────────────────────
-if [[ -z "${GITLAB_TOKEN:-}" && -r "${HOME}/.gitlab_token" ]]; then
-    # shellcheck disable=SC1090
-    eval "$(grep -E '^[[:space:]]*(export[[:space:]]+)?GITLAB_TOKEN=' "${HOME}/.gitlab_token" | tail -1)"
-fi
-if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-    echo "Error: GITLAB_TOKEN unset and ~/.gitlab_token unreadable."
-    echo "       pyproject pins subquadratic-ops-torch-cu13>=0.2.2, which is only on the"
-    echo "       internal GitLab registry, so the '.[all]' step will fail without it."
-    echo "       Create one (scope: read_api) at"
-    echo "         https://gitlab-master.nvidia.com/-/user_settings/personal_access_tokens"
-    echo "       then:  echo 'export GITLAB_TOKEN=glpat-...' > ~/.gitlab_token && chmod 600 ~/.gitlab_token"
-    exit 1
-fi
 
 LOG_DIR="${LOG_DIR:-${REPO_ROOT}/benchmarks/results}"
 mkdir -p "${LOG_DIR}"
@@ -198,16 +184,10 @@ cd /workspaces/nvSubquadratic
 pip install --no-cache-dir -r requirements-dev.txt
 git config --global --add safe.directory /workspaces/nvSubquadratic
 
-step "10/10 nvsubquadratic [all] (incl. subq_ops >= 0.2.2 from internal index)"
-SUBQ_INDEX="$(cat /mnt/secrets/gitlab_index 2>/dev/null || true)"
-if [ -z "${SUBQ_INDEX}" ]; then
-    echo "ERROR: no internal index available; .[all] would resolve subq_ops<0.2.2 or fail."
-    exit 1
-fi
+step "10/10 nvsubquadratic [all] (incl. subq_ops from public PyPI)"
 pip install --no-cache-dir wheel-stub
 pip install --no-cache-dir --no-build-isolation ".[all]" \
-    --extra-index-url "${TORCH_INDEX_URL}" \
-    --extra-index-url "${SUBQ_INDEX}"
+    --extra-index-url "${TORCH_INDEX_URL}"
 
 chown -R ubuntu:ubuntu /workspaces
 mkdir -p /home/ubuntu
@@ -276,15 +256,6 @@ export CUTLASS_DSL_VERSION='${CUTLASS_DSL_VERSION}'
 EOF
 )"
 
-# The token file: written to a private dir under $HOME, mounted read-only.
-SECRET_DIR="${HOME}/.nvsubq_build_secret"
-mkdir -p "${SECRET_DIR}"
-chmod 700 "${SECRET_DIR}"
-printf 'https://__token__:%s@gitlab-master.nvidia.com/api/v4/projects/180496/packages/pypi/simple' \
-    "${GITLAB_TOKEN}" > "${SECRET_DIR}/gitlab_index"
-chmod 600 "${SECRET_DIR}/gitlab_index"
-trap 'rm -rf "${SECRET_DIR}"' EXIT
-
 srun \
     --account="${ACCOUNT}" \
     --partition="${PARTITION}" \
@@ -295,7 +266,7 @@ srun \
     --error="${LOG_DIR}/imgbuild-%j.out" \
     --container-image="${BASE_IMAGE}" \
     --container-remap-root \
-    --container-mounts="${REPO_ROOT}:/mnt/src:ro,${SECRET_DIR}:/mnt/secrets:ro" \
+    --container-mounts="${REPO_ROOT}:/mnt/src:ro" \
     --container-save="${OUTPUT_SQSH}" \
     bash -c "${PREAMBLE}
 ${BUILD}"

@@ -13,12 +13,13 @@ nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearc
 - **B2B CausalConv1d**: Back-to-back causal convolutions for striped Hyena architectures
 - **CausalConv1d**: Standard causal convolutions with various kernel sizes (2-256)
 - **FFT CausalConv1d**: FFT-based causal convolutions for large kernel sizes (up to 8K-16M)
-- **Fused FFT Conv2d**: single-launch 2D FFT convolution running natively in fp32/fp16/bf16 (spatial dims up to 64 per axis); requires `subquadratic-ops-torch >= 0.2.2`
+- **Fused FFT Conv2d**: single-launch 2D FFT convolution running natively in fp32/fp16/bf16 (spatial dims up to 64 per axis); requires `subquadratic-ops-torch >= 0.3.0`, and compute capability 9.0+ (Hopper/Blackwell) for extents above 32 per axis
 
 **Requirements**:
 
 - CUDA-compatible NVIDIA GPU (Ampere or newer)
-- CUDA Toolkit 12.0 or higher
+- CUDA Toolkit 13.0 or higher
+- NVIDIA driver >= 580 (the CUDA 13.x minimum), or the CUDA forward-compatibility package
 - Python 3.10 or higher
 
 **quack-kernels (optional)**:
@@ -66,8 +67,12 @@ backend; selecting `fft_backend="subq_ops"` (or `"subq_ops_fused"`) without
 
 On 2D problems with spatial dims of at most 64 per axis, `fft_backend="subq_ops_fused"`
 is the fastest option: it fuses the whole FFT-conv pipeline into one launch and
-runs it natively in bf16/fp16 instead of upcasting to fp32, for roughly a 3-4x
-speedup over `torch_fft`. Models already written against `torch_fft` can pick up
+runs it natively in bf16/fp16 instead of upcasting to fp32 — measured at 1.9-4.9x
+over `torch_fft` and 1.3-2.5x over `subq_ops` on an H100 across spatial extents
+16-64 (batch 8, hidden 768, forward+backward, bf16). The margin over `torch_fft`
+grows with spatial extent; reproduce with
+[`benchmarks/ops/bench_fused_fftconv2d.py`](benchmarks/ops/bench_fused_fftconv2d.py).
+Models already written against `torch_fft` can pick up
 the same kernel under `torch.compile` without a config change — see the
 [torch.compile lowering](docs/ops/README.md#torchcompile-lowering).
 
@@ -87,7 +92,7 @@ docker build -t nvsubquadratic:dev .
 docker run --gpus all -p 8888:8888 -v $(pwd):/workspaces/nvSubquadratic nvsubquadratic:dev
 ```
 
-The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Volta through Blackwell). Build-args let you tune the compile:
+The Dockerfile builds NVIDIA Apex from source for a broad set of NVIDIA archs by default (`7.5;8.0;8.6;8.9;9.0;10.0;12.0` — Turing through Blackwell). Build-args let you tune the compile:
 
 - `TORCH_CUDA_ARCH_LIST` — narrow to your GPU(s) to speed up the build (e.g. `9.0` for H100, `8.6` for A6000, `8.9` for L4). Also applied to the patched `mamba-ssm` / `causal-conv1d` source builds (upstream otherwise hardcodes sm_75..sm_120).
 - `MAX_JOBS` — number of parallel nvcc/ninja jobs. Defaults to unconstrained. Set to `1` if the build OOMs or gcc ICEs (typical under qemu emulation for arm64).
@@ -134,7 +139,7 @@ bash setup_conda_env.sh
 conda activate nvsubquadratic
 ```
 
-This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.10 (CUDA 13.0), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
+This script creates the `nvsubquadratic` conda environment with Python 3.12 and PyTorch 2.14 (CUDA 13.0), installs all dev dependencies, builds NVIDIA Apex from source, and installs `quack-kernels`.
 
 ### Local Installation (venv)
 
@@ -144,7 +149,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install PyTorch with CUDA support first (before package dependencies)
-pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cu130
 
 # Install development dependencies
 pip install -r requirements-dev.txt

@@ -3,8 +3,8 @@
 # torch / torchvision: defined in pyproject.toml [project.dependencies] with the
 # same bounds as the runtime package. Do NOT list them here with a separate loose
 # pin (e.g. torchvision>=0.15): pip would satisfy that from PyPI and can replace a
-# CUDA-matched torch wheel (e.g. cu129 in Docker) with a different CUDA build and
-# break Apex in slurm/enroot/Dockerfile.slurm.
+# CUDA-matched torch wheel (e.g. cu130 in Docker) with a different CUDA build and
+# break Apex in the Dockerfile / scripts/slurm/enroot builds.
 #
 # Install order for local dev: pip install -e ".[quack]"  (or plain .) then
 #   pip install -r requirements-dev.txt

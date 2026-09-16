@@ -34,7 +34,7 @@ Attention does not use prepend_registers, so T = 1 + 4 + `num_patches` (no paddi
 git clone <repo-url> && cd nvSubquadratic
 
 # PyTorch with CUDA 13.0
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 # Core dependencies
 pip install -r requirements-dev.txt

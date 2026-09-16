@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+"""v6_hierarchical — FiLM Hyena, 4-stage Swin-T layout, BD + learnable ω₀.
+
+Modelled on ``vit5_hybrid/full_hyena_learnable_omega_blockdiag.py`` +
+``vit5_hybrid/_film.py``.
+
+Same architecture as ``hyena_hier_p4_pure`` but with 4 register tokens
+prepended as the first row of every stage's 2D grid.  Each block pools its
+registers (RegisterPooling) and FiLM-modulates the SIREN kernel (KernelFiLMGenerator).
+
+FiLM settings (matching vit5_hybrid/_film.py best run):
+  init_type          = "identity"  (γ=1, β=0 — start from no-modulation)
+  film_after_pos_embed = True      (modulates the positional-embedding sine)
+  num_film_layers    = 3           (pos-embed sine + 2 hidden linears)
+  film_weight_decay  = 5e-3        (dedicated optimizer group for FiLM weights)
+
+Batch  : 2048 (8 GPUs × 16 per-GPU × 16 accum steps).
+"""
+
+from examples.vit5_imagenet.v6_hierarchical._base_config import (
+    build_hyena_hier_net,
+    get_base_config,
+)
+from experiments.callbacks.mask_monitor import MaskMonitorCallback
+from experiments.callbacks.omega_scale_monitor import OmegaScaleMonitorCallback
+from experiments.default_cfg import ExperimentConfig
+from nvsubquadratic.lazy_config import LazyConfig
+
+
+def get_config() -> ExperimentConfig:
+    """Return the FiLM-conditioned hierarchical Hyena ImageNet config."""
+    config = get_base_config()
+    config.net = build_hyena_hier_net(layout="register_row")
+    config.callbacks.append(LazyConfig(MaskMonitorCallback)(log_every_n_steps=50))
+    config.callbacks.append(LazyConfig(OmegaScaleMonitorCallback)(log_every_n_steps=50))
+    config.wandb.job_group = "v6_hier_film"
+    return config

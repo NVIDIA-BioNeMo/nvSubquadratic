@@ -40,6 +40,8 @@ import torch
 
 from nvsubquadratic.ops.fftconv import fftconv2d_fp32_bhl, fftconv2d_fp32_blh
 from nvsubquadratic.ops.fftconv_custom import (
+    FUSED_FFT_SIZE_128_MIN_ARCH,
+    fused_fftconv2d_arch_supported,
     fused_fftconv2d_bhl,
     fused_fftconv2d_bhl_chunked,
     fused_fftconv2d_blh,
@@ -48,34 +50,21 @@ from nvsubquadratic.ops.fftconv_custom import (
     fused_fftconv2d_supported,
     resolve_fused_fft_size,
 )
-from tests.conftest import requires_subq_ops_fused
+from tests.conftest import (
+    L2_TOL_GRAD,
+    assert_l2_close,
+    l2_rel,
+    requires_sm90,
+    requires_subq_ops_fused,
+)
 
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 pytestmark = [requires_subq_ops_fused, requires_cuda]
 
-# Normwise relative-error budgets, calibrated against the observed error of the
-# fused kernel vs the fp32 torch reference (fp32 ~3e-7, fp16 ~3e-4, bf16 ~3e-3)
-# with ~3x headroom. Gradients accumulate over the batch, so they get more room.
-L2_TOL = {torch.float32: 1e-6, torch.float16: 1e-3, torch.bfloat16: 8e-3}
-L2_TOL_GRAD = {torch.float32: 1e-6, torch.float16: 2e-3, torch.bfloat16: 1.5e-2}
-
 HIDDEN_DIM = 16
 BATCH = 2
-
-
-def l2_rel(pred: torch.Tensor, ref: torch.Tensor) -> float:
-    """Normwise relative error, computed in fp64 so the metric adds no roundoff."""
-    pred64, ref64 = pred.double(), ref.double()
-    den = ref64.norm()
-    return ((pred64 - ref64).norm() / den).item() if den > 0 else (pred64 - ref64).norm().item()
-
-
-def assert_l2_close(pred, ref, dtype, tol_table=None, name=""):
-    tol = (tol_table or L2_TOL)[dtype]
-    rel = l2_rel(pred, ref)
-    assert rel < tol, f"{name} L2 rel error {rel:.3e} exceeds tol {tol:.1e}"
 
 
 def _inputs(spatial, kernel_size, dtype, kernel_batch=1, seed=0):
@@ -153,7 +142,7 @@ class TestResolveFftSize:
 class TestForwardMatchesReference:
     """The fused path reproduces fftconv2d_fp32_bhl up to dtype roundoff."""
 
-    @pytest.mark.parametrize("spatial", [7, 8, 16, 32, 64])
+    @pytest.mark.parametrize("spatial", [7, 8, 16, 32, pytest.param(64, marks=requires_sm90)])
     def test_double_grid_kernel(self, spatial, dtype):
         """K = 2N-1, the kernel size CKConvND generates on a double grid."""
         x, kernel, shortcut = _inputs(spatial, 2 * spatial - 1, dtype)
@@ -306,3 +295,36 @@ def test_rejects_oversized_input():
     kernel = torch.randn(1, 4, 129, 129, device="cuda")
     with pytest.raises(ValueError, match="too large for the fused 2D FFT kernel"):
         fused_fftconv2d_bhl(x, kernel)
+
+
+def test_arch_predicate_matches_device_capability():
+    """The 128 tile is gated on SM90+; smaller tiles run on any supported GPU."""
+    device = torch.device("cuda:0")
+    is_sm90plus = torch.cuda.get_device_capability(0) >= FUSED_FFT_SIZE_128_MIN_ARCH
+
+    assert fused_fftconv2d_arch_supported(device, 64) is True
+    assert fused_fftconv2d_arch_supported(device, 128) is is_sm90plus
+
+
+def test_128_tile_raises_below_sm90():
+    """A shape that needs the 128 tile fails loudly on SM80/SM86 rather than in the kernel.
+
+    32x32 fits the 64 tile and must work everywhere; 64x64 escalates to the 128
+    tile, which needs more shared memory than pre-Hopper parts provide. Both
+    branches are asserted so this stays meaningful on either class of runner.
+    """
+    kernel = torch.randn(1, 4, 5, 5, device="cuda")
+
+    # Always within reach: resolves to the 64 tile.
+    small = torch.randn(1, 4, 32, 32, device="cuda")
+    assert resolve_fused_fft_size(32, 32, 5, 5) == 64
+    fused_fftconv2d_bhl(small, kernel)
+
+    large = torch.randn(1, 4, 64, 64, device="cuda")
+    assert resolve_fused_fft_size(64, 64, 5, 5) == 128
+
+    if torch.cuda.get_device_capability(0) >= FUSED_FFT_SIZE_128_MIN_ARCH:
+        fused_fftconv2d_bhl(large, kernel)
+    else:
+        with pytest.raises(RuntimeError, match="requires compute capability"):
+            fused_fftconv2d_bhl(large, kernel)
