@@ -150,6 +150,8 @@ def make_plot(
     # Drop resolutions where no operator produced a value for this metric, so the
     # x-axis ends at the last reachable point.
     ok_seq = {int(r["seq_len"]) for r in rows if r.get("status") == "ok" and r.get(mkey) is not None}
+    if not ok_seq:
+        raise SystemExit(f"No successful ('ok') {mkey} values in the JSONL — nothing to plot.")
     rows = [r for r in rows if int(r["seq_len"]) in ok_seq]
 
     # Dimensionality (L = R^data_dim) and hardware, inferred from the data.
@@ -248,7 +250,7 @@ def make_plot(
             linewidths=2.0,
             color=FAIL_COLOR,
             zorder=5,
-            label="OOM / timeout",
+            label="OOM / error / timeout",
         )
 
     # ── Metric-specific overlays ──────────────────────────────────────────────

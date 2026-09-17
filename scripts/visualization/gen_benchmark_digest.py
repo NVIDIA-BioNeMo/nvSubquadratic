@@ -26,7 +26,10 @@ from collections import defaultdict
 from pathlib import Path
 
 
-RESULTS = Path("/lustre/fsw/healthcareeng_bionemo/farhadr/nvsubquadratic_workdir/nvSubquadratic/benchmarks/results")
+# The sweep JSONLs this reads, and the digest it writes, are committed at
+# <repo>/benchmarks/results/. Derived from this file's location so the
+# generator runs from any clone, not just the original Lustre workspace.
+RESULTS = Path(__file__).resolve().parents[2] / "benchmarks" / "results"
 
 SWEEPS = [
     ("forward_time_1d", "Reach 1D", 1, "2559702"),

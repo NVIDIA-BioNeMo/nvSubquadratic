@@ -338,6 +338,26 @@ class Attention(torch.nn.Module):
         # flex/fa4 back-ends are resolved eagerly here so a missing dependency fails
         # at construction, not mid-forward.
         self.attn_impl = attn_impl
+        # Validate the unsupported argument combinations before touching the
+        # back-end imports below: `fa4` resolves an optional dependency that may
+        # raise ImportError, which would otherwise mask the clearer message here.
+        if attn_impl == "flex" and is_causal:
+            # forward() calls flex_attention without a BlockMask, so it cannot mask.
+            # Rejecting beats silently handing back bidirectional attention to a
+            # caller who asked for causal.
+            raise ValueError(
+                "attn_impl='flex' does not support is_causal=True: no causal BlockMask is built. "
+                "Use attn_impl='sdpa' or 'fa4' for causal attention."
+            )
+        if attn_impl in ("flex", "fa4") and attn_dropout > 0.0:
+            # Neither flash-class path forwards a dropout probability — FlexAttention
+            # is called without one and FA3+ dropped the argument — so a non-zero
+            # value would be silently ignored rather than applied.
+            raise ValueError(
+                f"attn_impl={attn_impl!r} does not support attn_dropout={attn_dropout} (>0); "
+                "it would be silently ignored. Use attn_impl='sdpa' for attention dropout."
+            )
+
         if attn_impl == "flex":
             from torch.nn.attention.flex_attention import flex_attention
 

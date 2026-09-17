@@ -89,6 +89,7 @@ ______________________________________________________________________
 
 - SLURM job: `2559620`  |  device: `NVIDIA GB200`  |  dtype: `bf16`
 - hidden_dim=8, num_heads=2, batch_size=1, data_dim=2 (L = R^2)
+- Hyena short conv: torch_conv2d_symmetric
 - Hyena FFT backend: `subq_ops` at R=128..4096; `subq_ops_fused` at R=16..64
 
 | R     | L          | hyena  | attention  | mamba  |
@@ -118,6 +119,7 @@ ______________________________________________________________________
 
 - SLURM job: `2559621`  |  device: `NVIDIA GB200`  |  dtype: `bf16`
 - hidden_dim=8, num_heads=2, batch_size=1, data_dim=3 (L = R^3)
+- Hyena short conv: torch_conv3d_symmetric
 - Hyena FFT backend: `torch_fft` at R=16..256
 
 | R   | L          | hyena  | attention  | mamba  |
@@ -179,6 +181,7 @@ ______________________________________________________________________
 
 - SLURM job: `2559623`  |  device: `NVIDIA GB200`  |  dtype: `bf16`
 - hidden_dim=512, num_heads=4, batch_size=1, data_dim=2 (L = R^2)
+- Hyena short conv: torch_conv2d_symmetric
 - Hyena FFT backend: `subq_ops` at R=128..1024; `subq_ops_fused` at R=16..64
 
 | R     | L         | hyena  | attention | flex     | fa4      | mamba |
@@ -204,6 +207,7 @@ ______________________________________________________________________
 
 - SLURM job: `2559624`  |  device: `NVIDIA GB200`  |  dtype: `bf16`
 - hidden_dim=512, num_heads=4, batch_size=1, data_dim=3 (L = R^3)
+- Hyena short conv: torch_conv3d_symmetric
 - Hyena FFT backend: `torch_fft` at R=16..64
 
 | R   | L       | hyena  | attention | flex    | fa4     | mamba |
