@@ -1,0 +1,23 @@
+# Configuration for the DCO GitHub App (https://github.com/dcoapp/app).
+#
+# CONTRIBUTING.md requires every commit to carry a Signed-off-by trailer per the
+# Developer Certificate of Origin. The app enforces that on pull requests.
+#
+# Remediation commits let an unsigned commit be signed off retroactively by
+# adding a NEW commit to the PR, rather than rewriting history. That matters on
+# long-lived branches: rewriting there flattens merge commits, replays every
+# conflict resolution, and changes the SHAs of other people's commits.
+#
+#   individual  - the commit's own author signs off retroactively:
+#       I, Full Name <email>, hereby add my Signed-off-by to this commit: <sha>
+#
+#   thirdParty  - someone signs off on the author's behalf (requires individual):
+#       On behalf of Author <author@email>, I, Signer <signer@email>, hereby add
+#       my Signed-off-by to this commit: <sha>
+#
+# One line per commit, in the body of a commit that is itself signed off.
+# Third-party sign-off is a real DCO certification about provenance — use it
+# only where you can actually make that certification.
+allowRemediationCommits:
+  individual: true
+  thirdParty: true
