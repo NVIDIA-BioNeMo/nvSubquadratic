@@ -120,6 +120,8 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
     def _log_image_grid(self, trainer: pl.Trainer, pl_module: pl.LightningModule, event_idx: int) -> None:
         """Generate and log an image grid comparing input, prediction, and label.
 
+        Model inference uses the trainer's precision context, and predictions are converted to float32 for rendering.
+
         Args:
             trainer: PyTorch Lightning trainer.
             pl_module: PyTorch Lightning module.
@@ -153,9 +155,11 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Match validation precision; callbacks run outside the step's context.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        with trainer.precision_plugin.forward_context():
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()  # NumPy/matplotlib cannot consume bfloat16.
 
         # Convert to NCHW images, supporting flattened inputs.
         x_nchw = self._as_nchw_images(x)
@@ -489,6 +493,7 @@ class ValidationVolumeGridCallback(pl.callbacks.Callback):
 
         Creates a figure with 3D scatter plot views of input volumes alongside
         2D prediction and label images, similar to the dataset visualization.
+        Model inference uses the trainer's precision context, and predictions are converted to float32 for rendering.
 
         Args:
             trainer: PyTorch Lightning trainer.
@@ -529,9 +534,11 @@ class ValidationVolumeGridCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Match validation precision; callbacks run outside the step's context.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        with trainer.precision_plugin.forward_context():
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()  # NumPy/matplotlib cannot consume bfloat16.
 
         # Limit samples
         n = min(self.num_samples, x.shape[0])

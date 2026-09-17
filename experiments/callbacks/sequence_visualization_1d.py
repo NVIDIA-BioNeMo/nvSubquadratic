@@ -205,6 +205,8 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
     def _log_visualization(self, trainer: pl.Trainer, pl_module: pl.LightningModule, event_idx: int) -> None:
         """Generate and log 1D sequence visualization.
 
+        Model inference uses the trainer's precision context, and predictions are converted to float32 for rendering.
+
         Args:
             trainer: PyTorch Lightning trainer.
             pl_module: PyTorch Lightning module.
@@ -238,9 +240,11 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Match validation precision; callbacks run outside the step's context.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        with trainer.precision_plugin.forward_context():
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()  # NumPy/matplotlib cannot consume bfloat16.
 
         # x: [B, L, C_in], y: [B, segment_length, C_out], preds: [B, segment_length, C_out]
         n = min(self.num_samples, x.shape[0])
