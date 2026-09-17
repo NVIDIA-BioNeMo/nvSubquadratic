@@ -153,9 +153,11 @@ class ValidationImageGridCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Match validation precision; callbacks run outside the step's context.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        with trainer.precision_plugin.forward_context():
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()  # NumPy/matplotlib cannot consume bfloat16.
 
         # Convert to NCHW images, supporting flattened inputs.
         x_nchw = self._as_nchw_images(x)
@@ -529,9 +531,11 @@ class ValidationVolumeGridCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Match validation precision; callbacks run outside the step's context.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        with trainer.precision_plugin.forward_context():
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()  # NumPy/matplotlib cannot consume bfloat16.
 
         # Limit samples
         n = min(self.num_samples, x.shape[0])

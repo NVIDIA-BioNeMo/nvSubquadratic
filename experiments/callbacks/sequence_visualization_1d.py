@@ -238,9 +238,11 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
         if condition is not None:
             condition = condition.to(device)
 
-        # Forward pass
+        # Match validation precision; callbacks run outside the step's context.
         pl_module.eval()
-        preds = pl_module({"input": x, "condition": condition})["logits"]
+        with trainer.precision_plugin.forward_context():
+            preds = pl_module({"input": x, "condition": condition})["logits"]
+        preds = preds.float()  # NumPy/matplotlib cannot consume bfloat16.
 
         # x: [B, L, C_in], y: [B, segment_length, C_out], preds: [B, segment_length, C_out]
         n = min(self.num_samples, x.shape[0])
