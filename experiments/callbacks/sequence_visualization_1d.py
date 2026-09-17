@@ -205,6 +205,8 @@ class Sequence1DVisualizationCallback(pl.callbacks.Callback):
     def _log_visualization(self, trainer: pl.Trainer, pl_module: pl.LightningModule, event_idx: int) -> None:
         """Generate and log 1D sequence visualization.
 
+        Model inference uses the trainer's precision context, and predictions are converted to float32 for rendering.
+
         Args:
             trainer: PyTorch Lightning trainer.
             pl_module: PyTorch Lightning module.
