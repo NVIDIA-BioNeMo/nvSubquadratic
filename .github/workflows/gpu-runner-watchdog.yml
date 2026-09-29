@@ -13,6 +13,13 @@ name: GPU runner
 on:
   schedule:
     - cron: "47 * * * *"
+  # Also run when either GPU runner workflow changes on main, so the badge has a
+  # status right after merge (the first heartbeat is covered by the grace period).
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/gpu-runner-heartbeat.yml
+      - .github/workflows/gpu-runner-watchdog.yml
   workflow_dispatch:
 
 permissions:
