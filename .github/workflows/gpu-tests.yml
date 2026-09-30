@@ -14,7 +14,9 @@ on:
 # Cancel in-flight runs for the same PR/branch when a new commit is pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PRs only: every main commit gets a complete run, and the README badge
+  # (latest main result) never shows a cancelled run as failing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -61,8 +63,9 @@ jobs:
             exit 0
           fi
           echo "Changed files:"; echo "$CHANGED" | sed 's/^/  /'
-          # Inert: documentation and repo/review config that cannot affect the
-          # image or the tests. Uses shell `case` globs rather than a regex:
+          # Inert: documentation, repo/review config, and the GPU runner
+          # heartbeat/watchdog workflows (main-only, never run the suite) — none
+          # can affect the image or the tests. Uses shell `case` globs rather than a regex:
           # portable, and no dependency on which grep implementation the runner
           # happens to provide.
           #
@@ -74,7 +77,7 @@ jobs:
           IFS=$'\n'   # split on newlines only, so paths with spaces survive
           for f in $CHANGED; do
             case "$f" in
-              docs/*|*.md|.coderabbit.yaml|.gitignore|.github/CODEOWNERS|LICENSE|THIRD_PARTY_NOTICES.txt)
+              docs/*|*.md|.coderabbit.yaml|.gitignore|.github/CODEOWNERS|LICENSE|THIRD_PARTY_NOTICES.txt|.github/workflows/gpu-runner-heartbeat.yml|.github/workflows/gpu-runner-watchdog.yml)
                 ;;
               *)
                 echo "Source-affecting change: $f"
@@ -158,17 +161,26 @@ jobs:
       - name: Run distributed CP tests
         if: steps.scope.outputs.needed == 'true'
         run: |
+          # The CUDA base image's entrypoint prints a banner before the command's
+          # output, so keep only the last line — and refuse anything that isn't a
+          # number instead of silently skipping (this step used to skip on every run).
           GPU_COUNT=$(docker run --rm --gpus all \
             nvsubquadratic-ci:${{ github.sha }} \
-            python -c "import torch; print(torch.cuda.device_count())")
+            python -c "import torch; print(torch.cuda.device_count())" | tail -n 1)
+          if ! [[ "$GPU_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not read the GPU count from the CI image (got '$GPU_COUNT')"
+            exit 1
+          fi
           if [ "$GPU_COUNT" -ge 2 ]; then
-            docker run --rm --gpus all \
+            # --ipc=host: NCCL's intra-node transport needs more /dev/shm than
+            # Docker's 64 MB default.
+            docker run --rm --gpus all --ipc=host \
               nvsubquadratic-ci:${{ github.sha }} \
               torchrun --nproc_per_node=2 \
                 tests/modules/torchrun_sequence_mixer_cp_test.py \
                 --context_parallel_size=2 --dtype=float32
           else
-            echo "Skipping distributed tests: $GPU_COUNT GPU(s) available, need 2+"
+            echo "::warning::Skipping distributed CP tests: $GPU_COUNT GPU(s) visible, need 2+"
           fi
 
       - name: Clean up old images

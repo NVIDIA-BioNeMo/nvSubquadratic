@@ -1,0 +1,63 @@
+name: GPU runner
+
+# Status light for the self-hosted GPU runner (the README "GPU runner" badge).
+# While the runner is down, gpu-tests runs just wait in the queue, so its badge
+# keeps the last result for up to a day (then GitHub cancels them). This fails
+# instead when the hourly heartbeat (gpu-runner-heartbeat.yml) hasn't succeeded
+# within MAX_AGE_HOURS: the runner is offline, backed up for hours, or has lost
+# its GPUs. Scheduled-workflow failures notify whoever last changed the cron
+# line. GitHub disables scheduled workflows after 60 days without repository
+# activity; re-enable both GPU runner workflows if that happens.
+# Runs on a GitHub-hosted runner with a read-only token.
+
+on:
+  schedule:
+    - cron: "47 * * * *"
+  # Also run when either GPU runner workflow changes on main, so the badge has a
+  # status right after merge (the first heartbeat is covered by the grace period).
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/gpu-runner-heartbeat.yml
+      - .github/workflows/gpu-runner-watchdog.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAX_AGE_HOURS: "4"
+    steps:
+      - name: Check the last successful heartbeat
+        run: |
+          workflow="repos/$GITHUB_REPOSITORY/actions/workflows/gpu-runner-heartbeat.yml"
+          for attempt in 1 2 3; do
+            last=$(gh api "$workflow/runs?status=success&per_page=1" --jq '.workflow_runs[0].updated_at // ""') && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Could not query heartbeat runs from the GitHub API"
+              exit 1
+            fi
+            sleep 20
+          done
+          now=$(date -u +%s)
+          if [ -z "$last" ]; then
+            # Grace period right after the heartbeat workflow is added, before its first run finishes.
+            created=$(gh api "$workflow" --jq .created_at)
+            if [ $(( (now - $(date -u -d "$created" +%s)) / 3600 )) -lt "$MAX_AGE_HOURS" ]; then
+              echo "::warning::No successful GPU runner heartbeat yet (heartbeat workflow added at $created)"
+              exit 0
+            fi
+            echo "::error::No successful GPU runner heartbeat since the heartbeat workflow was added ($created)"
+            exit 1
+          fi
+          age_hours=$(( (now - $(date -u -d "$last" +%s)) / 3600 ))
+          echo "Last successful heartbeat: $last (${age_hours}h ago)"
+          if [ "$age_hours" -ge "$MAX_AGE_HOURS" ]; then
+            echo "::error::No successful GPU runner heartbeat for ${age_hours}h (limit ${MAX_AGE_HOURS}h): the runner is offline, backed up for hours, or has lost its GPUs"
+            exit 1
+          fi

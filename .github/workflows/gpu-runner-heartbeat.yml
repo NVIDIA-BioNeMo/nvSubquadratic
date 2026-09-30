@@ -1,0 +1,42 @@
+name: GPU runner heartbeat
+
+# Proves the self-hosted GPU runner is online and can reach its GPUs, directly
+# and through Docker (the path gpu-tests uses). This workflow can't report an
+# outage on its own: a job no runner picks up just waits in the queue (up to
+# 24h). The "GPU runner" workflow (gpu-runner-watchdog.yml) turns a stale
+# last-success into a red badge.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  push:
+    branches: [main]
+    paths: [.github/workflows/gpu-runner-heartbeat.yml]
+  workflow_dispatch:
+
+# No cancel-in-progress: a heartbeat already waiting for the runner keeps its
+# place in the queue. Later triggers collapse into a single pending run (GitHub
+# cancels the older pending one), so nothing piles up while the runner is down.
+concurrency:
+  group: gpu-runner-heartbeat
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  heartbeat:
+    runs-on: [self-hosted, gpu, colossus]
+    timeout-minutes: 10
+    steps:
+      - name: GPUs visible on the host
+        run: |
+          nvidia-smi -L
+          count=$(nvidia-smi -L | grep -c '^GPU ' || true)
+          if [ "$count" -lt 2 ]; then
+            echo "::error::Only $count GPU(s) visible; gpu-tests needs 2 for the distributed CP tests"
+            exit 1
+          fi
+
+      - name: GPUs visible through Docker
+        run: docker run --rm --gpus all ubuntu:22.04 nvidia-smi -L

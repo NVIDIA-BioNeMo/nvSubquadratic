@@ -1,5 +1,13 @@
 # nvSubquadratic
 
+[![GPU tests](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/actions/workflows/gpu-tests.yml/badge.svg?branch=main)](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/actions/workflows/gpu-tests.yml?query=branch%3Amain)
+[![GPU runner](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/actions/workflows/gpu-runner-watchdog.yml/badge.svg)](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/actions/workflows/gpu-runner-watchdog.yml)
+[![Lint](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/NVIDIA-BioNeMo/nvSubquadratic/actions/workflows/lint.yml?query=branch%3Amain)
+
+*GPU tests* is the latest result on `main`. *GPU runner* goes red when the self-hosted GPU runner
+has not completed its hourly heartbeat for 4 hours — check it before trusting *GPU tests*, which
+keeps its last result while runs wait for a down runner.
+
 A unified PyTorch-native library for subquadratic alternatives to quadratic attention methods.
 
 ## Overview
