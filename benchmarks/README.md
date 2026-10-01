@@ -123,8 +123,8 @@ Logs go to `logs/`.
 ## Environment
 
 - GPU: NVIDIA H100 SXM 80GB
-- PyTorch 2.6.0+cu129
-- CUDA 12.9
+- PyTorch 2.10.0+cu130
+- CUDA 13.0
 - Apex 0.1 (FusedLAMB)
 - QuACK 0.2.10 (fused RMSNorm)
 - NVIDIA DALI 1.53.0

@@ -134,12 +134,22 @@ class QKVSequenceMixer(torch.nn.Module):
         out_proj_bias: bool = False,
         init_method_in: Callable[[int], Callable[[torch.Tensor], torch.Tensor]] | None = None,
         init_method_out: Callable[[int], Callable[[torch.Tensor], torch.Tensor]] | None = None,
+        inner_dim: int | None = None,
     ):
         """Initialise the QKV sequence mixer.
 
         Args:
             hidden_dim: Channel dimension ``C`` of the input / output tensor.
-                Both ``qkv_proj`` and ``out_proj`` are sized using this value.
+                ``qkv_proj`` reads and ``out_proj`` writes this width.
+            inner_dim: Width the inner mixer operates at, ``C_inner``. Defaults to
+                ``hidden_dim`` (the previous fixed behaviour). Setting it wider gives
+                the expanded parameterisation used for FLOP-matching against Mamba-2:
+                ``qkv_proj: C -> 3*C_inner``, mixer on ``C_inner`` channels,
+                ``out_proj: C_inner -> C``. With ``C_inner = e*C`` this is the ``e``
+                of the FLOP-matching analysis; ``e = 1`` reproduces evo2's default,
+                which is only ~0.42x a Mamba-2 layer. **The inner mixer must be
+                constructed for ``inner_dim`` channels** — this class sizes the
+                projections, not the mixer.
             mixer_cfg: :class:`~nvsubquadratic.lazy_config.LazyConfig` for the
                 inner sequence-mixing operator.  The target class's ``forward``
                 method must accept ``(q, k, v, cp_group, **kwargs)`` where
@@ -187,8 +197,11 @@ class QKVSequenceMixer(torch.nn.Module):
 
         self.mixer = instantiate(mixer_cfg)
 
-        self.qkv_proj = torch.nn.Linear(hidden_dim, 3 * hidden_dim, bias=qkv_bias)
-        self.out_proj = torch.nn.Linear(hidden_dim, hidden_dim, bias=out_proj_bias)
+        self.hidden_dim = hidden_dim
+        self.inner_dim = hidden_dim if inner_dim is None else inner_dim
+
+        self.qkv_proj = torch.nn.Linear(hidden_dim, 3 * self.inner_dim, bias=qkv_bias)
+        self.out_proj = torch.nn.Linear(self.inner_dim, hidden_dim, bias=out_proj_bias)
 
         if init_method_in is not None:
             init_method_in(hidden_dim)(self.qkv_proj.weight.data)
