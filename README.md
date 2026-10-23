@@ -10,6 +10,8 @@ keeps its last result while runs wait for a down runner.
 
 A unified PyTorch-native library for subquadratic alternatives to quadratic attention methods.
 
+**Paper:** [Native Multi-Dimensional Subquadratic Operators via Input Dependent Long Convolutions](https://arxiv.org/abs/2607.19378) (HyenaND).
+
 ## Overview
 
 nvSubquadratic consolidates efforts from across NVIDIA Research teams (nvResearch, NeMo, BioNeMo) into a single, consistent API. Currently supporting multi-dimensional (1D, 2D, 3D) Hyena operators with optimized CUDA kernels. Hyena operators provide subquadratic alternatives to attention mechanisms, achieving O(N) or O(N log N) complexity compared to the O(N²) scaling of traditional attention.
