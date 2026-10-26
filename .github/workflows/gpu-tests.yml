@@ -10,10 +10,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Rebuild and run the full GPU regression suite on main even without commits.
+  # 09:23 UTC is 01:23 PST / 02:23 PDT, away from the busy start of the hour.
+  schedule:
+    - cron: "23 9 * * *"
 
 # Cancel in-flight runs for the same PR/branch when a new commit is pushed
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Nightly runs must not replace pending push or manually dispatched runs.
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   # PRs only: every main commit gets a complete run, and the README badge
   # (latest main result) never shows a cancelled run as failing.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -179,6 +184,9 @@ jobs:
               torchrun --nproc_per_node=2 \
                 tests/modules/torchrun_sequence_mixer_cp_test.py \
                 --context_parallel_size=2 --dtype=float32
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "::error::Nightly GPU regression requires 2+ visible GPUs; found $GPU_COUNT"
+            exit 1
           else
             echo "::warning::Skipping distributed CP tests: $GPU_COUNT GPU(s) visible, need 2+"
           fi
