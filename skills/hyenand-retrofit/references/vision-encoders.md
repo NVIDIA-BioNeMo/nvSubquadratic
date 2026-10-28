@@ -4,13 +4,15 @@
 
 For an encoder returning one feature per image patch, keep the patch embedding, positional embeddings, residual/MLP layers, feature ordering, and downstream head. Obtain `(H, W)` from the patch embedding's output before flattening; do not infer a square grid from token count. A 600-by-600 image with non-overlapping 20-by-20 patches has 900 tokens, not 360,000. Smaller patches or larger fields of view are separate experiments that also affect positional embeddings and pretrained compatibility.
 
+Resolve the supported bound separately from the runtime grid. Inspect the application's train/evaluation resolutions, crop/resize policy, and actual tokenizer stride/padding; account for stage downsampling where applicable. For a fixed input geometry, use its actual mixer grid. For variable geometry, derive per-axis bounds covering the configured range, not just a sampled batch. If the intended range is not available in code/configuration, ask the user for the supported image resolutions or maximum patch grid. Do not substitute an arbitrary 30 or 64. In the example below, `max_mixer_grid_hw` is this application-derived or user-specified bound, determined before constructing the model.
+
 Copy [../assets/vision_encoder.py](../assets/vision_encoder.py) into the host project and import `Hyena2DTokenMixer`. It operates on complete row-major patch grids and returns dense tokens in the same order:
 
 ```python
 # Construct once in the host block's __init__.
 self.token_mixer = Hyena2DTokenMixer(
     hidden_dim,
-    max_grid_hw=(30, 30),  # configure the supported patch-grid bound before training
+    max_grid_hw=max_mixer_grid_hw,  # derive from the application; ask if unknown
     film_conditioning="patch_mean",  # explicit ablation; "none" disables FiLM
     fft_backend="torch_fft",  # correctness baseline
     qkv_bias=True,  # match the host's projections
@@ -60,7 +62,7 @@ Choose a communication strategy that fits the host:
 - Keep attention blocks that exchange information between patches and prefixes, and define the Hyena branch's prefix update explicitly (for example, a zero residual update). Validate the whole hybrid.
 - Use patch pooling as readout only when that architecture change is intended; it changes a pretrained CLS model's contract.
 
-`ViT5HyenaAdapter` only reshapes. Its caller must arrange/pad tokens and supply projections through the inner mixer. Current `ViT5ClassificationNet` uses `[patches, CLS, registers, padding]`; do not copy another host's prefix indices. When using the asset for this folded layout, `max_grid_hw` must include the auxiliary rows. They can push FFT sizes over a padding boundary; include their cost in measurements.
+`ViT5HyenaAdapter` only reshapes. Its caller must arrange/pad tokens and supply projections through the inner mixer. Current `ViT5ClassificationNet` uses `[patches, CLS, registers, padding]`; do not copy another host's prefix indices. The stock asset accepts patches only. A prefix-aware adaptation must include auxiliary rows in its grid bound and exclude padding/special tokens from patch-mean conditioning. For variable-width grids, bound `H + ceil(P/W)` across the actual supported shapes; using only the largest width can underestimate auxiliary rows. They can push FFT sizes over a padding boundary; include their cost in measurements.
 
 ## Packed batches and resolution
 
@@ -86,6 +88,6 @@ Finish replacements before optimizer, EMA, distributed wrappers, and compilation
 
 Use `torch_fft` for the CPU reference. The asset includes a small `CKConvND` subclass that casts the local convolution shortcut to the activation dtype under autocast; this preserves the original FP32 parameter and its gradients. Without that cast, the current reference FFT path rejects BF16 activations with an FP32 shortcut. CPU BF16 autocast is covered by the asset tests; CUDA precision/backend validation is still required. Keep SIREN coordinate buffers in FP32: prefer FP32 model parameters with autocast. Blanket `.half()`/`.bfloat16()` also casts those buffers and is not supported by this template without additional buffer handling.
 
-Current `subq_ops` 2D zero-padded noncausal convolution supports batched FiLM kernels. `subq_ops_fused` also supports them but currently caps spatial extents at 64 per axis, including auxiliary rows. Check `CKConvND` and the installed CUDA extension before selecting either, especially at high resolution. Consult the repository's current CUDA extra and getting-started instructions for installation.
+Current `subq_ops` 2D zero-padded noncausal convolution supports batched FiLM kernels. `subq_ops_fused` also supports them but currently caps spatial extents at 64 per axis, including auxiliary rows. This is a backend eligibility constraint, not a Hyena grid default or a limit on application resolution. Select the backend after deriving the application's supported grids: if any exceed that cap, use a compatible backend such as `torch_fft` or a verified `subq_ops` installation. Do not resize, crop, or change patch size merely to fit the fused kernel. Check `CKConvND` and the installed CUDA extension before selecting either accelerated path, especially at high resolution. Consult the repository's current CUDA extra and getting-started instructions for installation.
 
 First compare attention with a chosen Hyena/hybrid variant at unchanged patch grid and training objective. Treat FiLM on/off as a separate knob. Then evaluate larger fields of view or finer patches, handling positional embeddings and controlling for task quality. Record task quality, encoder and end-to-end training throughput, and memory. CPU tests or unrelated benchmarks do not establish downstream gains. Context parallelism requires separate end-to-end validation of the intended 2D layout and conditioning path.

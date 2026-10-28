@@ -18,6 +18,8 @@ Trace the actual encoder construction and forward call, not only the attention c
 
 Ask only about choices the code cannot establish. A pure or hybrid layer pattern and FiLM on/off are experiment choices; use the user's preference or state a starting assumption. Preserve attention where an unsupported mask or cross-attention contract is essential.
 
+For vision, derive the runtime grid from the patch embedding and the supported grid range from the application's preprocessing, model, and train/evaluation configuration. If that range is unavailable, ask for the intended resolutions or maximum patch grid before constructing the bounded adapter. Do not invent a fixed grid or use a backend's size limit as the application's bound. Choose a compatible backend after establishing the geometry.
+
 ## Select the integration path
 
 - **Vision encoder:** read [references/vision-encoders.md](references/vision-encoders.md). Use [assets/vision_encoder.py](assets/vision_encoder.py) as a copyable starting point for dense, complete 2D patch grids with no prefixes. It includes learned projections, optional patch-conditioned FiLM, and an explicit runtime grid within a declared supported bound. Prefix/register and packed-batch integrations need the additional handling described in the reference.
