@@ -22,6 +22,7 @@ Covers:
       validation errors
     - CKConvND grid_size injection for grid_type="single" and "double"
     - ExponentialModulationND basic sanity
+    - BoxModulationND hard window: exact 0/1 taps, ND product, errors
 
 Usage (CPU only, no GPU needed):
     PYTHONPATH=. conda run -n nv-subq python -m pytest tests/modules/test_masks_nd.py -v -o addopts=""
@@ -34,6 +35,7 @@ import torch
 
 from nvsubquadratic.lazy_config import LazyConfig
 from nvsubquadratic.modules.masks_nd import (
+    BoxModulationND,
     ExponentialModulationND,
     GaussianModulationND,
     _std_from_attenuation,
@@ -562,3 +564,67 @@ class TestExponentialModulation:
         mask = ExponentialModulationND(data_dim=1, num_channels=4)
         for p in mask.parameters():
             assert hasattr(p, "_no_weight_decay") and p._no_weight_decay
+
+
+# ---------------------------------------------------------------------------
+# BoxModulationND
+# ---------------------------------------------------------------------------
+
+
+class TestBoxModulation:
+    """Hard window measured in kernel taps."""
+
+    @staticmethod
+    def _grid(*taps):
+        axes = [torch.linspace(-1, 1, t) for t in taps]
+        return torch.stack(torch.meshgrid(*axes, indexing="ij"), dim=-1).unsqueeze(0)
+
+    def test_1d_window_is_exact_in_taps(self):
+        mask = BoxModulationND(data_dim=1, max_offset=3)
+        x = torch.ones(1, 15, 4)
+        out = mask(grid=self._grid(15), x=x)
+        offset = (torch.arange(15) - 7).abs()
+        assert torch.equal(out[0, :, 0], (offset <= 3).float())
+        assert out[0, 7].eq(1).all()
+        assert set(out.unique().tolist()) == {0.0, 1.0}
+
+    def test_even_tap_count_centres_at_half(self):
+        mask = BoxModulationND(data_dim=1, max_offset=1)
+        out = mask(grid=self._grid(6), x=torch.ones(1, 6, 1))
+        assert out[0, :, 0].tolist() == [0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+
+    def test_nd_is_product_over_axes(self):
+        mask = BoxModulationND(data_dim=2, max_offset=1)
+        out = mask(grid=self._grid(7, 5), x=torch.ones(1, 7, 5, 2))
+        kept = out[0, :, :, 0]
+        assert kept.sum() == 9
+        assert kept[2:5, 1:4].eq(1).all()
+
+    def test_window_larger_than_kernel_keeps_everything(self):
+        mask = BoxModulationND(data_dim=1, max_offset=100)
+        x = torch.randn(2, 9, 3)
+        assert torch.equal(mask(grid=self._grid(9), x=x), x)
+
+    def test_dtype_follows_input_and_ignores_grid_values(self):
+        mask = BoxModulationND(data_dim=1, max_offset=2)
+        x = torch.randn(1, 11, 3, dtype=torch.bfloat16)
+        out = mask(grid=self._grid(11) * 123.0, x=x)
+        assert out.dtype == torch.bfloat16
+        assert torch.equal(out[0, 3:8], x[0, 3:8])
+        assert out[0, :3].eq(0).all() and out[0, 8:].eq(0).all()
+
+    def test_has_no_parameters_and_passes_gradients(self):
+        mask = BoxModulationND(data_dim=1, max_offset=2)
+        assert list(mask.parameters()) == []
+        x = torch.randn(1, 11, 3, requires_grad=True)
+        mask(grid=self._grid(11), x=x).sum().backward()
+        assert torch.equal(x.grad[0, :, 0], (torch.arange(11) - 5).abs().le(2).float())
+
+    @pytest.mark.parametrize("bad", [0, -1, 1.5, True])
+    def test_invalid_max_offset_raises(self, bad):
+        with pytest.raises(ValueError, match="max_offset"):
+            BoxModulationND(data_dim=1, max_offset=bad)
+
+    def test_wrong_rank_raises(self):
+        with pytest.raises(ValueError, match="spatial axes"):
+            BoxModulationND(data_dim=2, max_offset=1)(grid=self._grid(5), x=torch.ones(1, 5, 2))

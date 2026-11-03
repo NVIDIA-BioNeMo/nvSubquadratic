@@ -39,10 +39,19 @@ acting on ``mixer_cfg``.  Any class whose ``forward`` method accepts
 ``cp_group`` is passed **positionally** as the fourth argument; an inner mixer
 that captures it only via ``**kwargs`` would silently not receive it.
 
+A mixer that sets the class attribute ``takes_fused_qkv = True`` opts out of
+the split: it is called as ``forward(qkv, cp_group=..., **kwargs)`` with the
+un-split ``[B, *spatial, 3C]`` projection (channel blocks ``[q | k | v]``), so
+it can consume the projection output in place instead of three strided views
+(:class:`~nvsubquadratic.modules.tri_hyena.TriangleHyena` does this).  Mixers
+without the attribute are unaffected.
+
 The currently supported inner mixers are:
 
 * :class:`~nvsubquadratic.modules.hyena_nd.Hyena` — gated global-conv mixer
   (subquadratic in sequence length).
+* :class:`~nvsubquadratic.modules.tri_hyena.TriangleHyena` — Hyena over the
+  rows or columns of a pair representation (consumes the fused QKV projection).
 * :class:`~nvsubquadratic.modules.attention.Attention` — multi-head
   self-attention (quadratic in sequence length, but faster for short sequences
   and easy to compose with RoPE).
@@ -95,6 +104,9 @@ class QKVSequenceMixer(torch.nn.Module):
                                                          │
                                  [Linear(C → C, + bias?)]──► y
 
+    (a mixer with ``takes_fused_qkv = True`` receives the un-split ``QKV``
+    tensor instead; see the module docstring).
+
     The QKV projection packs all three projections into a single
     ``Linear(C, 3·C)`` call for efficiency; the output projection maps back to
     ``C``.  Both projections optionally include a bias term (disabled by
@@ -143,8 +155,9 @@ class QKVSequenceMixer(torch.nn.Module):
             mixer_cfg: :class:`~nvsubquadratic.lazy_config.LazyConfig` for the
                 inner sequence-mixing operator.  The target class's ``forward``
                 method must accept ``(q, k, v, cp_group, **kwargs)`` where
-                ``cp_group`` is the fourth positional argument.  Supported
-                targets include
+                ``cp_group`` is the fourth positional argument, or
+                ``(qkv, cp_group=..., **kwargs)`` when the class sets
+                ``takes_fused_qkv = True``.  Supported targets include
                 :class:`~nvsubquadratic.modules.hyena_nd.Hyena`,
                 :class:`~nvsubquadratic.modules.attention.Attention`,
                 :class:`~nvsubquadratic.modules.ckconv_nd.CKConvND`, and
@@ -288,9 +301,12 @@ class QKVSequenceMixer(torch.nn.Module):
         """
         # Q, K, V projections via single linear
         qkv = self.qkv_proj(x)
-        q, k, v = torch.chunk(qkv, 3, dim=-1)
-        # Sequence mixer (e.g., self-attention, hyena, etc.)
-        x = self.mixer(q, k, v, cp_group, **mixer_kwargs)
+        if getattr(self.mixer, "takes_fused_qkv", False):
+            x = self.mixer(qkv, cp_group=cp_group, **mixer_kwargs)
+        else:
+            q, k, v = torch.chunk(qkv, 3, dim=-1)
+            # Sequence mixer (e.g., self-attention, hyena, etc.)
+            x = self.mixer(q, k, v, cp_group, **mixer_kwargs)
         # Output projection
         x = self.out_proj(x)
         return x
