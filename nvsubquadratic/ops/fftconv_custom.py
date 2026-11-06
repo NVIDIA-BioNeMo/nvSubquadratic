@@ -86,6 +86,12 @@ __all__ = [
     "causal_fftconv1d_bhl_w_reshape_chunked",
     "causal_fftconv1d_blh",
     "causal_fftconv1d_blh_chunked",
+    "fftconv1d_bhl",
+    "fftconv1d_bhl_chunked",
+    "fftconv1d_bhl_w_reshape",
+    "fftconv1d_bhl_w_reshape_chunked",
+    "fftconv1d_blh",
+    "fftconv1d_blh_chunked",
     "fftconv2d_bhl",
     "fftconv2d_bhl_chunked",
     "fftconv2d_bhl_w_reshape",
@@ -101,9 +107,12 @@ __all__ = [
     "fused_fftconv2d_blh_chunked",
     "fused_fftconv2d_max_spatial",
     "fused_fftconv2d_supported",
+    "load_conv1d_kernels",
     "load_fused_fft_conv2d",
     "resolve_fused_fft_size",
 ]
+
+import functools
 
 import torch
 import torch.nn.functional as F
@@ -747,6 +756,8 @@ def causal_fftconv1d_bhl_chunked(
     _B, H, _L = x.shape
     x_fp32 = x.float()
     k_fp32 = kernel.float()
+    if k_fp32.ndim == 2:
+        k_fp32 = k_fp32[None]
 
     chunks = []
     for start in range(0, H, chunk_size):
@@ -784,3 +795,196 @@ def causal_fftconv1d_blh_chunked(
 ) -> torch.Tensor:
     """Alias for :func:`causal_fftconv1d_bhl_w_reshape_chunked`."""
     return causal_fftconv1d_bhl_w_reshape_chunked(x, kernel, shortcut, chunk_size)
+
+
+# ---------------------------------------------------------------------------
+# 1D non-causal ("same") long convolution — subq_ops ``fft_conv1d``, or the
+# dense Toeplitz-GEMM ``explicit_conv1d`` where that kernel exists and applies.
+# ---------------------------------------------------------------------------
+_fft_conv1d = None
+_explicit_conv1d = None
+_EXPLICIT_CONV1D_SEQ_LENS: frozenset[int] = frozenset()
+_EXPLICIT_CONV1D_DTYPES = (torch.bfloat16, torch.float16)
+_EXPLICIT_CONV1D_CAPABILITY_MAJOR = 10
+
+
+def _get_fft_conv1d():
+    """Return the ``fft_conv1d`` callable, importing on first call."""
+    global _fft_conv1d
+    if _fft_conv1d is None:
+        try:
+            from subquadratic_ops_torch.fft_conv1d import fft_conv1d
+
+            _fft_conv1d = fft_conv1d
+        except ImportError as exc:
+            raise ImportError(
+                "subquadratic_ops_torch is required for fft_backend='subq_ops'. "
+                "Install the accelerated CUDA kernels with: pip install 'nvsubquadratic[cuda]'"
+            ) from exc
+    return _fft_conv1d
+
+
+def _get_explicit_conv1d():
+    """Return the ``explicit_conv1d`` callable, or ``None`` when the installed wheel has no Toeplitz kernels."""
+    global _explicit_conv1d, _EXPLICIT_CONV1D_SEQ_LENS
+    if _explicit_conv1d is None:
+        try:
+            from subquadratic_ops_torch.experimental.explicit_conv1d import explicit_conv1d, supported_seq_lens
+        except ImportError:
+            _explicit_conv1d = False
+        else:
+            _explicit_conv1d = explicit_conv1d
+            _EXPLICIT_CONV1D_SEQ_LENS = frozenset(supported_seq_lens())
+    return _explicit_conv1d or None
+
+
+def load_conv1d_kernels() -> None:
+    """Import the 1D non-causal kernels now instead of on first call.
+
+    Same purpose as :func:`load_fused_fft_conv2d`: a ``torch.compile`` trace that
+    runs before any eager call must find the operators already registered and the
+    ``explicit_conv1d`` dispatch table already resolved.
+
+    Raises:
+        ImportError: If ``subquadratic_ops_torch`` is not installed.
+    """
+    _get_fft_conv1d()
+    _get_explicit_conv1d()
+
+
+@torch._dynamo.assume_constant_result
+def _device_has_explicit_conv1d(device_index: int) -> bool:
+    return torch.cuda.get_device_capability(device_index)[0] == _EXPLICIT_CONV1D_CAPABILITY_MAJOR
+
+
+@functools.lru_cache(maxsize=None)
+def _explicit_conv1d_applies(device_index: int, dtype: torch.dtype, seq_len: int, kernel_len: int) -> bool:
+    return (
+        dtype in _EXPLICIT_CONV1D_DTYPES
+        and seq_len in _EXPLICIT_CONV1D_SEQ_LENS
+        and kernel_len <= 2 * seq_len
+        and _device_has_explicit_conv1d(device_index)
+    )
+
+
+def _subq_conv1d_bhl(x: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
+    """Run the "same" convolution on native-dtype BHL tensors.
+
+    Upstream weight layout is ``[H, K]``; a shared ``[1, H, K]`` kernel is squeezed.
+    Per-sample FiLM weights ``[B, H, K]`` are not supported by either kernel.
+    """
+    if kernel.ndim == 3:
+        if kernel.shape[0] != 1:
+            raise NotImplementedError(
+                "subquadratic_ops_torch 1D convolutions do not accept per-sample FiLM weights. "
+                f"Got kernel shape {tuple(kernel.shape)} with batch={kernel.shape[0]}; "
+                "expected shared kernel [1, H, K] or [H, K]."
+            )
+        kernel = kernel.squeeze(0)
+    x, kernel = x.contiguous(), kernel.contiguous()
+    explicit_conv1d = _get_explicit_conv1d()
+    if explicit_conv1d is not None and x.is_cuda:
+        device_index = x.device.index if x.device.index is not None else torch.cuda.current_device()
+        # Uncached dispatch predicate under torch.compile.
+        applies = _explicit_conv1d_applies.__wrapped__ if torch.compiler.is_compiling() else _explicit_conv1d_applies
+        if applies(device_index, x.dtype, x.shape[-1], kernel.shape[-1]):
+            return explicit_conv1d(x, kernel)
+    return _get_fft_conv1d()(x, kernel)
+
+
+def fftconv1d_bhl(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """1D non-causal ("same") convolution via subq_ops CUDA kernels, BHL layout ``[B, H, L]``.
+
+    Drop-in replacement for :func:`nvsubquadratic.ops.fftconv.fftconv1d_fp32_bhl`:
+    ``y[l] = sum_m kernel[K // 2 + l - m] * x[m]`` (the kernel centre ``K // 2``
+    is lag zero), plus ``shortcut * x``.  Unlike the torch.fft path it runs in the
+    input dtype end to end: the dense Toeplitz-GEMM ``explicit_conv1d`` for
+    bf16/fp16 inputs on compute capability 10.x at its supported sequence lengths
+    (multiples of 128 up to 2048), ``fft_conv1d`` otherwise.  Both compute the same
+    convolution.
+
+    Args:
+        x: Input tensor ``[B, H, L]``.
+        kernel: Kernel tensor ``[1, H, K]`` or ``[H, K]`` with ``K <= 2 * L``; cast to
+            ``x.dtype``.  Per-sample FiLM weights are not supported.
+        shortcut: Optional per-channel scale ``[H]``.
+
+    Returns:
+        Output tensor ``[B, H, L]`` in ``x.dtype``.
+    """
+    y = _subq_conv1d_bhl(x, kernel.to(x.dtype))
+    if shortcut is not None:
+        y = y + shortcut.to(x.dtype).view(1, x.shape[1], 1) * x
+    return y
+
+
+def fftconv1d_bhl_w_reshape(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """1D non-causal convolution via subq_ops for BLH inputs ``[B, L, H]``.
+
+    Reshapes to BHL, runs :func:`fftconv1d_bhl`, reshapes back.
+    """
+    y_bhl = fftconv1d_bhl(rearrange(x, "b l h -> b h l"), rearrange(kernel, "b l h -> b h l"), shortcut)
+    return rearrange(y_bhl, "b h l -> b l h")
+
+
+def fftconv1d_blh(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Alias for :func:`fftconv1d_bhl_w_reshape`."""
+    return fftconv1d_bhl_w_reshape(x, kernel, shortcut)
+
+
+def fftconv1d_bhl_chunked(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Channel-chunked 1D non-causal convolution via subq_ops, BHL layout."""
+    if chunk_size is None:
+        chunk_size = _DEFAULT_CHUNK_SIZE
+    H = x.shape[1]
+    kernel = kernel.to(x.dtype)
+    if kernel.ndim == 2:
+        kernel = kernel[None]
+    chunks = [
+        _subq_conv1d_bhl(x[:, start : start + chunk_size], kernel[:, start : start + chunk_size])
+        for start in range(0, H, chunk_size)
+    ]
+    y = torch.cat(chunks, dim=1)
+    if shortcut is not None:
+        y = y + shortcut.to(x.dtype).view(1, H, 1) * x
+    return y
+
+
+def fftconv1d_bhl_w_reshape_chunked(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Channel-chunked 1D non-causal convolution via subq_ops for BLH inputs ``[B, L, H]``."""
+    y_bhl = fftconv1d_bhl_chunked(
+        rearrange(x, "b l h -> b h l"), rearrange(kernel, "b l h -> b h l"), shortcut, chunk_size
+    )
+    return rearrange(y_bhl, "b h l -> b l h")
+
+
+def fftconv1d_blh_chunked(
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    shortcut: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Alias for :func:`fftconv1d_bhl_w_reshape_chunked`."""
+    return fftconv1d_bhl_w_reshape_chunked(x, kernel, shortcut, chunk_size)

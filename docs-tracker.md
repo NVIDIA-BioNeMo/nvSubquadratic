@@ -42,8 +42,8 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `fftconv.py`              | \[x\]  | Module + key per-fn docstrings rewritten with math                                                     |
 | `circular_fftconv.py`     | \[x\]  | Already strong; left as-is                                                                             |
 | `fftconv_chunked.py`      | \[x\]  | Already strong; left as-is                                                                             |
-| `fftconv_custom.py`       | \[x\]  | Module docstring expanded with motivation; 1D causal wrappers; hosts the `fused_fftconv2d_*` family    |
-| `causal_conv1d_custom.py` | \[x\]  | New (1D PR): thin wrappers for direct `causal_conv1d` + fused `b2b_causal_conv1d`                      |
+| `fftconv_custom.py`       | \[x\]  | 1D causal + non-causal (`fft_conv1d`/`explicit_conv1d`) wrappers; hosts the `fused_fftconv2d_*` family |
+| `causal_conv1d_custom.py` | \[x\]  | Thin wrappers for direct `causal_conv1d` (NHW / channel-last NWH) + fused `b2b_causal_conv1d`          |
 | `mixed_fftconv.py`        | \[x\]  | New (#120): per-axis mixed boundary-condition FFT conv; see `docs/ops/mixed_boundary_conditions.md`    |
 | `fftconv_lowering.py`     | \[x\]  | torch.compile pre-grad pass rewriting the 2D FFT-conv chain onto `fused_fft_conv2d`; stats + SM90 gate |
 
@@ -53,6 +53,7 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | ---------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
 | `kernels_nd.py`                    | \[x\]  | Learned kernel parametrisation — RFF + SIREN, FiLM-conditioned variants                  |
 | `hyena_nd.py`                      | \[x\]  | Hyena operator (ND) — two-gate sandwich, AllToAll CP, BC-aware convolution               |
+| `tri_hyena.py`                     | \[x\]  | TriHyena — row/column Hyena on pair tensors `[B, L, L, C]`; reference checkpoint port    |
 | `ckconv_nd.py`                     | \[x\]  | CKConv (ND) — implicit kernel `k_θ(p) = MLP_θ(pos_enc(p))`, FFT domain, BC modes         |
 | `mamba_nd.py`                      | \[x\]  | Mamba SSM (ND) — selective SSM, ZOH discretisation, raster-scan ND, bidirectional mode   |
 | `attention.py`                     | \[x\]  | Scaled dot-product attention — multi-head, RoPE, ND spatial, O(L²) FLOP formula          |
@@ -64,7 +65,7 @@ Work bottom-up: primitive ops → modules → networks → experiments.
 | `vit5_residual_block.py`           | \[x\]  | ViT5 residual block — LayerScale, register-token conditioning, no condition-mixer branch |
 | `patchify.py`                      | \[x\]  | Patch embedding — strided conv, 1D/2D/3D, channels-last layout                           |
 | `position_encoding.py`             | \[x\]  | Axis-factorised learned PE — ND broadcast-expand, float32 output caveat                  |
-| `masks_nd.py`                      | \[x\]  | Exponential + Gaussian receptive-field windows; mask convention 1=included, 0=excluded   |
+| `masks_nd.py`                      | \[x\]  | Exponential + Gaussian soft windows, Box hard window; convention 1=included, 0=excluded  |
 | `mlp.py`                           | \[x\]  | Two-layer MLP — GELU/SwiGLU/GLU variants, expansion-ratio math, QuACK backend noted      |
 | `film.py`                          | \[x\]  | FiLM conditioning — γ(c)⊙x + β(c), SIREN-based kernel generator                          |
 | `grn.py`                           | \[x\]  | GRN — per-channel L2 norm, inter-channel competition, ConvNeXt V2 reference              |

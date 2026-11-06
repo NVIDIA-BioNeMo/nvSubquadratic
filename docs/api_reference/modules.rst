@@ -19,11 +19,18 @@ Sequence/spatial mixers: Hyena, Mamba, attention variants.
    :template: class_template.rst
 
    ~modules.hyena_nd.Hyena
+   ~modules.tri_hyena.TriangleHyena
    ~modules.mamba_nd.Mamba
    ~modules.attention.Attention
    ~modules.vit5_attention.ViT5Attention
    ~modules.vit5_hyena_adapter.ViT5HyenaAdapter
    ~modules.sequence_mixer.QKVSequenceMixer
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   ~modules.tri_hyena.load_reference_state_dict
 
 Convolutions
 ------------
@@ -66,6 +73,7 @@ masks that produce the filters consumed by the FFT ops.
    ~modules.masks_nd.ExponentialModulationND
    ~modules.masks_nd.GaussianModulationND
    ~modules.masks_nd.BlockAlignedGaussianModulationND
+   ~modules.masks_nd.BoxModulationND
 
 Normalization
 -------------

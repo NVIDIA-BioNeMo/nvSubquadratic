@@ -215,16 +215,50 @@ class TestChunked:
 class TestAssertions:
     """CKConvND raises AssertionError for invalid subq_ops configurations."""
 
-    def test_rejects_data_dim_1_non_causal(self):
-        """1D requires is_causal=True under subq_ops (no non-causal 1D kernel)."""
-        with pytest.raises(AssertionError, match="1D requires is_causal=True"):
+    def test_accepts_data_dim_1_non_causal(self):
+        """1D non-causal zero-padded conv dispatches to the subq_ops ``fftconv1d_bhl`` wrappers."""
+        from nvsubquadratic.ops.fftconv_custom import fftconv1d_bhl, fftconv1d_bhl_w_reshape
+
+        ckconv = CKConvND(
+            data_dim=1,
+            hidden_dim=32,
+            kernel_cfg=LazyConfig(torch.nn.Identity)(),
+            mask_cfg=LazyConfig(torch.nn.Identity)(),
+            grid_type="double",
+            fft_padding="zero",
+            fft_backend="subq_ops",
+        )
+        assert ckconv.fftconv_fn_bhl_input is fftconv1d_bhl
+        assert ckconv.fftconv_fn is fftconv1d_bhl_w_reshape
+
+    def test_accepts_data_dim_1_causal(self):
+        """1D causal zero-padded conv still dispatches to the causal subq_ops wrappers."""
+        from nvsubquadratic.ops.fftconv_custom import causal_fftconv1d_bhl, causal_fftconv1d_bhl_w_reshape
+
+        ckconv = CKConvND(
+            data_dim=1,
+            hidden_dim=32,
+            kernel_cfg=LazyConfig(torch.nn.Identity)(),
+            mask_cfg=LazyConfig(torch.nn.Identity)(),
+            grid_type="double",
+            fft_padding="zero",
+            is_causal=True,
+            fft_backend="subq_ops",
+        )
+        assert ckconv.fftconv_fn_bhl_input is causal_fftconv1d_bhl
+        assert ckconv.fftconv_fn is causal_fftconv1d_bhl_w_reshape
+        assert "use_shortcut=True" in ckconv.extra_repr()
+
+    def test_rejects_data_dim_1_circular(self):
+        """subq_ops implements zero-padded convolutions only."""
+        with pytest.raises(AssertionError, match="zero-padded"):
             CKConvND(
                 data_dim=1,
                 hidden_dim=32,
                 kernel_cfg=LazyConfig(torch.nn.Identity)(),
                 mask_cfg=LazyConfig(torch.nn.Identity)(),
-                grid_type="double",
-                fft_padding="zero",
+                grid_type="single",
+                fft_padding="circular",
                 fft_backend="subq_ops",
             )
 

@@ -167,6 +167,9 @@ class TestChunked:
         y_chunked = _custom_bhl_chunked(x, k, shortcut, chunk_size)
 
         torch.testing.assert_close(y_chunked, y_unchunked, atol=ATOL_F32, rtol=RTOL_F32)
+        torch.testing.assert_close(
+            _custom_bhl_chunked(x, k[0], shortcut, chunk_size), y_unchunked, atol=ATOL_F32, rtol=RTOL_F32
+        )
 
     def test_blh_chunked_matches(self, device):
         torch.manual_seed(42)
