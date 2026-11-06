@@ -42,7 +42,7 @@ pytestmark = [
 
 TOL = {torch.float32: 1e-4, torch.bfloat16: 1e-2, torch.float16: 1e-2}
 # (B, H, L, K): L=256 is an explicit_conv1d length, 100 and 37 are fft_conv1d-only.
-SHAPES = [(2, 32, 256, 511), (2, 32, 100, 199), (1, 16, 37, 73), (2, 32, 256, 129)]
+SHAPES = [(2, 32, 256, 511), (2, 32, 100, 199), (1, 16, 37, 73), (2, 32, 256, 129), (2, 32, 256, 512)]
 
 
 def rel(a, b):
@@ -82,6 +82,25 @@ def test_uses_explicit_conv1d_where_it_applies() -> None:
     assert applies(index, torch.float32, 256, 511) is False
     assert applies(index, torch.bfloat16, 100, 199) is False
     assert applies(index, torch.bfloat16, 256, 2 * 256 + 1) is False
+
+
+@pytest.mark.parametrize("cc10", [True, False])
+def test_subq_conv1d_dispatch(monkeypatch, cc10) -> None:
+    from nvsubquadratic.ops import fftconv_custom as fc
+
+    monkeypatch.setattr(fc, "_explicit_conv1d", lambda x, k: "explicit")
+    monkeypatch.setattr(fc, "_fft_conv1d", lambda x, k: "fft")
+    monkeypatch.setattr(fc, "_EXPLICIT_CONV1D_SEQ_LENS", frozenset({256}))
+    monkeypatch.setattr(fc, "_device_has_explicit_conv1d", lambda index: cc10)
+    monkeypatch.setattr(fc, "_explicit_conv1d_applies", fc._explicit_conv1d_applies.__wrapped__)
+    for dtype, L, K, want in [
+        (torch.bfloat16, 256, 511, "explicit" if cc10 else "fft"),
+        (torch.float32, 256, 511, "fft"),
+        (torch.bfloat16, 100, 199, "fft"),
+        (torch.bfloat16, 256, 513, "fft"),
+    ]:
+        x, kernel = torch.empty(1, 2, L, device="cuda", dtype=dtype), torch.empty(2, K, device="cuda", dtype=dtype)
+        assert fc._subq_conv1d_bhl(x, kernel) == want
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])

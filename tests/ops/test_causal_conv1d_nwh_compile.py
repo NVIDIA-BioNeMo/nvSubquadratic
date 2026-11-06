@@ -70,17 +70,18 @@ def test_bias_none_is_zero_bias() -> None:
     )
 
 
+@pytest.mark.parametrize(("dtype", "grad_rtol"), [(torch.float32, 1e-4), (torch.bfloat16, 1e-2)])
 @pytest.mark.parametrize("mode", ["default", "reduce-overhead"])
-def test_compiled_transposed_input_matches_eager(mode) -> None:
+def test_compiled_transposed_input_matches_eager(mode, dtype, grad_rtol) -> None:
     torch.manual_seed(0)
-    weight = torch.randn(3, 16, device="cuda", requires_grad=True)
+    weight = torch.randn(3, 16, device="cuda", dtype=dtype, requires_grad=True)
 
     def fn(pair):
         # [B, L, L, C] -> transposed rows -> [B*L, L, C]: a strided intermediate under inductor.
         stream = pair.transpose(1, 2).reshape(-1, pair.shape[1], pair.shape[-1])
         return causal_conv1d(stream.contiguous(), weight, None, "identity", channel_last=True)
 
-    pair = torch.randn(2, 24, 24, 16, device="cuda", requires_grad=True)
+    pair = torch.randn(2, 24, 24, 16, device="cuda", dtype=dtype, requires_grad=True)
     want = fn(pair)
     want_grads = torch.autograd.grad(want.square().sum(), (pair, weight))
     compiled = torch.compile(fn, mode=mode)
@@ -89,4 +90,4 @@ def test_compiled_transposed_input_matches_eager(mode) -> None:
         grads = torch.autograd.grad(got.square().sum(), (pair, weight))
     torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
     for g, w in zip(grads, want_grads):
-        torch.testing.assert_close(g, w, atol=1e-3, rtol=1e-4)
+        torch.testing.assert_close(g, w, atol=1e-3, rtol=grad_rtol)

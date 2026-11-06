@@ -175,7 +175,9 @@ class TriangleHyena(torch.nn.Module):
                 columns (ending node).
 
         Raises:
-            ValueError: If ``short_conv_backend`` is not ``"torch"`` or ``"subq_ops"``.
+            ValueError: If ``short_conv_backend`` is not ``"torch"`` or ``"subq_ops"``, or
+                ``global_conv_cfg`` is not a 1D non-causal zero-padded double-grid ``CKConvND``
+                with ``hidden_dim`` channels.
         """
         super().__init__()
         if short_conv_backend not in ("torch", "subq_ops"):
@@ -184,6 +186,19 @@ class TriangleHyena(torch.nn.Module):
         self.start_node = start_node
         self.short_conv_backend = short_conv_backend
         self.global_conv = instantiate(global_conv_cfg)
+        conv = self.global_conv
+        if (
+            conv.data_dim != 1
+            or conv.is_causal
+            or conv.hidden_dim != hidden_dim
+            or conv.grid_type == "single"
+            or "circular" in conv.fft_padding
+        ):
+            raise ValueError(
+                f"global_conv must be a 1D non-causal zero-padded double-grid CKConvND with hidden_dim={hidden_dim}, "
+                f"got data_dim={conv.data_dim}, is_causal={conv.is_causal}, hidden_dim={conv.hidden_dim}, "
+                f"grid_type={conv.grid_type!r}, fft_padding={conv.fft_padding!r}"
+            )
         weight = torch.empty(3 * hidden_dim, short_conv_kernel_size)
         torch.nn.init.kaiming_uniform_(weight, a=math.sqrt(5))
         self.short_conv_weight = torch.nn.Parameter(weight.t().contiguous())
@@ -255,7 +270,7 @@ class TriangleHyena(torch.nn.Module):
             padding_mask: Optional ``[B, L]`` boolean tensor, ``True`` at padded tokens.  The
                 long-conv input and the output gate are zeroed at every pair position in a
                 padded row or column, after the short conv.
-            **mixer_kwargs: Not supported (FiLM ``conditioning`` would need per-row kernels).
+            **mixer_kwargs: Ignored, including ``conditioning`` (no FiLM kernel conditioning).
 
         Returns:
             ``[B, L, L, C]`` update of the pair tensor.
@@ -263,12 +278,9 @@ class TriangleHyena(torch.nn.Module):
         Raises:
             ValueError: If the pair tensor is not square, the channel width does not match
                 ``hidden_dim``, only one of ``key`` / ``value`` is given, or ``cp_group`` has size > 1.
-            NotImplementedError: If extra mixer keyword arguments are passed.
         """
         if cp_group is not None and cp_group.size() > 1:
             raise ValueError("TriangleHyena does not support context parallelism.")
-        if mixer_kwargs:
-            raise NotImplementedError(f"TriangleHyena does not support mixer kwargs {sorted(mixer_kwargs)}.")
         if (key is None) != (value is None):
             raise ValueError("TriangleHyena takes either (query, key, value) or the fused qkv tensor alone.")
         qkv = query if key is None else torch.cat([query, key, value], dim=-1)
@@ -332,6 +344,7 @@ def load_reference_state_dict(
     kernel = mixer.mixer.global_conv.kernel
     width = mixer.qkv_proj.out_features // 3
     try:
+        norm = {"weight": ref["norm.weight"], "bias": ref["norm.bias"]}
         x12 = ref["linear_x12i.weight"]
         w_x1, w_x2, w_v = ref["W_conv_x12i_vj"].split(width)
         target = {
@@ -355,6 +368,8 @@ def load_reference_state_dict(
                 ]
     except KeyError as exc:
         raise ValueError(f"reference state dict lacks {exc}") from exc
+    if f"siren_kernel.kernel_network.{2 * len(kernel.hidden_linears)}.weight" in ref:
+        raise ValueError(f"reference SIREN has more than the mixer's {len(kernel.hidden_linears)} hidden layers")
     current = mixer.state_dict()
     for name, tensor in target.items():
         if name not in current:
@@ -365,4 +380,4 @@ def load_reference_state_dict(
         if name in current:
             target[name] = torch.zeros_like(current[name])
     mixer.load_state_dict({**current, **target})
-    return {"weight": ref["norm.weight"], "bias": ref["norm.bias"]}
+    return norm

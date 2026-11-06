@@ -37,7 +37,7 @@ from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.ckconv_nd import CKConvND
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import BoxModulationND, GaussianModulationND
-from nvsubquadratic.modules.residual_block import ResidualBlock
+from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock, ResidualBlock
 from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.modules.tri_hyena import TriangleHyena, _StencilConv, load_reference_state_dict
 
@@ -333,6 +333,30 @@ def test_reference_checkpoint_port_shape_mismatch() -> None:
         load_reference_state_dict(mixer, ref)
 
 
+def test_reference_checkpoint_port_siren_depth_mismatch() -> None:
+    mixer = make_mixer(L_cache=2 * L - 1)
+    before = {k: v.clone() for k, v in mixer.state_dict().items()}
+    deeper = {**reference_state_dict(C, seed=3), "siren_kernel.kernel_network.4.weight": torch.zeros(16, 16)}
+    with pytest.raises(ValueError, match="more than the mixer's 2 hidden layers"):
+        load_reference_state_dict(mixer, deeper)
+    shallower = {k: v for k, v in reference_state_dict(C, seed=3).items() if "kernel_network.2" not in k}
+    with pytest.raises(ValueError, match=r"kernel_network\.2"):
+        load_reference_state_dict(mixer, shallower)
+    for k, v in mixer.state_dict().items():
+        torch.testing.assert_close(v, before[k], atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("key", ["norm.weight", "norm.bias"])
+def test_reference_checkpoint_port_missing_norm_leaves_mixer_unchanged(key) -> None:
+    ref = reference_state_dict(C, seed=3)
+    del ref[key]
+    mixer = make_mixer(L_cache=2 * L - 1)
+    before = {k: v.clone() for k, v in mixer.state_dict().items()}
+    with pytest.raises(ValueError, match=key.replace(".", r"\.")):
+        load_reference_state_dict(mixer, ref)
+    assert all(torch.equal(before[k], v) for k, v in mixer.state_dict().items())
+
+
 # ---------------------------------------------------------------------------
 # Row / column structure
 # ---------------------------------------------------------------------------
@@ -451,7 +475,7 @@ def test_padding_mask_zeroes_padded_rows_and_columns(start_node) -> None:
 
 
 @pytest.mark.parametrize("start_node", [True, False])
-def test_padded_inputs_do_not_reach_unpadded_outputs(start_node) -> None:
+def test_padded_inputs_do_not_reach_unpadded_outputs_with_identity_short_conv(start_node) -> None:
     mixer = make_mixer(start_node=start_node, dtype=torch.float64)
     mixer.mixer.short_conv_weight.data.zero_()
     mixer.mixer.short_conv_weight.data[-1] = 1.0
@@ -590,10 +614,39 @@ def test_invalid_short_conv_backend_raises() -> None:
         instantiate(mixer_cfg(short_conv_backend="cudnn"))
 
 
-def test_conditioning_raises() -> None:
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"is_causal": True},
+        {"data_dim": 2},
+        {"hidden_dim": 2 * C},
+        {"grid_type": "single", "fft_padding": "circular"},
+        {"grid_type": None, "fft_padding": ["circular"]},
+    ],
+    ids=["causal", "2d", "hidden-dim", "single-grid", "per-axis-circular"],
+)
+def test_invalid_global_conv_raises(overrides) -> None:
+    cfg = mixer_cfg()
+    for name, value in overrides.items():
+        setattr(cfg.mixer_cfg.global_conv_cfg, name, value)
+    with pytest.raises(ValueError, match="global_conv must be"):
+        instantiate(cfg)
+
+
+def test_conditioning_is_ignored_and_adaln_zero_block_runs() -> None:
     mixer = make_mixer()
-    with pytest.raises(NotImplementedError, match="conditioning"):
-        mixer(torch.randn(B, L, L, C), conditioning=torch.randn(B, 4))
+    x = torch.randn(B, L, L, C)
+    torch.testing.assert_close(mixer(x, conditioning=torch.randn(B, C)), mixer(x), rtol=0, atol=0)
+    block = AdaLNZeroResidualBlock(
+        sequence_mixer_cfg=mixer_cfg(),
+        sequence_mixer_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=C),
+        mlp_cfg=LazyConfig(torch.nn.Identity)(),
+        mlp_norm_cfg=LazyConfig(torch.nn.Identity)(),
+        condition_norm_cfg=LazyConfig(torch.nn.Identity)(),
+        dropout_cfg=LazyConfig(torch.nn.Identity)(),
+        hidden_dim=C,
+    )
+    assert block(x, torch.randn(B, C)).shape == x.shape
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +680,31 @@ def test_subq_ops_backend_matches_torch_fft(dtype, seq_len) -> None:
     got.square().sum().backward()
     assert fast.mixer.global_conv.kernel.out_linear.weight.grad is not None
     assert fast.mixer.short_conv_weight.grad is not None
+
+
+@_requires_subq_ops
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] != 10,
+    reason="explicit_conv1d needs compute capability 10.x",
+)
+def test_bf16_subq_ops_backend_calls_explicit_conv1d(monkeypatch) -> None:
+    from nvsubquadratic.ops import fftconv_custom
+
+    explicit = fftconv_custom._get_explicit_conv1d()
+    if explicit is None:
+        pytest.skip("installed subquadratic_ops_torch has no explicit_conv1d")
+    calls = []
+    monkeypatch.setattr(fftconv_custom, "_explicit_conv1d", lambda x, k: calls.append(x.shape) or explicit(x, k))
+    mixer = make_mixer(
+        seq_len=256,
+        hidden_dim=32,
+        mask_cfg=box_cfg(64),
+        fft_backend="subq_ops",
+        short_conv_backend="subq_ops",
+        dtype=torch.bfloat16,
+    ).cuda()
+    mixer(torch.randn(1, 256, 256, 32, device="cuda", dtype=torch.bfloat16))
+    assert calls
 
 
 @_requires_cuda
