@@ -46,10 +46,12 @@ SHAPES = [(2, 32, 256, 511), (2, 32, 100, 199), (1, 16, 37, 73), (2, 32, 256, 12
 
 
 def rel(a, b):
+    """Relative L2 error of ``a`` against ``b``."""
     return ((a.float() - b.float()).norm() / b.float().norm()).item()
 
 
 def make(B, H, L, K, dtype, device="cuda"):
+    """Seeded input, shared kernel and shortcut tensors for a ``(B, H, L, K)`` case."""
     torch.manual_seed(0)
     x = torch.randn(B, H, L, device=device, dtype=dtype)
     kernel = torch.randn(1, H, K, device=device, dtype=dtype) / K**0.5
@@ -60,6 +62,7 @@ def make(B, H, L, K, dtype, device="cuda"):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("B, H, L, K", SHAPES)
 def test_forward_matches_torch_fft(B, H, L, K, dtype) -> None:
+    """``fftconv1d_bhl`` forward matches the torch FFT reference and keeps the input dtype."""
     from nvsubquadratic.ops.fftconv_custom import fftconv1d_bhl
 
     x, kernel, shortcut = make(B, H, L, K, dtype)
@@ -69,6 +72,7 @@ def test_forward_matches_torch_fft(B, H, L, K, dtype) -> None:
 
 
 def test_uses_explicit_conv1d_where_it_applies() -> None:
+    """``_explicit_conv1d_applies`` accepts only supported dtype, length and kernel combinations."""
     from nvsubquadratic.ops import fftconv_custom
 
     fftconv_custom.load_conv1d_kernels()
@@ -86,6 +90,7 @@ def test_uses_explicit_conv1d_where_it_applies() -> None:
 
 @pytest.mark.parametrize("cc10", [True, False])
 def test_subq_conv1d_dispatch(monkeypatch, cc10) -> None:
+    """``_subq_conv1d_bhl`` dispatches to ``explicit_conv1d`` or ``fft_conv1d`` per case."""
     from nvsubquadratic.ops import fftconv_custom as fc
 
     monkeypatch.setattr(fc, "_explicit_conv1d", lambda x, k: "explicit")
@@ -95,6 +100,7 @@ def test_subq_conv1d_dispatch(monkeypatch, cc10) -> None:
     monkeypatch.setattr(fc, "_explicit_conv1d_applies", fc._explicit_conv1d_applies.__wrapped__)
     for dtype, L, K, want in [
         (torch.bfloat16, 256, 511, "explicit" if cc10 else "fft"),
+        (torch.bfloat16, 256, 512, "explicit" if cc10 else "fft"),
         (torch.float32, 256, 511, "fft"),
         (torch.bfloat16, 100, 199, "fft"),
         (torch.bfloat16, 256, 513, "fft"),
@@ -106,6 +112,7 @@ def test_subq_conv1d_dispatch(monkeypatch, cc10) -> None:
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("B, H, L, K", SHAPES[:2])
 def test_backward_matches_torch_fft(B, H, L, K, dtype) -> None:
+    """``fftconv1d_bhl`` gradients match the torch FFT reference."""
     from nvsubquadratic.ops.fftconv_custom import fftconv1d_bhl
 
     x, kernel, shortcut = make(B, H, L, K, dtype)
@@ -120,6 +127,7 @@ def test_backward_matches_torch_fft(B, H, L, K, dtype) -> None:
 
 @pytest.mark.parametrize("B, H, L, K", SHAPES[:2])
 def test_blh_layout_and_chunked_variants(B, H, L, K) -> None:
+    """BLH-layout and chunked variants match ``fftconv1d_bhl``."""
     from nvsubquadratic.ops.fftconv_custom import (
         fftconv1d_bhl,
         fftconv1d_bhl_chunked,
@@ -140,6 +148,7 @@ def test_blh_layout_and_chunked_variants(B, H, L, K) -> None:
 
 
 def test_per_sample_kernel_raises() -> None:
+    """A per-sample kernel raises ``NotImplementedError``."""
     from nvsubquadratic.ops.fftconv_custom import fftconv1d_bhl
 
     x, kernel, _ = make(2, 16, 64, 127, torch.float32)
@@ -148,6 +157,7 @@ def test_per_sample_kernel_raises() -> None:
 
 
 def test_ckconv_1d_noncausal_subq_ops_matches_torch_fft() -> None:
+    """Non-causal 1D ``CKConvND`` with the subq_ops backend matches torch_fft."""
     from nvsubquadratic.lazy_config import LazyConfig
     from nvsubquadratic.modules.ckconv_nd import CKConvND
     from nvsubquadratic.modules.kernels_nd import SIRENKernelND

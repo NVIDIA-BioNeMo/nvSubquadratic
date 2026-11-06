@@ -41,6 +41,7 @@ ARCHS = [
 
 
 def make_builder(name: str, start_node: bool):
+    """Return a builder for the ``window-backend-execution`` arch ``name``."""
     window, backend, execution = name.split("-")
 
     def build(cfg: BenchConfig, seq_len: int) -> torch.nn.Module:
@@ -62,6 +63,7 @@ def make_builder(name: str, start_node: bool):
 
 
 def main() -> None:
+    """Parse CLI arguments and run the TriangleHyena benchmark sweep."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     add_common_args(parser, archs=ARCHS, csv_default="bench_tri_hyena.csv")
     parser.add_argument("--end-node", action="store_true", help="Benchmark the ending-node update.")

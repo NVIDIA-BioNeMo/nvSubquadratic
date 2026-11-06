@@ -91,12 +91,14 @@ def _get_b2b_causal_conv1d():
     tags=(torch.Tag.needs_fixed_stride_order,),
 )
 def _causal_conv1d_nwh(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, activation: str) -> torch.Tensor:
+    """Channel-last causal conv1d forward through the NWH primitive."""
     _get_causal_conv1d()
     return torch.ops.subquadratic_ops_torch.causal_conv1d_fwd_primitive(x, weight, bias, activation, True)
 
 
 @_causal_conv1d_nwh.register_fake
 def _(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, activation: str) -> torch.Tensor:
+    """Fake kernel returning a contiguous output shaped like ``x``."""
     return x.new_empty(x.shape)
 
 
@@ -109,6 +111,7 @@ def _(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, activation: str
 def _causal_conv1d_nwh_backward(
     grad_out: torch.Tensor, x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, activation: str
 ) -> list[torch.Tensor]:
+    """Channel-last causal conv1d backward; returns ``dx`` and the packed weight and bias gradient."""
     return torch.ops.subquadratic_ops_torch.causal_conv1d_bwd_primitive(grad_out, x, weight, bias, activation, True)
 
 
@@ -116,16 +119,19 @@ def _causal_conv1d_nwh_backward(
 def _(
     grad_out: torch.Tensor, x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, activation: str
 ) -> list[torch.Tensor]:
+    """Fake kernel returning ``dx`` shaped like ``x`` and the packed weight and bias gradient."""
     return [x.new_empty(x.shape), weight.new_empty(weight.numel() + bias.numel())]
 
 
 def _causal_conv1d_nwh_setup_context(ctx, inputs, output) -> None:
+    """Save the inputs and activation for the backward pass."""
     x, weight, bias, activation = inputs
     ctx.save_for_backward(x, weight, bias)
     ctx.activation = activation
 
 
 def _causal_conv1d_nwh_grad(ctx, grad_out):
+    """Unpack the NWH backward into gradients for ``x``, ``weight`` and ``bias``."""
     x, weight, bias = ctx.saved_tensors
     dx, dwb = _causal_conv1d_nwh_backward(grad_out, x, weight, bias, ctx.activation)
     return dx, dwb[: weight.numel()].view(weight.shape), dwb[weight.numel() :], None

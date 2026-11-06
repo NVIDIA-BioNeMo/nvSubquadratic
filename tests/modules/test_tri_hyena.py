@@ -60,6 +60,7 @@ def mixer_cfg(
     use_shortcut=True,
     qkv_bias=False,
 ):
+    """LazyConfig for a ``QKVSequenceMixer`` wrapping ``TriangleHyena`` with a SIREN ``CKConvND``."""
     if mask_cfg is None:
         mask_cfg = LazyConfig(torch.nn.Identity)()
     return LazyConfig(QKVSequenceMixer)(
@@ -95,6 +96,7 @@ def mixer_cfg(
 
 
 def make_mixer(seed=0, dtype=torch.float32, **kwargs):
+    """Seeded mixer instantiated from ``mixer_cfg`` with parameters cast to ``dtype``."""
     torch.manual_seed(seed)
     return cast_params(instantiate(mixer_cfg(**kwargs)), dtype)
 
@@ -107,11 +109,15 @@ def cast_params(module, dtype):
 
 
 def box_cfg(max_offset):
+    """LazyConfig for a 1D ``BoxModulationND`` window."""
     return LazyConfig(BoxModulationND)(data_dim=1, max_offset=max_offset)
 
 
 class FakeGroup:
+    """Stand-in process group of size 2."""
+
     def size(self):
+        """Return the group size."""
         return 2
 
 
@@ -189,6 +195,7 @@ def ref_siren_filter(ref, length, hidden_layers):
 
 
 def reference_state_dict(c, seed):
+    """Random float64 state dict in the reference TriHyena checkpoint layout."""
     torch.manual_seed(seed)
 
     def r(*shape):
@@ -220,6 +227,7 @@ def reference_state_dict(c, seed):
 
 @pytest.mark.parametrize("start_node", [True, False])
 def test_output_shape_and_gradients(start_node) -> None:
+    """Output keeps the input shape and every parameter receives a finite, non-zero gradient."""
     mixer = make_mixer(start_node=start_node, mask_cfg=LazyConfig(GaussianModulationND)(data_dim=1, num_channels=C))
     x = torch.randn(B, L, L, C, requires_grad=True)
     y = mixer(x)
@@ -241,6 +249,7 @@ def test_output_shape_and_gradients(start_node) -> None:
 
 
 def test_bfloat16_matches_fp32() -> None:
+    """bfloat16 mixer output matches the fp32 output within tolerance."""
     mixer = make_mixer()
     x = torch.randn(B, L, L, C)
     y32 = mixer(x)
@@ -258,6 +267,7 @@ def test_bfloat16_matches_fp32() -> None:
 @pytest.mark.parametrize("start_node", [True, False])
 @pytest.mark.parametrize("mask_cfg", [None, box_cfg(2)], ids=["no-window", "box-2"])
 def test_matches_reference_core(start_node, mask_cfg) -> None:
+    """Mixer matches the eager reference core with and without a box window."""
     mixer = make_mixer(start_node=start_node, mask_cfg=mask_cfg, dtype=torch.float64)
     mixer.mixer.global_conv.shortcut.data.zero_()
     x = torch.randn(B, L, L, C, dtype=torch.float64)
@@ -271,6 +281,7 @@ def test_matches_reference_core(start_node, mask_cfg) -> None:
 
 @pytest.mark.parametrize("start_node", [True, False])
 def test_reference_checkpoint_port(start_node) -> None:
+    """A ported reference checkpoint reproduces the reference forward pass."""
     ref = reference_state_dict(C, seed=3)
     mixer = make_mixer(start_node=start_node, mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64)
     norm = load_reference_state_dict(mixer, {f"core.{k}": v for k, v in ref.items()})
@@ -294,6 +305,7 @@ def test_reference_checkpoint_port(start_node) -> None:
 
 
 def test_reference_checkpoint_port_without_shortcut() -> None:
+    """Porting into a mixer without a shortcut matches one with a zeroed shortcut."""
     ref = reference_state_dict(C, seed=3)
     with_shortcut = make_mixer(mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64)
     without = make_mixer(mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64, use_shortcut=False)
@@ -310,6 +322,7 @@ def test_reference_checkpoint_port_without_shortcut() -> None:
 
 
 def test_reference_checkpoint_port_zeroes_qkv_bias() -> None:
+    """Porting zeroes an existing qkv bias."""
     ref = reference_state_dict(C, seed=3)
     without = make_mixer(mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64)
     with_bias = make_mixer(mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64, qkv_bias=True)
@@ -323,6 +336,7 @@ def test_reference_checkpoint_port_zeroes_qkv_bias() -> None:
 
 
 def test_reference_checkpoint_port_shape_mismatch() -> None:
+    """Mis-shaped or missing checkpoint tensors raise ``ValueError`` naming the key."""
     ref = reference_state_dict(C, seed=3)
     mixer = make_mixer(L_cache=2 * L - 1)
     ref["W_conv_x12i_vj"] = ref["W_conv_x12i_vj"][:, :2]
@@ -334,6 +348,7 @@ def test_reference_checkpoint_port_shape_mismatch() -> None:
 
 
 def test_reference_checkpoint_port_siren_depth_mismatch() -> None:
+    """A SIREN depth mismatch raises ``ValueError`` and leaves the mixer unchanged."""
     mixer = make_mixer(L_cache=2 * L - 1)
     before = {k: v.clone() for k, v in mixer.state_dict().items()}
     deeper = {**reference_state_dict(C, seed=3), "siren_kernel.kernel_network.4.weight": torch.zeros(16, 16)}
@@ -348,6 +363,7 @@ def test_reference_checkpoint_port_siren_depth_mismatch() -> None:
 
 @pytest.mark.parametrize("key", ["norm.weight", "norm.bias"])
 def test_reference_checkpoint_port_missing_norm_leaves_mixer_unchanged(key) -> None:
+    """A missing norm tensor raises ``ValueError`` and leaves the mixer unchanged."""
     ref = reference_state_dict(C, seed=3)
     del ref[key]
     mixer = make_mixer(L_cache=2 * L - 1)
@@ -366,6 +382,7 @@ def test_reference_checkpoint_port_missing_norm_leaves_mixer_unchanged(key) -> N
 @pytest.mark.parametrize("requires_grad", [False, True])
 @pytest.mark.parametrize("with_mask", [False, True], ids=["no-mask", "mask"])
 def test_fused_qkv_matches_separate_tensors(start_node, requires_grad, with_mask) -> None:
+    """Fused ``[..., 3C]`` qkv input matches separate q, k, v tensors in output and gradients."""
     tri = make_mixer(start_node=start_node, dtype=torch.float64).mixer
     qkv = torch.randn(B, L, L, 3 * C, dtype=torch.float64, requires_grad=requires_grad)
     copies = [t.detach().clone().requires_grad_(requires_grad) for t in qkv.chunk(3, dim=-1)]
@@ -380,19 +397,24 @@ def test_fused_qkv_matches_separate_tensors(start_node, requires_grad, with_mask
 
 
 class RecordingMixer(torch.nn.Module):
+    """Inner mixer that records its call arguments."""
+
     def __init__(self, fused):
+        """Optionally declare ``takes_fused_qkv``."""
         super().__init__()
         if fused:
             self.takes_fused_qkv = True
         self.calls = []
 
     def forward(self, *args, **kwargs):
+        """Record the call and return the first ``C`` channels of the first argument."""
         self.calls.append((args, kwargs))
         return args[0][..., :C]
 
 
 @pytest.mark.parametrize("fused", [False, True])
 def test_sequence_mixer_fused_qkv_contract(fused) -> None:
+    """``QKVSequenceMixer`` passes fused or split qkv according to ``takes_fused_qkv``."""
     assert TriangleHyena.takes_fused_qkv is True
     mixer = QKVSequenceMixer(hidden_dim=C, mixer_cfg=LazyConfig(RecordingMixer)(fused=fused))
     x = torch.randn(B, L, L, C)
@@ -410,6 +432,7 @@ def test_sequence_mixer_fused_qkv_contract(fused) -> None:
 
 @pytest.mark.parametrize("taps", [1, 3, 4])
 def test_stencil_conv_matches_conv1d_and_gradcheck(taps) -> None:
+    """``_StencilConv`` matches the reference causal conv and passes gradcheck."""
     torch.manual_seed(0)
     x = torch.randn(3, 7, 2 * C, dtype=torch.float64)[:, :, ::2].requires_grad_()
     w = torch.randn(taps, C, dtype=torch.float64, requires_grad=True)
@@ -418,6 +441,7 @@ def test_stencil_conv_matches_conv1d_and_gradcheck(taps) -> None:
 
 
 def test_partial_qkv_raises() -> None:
+    """Two tensors or a fused input of the wrong width raise ``ValueError``."""
     tri = make_mixer().mixer
     q, k = torch.randn(2, B, L, L, C)
     with pytest.raises(ValueError, match="fused qkv"):
@@ -427,6 +451,7 @@ def test_partial_qkv_raises() -> None:
 
 
 def test_end_node_is_start_node_on_transposed_pair() -> None:
+    """Ending-node update equals the starting-node update on the transposed pair."""
     start = make_mixer(start_node=True, dtype=torch.float64)
     end = make_mixer(start_node=False, dtype=torch.float64)
     end.load_state_dict(start.state_dict())
@@ -437,6 +462,7 @@ def test_end_node_is_start_node_on_transposed_pair() -> None:
 
 @pytest.mark.parametrize("start_node", [True, False])
 def test_rows_are_independent_except_through_the_column_stream(start_node) -> None:
+    """Perturbing one row of q or v changes only that row; perturbing k changes all rows."""
     tri = make_mixer(start_node=start_node, dtype=torch.float64).mixer
     q, k, v = (torch.randn(B, L, L, C, dtype=torch.float64) for _ in range(3))
     axis = 1 if start_node else 2
@@ -463,6 +489,7 @@ def test_rows_are_independent_except_through_the_column_stream(start_node) -> No
 
 @pytest.mark.parametrize("start_node", [True, False])
 def test_padding_mask_zeroes_padded_rows_and_columns(start_node) -> None:
+    """Padded rows and columns of the inner mixer output are zero."""
     mixer = make_mixer(start_node=start_node, dtype=torch.float64)
     x = torch.randn(B, L, L, C, dtype=torch.float64)
     padding = torch.zeros(B, L, dtype=torch.bool)
@@ -476,6 +503,7 @@ def test_padding_mask_zeroes_padded_rows_and_columns(start_node) -> None:
 
 @pytest.mark.parametrize("start_node", [True, False])
 def test_padded_inputs_do_not_reach_unpadded_outputs_with_identity_short_conv(start_node) -> None:
+    """Changing padded positions does not change the output when a padding mask is given."""
     mixer = make_mixer(start_node=start_node, dtype=torch.float64)
     mixer.mixer.short_conv_weight.data.zero_()
     mixer.mixer.short_conv_weight.data[-1] = 1.0
@@ -493,6 +521,7 @@ def test_padded_inputs_do_not_reach_unpadded_outputs_with_identity_short_conv(st
 
 
 def test_all_false_padding_mask_is_a_no_op() -> None:
+    """An all-False padding mask matches passing no mask."""
     mixer = make_mixer()
     x = torch.randn(B, L, L, C)
     with torch.no_grad():
@@ -522,6 +551,7 @@ def flat_filter_change_per_position(mask_cfg, seq_len=12, j=5):
 
 
 def test_box_window_limits_the_receptive_field() -> None:
+    """Box window confines the receptive field to ``max_offset`` positions."""
     seq_len, j, max_offset = 12, 5, 3
     change = flat_filter_change_per_position(box_cfg(max_offset), seq_len, j)
     distance = (torch.arange(seq_len) - j).abs()
@@ -530,10 +560,12 @@ def test_box_window_limits_the_receptive_field() -> None:
 
 
 def test_no_window_reaches_every_position() -> None:
+    """Without a window a perturbation reaches every position in the row."""
     assert flat_filter_change_per_position(None).min() > 1e-3
 
 
 def test_gaussian_window_is_learnable_and_local() -> None:
+    """Gaussian window has a learnable width and decays away from the centre."""
     mixer = make_mixer(
         mask_cfg=LazyConfig(GaussianModulationND)(data_dim=1, num_channels=C), seq_len=12, dtype=torch.float64
     )
@@ -553,6 +585,7 @@ def test_gaussian_window_is_learnable_and_local() -> None:
 
 
 def test_residual_block_integration() -> None:
+    """Mixer runs inside a ``ResidualBlock`` and preserves the input shape."""
     torch.manual_seed(0)
     block = ResidualBlock(
         sequence_mixer_cfg=mixer_cfg(),
@@ -590,6 +623,7 @@ def test_flop_count() -> None:
 
 @pytest.mark.parametrize("batch, seq_len", [(1, 1), (1, 2), (2, 5), (3, 2)])
 def test_edge_sizes(batch, seq_len) -> None:
+    """Small batch and sequence sizes produce correctly shaped outputs and finite gradients."""
     mixer = make_mixer(seq_len=max(seq_len, 2), mask_cfg=box_cfg(8))
     x = torch.randn(batch, seq_len, seq_len, C, requires_grad=True)
     y = mixer(x)
@@ -599,17 +633,20 @@ def test_edge_sizes(batch, seq_len) -> None:
 
 
 def test_non_square_pair_raises() -> None:
+    """A non-square pair tensor raises ``ValueError``."""
     with pytest.raises(ValueError, match="square"):
         make_mixer()(torch.randn(B, L, L + 1, C))
 
 
 def test_context_parallel_raises() -> None:
+    """A context-parallel group raises ``ValueError``."""
     mixer = make_mixer()
     with pytest.raises(ValueError, match="context parallelism"):
         mixer(torch.randn(B, L, L, C), cp_group=FakeGroup())
 
 
 def test_invalid_short_conv_backend_raises() -> None:
+    """An unknown ``short_conv_backend`` raises ``ValueError``."""
     with pytest.raises(ValueError, match="short_conv_backend"):
         instantiate(mixer_cfg(short_conv_backend="cudnn"))
 
@@ -622,10 +659,12 @@ def test_invalid_short_conv_backend_raises() -> None:
         {"hidden_dim": 2 * C},
         {"grid_type": "single", "fft_padding": "circular"},
         {"grid_type": None, "fft_padding": ["circular"]},
+        {"grid_type": None, "fft_padding": ["CIRCULAR"]},
     ],
-    ids=["causal", "2d", "hidden-dim", "single-grid", "per-axis-circular"],
+    ids=["causal", "2d", "hidden-dim", "single-grid", "per-axis-circular", "per-axis-circular-upper"],
 )
 def test_invalid_global_conv_raises(overrides) -> None:
+    """An unsupported ``global_conv`` configuration raises ``ValueError``."""
     cfg = mixer_cfg()
     for name, value in overrides.items():
         setattr(cfg.mixer_cfg.global_conv_cfg, name, value)
@@ -634,6 +673,7 @@ def test_invalid_global_conv_raises(overrides) -> None:
 
 
 def test_conditioning_is_ignored_and_adaln_zero_block_runs() -> None:
+    """Conditioning does not change the output and the mixer runs in an ``AdaLNZeroResidualBlock``."""
     mixer = make_mixer()
     x = torch.randn(B, L, L, C)
     torch.testing.assert_close(mixer(x, conditioning=torch.randn(B, C)), mixer(x), rtol=0, atol=0)
@@ -659,6 +699,7 @@ def test_conditioning_is_ignored_and_adaln_zero_block_runs() -> None:
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("seq_len", [37, 256], ids=["fft", "explicit-eligible"])
 def test_subq_ops_backend_matches_torch_fft(dtype, seq_len) -> None:
+    """subq_ops FFT and short-conv backends match the torch backends with gradients."""
     hidden = 32
     reference = make_mixer(seq_len=seq_len, hidden_dim=hidden, mask_cfg=box_cfg(64), dtype=dtype).cuda()
     fast = make_mixer(
@@ -688,6 +729,7 @@ def test_subq_ops_backend_matches_torch_fft(dtype, seq_len) -> None:
     reason="explicit_conv1d needs compute capability 10.x",
 )
 def test_bf16_subq_ops_backend_calls_explicit_conv1d(monkeypatch) -> None:
+    """bfloat16 subq_ops backend dispatches to ``explicit_conv1d`` on compute capability 10.x."""
     from nvsubquadratic.ops import fftconv_custom
 
     explicit = fftconv_custom._get_explicit_conv1d()
@@ -710,6 +752,7 @@ def test_bf16_subq_ops_backend_calls_explicit_conv1d(monkeypatch) -> None:
 @_requires_cuda
 @_requires_subq_ops
 def test_compiled_subq_ops_backends_match_eager() -> None:
+    """``reduce-overhead`` compiled subq_ops mixer matches eager in output and input gradient."""
     seq_len, hidden = 256, 32
     mixer = make_mixer(
         seq_len=seq_len,
@@ -734,6 +777,7 @@ def test_compiled_subq_ops_backends_match_eager() -> None:
 @_requires_subq_ops
 @pytest.mark.parametrize("start_node", [True, False])
 def test_fullgraph_compile_matches_eager(start_node) -> None:
+    """``fullgraph`` compile matches eager and has no graph breaks."""
     seq_len, hidden = 256, 32
     mixer = make_mixer(
         seq_len=seq_len,

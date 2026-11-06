@@ -47,6 +47,7 @@ def reference(x, weight, bias):
 
 
 def test_eager_matches_conv1d() -> None:
+    """Channel-last ``causal_conv1d`` matches ``F.conv1d`` in output and gradients."""
     torch.manual_seed(0)
     x = torch.randn(4, 32, 16, device="cuda", requires_grad=True)
     weight = torch.randn(3, 16, device="cuda", requires_grad=True)
@@ -61,6 +62,7 @@ def test_eager_matches_conv1d() -> None:
 
 
 def test_bias_none_is_zero_bias() -> None:
+    """``bias=None`` gives the same output as a zero bias."""
     torch.manual_seed(0)
     x = torch.randn(2, 8, 16, device="cuda")
     weight = torch.randn(3, 16, device="cuda")
@@ -73,6 +75,7 @@ def test_bias_none_is_zero_bias() -> None:
 @pytest.mark.parametrize(("dtype", "grad_rtol"), [(torch.float32, 1e-4), (torch.bfloat16, 1e-2)])
 @pytest.mark.parametrize("mode", ["default", "reduce-overhead"])
 def test_compiled_transposed_input_matches_eager(mode, dtype, grad_rtol) -> None:
+    """Compiled conv on a transposed pair stream matches eager in output and gradients."""
     torch.manual_seed(0)
     weight = torch.randn(3, 16, device="cuda", dtype=dtype, requires_grad=True)
 

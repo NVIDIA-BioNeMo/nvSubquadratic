@@ -576,10 +576,12 @@ class TestBoxModulation:
 
     @staticmethod
     def _grid(*taps):
+        """Batched ``[-1, 1]`` coordinate grid with ``taps`` points per axis."""
         axes = [torch.linspace(-1, 1, t) for t in taps]
         return torch.stack(torch.meshgrid(*axes, indexing="ij"), dim=-1).unsqueeze(0)
 
     def test_1d_window_is_exact_in_taps(self):
+        """1D window keeps exactly the taps within ``max_offset`` of the centre."""
         mask = BoxModulationND(data_dim=1, max_offset=3)
         x = torch.ones(1, 15, 4)
         out = mask(grid=self._grid(15), x=x)
@@ -589,11 +591,13 @@ class TestBoxModulation:
         assert set(out.unique().tolist()) == {0.0, 1.0}
 
     def test_even_tap_count_centres_at_half(self):
+        """An even tap count centres the window between the two middle taps."""
         mask = BoxModulationND(data_dim=1, max_offset=1)
         out = mask(grid=self._grid(6), x=torch.ones(1, 6, 1))
         assert out[0, :, 0].tolist() == [0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
 
     def test_nd_is_product_over_axes(self):
+        """2D window is the product of the per-axis 1D windows."""
         mask = BoxModulationND(data_dim=2, max_offset=1)
         out = mask(grid=self._grid(7, 5), x=torch.ones(1, 7, 5, 2))
         kept = out[0, :, :, 0]
@@ -601,11 +605,13 @@ class TestBoxModulation:
         assert kept[2:5, 1:4].eq(1).all()
 
     def test_window_larger_than_kernel_keeps_everything(self):
+        """A window wider than the kernel returns the input unchanged."""
         mask = BoxModulationND(data_dim=1, max_offset=100)
         x = torch.randn(2, 9, 3)
         assert torch.equal(mask(grid=self._grid(9), x=x), x)
 
     def test_dtype_follows_input_and_ignores_grid_values(self):
+        """Output keeps the input dtype and depends on tap positions, not grid values."""
         mask = BoxModulationND(data_dim=1, max_offset=2)
         x = torch.randn(1, 11, 3, dtype=torch.bfloat16)
         out = mask(grid=self._grid(11) * 123.0, x=x)
@@ -614,6 +620,7 @@ class TestBoxModulation:
         assert out[0, :3].eq(0).all() and out[0, 8:].eq(0).all()
 
     def test_has_no_parameters_and_passes_gradients(self):
+        """Module has no parameters and gradients flow only through kept taps."""
         mask = BoxModulationND(data_dim=1, max_offset=2)
         assert list(mask.parameters()) == []
         x = torch.randn(1, 11, 3, requires_grad=True)
@@ -622,9 +629,11 @@ class TestBoxModulation:
 
     @pytest.mark.parametrize("bad", [0, -1, 1.5, True])
     def test_invalid_max_offset_raises(self, bad):
+        """Non-positive, non-integer and bool ``max_offset`` raise ``ValueError``."""
         with pytest.raises(ValueError, match="max_offset"):
             BoxModulationND(data_dim=1, max_offset=bad)
 
     def test_wrong_rank_raises(self):
+        """A grid whose rank does not match ``data_dim`` raises ``ValueError``."""
         with pytest.raises(ValueError, match="spatial axes"):
             BoxModulationND(data_dim=2, max_offset=1)(grid=self._grid(5), x=torch.ones(1, 5, 2))

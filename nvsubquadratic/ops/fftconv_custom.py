@@ -854,11 +854,13 @@ def load_conv1d_kernels() -> None:
 
 @torch._dynamo.assume_constant_result
 def _device_has_explicit_conv1d(device_index: int) -> bool:
+    """Whether device ``device_index`` has the compute capability ``explicit_conv1d`` targets."""
     return torch.cuda.get_device_capability(device_index)[0] == _EXPLICIT_CONV1D_CAPABILITY_MAJOR
 
 
 @functools.lru_cache(maxsize=None)
 def _explicit_conv1d_applies(device_index: int, dtype: torch.dtype, seq_len: int, kernel_len: int) -> bool:
+    """Whether ``explicit_conv1d`` supports this device, dtype, sequence length and kernel length."""
     return (
         dtype in _EXPLICIT_CONV1D_DTYPES
         and seq_len in _EXPLICIT_CONV1D_SEQ_LENS

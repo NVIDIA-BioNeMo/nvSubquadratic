@@ -120,11 +120,13 @@ class _StencilConv(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+        """Causal depthwise conv of ``x`` ``[N, L, C]`` with ``weight`` ``[K, C]``."""
         ctx.save_for_backward(x, weight)
         return _shifted_taps(x, weight, causal=True)
 
     @staticmethod
     def backward(ctx, grad: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Gradients with respect to ``x`` and ``weight``."""
         x, weight = ctx.saved_tensors
         taps, length = weight.shape[0], x.shape[1]
         padded = F.pad(x, (0, 0, taps - 1, 0))
@@ -192,7 +194,7 @@ class TriangleHyena(torch.nn.Module):
             or conv.is_causal
             or conv.hidden_dim != hidden_dim
             or conv.grid_type == "single"
-            or "circular" in conv.fft_padding
+            or any(conv._periodic_per_axis)
         ):
             raise ValueError(
                 f"global_conv must be a 1D non-causal zero-padded double-grid CKConvND with hidden_dim={hidden_dim}, "

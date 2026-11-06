@@ -151,11 +151,13 @@ class PairMixer(torch.nn.Module):
     """
 
     def __init__(self, mixer: torch.nn.Module, norm: torch.nn.Module):
+        """Wrap ``mixer`` with the pre-norm ``norm``."""
         super().__init__()
         self.norm = norm
         self.mixer = mixer
 
     def forward(self, pair: torch.Tensor, is_padding: torch.Tensor) -> torch.Tensor:
+        """Apply ``norm`` then the mixer with ``is_padding`` as the padding mask."""
         return self.mixer(self.norm(pair), padding_mask=is_padding)
 
 
@@ -164,6 +166,7 @@ _SEGMENT_ROUND = 2 * 1024 * 1024
 
 
 def _l2_flush_bytes() -> int:
+    """Size in bytes of the L2 flush buffer, or 0 when L2 flushing is off."""
     return 0 if _l2_flush_buf is None else _l2_flush_buf.numel()
 
 
@@ -190,6 +193,7 @@ class BenchConfig:
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> BenchConfig:
+        """Build the config from parsed CLI arguments and allocate the L2 flush buffer if requested."""
         if not torch.cuda.is_available():
             print("CUDA required.", file=sys.stderr)
             sys.exit(1)
@@ -212,6 +216,7 @@ class BenchConfig:
         )
 
     def flush_l2_cache(self) -> None:
+        """Overwrite the L2 flush buffer when L2 flushing is enabled."""
         if self.flush_l2:
             _l2_flush_buf.zero_()
 
@@ -228,6 +233,7 @@ class BenchConfig:
 
     @property
     def dtype_name(self) -> str:
+        """Benchmark dtype name without the ``torch.`` prefix."""
         return str(self.dtype).replace("torch.", "")
 
 
@@ -239,18 +245,22 @@ def make_inputs(cfg: BenchConfig, batch_size: int, seq_len: int) -> tuple[torch.
 
 
 def peak_mb(device) -> float:
+    """Peak allocated memory in MiB, excluding the L2 flush buffer."""
     return (torch.cuda.max_memory_allocated(device) - _l2_flush_bytes()) / (1024 * 1024)
 
 
 def alloc_mb(device) -> float:
+    """Currently allocated memory in MiB, excluding the L2 flush buffer."""
     return (torch.cuda.memory_allocated(device) - _l2_flush_bytes()) / (1024 * 1024)
 
 
 def reserved_mb(device) -> float:
+    """Currently reserved memory in MiB, excluding the L2 flush buffer's segments."""
     return (torch.cuda.memory_reserved(device) - _l2_flush_reserved_bytes()) / (1024 * 1024)
 
 
 def peak_reserved_mb(device) -> float:
+    """Peak reserved memory in MiB, excluding the L2 flush buffer's segments."""
     return (torch.cuda.max_memory_reserved(device) - _l2_flush_reserved_bytes()) / (1024 * 1024)
 
 
@@ -263,6 +273,7 @@ def reset_device_state(device) -> None:
 
 
 def _timed_events(n: int):
+    """Two lists of ``n`` timing-enabled CUDA events (starts, ends)."""
     return (
         [torch.cuda.Event(enable_timing=True) for _ in range(n)],
         [torch.cuda.Event(enable_timing=True) for _ in range(n)],
@@ -270,6 +281,7 @@ def _timed_events(n: int):
 
 
 def _mean_ms(starts, ends) -> float:
+    """Mean elapsed milliseconds over paired start and end events."""
     return sum(s.elapsed_time(e) for s, e in zip(starts, ends)) / len(starts)
 
 
@@ -382,6 +394,8 @@ def run_one(cfg: BenchConfig, module: torch.nn.Module, batch_size: int, seq_len:
 
 
 def print_row(row: dict) -> None:
+    """Print one result row as a fixed-width line."""
+
     def fmt(value, width, spec):
         return f"{value:{width}{spec}}" if value is not None else " " * width
 
@@ -399,6 +413,7 @@ def print_row(row: dict) -> None:
 
 
 def save_csv(rows: list[dict], path: str) -> None:
+    """Write ``rows`` to ``path`` as CSV; no-op when ``rows`` is empty."""
     if not rows:
         return
     with open(path, "w", newline="") as f:
