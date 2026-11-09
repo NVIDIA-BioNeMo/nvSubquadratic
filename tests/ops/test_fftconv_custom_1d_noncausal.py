@@ -110,6 +110,26 @@ def test_subq_conv1d_dispatch(monkeypatch, cc10) -> None:
         assert fc._subq_conv1d_bhl(x, kernel) == want
 
 
+def test_subq_conv1d_compile_off_cc10_does_not_guard_on_seq_len(monkeypatch) -> None:
+    """Off CC 10.x, a dynamic compiled bf16 graph is reused across sequence lengths."""
+    from torch._dynamo.testing import CompileCounter
+
+    from nvsubquadratic.ops import fftconv_custom as fc
+
+    monkeypatch.setattr(fc, "_explicit_conv1d", lambda x, k: x)
+    monkeypatch.setattr(fc, "_fft_conv1d", lambda x, k: x * k.sum(-1)[:, None])
+    monkeypatch.setattr(fc, "_EXPLICIT_CONV1D_SEQ_LENS", frozenset({256}))
+    monkeypatch.setattr(fc, "_device_has_explicit_conv1d", lambda index: False)
+    torch._dynamo.reset()
+    counter = CompileCounter()
+    compiled = torch.compile(fc._subq_conv1d_bhl, backend=counter, fullgraph=True, dynamic=True)
+    kernel = torch.randn(2, 7, device="cuda", dtype=torch.bfloat16)
+    for L in (100, 256, 300):
+        compiled(torch.randn(1, 2, L, device="cuda", dtype=torch.bfloat16), kernel)
+    torch._dynamo.reset()
+    assert counter.frame_count == 1
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("B, H, L, K", SHAPES[:2])
 def test_backward_matches_torch_fft(B, H, L, K, dtype) -> None:

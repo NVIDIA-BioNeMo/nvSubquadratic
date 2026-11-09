@@ -861,11 +861,12 @@ def _device_has_explicit_conv1d(device_index: int) -> bool:
 @functools.lru_cache(maxsize=None)
 def _explicit_conv1d_applies(device_index: int, dtype: torch.dtype, seq_len: int, kernel_len: int) -> bool:
     """Whether ``explicit_conv1d`` supports this device, dtype, sequence length and kernel length."""
+    # Device first: off CC 10.x, compiled graphs must not guard on seq_len.
     return (
-        dtype in _EXPLICIT_CONV1D_DTYPES
+        _device_has_explicit_conv1d(device_index)
+        and dtype in _EXPLICIT_CONV1D_DTYPES
         and seq_len in _EXPLICIT_CONV1D_SEQ_LENS
         and kernel_len <= 2 * seq_len
-        and _device_has_explicit_conv1d(device_index)
     )
 
 
