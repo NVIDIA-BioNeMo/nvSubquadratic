@@ -76,6 +76,9 @@ def add_common_args(parser: argparse.ArgumentParser, *, archs: list[str], csv_de
     parser.add_argument("--no-flush-l2", dest="flush_l2", action="store_false")
     parser.add_argument("--dtype", choices=list(DTYPES), default="bf16")
     parser.add_argument("--mode", choices=["train", "infer"], default="train")
+    parser.add_argument(
+        "--right-pad-frac", type=float, default=0.125, help="Fraction of each sample padded at the end."
+    )
     parser.add_argument("--archs", nargs="+", default=archs, choices=archs)
     parser.add_argument("--csv", default=csv_default)
 
@@ -90,6 +93,7 @@ def tri_hyena_mixer_cfg(
     start_node: bool,
     L_cache: int,
     use_shortcut: bool = False,
+    right_padding: bool = False,
 ) -> LazyConfig:
     """``QKVSequenceMixer(TriangleHyena)`` config with the paper's SIREN sizes and no shortcut by default."""
     if window == "box":
@@ -107,6 +111,7 @@ def tri_hyena_mixer_cfg(
             hidden_dim=hidden_dim,
             start_node=start_node,
             short_conv_backend=short_conv_backend,
+            right_padding=right_padding,
             global_conv_cfg=LazyConfig(CKConvND)(
                 data_dim=1,
                 hidden_dim=hidden_dim,
@@ -190,6 +195,7 @@ class BenchConfig:
     n_bench: int
     flush_l2: bool
     mode: str
+    right_pad_frac: float
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> BenchConfig:
@@ -213,6 +219,7 @@ class BenchConfig:
             n_bench=args.n_bench,
             flush_l2=args.flush_l2,
             mode=args.mode,
+            right_pad_frac=args.right_pad_frac,
         )
 
     def flush_l2_cache(self) -> None:
@@ -238,9 +245,10 @@ class BenchConfig:
 
 
 def make_inputs(cfg: BenchConfig, batch_size: int, seq_len: int) -> tuple[torch.Tensor, torch.Tensor]:
-    """Random pair tensor and an all-False padding mask."""
+    """Random pair tensor and a padding mask marking the last ``round(right_pad_frac * L)`` positions."""
     pair = torch.randn(batch_size, seq_len, seq_len, cfg.hidden_dim, device=cfg.device, dtype=cfg.dtype)
     is_padding = torch.zeros(batch_size, seq_len, device=cfg.device, dtype=torch.bool)
+    is_padding[:, seq_len - round(cfg.right_pad_frac * seq_len) :] = True
     return pair, is_padding
 
 

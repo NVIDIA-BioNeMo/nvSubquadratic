@@ -162,6 +162,7 @@ class TriangleHyena(torch.nn.Module):
         short_conv_kernel_size: int = 3,
         short_conv_backend: Literal["torch", "subq_ops"] = "torch",
         start_node: bool = True,
+        right_padding: bool = False,
     ):
         """Build the short-conv taps and instantiate the long convolution.
 
@@ -176,6 +177,8 @@ class TriangleHyena(torch.nn.Module):
                 CUDA kernel.  Under ``torch.compile`` both use the fused stencil form.
             start_node: ``True`` mixes along rows (starting node), ``False`` along
                 columns (ending node).
+            right_padding: Skip zeroing the projections before the short conv.  ``True`` only if
+                every padding mask marks a suffix of each sample; other layouts then leak padded values.
 
         Raises:
             ValueError: If ``short_conv_backend`` is not ``"torch"`` or ``"subq_ops"``, or
@@ -187,6 +190,7 @@ class TriangleHyena(torch.nn.Module):
             raise ValueError(f"short_conv_backend must be 'torch' or 'subq_ops', got {short_conv_backend!r}")
         self.hidden_dim = hidden_dim
         self.start_node = start_node
+        self.right_padding = right_padding
         self.short_conv_backend = short_conv_backend
         self.global_conv = instantiate(global_conv_cfg)
         conv = self.global_conv
@@ -275,7 +279,8 @@ class TriangleHyena(torch.nn.Module):
             cp_group: Context-parallel group; only ``None`` or a group of size 1 is supported.
             padding_mask: Optional ``[B, L]`` boolean tensor, ``True`` at padded tokens.  The
                 projections are zeroed at every pair position in a padded row or column before
-                the short conv, and the long-conv input and output gate again after it.
+                the short conv, and the long-conv input and output gate again after it; with
+                ``right_padding`` only after it, together with the column stream.
             **mixer_kwargs: Only ``conditioning`` is accepted, and it is ignored (no FiLM kernel
                 conditioning).
 
@@ -303,9 +308,10 @@ class TriangleHyena(torch.nn.Module):
             )
         flat = (batch * rows, rows, channels)
         if padding_mask is not None:
-            # Zero padded pairs before the short conv so padded values never reach valid ones.
             pair_mask = (padding_mask[:, :, None] | padding_mask[:, None, :])[..., None]
-            qkv = qkv.masked_fill(pair_mask, 0)
+            if not self.right_padding:
+                # Zero padded pairs before the short conv so padded values never reach valid ones.
+                qkv = qkv.masked_fill(pair_mask, 0)
         key = qkv[..., channels : 2 * channels]
         row_in, col_in = (qkv, key.transpose(1, 2)) if self.start_node else (qkv.transpose(1, 2), key)
         if self.start_node and not torch.compiler.is_compiling():
@@ -320,6 +326,8 @@ class TriangleHyena(torch.nn.Module):
             mask = pair_mask.reshape(batch * rows, rows, 1)
             x1 = x1.masked_fill(mask, 0)
             x2 = x2.masked_fill(mask, 0)
+            if self.right_padding:
+                v = v.masked_fill(mask, 0)
         z = (x1 * v).transpose(1, 2).contiguous()
         y = x2 * self.global_conv(z, is_bhl_input=True).transpose(1, 2)
         y = y.reshape(batch, rows, rows, channels)

@@ -61,6 +61,7 @@ def mixer_cfg(
     use_shortcut=True,
     qkv_bias=False,
     out_proj_bias=True,
+    right_padding=False,
 ):
     """LazyConfig for a ``QKVSequenceMixer`` wrapping ``TriangleHyena`` with a SIREN ``CKConvND``."""
     if mask_cfg is None:
@@ -73,6 +74,7 @@ def mixer_cfg(
             hidden_dim=hidden_dim,
             start_node=start_node,
             short_conv_backend=short_conv_backend,
+            right_padding=right_padding,
             global_conv_cfg=LazyConfig(CKConvND)(
                 data_dim=1,
                 hidden_dim=hidden_dim,
@@ -524,10 +526,14 @@ def test_padding_mask_zeroes_padded_rows_and_columns(start_node) -> None:
 
 
 @pytest.mark.parametrize("start_node", [True, False])
-@pytest.mark.parametrize("padded", [[0, 1], [3], [1, 4], [4, 5]], ids=["left", "interior", "two_gaps", "suffix"])
-def test_padded_inputs_do_not_reach_unpadded_outputs(start_node, padded) -> None:
+@pytest.mark.parametrize(
+    "padded, right_padding",
+    [([0, 1], False), ([3], False), ([1, 4], False), ([4, 5], False), ([5], True), ([4, 5], True)],
+    ids=["left", "interior", "two_gaps", "suffix", "right_padding-1", "right_padding-2"],
+)
+def test_padded_inputs_do_not_reach_unpadded_outputs(start_node, padded, right_padding) -> None:
     """Outputs at valid pairs ignore padded values (random or NaN) and match the unpadded run."""
-    mixer = make_mixer(start_node=start_node, dtype=torch.float64)
+    mixer = make_mixer(start_node=start_node, dtype=torch.float64, right_padding=right_padding)
     x = torch.randn(B, L, L, C, dtype=torch.float64)
     padding = torch.zeros(B, L, dtype=torch.bool)
     padding[0, padded] = True
@@ -542,6 +548,8 @@ def test_padded_inputs_do_not_reach_unpadded_outputs(start_node, padded) -> None
         if keep[-1] - keep[0] + 1 == len(keep):
             torch.testing.assert_close(y[0][keep][:, keep], mixer(x[:1, keep][:, :, keep])[0])
         assert not torch.equal(mixer(x), y)
+        general = make_mixer(start_node=start_node, dtype=torch.float64)(x, padding_mask=padding)
+        torch.testing.assert_close(y[~pair], general[~pair])
 
 
 def test_all_false_padding_mask_is_a_no_op() -> None:

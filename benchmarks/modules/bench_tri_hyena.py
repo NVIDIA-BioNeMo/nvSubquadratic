@@ -54,6 +54,7 @@ def make_builder(name: str, start_node: bool):
             fft_backend="torch_fft" if backend == "torch" else "subq_ops",
             short_conv_backend=backend,
             start_node=start_node,
+            right_padding=True,
         )
         norm = torch.nn.LayerNorm(cfg.hidden_dim)
         module = cast_params(PairMixer(mixer, norm).to(cfg.device), cfg.dtype)
