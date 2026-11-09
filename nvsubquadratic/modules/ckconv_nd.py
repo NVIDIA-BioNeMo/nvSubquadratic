@@ -868,7 +868,10 @@ class CKConvND(torch.nn.Module):
                     load_conv1d_kernels,
                 )
 
-                load_conv1d_kernels()
+                try:  # Pre-load for torch.compile; a missing wheel raises on first call instead
+                    load_conv1d_kernels()
+                except ImportError:
+                    pass
                 if use_chunked_fftconv:
                     self.fftconv_fn = fftconv1d_bhl_w_reshape_chunked
                     self.fftconv_fn_bhl_input = fftconv1d_bhl_chunked

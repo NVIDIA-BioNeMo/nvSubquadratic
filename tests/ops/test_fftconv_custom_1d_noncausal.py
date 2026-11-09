@@ -26,6 +26,7 @@ Usage (requires GPU):
 """
 
 import importlib.util
+import sys
 
 import pytest
 import torch
@@ -185,3 +186,38 @@ def test_ckconv_1d_noncausal_subq_ops_matches_torch_fft() -> None:
 
     x = torch.randn(2, 64, 16, device="cuda")
     assert rel(build("subq_ops")(x), build("torch_fft")(x)) < 1e-4
+
+
+def test_ckconv_1d_noncausal_subq_ops_without_wheel_raises_on_first_call(monkeypatch) -> None:
+    """Without ``subquadratic_ops_torch``, a non-causal 1D ``CKConvND`` constructs and its forward raises."""
+    from nvsubquadratic.lazy_config import LazyConfig
+    from nvsubquadratic.modules.ckconv_nd import CKConvND
+    from nvsubquadratic.modules.kernels_nd import SIRENKernelND
+    from nvsubquadratic.ops import fftconv_custom as fc
+
+    for name in ("subquadratic_ops_torch.fft_conv1d", "subquadratic_ops_torch.experimental.explicit_conv1d"):
+        monkeypatch.setitem(sys.modules, name, None)
+    monkeypatch.setattr(fc, "_fft_conv1d", None)
+    monkeypatch.setattr(fc, "_explicit_conv1d", None)
+    monkeypatch.setattr(fc, "_EXPLICIT_CONV1D_SEQ_LENS", frozenset())
+    ckconv = CKConvND(
+        data_dim=1,
+        hidden_dim=16,
+        kernel_cfg=LazyConfig(SIRENKernelND)(
+            out_dim=16,
+            data_dim=1,
+            mlp_hidden_dim=16,
+            num_layers=2,
+            embedding_dim=16,
+            omega_0=10.0,
+            L_cache=64,
+            use_bias=True,
+        ),
+        mask_cfg=LazyConfig(torch.nn.Identity)(),
+        grid_type="double",
+        fft_padding="zero",
+        fft_backend="subq_ops",
+    )
+    with pytest.raises(ImportError, match="pip install"):
+        ckconv(torch.randn(2, 64, 16))
+    assert fc._fft_conv1d is None
