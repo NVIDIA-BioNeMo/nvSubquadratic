@@ -16,7 +16,8 @@
 """Channel-last ``causal_conv1d`` wrapper: eager parity with ``F.conv1d`` and correctness under torch.compile.
 
 The compiled case feeds the kernel a transposed intermediate, the layout that
-trips the upstream primitive's stride check without the wrapper.
+trips the upstream primitive's stride check without the wrapper; ``torch.library.opcheck``
+pins the fake kernels of both NWH ops.
 
 Usage (requires GPU):
     PYTHONPATH=. python -m pytest tests/ops/test_causal_conv1d_nwh_compile.py -v -o addopts=""
@@ -90,9 +91,11 @@ def test_compiled_transposed_input_matches_eager(mode, dtype, grad_rtol) -> None
     weight = torch.randn(3, 16, device="cuda", dtype=dtype, requires_grad=True)
 
     def fn(pair):
-        # [B, L, L, C] -> transposed rows -> [B*L, L, C]: a strided intermediate under inductor.
+        # [B, L, L, C] -> transposed rows -> [B*L, L, C], fed as a dense channel-major view.
         stream = pair.transpose(1, 2).reshape(-1, pair.shape[1], pair.shape[-1])
-        return causal_conv1d(stream.contiguous(), weight, None, "identity", channel_last=True)
+        stream = stream.transpose(1, 2).contiguous().transpose(1, 2)
+        # Consumed in-graph so inductor asserts the output stride the fake kernel promises.
+        return causal_conv1d(stream, weight, None, "identity", channel_last=True).square()
 
     pair = torch.randn(2, 24, 24, 16, device="cuda", dtype=dtype, requires_grad=True)
     want = fn(pair)
@@ -104,3 +107,18 @@ def test_compiled_transposed_input_matches_eager(mode, dtype, grad_rtol) -> None
     torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
     for g, w in zip(grads, want_grads):
         torch.testing.assert_close(g, w, atol=1e-3, rtol=grad_rtol)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
+def test_opcheck(dtype) -> None:
+    """NWH forward and backward custom ops pass ``torch.library.opcheck`` on a dense transposed input."""
+    torch.manual_seed(0)
+    x = torch.randn(4, 16, 32, device="cuda", dtype=dtype).transpose(1, 2).requires_grad_()
+    weight = torch.randn(3, 16, device="cuda", dtype=dtype, requires_grad=True)
+    bias = torch.randn(16, device="cuda", dtype=dtype, requires_grad=True)
+    grad_out = torch.randn(4, 32, 16, device="cuda", dtype=dtype)
+    torch.library.opcheck(torch.ops.nvsubquadratic.causal_conv1d_nwh, (x, weight, bias, "identity"))
+    torch.library.opcheck(
+        torch.ops.nvsubquadratic.causal_conv1d_nwh_backward,
+        (grad_out, x.detach(), weight.detach(), bias.detach(), "identity"),
+    )

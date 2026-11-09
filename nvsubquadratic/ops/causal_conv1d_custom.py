@@ -161,7 +161,7 @@ def causal_conv1d(
     if channel_last:
         if bias is None:
             bias = x.new_zeros(weight.shape[1])
-        return _causal_conv1d_nwh(x, weight, bias, activation)
+        return _causal_conv1d_nwh(x.contiguous(), weight, bias, activation)
     return _get_causal_conv1d()(x, weight, bias, activation)
 
 
