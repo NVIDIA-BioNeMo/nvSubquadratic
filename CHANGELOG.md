@@ -33,6 +33,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without the attribute still receive `(q, k, v, cp_group)`. Under
   `torch.compile` `TriangleHyena` runs its short conv as a fused stencil.
 
+### Changed
+
+- The `[cuda]` extra now requires `subquadratic-ops-torch-cu13>=0.3.1`; only the
+  latest subquadratic-ops-torch release is supported.
+
 ## \[0.2.0\] - 2026-09-16
 
 ### Added
