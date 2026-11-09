@@ -42,8 +42,17 @@ pytestmark = [
 ]
 
 TOL = {torch.float32: 1e-4, torch.bfloat16: 1e-2, torch.float16: 1e-2}
-# (B, H, L, K): L=256 is an explicit_conv1d length, 100 and 37 are fft_conv1d-only.
-SHAPES = [(2, 32, 256, 511), (2, 32, 100, 199), (1, 16, 37, 73), (2, 32, 256, 129), (2, 32, 256, 512)]
+# (B, H, L, K): K = 2L - 1, K < L, K = 2L; L=256 is an explicit_conv1d length; odd L; L <= 8, L > 256: blocked engine.
+SHAPES = [
+    (2, 32, 256, 511),
+    (2, 32, 100, 199),
+    (1, 16, 37, 73),
+    (2, 32, 256, 129),
+    (2, 32, 256, 512),
+    (1, 16, 37, 74),
+    (2, 16, 5, 9),
+    (2, 16, 300, 299),
+]
 
 
 def rel(a, b):
@@ -60,7 +69,7 @@ def make(B, H, L, K, dtype, device="cuda"):
     return x, kernel, shortcut
 
 
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("B, H, L, K", SHAPES)
 def test_forward_matches_torch_fft(B, H, L, K, dtype) -> None:
     """``fftconv1d_bhl`` forward matches the torch FFT reference and keeps the input dtype."""
@@ -130,8 +139,8 @@ def test_subq_conv1d_compile_off_cc10_does_not_guard_on_seq_len(monkeypatch) -> 
     assert counter.frame_count == 1
 
 
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-@pytest.mark.parametrize("B, H, L, K", SHAPES[:2])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
+@pytest.mark.parametrize("B, H, L, K", SHAPES[:2] + SHAPES[-3:])
 def test_backward_matches_torch_fft(B, H, L, K, dtype) -> None:
     """``fftconv1d_bhl`` gradients match the torch FFT reference."""
     from nvsubquadratic.ops.fftconv_custom import fftconv1d_bhl
