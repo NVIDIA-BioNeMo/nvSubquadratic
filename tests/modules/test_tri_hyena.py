@@ -675,10 +675,12 @@ def test_invalid_global_conv_raises(overrides) -> None:
 
 
 def test_conditioning_is_ignored_and_adaln_zero_block_runs() -> None:
-    """Conditioning does not change the output and the mixer runs in an ``AdaLNZeroResidualBlock``."""
+    """Conditioning does not change the output, other kwargs raise, and the mixer runs in an ``AdaLNZeroResidualBlock``."""
     mixer = make_mixer()
     x = torch.randn(B, L, L, C)
     torch.testing.assert_close(mixer(x, conditioning=torch.randn(B, C)), mixer(x), rtol=0, atol=0)
+    with pytest.raises(TypeError, match="padding_maks"):
+        mixer(x, padding_maks=torch.zeros(B, L, dtype=torch.bool))
     block = AdaLNZeroResidualBlock(
         sequence_mixer_cfg=mixer_cfg(),
         sequence_mixer_norm_cfg=LazyConfig(torch.nn.LayerNorm)(normalized_shape=C),

@@ -272,7 +272,8 @@ class TriangleHyena(torch.nn.Module):
             padding_mask: Optional ``[B, L]`` boolean tensor, ``True`` at padded tokens.  The
                 projections are zeroed at every pair position in a padded row or column before
                 the short conv, and the long-conv input and output gate again after it.
-            **mixer_kwargs: Ignored, including ``conditioning`` (no FiLM kernel conditioning).
+            **mixer_kwargs: Only ``conditioning`` is accepted, and it is ignored (no FiLM kernel
+                conditioning).
 
         Returns:
             ``[B, L, L, C]`` update of the pair tensor.
@@ -280,9 +281,13 @@ class TriangleHyena(torch.nn.Module):
         Raises:
             ValueError: If the pair tensor is not square, the channel width does not match
                 ``hidden_dim``, only one of ``key`` / ``value`` is given, or ``cp_group`` has size > 1.
+            TypeError: If ``mixer_kwargs`` holds any key other than ``conditioning``.
         """
         if cp_group is not None and cp_group.size() > 1:
             raise ValueError("TriangleHyena does not support context parallelism.")
+        mixer_kwargs.pop("conditioning", None)  # AdaLN-zero blocks always pass conditioning
+        if mixer_kwargs:
+            raise TypeError(f"TriangleHyena got unexpected mixer kwargs {sorted(mixer_kwargs)}.")
         if (key is None) != (value is None):
             raise ValueError("TriangleHyena takes either (query, key, value) or the fused qkv tensor alone.")
         qkv = query if key is None else torch.cat([query, key, value], dim=-1)
