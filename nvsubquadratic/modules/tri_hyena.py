@@ -270,8 +270,8 @@ class TriangleHyena(torch.nn.Module):
             value: ``[B, L, L, C]`` output-gate projection (reference ``x2``).
             cp_group: Context-parallel group; only ``None`` or a group of size 1 is supported.
             padding_mask: Optional ``[B, L]`` boolean tensor, ``True`` at padded tokens.  The
-                long-conv input and the output gate are zeroed at every pair position in a
-                padded row or column, after the short conv.
+                projections are zeroed at every pair position in a padded row or column before
+                the short conv, and the long-conv input and output gate again after it.
             **mixer_kwargs: Ignored, including ``conditioning`` (no FiLM kernel conditioning).
 
         Returns:
@@ -293,6 +293,10 @@ class TriangleHyena(torch.nn.Module):
                 f"TriangleHyena needs a square pair tensor [B, L, L, 3C] with C={channels}, got {tuple(qkv.shape)}."
             )
         flat = (batch * rows, rows, channels)
+        if padding_mask is not None:
+            # Zero padded pairs before the short conv so padded values never reach valid ones.
+            pair_mask = (padding_mask[:, :, None] | padding_mask[:, None, :])[..., None]
+            qkv = qkv.masked_fill(pair_mask, 0)
         key = qkv[..., channels : 2 * channels]
         row_in, col_in = (qkv, key.transpose(1, 2)) if self.start_node else (qkv.transpose(1, 2), key)
         if self.start_node and not torch.compiler.is_compiling():
@@ -303,7 +307,7 @@ class TriangleHyena(torch.nn.Module):
             x2 = self._short_conv(row_in[..., 2 * channels :].reshape(flat), self._stream_weight(2))
         v = self._short_conv(col_in.reshape(flat), self._stream_weight(1))
         if padding_mask is not None:
-            mask = (padding_mask[:, :, None] | padding_mask[:, None, :]).reshape(batch * rows, rows, 1)
+            mask = pair_mask.reshape(batch * rows, rows, 1)
             x1 = x1.masked_fill(mask, 0)
             x2 = x2.masked_fill(mask, 0)
         z = (x1 * v).transpose(1, 2).contiguous()

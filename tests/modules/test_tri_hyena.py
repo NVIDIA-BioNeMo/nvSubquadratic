@@ -151,6 +151,8 @@ def ref_core(x1, x2, v, h, w_conv, padding, start_node):
     def flat(t):
         return t.reshape(b * length, length, c)
 
+    pair = (padding[:, :, None] | padding[:, None, :])[..., None]
+    x1, x2, v = (t.masked_fill(pair, 0) for t in (x1, x2, v))
     x1 = ref_causal_conv(flat(row(x1)), w_conv[:c])
     x2 = ref_causal_conv(flat(row(x2)), w_conv[c : 2 * c])
     v = ref_causal_conv(flat(col(v)), w_conv[2 * c :])
@@ -502,22 +504,24 @@ def test_padding_mask_zeroes_padded_rows_and_columns(start_node) -> None:
 
 
 @pytest.mark.parametrize("start_node", [True, False])
-def test_padded_inputs_do_not_reach_unpadded_outputs_with_identity_short_conv(start_node) -> None:
-    """Changing padded positions does not change the output when a padding mask is given."""
+@pytest.mark.parametrize("padded", [[0, 1], [3], [1, 4], [4, 5]], ids=["left", "interior", "two_gaps", "suffix"])
+def test_padded_inputs_do_not_reach_unpadded_outputs(start_node, padded) -> None:
+    """Outputs at valid pairs ignore padded values (random or NaN) and match the unpadded run."""
     mixer = make_mixer(start_node=start_node, dtype=torch.float64)
-    mixer.mixer.short_conv_weight.data.zero_()
-    mixer.mixer.short_conv_weight.data[-1] = 1.0
     x = torch.randn(B, L, L, C, dtype=torch.float64)
     padding = torch.zeros(B, L, dtype=torch.bool)
-    padding[0, 3] = True
-    x2 = x.clone()
-    x2[0, 3] = torch.randn(L, C, dtype=torch.float64)
-    x2[0, :, 3] = torch.randn(L, C, dtype=torch.float64)
+    padding[0, padded] = True
+    pair = padding[:, :, None] | padding[:, None, :]
     with torch.no_grad():
-        y, y2 = mixer(x, padding_mask=padding), mixer(x2, padding_mask=padding)
-    assert torch.equal(y, y2)
-    with torch.no_grad():
-        assert not torch.equal(mixer(x), mixer(x2))
+        y = mixer(x, padding_mask=padding)
+        for fill in (torch.randn_like(x), torch.full_like(x, float("nan"))):
+            y2 = mixer(torch.where(pair[..., None], fill, x), padding_mask=padding)
+            assert torch.isfinite(y2).all()
+            assert torch.equal(y[~pair], y2[~pair])
+        keep = (~padding[0]).nonzero().squeeze(1)
+        if keep[-1] - keep[0] + 1 == len(keep):
+            torch.testing.assert_close(y[0][keep][:, keep], mixer(x[:1, keep][:, :, keep])[0])
+        assert not torch.equal(mixer(x), y)
 
 
 def test_all_false_padding_mask_is_a_no_op() -> None:
