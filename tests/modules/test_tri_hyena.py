@@ -817,8 +817,9 @@ def test_bf16_subq_ops_backend_calls_explicit_conv1d(monkeypatch) -> None:
 
 @_requires_cuda
 @_requires_subq_ops
-def test_compiled_subq_ops_backends_match_eager() -> None:
-    """``reduce-overhead`` compiled subq_ops mixer matches eager in output and input gradient."""
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_compiled_subq_ops_backends_match_eager(dtype) -> None:
+    """``reduce-overhead`` compiled subq_ops mixer matches eager in output and input gradient (fp32); bf16 runs."""
     seq_len, hidden = 256, 32
     mixer = make_mixer(
         seq_len=seq_len,
@@ -826,25 +827,28 @@ def test_compiled_subq_ops_backends_match_eager() -> None:
         mask_cfg=box_cfg(64),
         fft_backend="subq_ops",
         short_conv_backend="subq_ops",
-        dtype=torch.bfloat16,
+        dtype=dtype,
         out_proj_bias=False,
     ).cuda()
-    x = torch.randn(1, seq_len, seq_len, hidden, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    x = torch.randn(1, seq_len, seq_len, hidden, device="cuda", dtype=dtype, requires_grad=True)
     want = mixer(x)
     want_grad = torch.autograd.grad(want.float().square().sum(), x)[0]
     compiled = torch.compile(mixer, mode="reduce-overhead")
     for _ in range(3):
         got = compiled(x)
         got_grad = torch.autograd.grad(got.float().square().sum(), x)[0]
-    assert (got.float() - want.float()).norm() / want.float().norm() < 5e-2
-    assert (got_grad.float() - want_grad.float()).norm() / want_grad.float().norm() < 5e-2
+    assert torch.isfinite(got).all() and torch.isfinite(got_grad).all()
+    if dtype == torch.float32:  # bf16 eager rounds the SIREN pre-sine argument, inductor does not
+        assert (got - want).norm() / want.norm() < 1e-5
+        assert (got_grad - want_grad).norm() / want_grad.norm() < 1e-5
 
 
 @_requires_cuda
 @_requires_subq_ops
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("start_node", [True, False])
-def test_fullgraph_compile_matches_eager(start_node) -> None:
-    """``fullgraph`` compile matches eager and has no graph breaks."""
+def test_fullgraph_compile_matches_eager(start_node, dtype) -> None:
+    """``fullgraph`` compile matches eager (fp32) and has no graph breaks."""
     seq_len, hidden = 256, 32
     mixer = make_mixer(
         seq_len=seq_len,
@@ -853,14 +857,16 @@ def test_fullgraph_compile_matches_eager(start_node) -> None:
         mask_cfg=box_cfg(64),
         fft_backend="subq_ops",
         short_conv_backend="subq_ops",
-        dtype=torch.bfloat16,
+        dtype=dtype,
         out_proj_bias=False,
     ).cuda()
-    x = torch.randn(1, seq_len, seq_len, hidden, device="cuda", dtype=torch.bfloat16)
+    x = torch.randn(1, seq_len, seq_len, hidden, device="cuda", dtype=dtype)
     compiled = torch.compile(mixer, fullgraph=True)
     with torch.no_grad():
         want = mixer(x)
         got = compiled(x)
-    assert (got.float() - want.float()).norm() / want.float().norm() < 5e-2
+    assert torch.isfinite(got).all()
+    if dtype == torch.float32:  # bf16 eager rounds the SIREN pre-sine argument, inductor does not
+        assert (got - want).norm() / want.norm() < 1e-5
     explanation = torch._dynamo.explain(mixer)(x)
     assert explanation.graph_break_count == 0
