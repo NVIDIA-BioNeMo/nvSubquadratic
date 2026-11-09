@@ -270,16 +270,24 @@ def test_bfloat16_runs() -> None:
 @pytest.mark.parametrize("start_node", [True, False])
 @pytest.mark.parametrize("mask_cfg", [None, box_cfg(2)], ids=["no-window", "box-2"])
 def test_matches_reference_core(start_node, mask_cfg) -> None:
-    """Mixer matches the eager reference core with and without a box window."""
+    """Mixer matches the eager reference core in output and every parameter gradient, with and without a box window."""
     mixer = make_mixer(start_node=start_node, mask_cfg=mask_cfg, dtype=torch.float64)
     mixer.mixer.global_conv.shortcut.data.zero_()
+    mixer.mixer.global_conv.shortcut.requires_grad_(False)
     x = torch.randn(B, L, L, C, dtype=torch.float64)
     padding = torch.zeros(B, L, dtype=torch.bool)
     padding[1, -2:] = True
-    with torch.no_grad():
-        got = mixer(x, padding_mask=padding)
-        want = ref_from_mixer(mixer, x, padding)
+    got = mixer(x, padding_mask=padding)
+    want = ref_from_mixer(mixer, x, padding)
     torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
+    names, params = zip(*[(n, p) for n, p in mixer.named_parameters() if p.requires_grad])
+    got_grads = torch.autograd.grad(got.square().sum(), params)
+    want_grads = torch.autograd.grad(want.square().sum(), params)
+    for name, g, w in zip(names, got_grads, want_grads):
+        # Short-conv taps per stream block [x1 | v | x2] so a frozen block is named.
+        blocks = zip(["x1", "v", "x2"], g.split(C, -1), w.split(C, -1)) if "short_conv" in name else [("", g, w)]
+        for block, gb, wb in blocks:
+            torch.testing.assert_close(gb, wb, atol=1e-6, rtol=1e-5, msg=lambda m: f"{name} {block}: {m}")
 
 
 @pytest.mark.parametrize("seq_len", [L - 2, L, L + 3, 2 * L - 1, 2 * L])
@@ -767,9 +775,18 @@ def test_subq_ops_backend_matches_torch_fft(dtype, seq_len) -> None:
     got = fast(x, padding_mask=padding)
     tol = 1e-5 if dtype == torch.float32 else 1e-3
     assert (got.float() - want.float()).norm() / want.float().norm() < tol
-    got.square().sum().backward()
-    assert fast.mixer.global_conv.kernel.out_linear.weight.grad is not None
-    assert fast.mixer.short_conv_weight.grad is not None
+    got.float().square().sum().backward()
+    want.float().square().sum().backward()
+    grad_tol = 1e-5 if dtype == torch.float32 else 5e-2
+    for (name, p), q in zip(fast.named_parameters(), reference.parameters()):
+        # Short-conv taps per stream block [x1 | v | x2] so a frozen block is named.
+        blocks = (
+            zip(["x1", "v", "x2"], p.grad.split(hidden, -1), q.grad.split(hidden, -1))
+            if "short_conv" in name
+            else [("", p.grad, q.grad)]
+        )
+        for block, g, w in blocks:
+            assert (g.float() - w.float()).norm() / w.float().norm() < grad_tol, f"{name} {block}"
 
 
 @_requires_subq_ops
