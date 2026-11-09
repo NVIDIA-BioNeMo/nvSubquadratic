@@ -35,6 +35,7 @@ import torch.nn.functional as F
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
 from nvsubquadratic.modules.ckconv_nd import CKConvND
+from nvsubquadratic.modules.film import KernelFiLMGenerator
 from nvsubquadratic.modules.kernels_nd import SIRENKernelND
 from nvsubquadratic.modules.masks_nd import BoxModulationND, GaussianModulationND
 from nvsubquadratic.modules.residual_block import AdaLNZeroResidualBlock, ResidualBlock
@@ -671,6 +672,16 @@ def test_invalid_global_conv_raises(overrides) -> None:
     for name, value in overrides.items():
         setattr(cfg.mixer_cfg.global_conv_cfg, name, value)
     with pytest.raises(ValueError, match="global_conv must be"):
+        instantiate(cfg)
+
+
+def test_film_kernel_raises() -> None:
+    """A FiLM-conditioned ``global_conv`` kernel raises ``ValueError``."""
+    cfg = mixer_cfg()
+    cfg.mixer_cfg.global_conv_cfg.kernel_cfg.film_cfg = LazyConfig(KernelFiLMGenerator)(
+        cond_dim=C, kernel_hidden_dim=16, num_film_layers=2
+    )
+    with pytest.raises(ValueError, match="FiLM"):
         instantiate(cfg)
 
 

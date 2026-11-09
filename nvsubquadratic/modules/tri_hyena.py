@@ -179,7 +179,7 @@ class TriangleHyena(torch.nn.Module):
         Raises:
             ValueError: If ``short_conv_backend`` is not ``"torch"`` or ``"subq_ops"``, or
                 ``global_conv_cfg`` is not a 1D non-causal zero-padded double-grid ``CKConvND``
-                with ``hidden_dim`` channels.
+                with ``hidden_dim`` channels, or its kernel is FiLM-conditioned.
         """
         super().__init__()
         if short_conv_backend not in ("torch", "subq_ops"):
@@ -201,6 +201,8 @@ class TriangleHyena(torch.nn.Module):
                 f"got data_dim={conv.data_dim}, is_causal={conv.is_causal}, hidden_dim={conv.hidden_dim}, "
                 f"grid_type={conv.grid_type!r}, fft_padding={conv.fft_padding!r}"
             )
+        if getattr(conv.kernel, "film_generator", None) is not None:
+            raise ValueError("TriangleHyena does not support FiLM kernels: conditioning cannot reach the long conv.")
         weight = torch.empty(3 * hidden_dim, short_conv_kernel_size)
         torch.nn.init.kaiming_uniform_(weight, a=math.sqrt(5))
         self.short_conv_weight = torch.nn.Parameter(weight.t().contiguous())
