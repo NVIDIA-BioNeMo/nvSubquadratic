@@ -285,7 +285,8 @@ def test_reference_checkpoint_port(start_node) -> None:
     """A ported reference checkpoint reproduces the reference forward pass."""
     ref = reference_state_dict(C, seed=3)
     mixer = make_mixer(start_node=start_node, mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64)
-    norm = load_reference_state_dict(mixer, {f"core.{k}": v for k, v in ref.items()})
+    grid = {"siren_kernel.positional_embedding.grid_cache": torch.zeros(1, 2 * L - 1, 1)}
+    norm = load_reference_state_dict(mixer, {f"core.{k}": v for k, v in {**ref, **grid}.items()})
     assert norm["weight"] is ref["norm.weight"] and norm["bias"] is ref["norm.bias"]
     assert torch.equal(mixer.mixer.global_conv.shortcut, torch.zeros(C, dtype=torch.float64))
 
@@ -353,13 +354,32 @@ def test_reference_checkpoint_port_siren_depth_mismatch() -> None:
     mixer = make_mixer(L_cache=2 * L - 1)
     before = {k: v.clone() for k, v in mixer.state_dict().items()}
     deeper = {**reference_state_dict(C, seed=3), "siren_kernel.kernel_network.4.weight": torch.zeros(16, 16)}
-    with pytest.raises(ValueError, match="more than the mixer's 2 hidden layers"):
+    with pytest.raises(ValueError, match=r"kernel_network\.4\.weight"):
         load_reference_state_dict(mixer, deeper)
     shallower = {k: v for k, v in reference_state_dict(C, seed=3).items() if "kernel_network.2" not in k}
     with pytest.raises(ValueError, match=r"kernel_network\.2"):
         load_reference_state_dict(mixer, shallower)
     for k, v in mixer.state_dict().items():
         torch.testing.assert_close(v, before[k], atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("key", ["linear_vj.bias", "siren_kernel.kernel_network.1.omega_0"])
+def test_reference_checkpoint_port_unused_key(key) -> None:
+    """An unused reference tensor raises ``ValueError`` and leaves the mixer unchanged."""
+    mixer = make_mixer(L_cache=2 * L - 1)
+    before = {k: v.clone() for k, v in mixer.state_dict().items()}
+    with pytest.raises(ValueError, match=key.replace(".", r"\.")):
+        load_reference_state_dict(mixer, {**reference_state_dict(C, seed=3), key: torch.zeros(1)})
+    assert all(torch.equal(before[k], v) for k, v in mixer.state_dict().items())
+
+
+def test_reference_checkpoint_port_unmapped_mixer_parameter() -> None:
+    """A mixer parameter with no reference counterpart raises ``ValueError`` and leaves the mixer unchanged."""
+    mixer = make_mixer(L_cache=2 * L - 1, mask_cfg=LazyConfig(GaussianModulationND)(data_dim=1, num_channels=C))
+    before = {k: v.clone() for k, v in mixer.state_dict().items()}
+    with pytest.raises(ValueError, match=r"mask\.std_param"):
+        load_reference_state_dict(mixer, reference_state_dict(C, seed=3))
+    assert all(torch.equal(before[k], v) for k, v in mixer.state_dict().items())
 
 
 @pytest.mark.parametrize("key", ["norm.weight", "norm.bias"])

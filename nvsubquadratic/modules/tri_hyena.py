@@ -354,37 +354,40 @@ def load_reference_state_dict(
 
     Raises:
         ValueError: If a tensor's shape does not match the mixer's, or a reference key is missing.
+        ValueError: If a reference key other than ``grid_cache`` is unused.
+        ValueError: If a mixer parameter has no reference counterpart.
     """
     ref = {key.removeprefix("core."): value for key, value in state_dict.items()}
     kernel = mixer.mixer.global_conv.kernel
     width = mixer.qkv_proj.out_features // 3
     try:
-        norm = {"weight": ref["norm.weight"], "bias": ref["norm.bias"]}
-        x12 = ref["linear_x12i.weight"]
-        w_x1, w_x2, w_v = ref["W_conv_x12i_vj"].split(width)
+        norm = {"weight": ref.pop("norm.weight"), "bias": ref.pop("norm.bias")}
+        x12 = ref.pop("linear_x12i.weight")
+        w_x1, w_x2, w_v = ref.pop("W_conv_x12i_vj").split(width)
         target = {
-            "qkv_proj.weight": torch.cat([x12[:width], ref["linear_vj.weight"], x12[width:]]),
-            "out_proj.weight": ref["to_out.weight"],
-            "out_proj.bias": ref["to_out.bias"],
+            "qkv_proj.weight": torch.cat([x12[:width], ref.pop("linear_vj.weight"), x12[width:]]),
+            "out_proj.weight": ref.pop("to_out.weight"),
+            "out_proj.bias": ref.pop("to_out.bias"),
             "mixer.short_conv_weight": torch.cat([w_x1, w_v, w_x2]).t().contiguous(),
-            "mixer.global_conv.kernel.positional_embedding.linear.weight": ref[
+            "mixer.global_conv.kernel.positional_embedding.linear.weight": ref.pop(
                 "siren_kernel.positional_embedding.linear.weight"
-            ],
-            "mixer.global_conv.kernel.positional_embedding.linear.bias": ref[
+            ),
+            "mixer.global_conv.kernel.positional_embedding.linear.bias": ref.pop(
                 "siren_kernel.positional_embedding.linear.bias"
-            ],
-            "mixer.global_conv.kernel.out_linear.weight": ref["siren_kernel.out_linear.weight"],
-            "mixer.global_conv.kernel.out_linear.bias": ref["siren_kernel.out_linear.bias"],
+            ),
+            "mixer.global_conv.kernel.out_linear.weight": ref.pop("siren_kernel.out_linear.weight"),
+            "mixer.global_conv.kernel.out_linear.bias": ref.pop("siren_kernel.out_linear.bias"),
         }
         for index in range(len(kernel.hidden_linears)):
             for name in ("weight", "bias"):
-                target[f"mixer.global_conv.kernel.hidden_linears.{index}.{name}"] = ref[
+                target[f"mixer.global_conv.kernel.hidden_linears.{index}.{name}"] = ref.pop(
                     f"siren_kernel.kernel_network.{2 * index}.{name}"
-                ]
+                )
     except KeyError as exc:
         raise ValueError(f"reference state dict lacks {exc}") from exc
-    if f"siren_kernel.kernel_network.{2 * len(kernel.hidden_linears)}.weight" in ref:
-        raise ValueError(f"reference SIREN has more than the mixer's {len(kernel.hidden_linears)} hidden layers")
+    ref.pop("siren_kernel.positional_embedding.grid_cache", None)
+    if ref:
+        raise ValueError(f"reference state dict has unused keys {sorted(ref)}")
     current = mixer.state_dict()
     for name, tensor in target.items():
         if name not in current:
@@ -394,5 +397,7 @@ def load_reference_state_dict(
     for name in ("qkv_proj.bias", "mixer.global_conv.shortcut"):
         if name in current:
             target[name] = torch.zeros_like(current[name])
+    if unmapped := sorted(set(current) - set(target)):
+        raise ValueError(f"mixer parameters {unmapped} have no reference counterpart")
     mixer.load_state_dict({**current, **target})
     return norm
