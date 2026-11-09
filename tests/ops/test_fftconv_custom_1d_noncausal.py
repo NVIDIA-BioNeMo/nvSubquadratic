@@ -177,6 +177,15 @@ def test_per_sample_kernel_raises() -> None:
         fftconv1d_bhl(x, kernel.expand(2, -1, -1))
 
 
+def test_kernel_channel_mismatch_raises() -> None:
+    """A kernel with a different channel count than ``x`` raises ``ValueError`` before dispatch."""
+    from nvsubquadratic.ops.fftconv_custom import fftconv1d_bhl
+
+    x, kernel, _ = make(2, 16, 64, 127, torch.float32, device="cpu")
+    with pytest.raises(ValueError, match="channels"):
+        fftconv1d_bhl(x, kernel[:, :8])
+
+
 def test_ckconv_1d_noncausal_subq_ops_matches_torch_fft() -> None:
     """Non-causal 1D ``CKConvND`` with the subq_ops backend matches torch_fft."""
     from nvsubquadratic.lazy_config import LazyConfig

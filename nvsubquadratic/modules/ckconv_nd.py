@@ -90,7 +90,8 @@ Two boundary conditions are supported per spatial axis:
 
 Shortcut (skip connection)
 --------------------------
-Every forward pass adds a per-channel residual term:
+With ``use_shortcut=True`` (the default) every forward pass adds a per-channel
+residual term:
 
 .. code-block:: none
 
@@ -460,7 +461,8 @@ class CKConvND(torch.nn.Module):
 
         y = IFFT( FFT(x) ⊙ FFT(k_θ) )  +  shortcut ⊙ x
 
-    at O(N log N) cost per channel, where N = prod(spatial_dims).
+    at O(N log N) cost per channel, where N = prod(spatial_dims); the
+    ``shortcut ⊙ x`` term only with ``use_shortcut=True``.
 
     The MLP and its positional encoding are provided through ``kernel_cfg``
     (typically a ``SIRENKernelND`` or ``RandomFourierKernelND`` lazy config
@@ -615,10 +617,13 @@ class CKConvND(torch.nn.Module):
                     (1D "same" conv): ``fft_conv1d``, or the Toeplitz-GEMM
                     ``explicit_conv1d`` for bf16/fp16 inputs on compute capability
                     10.x at its supported sequence lengths.  Runs in the input
-                    dtype; no per-sample weights.
+                    dtype; no per-sample weights.  Raises on the first forward
+                    beyond its length cap and specialises compiled graphs on
+                    the length (see
+                    :func:`~nvsubquadratic.ops.fftconv_custom.fftconv1d_bhl`).
 
-                  Does not support fp16 FFT, per-axis ``fft_padding``, or
-                  ``data_dim=3``.
+                  The 2D and 1D causal paths run the FFT in fp32 (no fp16 FFT).
+                  No path supports per-axis ``fft_padding`` or ``data_dim=3``.
 
                 * ``"subq_ops_fused"``: the fused ``fused_fft_conv2d`` CUDA
                   kernel from ``subquadratic_ops_torch``, which runs the whole
@@ -899,7 +904,7 @@ class CKConvND(torch.nn.Module):
                 )
         elif fft_backend == "subq_ops_fused":
             # 2D-only (enforced above). The fused op keeps the input dtype end
-            # to end, so unlike the "subq_ops" path there is no fp32 round-trip.
+            # to end, so unlike the 2D "subq_ops" path there is no fp32 round-trip.
             from nvsubquadratic.ops.fftconv_custom import (
                 fused_fftconv2d_bhl,
                 fused_fftconv2d_bhl_chunked,
@@ -1157,7 +1162,7 @@ class CKConvND(torch.nn.Module):
         Generates the implicit kernel from the positional grid, optionally
         applies the attenuation mask, crops the kernel for causal mode,
         handles context-parallel channel slicing, and applies the FFT
-        convolution with the shortcut term.
+        convolution with the shortcut term (if ``use_shortcut``).
 
         Computation (non-causal, no CP):
 

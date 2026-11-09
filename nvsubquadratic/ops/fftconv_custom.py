@@ -56,6 +56,11 @@ Functions provided
 - ``causal_fftconv1d_blh`` / ``causal_fftconv1d_blh_chunked``: aliases for
   the ``_w_reshape`` variants.
 
+1D non-causal (zero-padded "same", **native dtype**):
+
+- ``fftconv1d_bhl`` / ``fftconv1d_bhl_chunked`` and the matching ``_w_reshape`` /
+  ``_blh`` variants, run in the input dtype (``fft_conv1d`` or ``explicit_conv1d``).
+
 The ``fftconv2d*`` / ``causal_fftconv1d*`` functions accept any input dtype
 (bf16, fp16, fp32) and internally cast to fp32 for the CUDA kernel, returning
 the output in the original dtype.  The ``fused_fftconv2d*`` functions instead
@@ -884,6 +889,8 @@ def _subq_conv1d_bhl(x: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
                 "expected shared kernel [1, H, K] or [H, K]."
             )
         kernel = kernel.squeeze(0)
+    if kernel.shape[0] != x.shape[1]:
+        raise ValueError(f"kernel {tuple(kernel.shape)} does not match the channels of x {tuple(x.shape)}")
     x, kernel = x.contiguous(), kernel.contiguous()
     explicit_conv1d = _get_explicit_conv1d()
     if explicit_conv1d is not None and x.is_cuda:
@@ -910,14 +917,26 @@ def fftconv1d_bhl(
     (multiples of 128 up to 2048), ``fft_conv1d`` otherwise.  Both compute the same
     convolution.
 
+    Unlike ``torch_fft`` it caps the length (subquadratic-ops-torch 0.3.1): with
+    ``K = 2L - 1`` (``grid_type="double"``), ``L <= 4096`` on SM8x / SM12x,
+    ``L <= 8192`` on SM90-SM11x and ``L <= 2048`` in fp64; with ``K ~ L``
+    (``grid_type="single"``) the caps double.  The cap follows ``K``, so a Box window
+    does not lift it.  Compiled graphs specialise on ``L`` (on 0.3.1 one graph per
+    ``fft_conv1d`` FFT size, e.g. ``L`` 300-500 share 1024), so bucket ``L`` or use
+    ``fft_backend="torch_fft"`` for variable-length compile.
+
     Args:
         x: Input tensor ``[B, H, L]``.
         kernel: Kernel tensor ``[1, H, K]`` or ``[H, K]`` with ``K <= 2 * L``; cast to
-            ``x.dtype``.  Per-sample FiLM weights are not supported.
+            ``x.dtype``, so an fp32 kernel with bf16/fp16 ``x`` gets a gradient rounded to
+            that dtype.  Per-sample FiLM weights are not supported.
         shortcut: Optional per-channel scale ``[H]``.
 
     Returns:
         Output tensor ``[B, H, L]`` in ``x.dtype``.
+
+    Raises:
+        ValueError: If ``L`` exceeds the cap above, or ``kernel`` does not have ``H`` channels.
     """
     y = _subq_conv1d_bhl(x, kernel.to(x.dtype))
     if shortcut is not None:
@@ -933,6 +952,14 @@ def fftconv1d_bhl_w_reshape(
     """1D non-causal convolution via subq_ops for BLH inputs ``[B, L, H]``.
 
     Reshapes to BHL, runs :func:`fftconv1d_bhl`, reshapes back.
+
+    Args:
+        x: Input tensor ``[B, L, H]``.
+        kernel: Kernel tensor ``[1, K, H]``; see :func:`fftconv1d_bhl`.
+        shortcut: Optional per-channel scale ``[H]``.
+
+    Returns:
+        Output tensor ``[B, L, H]`` in ``x.dtype``.
     """
     y_bhl = fftconv1d_bhl(rearrange(x, "b l h -> b h l"), rearrange(kernel, "b l h -> b h l"), shortcut)
     return rearrange(y_bhl, "b h l -> b l h")
@@ -943,7 +970,16 @@ def fftconv1d_blh(
     kernel: torch.Tensor,
     shortcut: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Alias for :func:`fftconv1d_bhl_w_reshape`."""
+    """Alias for :func:`fftconv1d_bhl_w_reshape`.
+
+    Args:
+        x: Input tensor ``[B, L, H]``.
+        kernel: Kernel tensor ``[1, K, H]``; see :func:`fftconv1d_bhl`.
+        shortcut: Optional per-channel scale ``[H]``.
+
+    Returns:
+        Output tensor ``[B, L, H]`` in ``x.dtype``.
+    """
     return fftconv1d_bhl_w_reshape(x, kernel, shortcut)
 
 
@@ -953,7 +989,17 @@ def fftconv1d_bhl_chunked(
     shortcut: torch.Tensor | None = None,
     chunk_size: int | None = None,
 ) -> torch.Tensor:
-    """Channel-chunked 1D non-causal convolution via subq_ops, BHL layout."""
+    """Channel-chunked 1D non-causal convolution via subq_ops, BHL layout.
+
+    Args:
+        x: Input tensor ``[B, H, L]``.
+        kernel: Kernel tensor ``[1, H, K]`` or ``[H, K]``; see :func:`fftconv1d_bhl`.
+        shortcut: Optional per-channel scale ``[H]``.
+        chunk_size: Channels per kernel call; ``None`` means 128.
+
+    Returns:
+        Output tensor ``[B, H, L]`` in ``x.dtype``.
+    """
     if chunk_size is None:
         chunk_size = _DEFAULT_CHUNK_SIZE
     H = x.shape[1]
@@ -976,7 +1022,17 @@ def fftconv1d_bhl_w_reshape_chunked(
     shortcut: torch.Tensor | None = None,
     chunk_size: int | None = None,
 ) -> torch.Tensor:
-    """Channel-chunked 1D non-causal convolution via subq_ops for BLH inputs ``[B, L, H]``."""
+    """Channel-chunked 1D non-causal convolution via subq_ops for BLH inputs ``[B, L, H]``.
+
+    Args:
+        x: Input tensor ``[B, L, H]``.
+        kernel: Kernel tensor ``[1, K, H]``; see :func:`fftconv1d_bhl`.
+        shortcut: Optional per-channel scale ``[H]``.
+        chunk_size: Channels per kernel call; ``None`` means 128.
+
+    Returns:
+        Output tensor ``[B, L, H]`` in ``x.dtype``.
+    """
     y_bhl = fftconv1d_bhl_chunked(
         rearrange(x, "b l h -> b h l"), rearrange(kernel, "b l h -> b h l"), shortcut, chunk_size
     )
@@ -989,5 +1045,15 @@ def fftconv1d_blh_chunked(
     shortcut: torch.Tensor | None = None,
     chunk_size: int | None = None,
 ) -> torch.Tensor:
-    """Alias for :func:`fftconv1d_bhl_w_reshape_chunked`."""
+    """Alias for :func:`fftconv1d_bhl_w_reshape_chunked`.
+
+    Args:
+        x: Input tensor ``[B, L, H]``.
+        kernel: Kernel tensor ``[1, K, H]``; see :func:`fftconv1d_bhl`.
+        shortcut: Optional per-channel scale ``[H]``.
+        chunk_size: Channels per kernel call; ``None`` means 128.
+
+    Returns:
+        Output tensor ``[B, L, H]`` in ``x.dtype``.
+    """
     return fftconv1d_bhl_w_reshape_chunked(x, kernel, shortcut, chunk_size)

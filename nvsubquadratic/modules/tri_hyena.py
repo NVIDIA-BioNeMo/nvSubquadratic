@@ -22,8 +22,11 @@ AlphaFold-style trunks update a pair representation :math:`z \in R^{B \times L
 attends over itself) and around the ending node (every column).  Both cost
 :math:`O(L^3)`.  TriHyena ("Triangles Are All You Need: Subcubic Protein
 Structure Prediction with TriHyena") replaces each of them with a 1D Hyena
-operator run along the same axis, which is :math:`O(L^2 \log L)` in time and
-memory while preserving the row / column structure.
+operator run along the same axis, which preserves the row / column structure.
+Per channel, the FFT long conv costs :math:`O(L^2 \log L)` time and :math:`O(L^2)`
+memory; the Toeplitz-GEMM ``explicit_conv1d`` path of ``CKConvND`` costs
+:math:`O(L^3)` time, like triangle attention, though ``flop_count`` reports the
+FFT cost on both.
 
 Computation (starting node)
 ---------------------------
@@ -49,16 +52,18 @@ Layout
 ------
 Reshaped to ``[B * L, L, C]`` every row is an ordinary 1D sequence.  The module
 stays channel-last up to the long convolution: the depthwise causal short conv runs on the channel-last
-tensors (``short_conv_backend="subq_ops"`` uses the NWH CUDA kernel) and the
-only layout copy is the transpose into the long conv.  ``QKVSequenceMixer``
+tensors (``short_conv_backend="subq_ops"`` uses the NWH CUDA kernel).  In eager
+mode the column stream, and at the ending node all three streams, are copied into
+``[B * L, L, C]`` for it, and the long conv takes a transposed ``[B * L, C, L]``
+copy of its input.  ``QKVSequenceMixer``
 hands over its fused ``[B, L, L, 3C]`` projection un-split (``takes_fused_qkv``),
 so in eager mode the starting node convolves the full ``3C``-wide stream straight
 from the projection output (the key block of that call is unused) instead of
-de-interleaving copies, at the cost of one extra ``[B * L, L, C]`` buffer.  Under
+de-interleaving copies, at the cost of one extra ``[B * L, L, C]`` buffer at the
+forward peak without a padding mask.  Under
 ``torch.compile`` the short conv is instead written as shifted
-multiply-adds (``_StencilConv``, either backend), which inductor fuses with the
-projection slices, the padding mask, the gate and the transpose into the long
-conv; nothing is copied in front of it.  The input projections
+multiply-adds (``_StencilConv``, either backend) for inductor to fuse with the
+projection slices, the padding mask and the gate.  The input projections
 (``C -> 3C``) and the output projection live in
 :class:`~nvsubquadratic.modules.sequence_mixer.QKVSequenceMixer`, and the
 pre-norm in the surrounding residual block, as for every other mixer.
@@ -85,6 +90,7 @@ Example configuration
                 # mask_cfg=LazyConfig(GaussianModulationND)(data_dim=1, num_channels=C),  # soft window
                 grid_type="double", fft_padding="zero", is_causal=False, use_shortcut=False,
                 fft_backend="subq_ops",  # explicit_conv1d / fft_conv1d on GPU; "torch_fft" on CPU
+                # subq_ops caps L (4096 on SM8x / SM12x, 8192 on SM90-SM11x; see fftconv1d_bhl)
             ),
         ),
     )
