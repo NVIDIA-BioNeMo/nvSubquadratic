@@ -843,7 +843,7 @@ def test_bf16_subq_ops_backend_calls_explicit_conv1d(monkeypatch) -> None:
 @_requires_subq_ops
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_compiled_subq_ops_backends_match_eager(dtype) -> None:
-    """``reduce-overhead`` compiled subq_ops mixer matches eager in output and input gradient (fp32); bf16 runs."""
+    """``reduce-overhead`` compiled subq_ops mixer matches eager in output and every gradient (fp32); bf16 runs."""
     seq_len, hidden = 256, 32
     mixer = make_mixer(
         seq_len=seq_len,
@@ -854,17 +854,28 @@ def test_compiled_subq_ops_backends_match_eager(dtype) -> None:
         dtype=dtype,
         out_proj_bias=False,
     ).cuda()
+    names, params = zip(*[(n, p) for n, p in mixer.named_parameters() if p.requires_grad])
     x = torch.randn(1, seq_len, seq_len, hidden, device="cuda", dtype=dtype, requires_grad=True)
     want = mixer(x)
-    want_grad = torch.autograd.grad(want.float().square().sum(), x)[0]
+    want_grad, *want_pgrads = torch.autograd.grad(want.float().square().sum(), (x, *params))
     compiled = torch.compile(mixer, mode="reduce-overhead")
     for _ in range(3):
         got = compiled(x)
-        got_grad = torch.autograd.grad(got.float().square().sum(), x)[0]
+        got_grad, *got_pgrads = torch.autograd.grad(got.float().square().sum(), (x, *params))
     assert torch.isfinite(got).all() and torch.isfinite(got_grad).all()
+    assert all(torch.isfinite(g).all() for g in got_pgrads), "non-finite parameter gradient"
     if dtype == torch.float32:  # bf16 eager rounds the SIREN pre-sine argument, inductor does not
         assert (got - want).norm() / want.norm() < 1e-5
         assert (got_grad - want_grad).norm() / want_grad.norm() < 1e-5
+        for name, g, w in zip(names, got_pgrads, want_pgrads):
+            # Short-conv taps per stream block [x1 | v | x2]; compile swaps in _StencilConv's own backward.
+            blocks = (
+                zip(["x1", "v", "x2"], g.split(hidden, -1), w.split(hidden, -1))
+                if "short_conv" in name
+                else [("", g, w)]
+            )
+            for block, gb, wb in blocks:
+                assert (gb - wb).norm() / wb.norm() < 1e-5, f"{name} {block}"
 
 
 @_requires_cuda
