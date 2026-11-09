@@ -611,10 +611,12 @@ def test_flop_count() -> None:
     gates = 2 * C * seq_len**2
     siren = (2 * grid * width + grid * width) + 2 * (2 * grid * width * width + grid * width) + 2 * grid * width * C
     padded = 2 * seq_len
-    long_conv = 3 * 5 * C * padded * 4 + 6 * C * padded + C * seq_len
-    want = short_conv + gates + seq_len * (siren + long_conv) - (seq_len - 1) * siren
-    assert want == 98736
+    fft = 5 * C * padded * 4  # one length-2L FFT per channel
+    per_row = 2 * fft + 6 * C * padded + C * seq_len  # input FFT, inverse FFT, product, shortcut
+    want = short_conv + gates + seq_len * per_row + siren + fft  # SIREN and the filter FFT once per forward
+    assert want == 80816
     assert mixer.mixer.flop_count((seq_len, seq_len)) == want
+    assert mixer.mixer.flop_count((seq_len, seq_len), inference=True) == want - siren - fft
     assert isinstance(mixer.flop_count((seq_len, seq_len)), int)
     assert mixer.flop_count((seq_len, seq_len)) > want
 

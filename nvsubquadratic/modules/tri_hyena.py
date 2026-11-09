@@ -218,8 +218,8 @@ class TriangleHyena(torch.nn.Module):
         """Count FLOPs for one forward pass over an ``L x L`` pair tensor.
 
         Short conv (three depthwise streams), the two gates, and the long conv
-        once per row; the SIREN filter is generated once per forward, so its
-        cost is counted once.
+        once per row; the SIREN filter and its FFT run once per forward, so
+        their cost is counted once.
 
         Args:
             spatial_dims: ``(L, L)``.
@@ -233,8 +233,9 @@ class TriangleHyena(torch.nn.Module):
         positions = seq_len * seq_len
         flops = 2 * 3 * self.hidden_dim * self.short_conv_weight.shape[0] * positions
         flops += 2 * self.hidden_dim * positions
-        flops += seq_len * self.global_conv.flop_count((seq_len,), inference=inference)
-        flops -= (seq_len - 1) * self.global_conv.kernel.flop_count([seq_len], inference=inference)
+        # SIREN and filter FFT run once per forward; per-row terms scale with seq_len
+        per_row = self.global_conv.flop_count((seq_len,), inference=True)
+        flops += (seq_len - 1) * per_row + self.global_conv.flop_count((seq_len,), inference=inference)
         return flops
 
     def _short_conv(self, x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
