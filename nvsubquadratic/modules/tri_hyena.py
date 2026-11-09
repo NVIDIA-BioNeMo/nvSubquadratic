@@ -285,8 +285,8 @@ class TriangleHyena(torch.nn.Module):
             cp_group: Context-parallel group; only ``None`` or a group of size 1 is supported.
             padding_mask: Optional ``[B, L]`` boolean tensor, ``True`` at padded tokens.  The
                 projections are zeroed at every pair position in a padded row or column before
-                the short conv, and the long-conv input and output gate again after it; with
-                ``right_padding`` only after it, together with the column stream.
+                the short conv (skipped with ``right_padding``), and the long-conv input
+                ``x1 * v`` and the output gate after it.
             **mixer_kwargs: Only ``conditioning`` is accepted, and it is ignored (no FiLM kernel
                 conditioning).
 
@@ -328,13 +328,14 @@ class TriangleHyena(torch.nn.Module):
             x1 = self._short_conv(row_in[..., :channels].reshape(flat), self._stream_weight(0))
             x2 = self._short_conv(row_in[..., 2 * channels :].reshape(flat), self._stream_weight(2))
         v = self._short_conv(col_in.reshape(flat), self._stream_weight(1))
+        z = x1 * v
+        del x1  # release the view into the fused short-conv output
         if padding_mask is not None:
             mask = pair_mask.reshape(batch * rows, rows, 1)
-            x1 = x1.masked_fill(mask, 0)
+            # Zero padded pairs of the long-conv input and the output gate.
+            z = z.masked_fill(mask, 0)
             x2 = x2.masked_fill(mask, 0)
-            if self.right_padding:
-                v = v.masked_fill(mask, 0)
-        z = (x1 * v).transpose(1, 2).contiguous()
+        z = z.transpose(1, 2).contiguous()
         y = x2 * self.global_conv(z, is_bhl_input=True).transpose(1, 2)
         y = y.reshape(batch, rows, rows, channels)
         return y if self.start_node else y.transpose(1, 2)
