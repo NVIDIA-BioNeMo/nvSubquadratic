@@ -439,8 +439,9 @@ def run_sweep(
     """Sweep ``seq_lens x archs`` and write ``args.csv`` incrementally.
 
     ``archs`` maps a name to ``builder(cfg, seq_len) -> module`` already on the
-    device in ``cfg.dtype``.  Compile state and cached segments are reset before every (arch, seq_len)
-    measurement so no arch's cudagraph pool sits in the next arch's baseline.
+    device in ``cfg.dtype``.  Each module is built after the compile state and cached segments are
+    reset, measured, and released before the next arch is built, so its memory columns and OOM status
+    describe that arch alone.
     """
     selected = [name for name in args.archs if name in archs]
     print(f"Device: {cfg.device_name}  mode: {cfg.mode}  dtype: {cfg.dtype_name}")
@@ -454,14 +455,6 @@ def run_sweep(
     oomed: set[str] = set()
     for seq_len in args.seq_lens:
         print(f"--- L={seq_len}  B={args.batch_size} ---")
-        modules = {}
-        for name in selected:
-            if name in oomed:
-                continue
-            try:
-                modules[name] = archs[name](cfg, seq_len)
-            except torch.cuda.OutOfMemoryError:
-                oomed.add(name)
         for name in selected:
             row = {
                 "arch": name,
@@ -476,8 +469,10 @@ def run_sweep(
             }
             if name not in oomed:
                 reset_device_state(cfg.device)
+                module = None
                 try:
-                    row.update(run_one(cfg, modules[name], args.batch_size, seq_len))
+                    module = archs[name](cfg, seq_len)
+                    row.update(run_one(cfg, module, args.batch_size, seq_len))
                 except torch.cuda.OutOfMemoryError:
                     oomed.add(name)
                     row["status"] = "OOM"
@@ -485,7 +480,7 @@ def run_sweep(
                     traceback.print_exc()
                     row["status"] = "ERROR"
                 finally:
-                    modules.pop(name, None)
+                    module = None
                     gc.collect()
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize(cfg.device)

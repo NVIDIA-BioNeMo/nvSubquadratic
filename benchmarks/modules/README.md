@@ -58,7 +58,7 @@ steady-state working set) instead, while for eager archs
 runs full steps, so `steady_reserved_delta_mb` also contains the parameter
 gradients left by the last warm-up step, and for compiled archs `act_mb` and
 `step_peak_*` leave out the activations held in the cudagraph pool (L=512 starting
-node: `act_mb` 194 compiled vs 1092 eager `subq_ops`).
+node: `act_mb` 193 compiled vs 1092 eager `subq_ops`).
 
 ### Results (GB300 CC 10.3, 1300 W cap, bf16, B=1, C=128, box window 256, `--mode infer`, 2026-11-09)
 
