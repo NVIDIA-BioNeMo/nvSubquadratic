@@ -179,9 +179,9 @@ def ref_from_mixer(mixer, x, padding):
     return mixer.out_proj(y)
 
 
-def ref_siren_filter(ref, length, hidden_layers):
-    """Reference SIREN filter for L_cache = 2L - 1: coordinates linspace(-0.5, 0.5, 2L - 1)."""
-    t = torch.linspace(-0.5, 0.5, 2 * length - 1, dtype=torch.float64).unsqueeze(-1)
+def ref_siren_filter(ref, length, hidden_layers, ref_len=L):
+    """Reference SIREN filter for L_cache = 2 ref_len - 1: 2 length - 1 taps spaced 1 / (2 (ref_len - 1))."""
+    t = ((torch.arange(2 * length - 1, dtype=torch.float64) - (length - 1)) / (2 * (ref_len - 1))).unsqueeze(-1)
     h = torch.sin(
         F.linear(
             t,
@@ -280,9 +280,10 @@ def test_matches_reference_core(start_node, mask_cfg) -> None:
     torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
 
 
+@pytest.mark.parametrize("seq_len", [L - 2, L, L + 3, 2 * L - 1, 2 * L])
 @pytest.mark.parametrize("start_node", [True, False])
-def test_reference_checkpoint_port(start_node) -> None:
-    """A ported reference checkpoint reproduces the reference forward pass."""
+def test_reference_checkpoint_port(start_node, seq_len) -> None:
+    """A ported reference checkpoint built at ``L`` reproduces the reference forward pass at ``seq_len``."""
     ref = reference_state_dict(C, seed=3)
     mixer = make_mixer(start_node=start_node, mask_cfg=box_cfg(2), L_cache=2 * L - 1, dtype=torch.float64)
     grid = {"siren_kernel.positional_embedding.grid_cache": torch.zeros(1, 2 * L - 1, 1)}
@@ -290,20 +291,20 @@ def test_reference_checkpoint_port(start_node) -> None:
     assert norm["weight"] is ref["norm.weight"] and norm["bias"] is ref["norm.bias"]
     assert torch.equal(mixer.mixer.global_conv.shortcut, torch.zeros(C, dtype=torch.float64))
 
-    x = torch.randn(B, L, L, C, dtype=torch.float64)
-    padding = torch.zeros(B, L, dtype=torch.bool)
+    x = torch.randn(B, seq_len, seq_len, C, dtype=torch.float64)
+    padding = torch.zeros(B, seq_len, dtype=torch.bool)
     padding[0, 0] = True
     x1 = x @ ref["linear_x12i.weight"][:C].t()
     x2 = x @ ref["linear_x12i.weight"][C:].t()
     v = x @ ref["linear_vj.weight"].t()
-    h = ref_siren_filter(ref, L, hidden_layers=2)
-    offset = (torch.arange(2 * L - 1) - (L - 1)).abs()
+    h = ref_siren_filter(ref, seq_len, hidden_layers=2)
+    offset = (torch.arange(2 * seq_len - 1) - (seq_len - 1)).abs()
     h = h.masked_fill(offset > 2, 0)
     y = ref_core(x1, x2, v, h, ref["W_conv_x12i_vj"], padding, start_node)
     want = y @ ref["to_out.weight"].t() + ref["to_out.bias"]
     with torch.no_grad():
         got = mixer(x, padding_mask=padding)
-    torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(got, want, atol=1e-4, rtol=1e-5)  # atol covers the fp32 SIREN grid
 
 
 def test_reference_checkpoint_port_without_shortcut() -> None:

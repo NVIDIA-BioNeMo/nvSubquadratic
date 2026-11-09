@@ -78,7 +78,8 @@ Example configuration
                 data_dim=1, hidden_dim=C,
                 kernel_cfg=LazyConfig(SIRENKernelND)(
                     out_dim=C, data_dim=1, mlp_hidden_dim=32, num_layers=3, embedding_dim=32,
-                    omega_0=30.0, L_cache=L, use_bias=True,
+                    # grid [-0.5, 0.5] at L as in the reference; L_cache=L gives [-1, 1] (2x effective omega_0)
+                    omega_0=30.0, L_cache=2 * L - 1, use_bias=True,
                 ),
                 mask_cfg=LazyConfig(BoxModulationND)(data_dim=1, max_offset=256),  # hard window
                 # mask_cfg=LazyConfig(GaussianModulationND)(data_dim=1, num_channels=C),  # soft window
@@ -340,7 +341,8 @@ def load_reference_state_dict(
     ``use_shortcut=False`` to drop them).
 
     The mixer must be built to match: ``SIRENKernelND(L_cache=2 * L - 1)`` with the
-    reference ``L`` (its SIREN grid spans ``[-0.5, 0.5]``), ``mask_cfg =
+    reference ``L`` (its SIREN grid keeps the reference tap spacing ``1 / (2 (L - 1))`` at
+    every runtime length and spans ``[-0.5, 0.5]`` only at ``L``), ``mask_cfg =
     BoxModulationND(max_offset=<reference max_offset>)`` or ``Identity`` when it was
     ``0``, ``short_conv_kernel_size=3`` and ``out_proj_bias=True``.
 
