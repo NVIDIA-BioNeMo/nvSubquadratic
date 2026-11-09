@@ -310,6 +310,7 @@ class TriangleHyena(torch.nn.Module):
         if self.start_node and not torch.compiler.is_compiling():
             rows_out = self._short_conv(row_in.reshape(batch * rows, rows, 3 * channels), self.short_conv_weight)
             x1, x2 = rows_out[..., :channels], rows_out[..., 2 * channels :]
+            del rows_out
         else:
             x1 = self._short_conv(row_in[..., :channels].reshape(flat), self._stream_weight(0))
             x2 = self._short_conv(row_in[..., 2 * channels :].reshape(flat), self._stream_weight(2))
