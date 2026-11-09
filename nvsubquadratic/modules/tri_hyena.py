@@ -286,7 +286,9 @@ class TriangleHyena(torch.nn.Module):
             padding_mask: Optional ``[B, L]`` boolean tensor, ``True`` at padded tokens.  The
                 projections are zeroed at every pair position in a padded row or column before
                 the short conv (skipped with ``right_padding``), and the long-conv input
-                ``x1 * v`` and the output gate after it.
+                ``x1 * v`` and the output gate after it.  Padded inputs must be finite for training:
+                valid outputs ignore them, but non-finite inputs make upstream weight gradients
+                (e.g. the input projection) non-finite.
             **mixer_kwargs: Only ``conditioning`` is accepted, and it is ignored (no FiLM kernel
                 conditioning).
 

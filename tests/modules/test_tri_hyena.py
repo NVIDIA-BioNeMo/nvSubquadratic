@@ -560,6 +560,30 @@ def test_padded_inputs_do_not_reach_unpadded_outputs(start_node, padded, right_p
         torch.testing.assert_close(y[~pair], general[~pair])
 
 
+@pytest.mark.parametrize("start_node", [True, False])
+@pytest.mark.parametrize(
+    "padded, right_padding",
+    [([4, 5], True), ([4, 5], False), ([3], False)],
+    ids=["right_padding", "suffix", "interior"],
+)
+def test_finite_padded_inputs_do_not_change_gradients(start_node, padded, right_padding) -> None:
+    """Gradients of a loss on valid pairs are finite and independent of finite padded values."""
+    mixer = make_mixer(start_node=start_node, dtype=torch.float64, right_padding=right_padding)
+    x = torch.randn(B, L, L, C, dtype=torch.float64)
+    padding = torch.zeros(B, L, dtype=torch.bool)
+    padding[0, padded] = True
+    pair = (padding[:, :, None] | padding[:, None, :])[..., None]
+    cotangent = torch.randn(B, L, L, C, dtype=torch.float64).masked_fill(pair, 0)
+    grads = []
+    for _ in range(2):
+        x_in = torch.where(pair, 1e3 * torch.randn_like(x), x).requires_grad_()
+        y = mixer(x_in, padding_mask=padding)
+        grads.append(torch.autograd.grad((y * cotangent).sum(), [x_in, *mixer.parameters()]))
+    for got, want in zip(*grads):
+        assert torch.isfinite(got).all()
+        torch.testing.assert_close(got, want, rtol=1e-12, atol=1e-12)
+
+
 def test_all_false_padding_mask_is_a_no_op() -> None:
     """An all-False padding mask matches passing no mask."""
     mixer = make_mixer()
