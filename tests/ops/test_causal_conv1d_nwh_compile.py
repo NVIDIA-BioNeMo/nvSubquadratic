@@ -72,6 +72,16 @@ def test_bias_none_is_zero_bias() -> None:
     )
 
 
+def test_bias_none_backward_after_inference_mode() -> None:
+    """``bias=None`` still trains after an ``inference_mode`` call with the same channel count."""
+    weight = torch.randn(3, 40, device="cuda", requires_grad=True)
+    with torch.inference_mode():
+        causal_conv1d(torch.randn(2, 8, 40, device="cuda"), weight.detach(), None, "identity", channel_last=True)
+    x = torch.randn(2, 8, 40, device="cuda", requires_grad=True)
+    causal_conv1d(x, weight, None, "identity", channel_last=True).sum().backward()
+    assert x.grad is not None and weight.grad is not None
+
+
 @pytest.mark.parametrize(("dtype", "grad_rtol"), [(torch.float32, 1e-4), (torch.bfloat16, 1e-2)])
 @pytest.mark.parametrize("mode", ["default", "reduce-overhead"])
 def test_compiled_transposed_input_matches_eager(mode, dtype, grad_rtol) -> None:

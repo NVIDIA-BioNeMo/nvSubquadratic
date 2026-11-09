@@ -44,8 +44,6 @@ __all__ = [
     "causal_conv1d",
 ]
 
-import functools
-
 import torch
 
 
@@ -140,12 +138,6 @@ def _causal_conv1d_nwh_grad(ctx, grad_out):
 _causal_conv1d_nwh.register_autograd(_causal_conv1d_nwh_grad, setup_context=_causal_conv1d_nwh_setup_context)
 
 
-@functools.lru_cache(maxsize=None)
-def _zero_bias(channels: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    """Cached all-zero bias tensor for the NWH primitive."""
-    return torch.zeros(channels, device=device, dtype=dtype)
-
-
 def causal_conv1d(
     x: torch.Tensor,
     weight: torch.Tensor,
@@ -168,8 +160,7 @@ def causal_conv1d(
     """
     if channel_last:
         if bias is None:
-            zero_bias = _zero_bias.__wrapped__ if torch.compiler.is_compiling() else _zero_bias
-            bias = zero_bias(weight.shape[1], x.device, x.dtype)
+            bias = x.new_zeros(weight.shape[1])
         return _causal_conv1d_nwh(x, weight, bias, activation)
     return _get_causal_conv1d()(x, weight, bias, activation)
 
