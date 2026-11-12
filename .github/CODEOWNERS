@@ -45,10 +45,22 @@
 /tests/ops/test_fftconv_lowering.py                 @farhadrgh @saeepaliwal @moradza
 /tests/ops/test_fftconv_custom.py                   @farhadrgh @saeepaliwal @moradza
 /tests/ops/test_fftconv_custom_1d.py                @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_custom_1d_noncausal.py      @farhadrgh @saeepaliwal @moradza
 /tests/ops/test_causal_conv1d_custom.py             @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_causal_conv1d_nwh_compile.py        @farhadrgh @saeepaliwal @moradza
 /tests/ops/test_subq_ops_fft_conv2d.py              @farhadrgh @saeepaliwal @moradza
 /tests/modules/test_subq_ops_causal_conv1d.py       @farhadrgh @saeepaliwal @moradza
 /tests/modules/test_ckconv_nd_subq.py               @farhadrgh @saeepaliwal @moradza
+
+# TriangleHyena pair mixer — @moradza.
+#
+# @moradza wrote the mixer, its tests and its benchmark harness. Listed
+# alongside the default owners for the same reason as the kernel bindings above.
+/nvsubquadratic/modules/tri_hyena.py                @farhadrgh @saeepaliwal @moradza
+/tests/modules/test_tri_hyena.py                    @farhadrgh @saeepaliwal @moradza
+/benchmarks/modules/README.md                       @farhadrgh @saeepaliwal @moradza
+/benchmarks/modules/_common.py                      @farhadrgh @saeepaliwal @moradza
+/benchmarks/modules/bench_tri_hyena.py              @farhadrgh @saeepaliwal @moradza
 
 # ⚠️ PREREQUISITE for the two sections below: a CODEOWNERS entry naming a user
 # WITHOUT write access to this repo is silently ignored — no auto-request, no
