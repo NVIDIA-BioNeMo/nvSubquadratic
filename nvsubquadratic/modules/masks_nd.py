@@ -30,7 +30,7 @@ element-wise into the implicit kernel values *before* the FFT convolution step.
 After masking, the effective kernel decays towards zero beyond a characteristic
 spatial radius, concentrating each channel's receptive field.
 
-There are two families:
+There are three families:
 
 * **Exponential** (:class:`ExponentialModulationND`) — fixed, non-learnable
   decay rates initialised on a log-uniform ramp from slow to fast; used to
@@ -42,6 +42,11 @@ There are two families:
   parameters per spatial axis and channel; the mask is a factorised product of
   Gaussians, one per axis.  During training the bandwidth can grow or shrink,
   subject to ``[min_std, max_std]`` clamp bounds.
+
+* **Box** (:class:`BoxModulationND`) — fixed hard window measured in kernel
+  taps: every tap farther than ``max_offset`` from the kernel centre is zeroed,
+  the rest are kept unchanged.  This is the window used by models trained with
+  a hard filter crop; the two families above are its soft counterparts.
 
 How masks interact with the FFT convolution operators
 ------------------------------------------------------
@@ -672,6 +677,75 @@ class BlockAlignedGaussianModulationND(GaussianModulationND):
         # block-structured SIREN kernel.
         with torch.no_grad():
             self.std_param.data.copy_(self.std_param.data.flip(dims=[-1]))
+
+
+class BoxModulationND(torch.nn.Module):
+    r"""Fixed box (hard) window applied to implicit convolutional kernels.
+
+    Geometry
+    --------
+    The kernel produced by an implicit kernel network has :math:`K_d` taps on
+    axis :math:`d`, centred at tap index :math:`\lfloor K_d / 2 \rfloor` (lag
+    zero).  With tap offsets :math:`o_d = i_d - \lfloor K_d / 2 \rfloor`, the
+    mask is
+
+    .. math::
+
+        m(o) = \prod_{d=0}^{D-1} \mathbb{1}\bigl[\,|o_d| \le \text{max\_offset}\,\bigr]
+
+    **1 = kept, 0 = excluded.**  Unlike the Gaussian and exponential windows the
+    box is measured in integer taps rather than in normalised grid coordinates,
+    so it is exact at any runtime kernel size and matches a hard crop of the
+    filter at ``|offset| > max_offset``.  It has no parameters.
+
+    The window is read off ``x.shape``; the ``grid`` argument is accepted for
+    interface compatibility with the other masks and is not used.
+
+    Args:
+        data_dim: Number of spatial axes of the kernel.
+        max_offset: Largest tap offset from the kernel centre that is kept, in
+            taps, on every axis.  Must be ``>= 1``; use ``torch.nn.Identity`` for
+            no window.
+    """
+
+    def __init__(self, data_dim: int, max_offset: int):
+        """Initialise the box window; see the class docstring for the arguments."""
+        super().__init__()
+        if isinstance(max_offset, bool) or not isinstance(max_offset, int) or max_offset < 1:
+            raise ValueError(f"max_offset must be an int >= 1, got {max_offset!r}")
+        self.data_dim = data_dim
+        self.max_offset = max_offset
+
+    def extra_repr(self) -> str:
+        """Return a short summary string."""
+        return f"data_dim={self.data_dim}, max_offset={self.max_offset}"
+
+    def forward(self, grid: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        """Zero every kernel tap farther than ``max_offset`` from the centre.
+
+        Args:
+            grid: Coordinate grid ``[1, *spatial_dims, data_dim]``; unused.
+            x: Kernel tensor ``[B, *spatial_dims, num_channels]``.
+
+        Returns:
+            torch.Tensor: ``x`` with the taps outside the window set to zero;
+            same shape and dtype as ``x``.
+
+        Raises:
+            ValueError: If ``x`` does not have ``data_dim`` spatial axes.
+        """
+        if x.ndim != self.data_dim + 2:
+            raise ValueError(
+                f"expected x with {self.data_dim} spatial axes ([B, *spatial, C]), got shape {tuple(x.shape)}"
+            )
+        outside = None
+        for axis, taps in enumerate(x.shape[1:-1]):
+            offset = torch.arange(-(taps // 2), taps - taps // 2, device=x.device)
+            shape = [1] * x.ndim
+            shape[axis + 1] = taps
+            axis_outside = (offset.abs() > self.max_offset).view(shape)
+            outside = axis_outside if outside is None else outside | axis_outside
+        return x.masked_fill(outside, 0)
 
 
 if __name__ == "__main__":

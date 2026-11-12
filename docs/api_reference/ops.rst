@@ -35,8 +35,8 @@ FFT convolutions (CUDA-accelerated)
 ------------------------------------
 
 Drop-in wrappers around the ``subquadratic_ops_torch`` fused CUDA kernels.
-2D non-causal and 1D causal long-conv variants share the same API as the
-fp32 reference ops above.
+2D non-causal, 1D causal and 1D non-causal long-conv variants share the same
+API as the fp32 reference ops above.
 
 .. autosummary::
    :toctree: generated/
@@ -48,6 +48,13 @@ fp32 reference ops above.
    ~ops.fftconv_custom.causal_fftconv1d_blh
    ~ops.fftconv_custom.causal_fftconv1d_bhl
    ~ops.fftconv_custom.causal_fftconv1d_bhl_w_reshape
+   ~ops.fftconv_custom.fftconv1d_blh
+   ~ops.fftconv_custom.fftconv1d_bhl
+   ~ops.fftconv_custom.fftconv1d_bhl_w_reshape
+   ~ops.fftconv_custom.fftconv1d_blh_chunked
+   ~ops.fftconv_custom.fftconv1d_bhl_chunked
+   ~ops.fftconv_custom.fftconv1d_bhl_w_reshape_chunked
+   ~ops.fftconv_custom.load_conv1d_kernels
 
 .. _ops-fftconv-fused:
 

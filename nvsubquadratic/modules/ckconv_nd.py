@@ -90,7 +90,8 @@ Two boundary conditions are supported per spatial axis:
 
 Shortcut (skip connection)
 --------------------------
-Every forward pass adds a per-channel residual term:
+With ``use_shortcut=True`` (the default) every forward pass adds a per-channel
+residual term:
 
 .. code-block:: none
 
@@ -460,7 +461,8 @@ class CKConvND(torch.nn.Module):
 
         y = IFFT( FFT(x) ⊙ FFT(k_θ) )  +  shortcut ⊙ x
 
-    at O(N log N) cost per channel, where N = prod(spatial_dims).
+    at O(N log N) cost per channel, where N = prod(spatial_dims); the
+    ``shortcut ⊙ x`` term only with ``use_shortcut=True``.
 
     The MLP and its positional encoding are provided through ``kernel_cfg``
     (typically a ``SIRENKernelND`` or ``RandomFourierKernelND`` lazy config
@@ -505,10 +507,10 @@ class CKConvND(torch.nn.Module):
             ``(kernel_values, grid)`` on each forward call).
         mask (nn.Module): Attenuation mask applied to kernel values after
             generation.  ``nn.Identity`` when no mask is configured.
-        shortcut (nn.Parameter): Learnable per-channel skip-connection scale
+        shortcut (nn.Parameter or None): Learnable per-channel skip-connection scale
             of shape ``(hidden_dim,)``.  Fused into the FFT convolution op.
             Initialised with ``uniform(-1/√hidden_dim, 1/√hidden_dim)``
-            (Kaiming-uniform scale).
+            (Kaiming-uniform scale).  ``None`` when ``use_shortcut=False``.
         fftconv_fn (callable): Selected FFT convolution function for
             channels-last (BLH) input with internal reshape.  Signature:
             ``(x, kernel, shortcut) → output``.
@@ -532,6 +534,7 @@ class CKConvND(torch.nn.Module):
         is_causal: bool = False,
         use_chunked_fftconv: bool = False,
         fft_backend: Literal["torch_fft", "subq_ops", "subq_ops_fused"] = "torch_fft",
+        use_shortcut: bool = True,
     ):
         """Construct a CKConvND operator.
 
@@ -610,9 +613,17 @@ class CKConvND(torch.nn.Module):
                   - ``data_dim=1``, ``is_causal=True`` (1D causal conv).
                     The 1D causal CUDA kernel does not accept batched per-sample
                     weights; FiLM conditioning is unsupported on this path.
+                  - ``data_dim=1``, ``is_causal=False``, ``fft_padding="zero"``
+                    (1D "same" conv): ``fft_conv1d``, or the Toeplitz-GEMM
+                    ``explicit_conv1d`` for bf16/fp16 inputs on compute capability
+                    10.x at its supported sequence lengths.  Runs in the input
+                    dtype; no per-sample weights.  Raises on the first forward
+                    beyond its length cap and specialises compiled graphs on
+                    the length (see
+                    :func:`~nvsubquadratic.ops.fftconv_custom.fftconv1d_bhl`).
 
-                  Does not support fp16 FFT, per-axis ``fft_padding``, or
-                  ``data_dim=3``.
+                  The 2D and 1D causal paths run the FFT in fp32 (no fp16 FFT).
+                  No path supports per-axis ``fft_padding`` or ``data_dim=3``.
 
                 * ``"subq_ops_fused"``: the fused ``fused_fft_conv2d`` CUDA
                   kernel from ``subquadratic_ops_torch``, which runs the whole
@@ -630,6 +641,8 @@ class CKConvND(torch.nn.Module):
                   spatial cap is enforced on the first forward pass, not at
                   construction, since the input size is not known here.
                   Per-sample (FiLM) batched kernel weights are supported.
+            use_shortcut: If ``False``, no ``shortcut`` parameter is created and the
+                output is the plain convolution ``y = IFFT(FFT(x) ⊙ FFT(k_θ))``.
 
         Raises:
             AssertionError: If ``fft_backend`` is not one of the recognised
@@ -743,12 +756,11 @@ class CKConvND(torch.nn.Module):
             )
 
         if fft_backend == "subq_ops":
-            if data_dim == 1:
-                assert is_causal, (
-                    "fft_backend='subq_ops' on 1D requires is_causal=True "
-                    "(no non-causal 1D CUDA kernel is wired). Got is_causal=False."
+            if data_dim not in (1, 2):
+                raise AssertionError(
+                    f"fft_backend='subq_ops' only supports data_dim in (1, 2). Got data_dim={data_dim}."
                 )
-            elif data_dim == 2:
+            if data_dim == 2:
                 assert not is_causal, (
                     "fft_backend='subq_ops' on 2D does not support causal convolutions (causal is 1D only)."
                 )
@@ -756,9 +768,10 @@ class CKConvND(torch.nn.Module):
                     "fft_backend='subq_ops' on 2D only supports zero-padded convolutions. "
                     f"Got fft_padding='{fft_padding}'."
                 )
-            else:
-                raise AssertionError(
-                    f"fft_backend='subq_ops' only supports data_dim in (1, 2). Got data_dim={data_dim}."
+            elif not is_causal:
+                assert fft_padding == "zero", (
+                    "fft_backend='subq_ops' on 1D non-causal only supports zero-padded convolutions. "
+                    f"Got fft_padding='{fft_padding}'."
                 )
         super().__init__()
         self.data_dim = data_dim
@@ -827,14 +840,17 @@ class CKConvND(torch.nn.Module):
         self.mask = instantiate(mask_cfg)
 
         # Construct shortcut projection
-        self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim))
-        bounds = math.sqrt(1.0 / hidden_dim)
-        self.shortcut.data.uniform_(-bounds, bounds)
+        self.use_shortcut = use_shortcut
+        if use_shortcut:
+            self.shortcut = torch.nn.Parameter(torch.empty(hidden_dim))
+            bounds = math.sqrt(1.0 / hidden_dim)
+            self.shortcut.data.uniform_(-bounds, bounds)
+        else:
+            self.register_parameter("shortcut", None)
 
         # Select FFT convolution functions based on backend
         if fft_backend == "subq_ops":
-            if data_dim == 1:
-                # 1D causal path (gated by the constraint block above).
+            if data_dim == 1 and is_causal:
                 from nvsubquadratic.ops.fftconv_custom import (
                     causal_fftconv1d_bhl,
                     causal_fftconv1d_bhl_chunked,
@@ -848,6 +864,25 @@ class CKConvND(torch.nn.Module):
                 else:
                     self.fftconv_fn = causal_fftconv1d_bhl_w_reshape
                     self.fftconv_fn_bhl_input = causal_fftconv1d_bhl
+            elif data_dim == 1:
+                from nvsubquadratic.ops.fftconv_custom import (
+                    fftconv1d_bhl,
+                    fftconv1d_bhl_chunked,
+                    fftconv1d_bhl_w_reshape,
+                    fftconv1d_bhl_w_reshape_chunked,
+                    load_conv1d_kernels,
+                )
+
+                try:  # Pre-load for torch.compile; a missing wheel raises on first call instead
+                    load_conv1d_kernels()
+                except ImportError:
+                    pass
+                if use_chunked_fftconv:
+                    self.fftconv_fn = fftconv1d_bhl_w_reshape_chunked
+                    self.fftconv_fn_bhl_input = fftconv1d_bhl_chunked
+                else:
+                    self.fftconv_fn = fftconv1d_bhl_w_reshape
+                    self.fftconv_fn_bhl_input = fftconv1d_bhl
             elif data_dim == 2:
                 from nvsubquadratic.ops.fftconv_custom import (
                     fftconv2d_bhl,
@@ -869,7 +904,7 @@ class CKConvND(torch.nn.Module):
                 )
         elif fft_backend == "subq_ops_fused":
             # 2D-only (enforced above). The fused op keeps the input dtype end
-            # to end, so unlike the "subq_ops" path there is no fp32 round-trip.
+            # to end, so unlike the 2D "subq_ops" path there is no fp32 round-trip.
             from nvsubquadratic.ops.fftconv_custom import (
                 fused_fftconv2d_bhl,
                 fused_fftconv2d_bhl_chunked,
@@ -937,7 +972,7 @@ class CKConvND(torch.nn.Module):
             ``data_dim``, ``hidden_dim``, ``fft_padding``,
             ``periodic_per_axis`` (only when in per-axis list mode),
             ``grid_type``, ``is_causal``, ``use_chunked_fftconv``,
-            and ``fft_backend``.
+            ``fft_backend`` and ``use_shortcut``.
         """
         bc_repr = f"fft_padding={self.fft_padding!r}"
         if self._is_tuple_mode:
@@ -946,7 +981,7 @@ class CKConvND(torch.nn.Module):
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"{bc_repr}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
             f"use_chunked_fftconv={self.use_chunked_fftconv}, "
-            f"fft_backend={self.fft_backend!r}"
+            f"fft_backend={self.fft_backend!r}, use_shortcut={self.use_shortcut}"
         )
 
     def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
@@ -1051,14 +1086,14 @@ class CKConvND(torch.nn.Module):
         prod_spatial = 1
         for s in spatial_dims:
             prod_spatial *= s
-        shortcut_flops = C * prod_spatial
+        shortcut_flops = C * prod_spatial if self.use_shortcut else 0
 
         flops += int(fft_flops) + cmul_flops + shortcut_flops
 
         return flops
 
     def apply_convolution(
-        self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor, is_bhl_input: bool
+        self, x: torch.Tensor, conv_kernel: torch.Tensor, shortcut: torch.Tensor | None, is_bhl_input: bool
     ) -> torch.Tensor:
         """Apply the FFT-based depthwise convolution.
 
@@ -1092,8 +1127,8 @@ class CKConvND(torch.nn.Module):
                 axes and ``2*N - 1`` on double-grid (zero-padded) axes, where
                 ``N`` is the corresponding input spatial size.  Transposed
                 internally when ``is_bhl_input=True``.
-            shortcut: Per-channel skip-connection scale, shape ``(C,)``.
-                Typically ``self.shortcut`` or a CP-sliced view thereof.
+            shortcut: Per-channel skip-connection scale, shape ``(C,)``, or ``None``
+                to skip the term.  Typically ``self.shortcut`` or a CP-sliced view thereof.
             is_bhl_input: If ``True``, treat ``x`` as channels-first
                 ``(B, C, *spatial)`` and use ``self.fftconv_fn_bhl_input``.
                 If ``False``, treat ``x`` as channels-last ``(B, *spatial, C)``
@@ -1127,7 +1162,7 @@ class CKConvND(torch.nn.Module):
         Generates the implicit kernel from the positional grid, optionally
         applies the attenuation mask, crops the kernel for causal mode,
         handles context-parallel channel slicing, and applies the FFT
-        convolution with the shortcut term.
+        convolution with the shortcut term (if ``use_shortcut``).
 
         Computation (non-causal, no CP):
 
@@ -1234,7 +1269,7 @@ class CKConvND(torch.nn.Module):
             conv_kernel = conv_kernel[..., start_idx:end_idx]
 
             # Also slice the shortcut parameter
-            shortcut = self.shortcut[start_idx:end_idx]
+            shortcut = None if self.shortcut is None else self.shortcut[start_idx:end_idx]
         else:
             shortcut = self.shortcut
 

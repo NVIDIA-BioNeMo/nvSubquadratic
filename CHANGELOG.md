@@ -6,6 +6,38 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## \[Unreleased\]
 
+### Added
+
+- **`TriangleHyena`** (`nvsubquadratic/modules/tri_hyena.py`): TriHyena, the
+  subquadratic replacement for triangle attention on pair tensors
+  `[B, L, L, C]`. An inner mixer for `QKVSequenceMixer` that runs a Hyena
+  operator along every row (starting node) or column (ending node) with
+  `CKConvND` (SIREN filter + window) as the long conv and a channel-last causal
+  short conv (`short_conv_backend="subq_ops"` for the CUDA kernel).
+  `load_reference_state_dict` ports checkpoints of the reference TriHyena
+  implementation.
+- **`BoxModulationND`** (`masks_nd.py`): hard filter window measured in kernel
+  taps (the reference TriHyena `max_offset` crop), alongside the soft Gaussian
+  and exponential windows.
+- **1D non-causal `fft_backend="subq_ops"` on `CKConvND`**, backed by
+  `subquadratic_ops_torch.fft_conv1d` and, for bf16/fp16 inputs on compute
+  capability 10.x at its supported lengths, the Toeplitz-GEMM `explicit_conv1d`
+  (`ops/fftconv_custom.py`: `fftconv1d_bhl` and variants). Runs in the input
+  dtype. `ops/causal_conv1d_custom.causal_conv1d` gains `channel_last`.
+- `benchmarks/modules/bench_tri_hyena.py`: TriHyena benchmark (window, long-conv
+  backend, eager / compiled, starting / ending node).
+- `CKConvND(use_shortcut=False)` drops the learnable `shortcut` parameter and
+  the fused `shortcut * x` term; the default and existing state dicts are unchanged.
+- `QKVSequenceMixer` hands an inner mixer that sets `takes_fused_qkv = True` the
+  un-split `[B, *spatial, 3C]` projection (`TriangleHyena` opts in); mixers
+  without the attribute still receive `(q, k, v, cp_group)`. Under
+  `torch.compile` `TriangleHyena` runs its short conv as a fused stencil.
+
+### Changed
+
+- The `[cuda]` extra now requires `subquadratic-ops-torch-cu13>=0.3.1`; only the
+  latest subquadratic-ops-torch release is supported.
+
 ## \[0.2.0\] - 2026-09-16
 
 ### Added
