@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+experiments.datamodules.pde.well
+================================
+
+.. currentmodule:: experiments.datamodules.pde.well
+
+.. autoclass:: experiments.datamodules.pde.well
+   :members:
+   :show-inheritance:

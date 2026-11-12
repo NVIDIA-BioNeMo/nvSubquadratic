@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+RegisterPooling
+===============
+
+.. currentmodule:: nvsubquadratic.modules.film
+
+.. autoclass:: RegisterPooling
+   :members:
+   :show-inheritance:

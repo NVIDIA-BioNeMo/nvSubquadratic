@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+RMSNorm
+=======
+
+.. currentmodule:: nvsubquadratic.modules.rms_norm
+
+.. autoclass:: RMSNorm
+   :members:
+   :show-inheritance:

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+load\_config\_from\_file
+========================
+
+.. currentmodule:: experiments.utils.cli
+
+.. autofunction:: load_config_from_file

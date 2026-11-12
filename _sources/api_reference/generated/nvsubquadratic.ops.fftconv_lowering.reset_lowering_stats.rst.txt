@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+reset\_lowering\_stats
+======================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_lowering
+
+.. autofunction:: reset_lowering_stats

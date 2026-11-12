@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+LearnableOmegaSIRENKernelND
+===========================
+
+.. currentmodule:: nvsubquadratic.modules.kernels_nd
+
+.. autoclass:: LearnableOmegaSIRENKernelND
+   :members:
+   :show-inheritance:

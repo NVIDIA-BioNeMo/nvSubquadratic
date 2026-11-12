@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+partial\_wang\_init\_fn\_with\_num\_layers
+==========================================
+
+.. currentmodule:: nvsubquadratic.utils.init
+
+.. autofunction:: partial_wang_init_fn_with_num_layers

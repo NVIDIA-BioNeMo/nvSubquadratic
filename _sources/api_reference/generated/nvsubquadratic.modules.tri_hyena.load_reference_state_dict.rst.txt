@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+load\_reference\_state\_dict
+============================
+
+.. currentmodule:: nvsubquadratic.modules.tri_hyena
+
+.. autofunction:: load_reference_state_dict
