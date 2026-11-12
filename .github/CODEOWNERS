@@ -7,23 +7,23 @@
 # Docs: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customizations/customizing-your-repository/about-code-owners
 
 # Default — applies to anything not matched by a more specific rule below.
-*                              @farhadrgh
+*                              @farhadrgh @saeepaliwal
 
 # Release artefacts: license text, attribution, contributor docs, security policy.
-/LICENSE/                      @farhadrgh
-/CONTRIBUTING.md               @farhadrgh
-/SECURITY.md                   @farhadrgh
-/release_checklist.md          @farhadrgh
+/LICENSE/                      @farhadrgh @saeepaliwal
+/CONTRIBUTING.md               @farhadrgh @saeepaliwal
+/SECURITY.md                   @farhadrgh @saeepaliwal
+/release_checklist.md          @farhadrgh @saeepaliwal
 
 # Build & packaging metadata.
-/pyproject.toml                @farhadrgh
-/VERSION                       @farhadrgh
+/pyproject.toml                @farhadrgh @saeepaliwal
+/VERSION                       @farhadrgh @saeepaliwal
 
 # CI workflows and codeowner config itself.
-/.github/                      @farhadrgh
+/.github/                      @farhadrgh @saeepaliwal
 
 # Documentation source.
-/docs/                         @farhadrgh
+/docs/                         @farhadrgh @saeepaliwal
 
 # subquadratic-ops kernel bindings.
 #
@@ -37,30 +37,30 @@
 # unavailable. To make his approval mandatory for these paths, list @moradza
 # alone on the line — note that would also stop @farhadrgh self-approving
 # kernel changes.
-/nvsubquadratic/ops/fftconv_custom.py               @farhadrgh @moradza
-/nvsubquadratic/ops/fftconv_lowering.py             @farhadrgh @moradza
-/nvsubquadratic/ops/causal_conv1d_custom.py         @farhadrgh @moradza
-/nvsubquadratic/modules/subq_ops_causal_conv1d.py   @farhadrgh @moradza
-/tests/ops/test_fused_fftconv2d.py                  @farhadrgh @moradza
-/tests/ops/test_fftconv_lowering.py                 @farhadrgh @moradza
-/tests/ops/test_fftconv_custom.py                   @farhadrgh @moradza
-/tests/ops/test_fftconv_custom_1d.py                @farhadrgh @moradza
-/tests/ops/test_fftconv_custom_1d_noncausal.py      @farhadrgh @moradza
-/tests/ops/test_causal_conv1d_custom.py             @farhadrgh @moradza
-/tests/ops/test_causal_conv1d_nwh_compile.py        @farhadrgh @moradza
-/tests/ops/test_subq_ops_fft_conv2d.py              @farhadrgh @moradza
-/tests/modules/test_subq_ops_causal_conv1d.py       @farhadrgh @moradza
-/tests/modules/test_ckconv_nd_subq.py               @farhadrgh @moradza
+/nvsubquadratic/ops/fftconv_custom.py               @farhadrgh @saeepaliwal @moradza
+/nvsubquadratic/ops/fftconv_lowering.py             @farhadrgh @saeepaliwal @moradza
+/nvsubquadratic/ops/causal_conv1d_custom.py         @farhadrgh @saeepaliwal @moradza
+/nvsubquadratic/modules/subq_ops_causal_conv1d.py   @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fused_fftconv2d.py                  @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_lowering.py                 @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_custom.py                   @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_custom_1d.py                @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_fftconv_custom_1d_noncausal.py      @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_causal_conv1d_custom.py             @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_causal_conv1d_nwh_compile.py        @farhadrgh @saeepaliwal @moradza
+/tests/ops/test_subq_ops_fft_conv2d.py              @farhadrgh @saeepaliwal @moradza
+/tests/modules/test_subq_ops_causal_conv1d.py       @farhadrgh @saeepaliwal @moradza
+/tests/modules/test_ckconv_nd_subq.py               @farhadrgh @saeepaliwal @moradza
 
 # TriangleHyena pair mixer — @moradza.
 #
 # @moradza wrote the mixer, its tests and its benchmark harness. Listed
 # alongside the default owners for the same reason as the kernel bindings above.
-/nvsubquadratic/modules/tri_hyena.py                @farhadrgh @moradza
-/tests/modules/test_tri_hyena.py                    @farhadrgh @moradza
-/benchmarks/modules/README.md                       @farhadrgh @moradza
-/benchmarks/modules/_common.py                      @farhadrgh @moradza
-/benchmarks/modules/bench_tri_hyena.py              @farhadrgh @moradza
+/nvsubquadratic/modules/tri_hyena.py                @farhadrgh @saeepaliwal @moradza
+/tests/modules/test_tri_hyena.py                    @farhadrgh @saeepaliwal @moradza
+/benchmarks/modules/README.md                       @farhadrgh @saeepaliwal @moradza
+/benchmarks/modules/_common.py                      @farhadrgh @saeepaliwal @moradza
+/benchmarks/modules/bench_tri_hyena.py              @farhadrgh @saeepaliwal @moradza
 
 # ⚠️ PREREQUISITE for the two sections below: a CODEOWNERS entry naming a user
 # WITHOUT write access to this repo is silently ignored — no auto-request, no
@@ -73,18 +73,18 @@
 # NOT him — naming it would produce a rule that silently never fires.
 
 # ImageNet / ViT5 experiments — @Dafidofff and @moradza.
-/benchmarks/vit5_imagenet/                          @farhadrgh @Dafidofff @moradza
-/examples/imagenet_classification/                  @farhadrgh @Dafidofff @moradza
-/examples/vit5_imagenet/                            @farhadrgh @Dafidofff @moradza
-/reports/vit5_imagenet_dataloader_profiling/        @farhadrgh @Dafidofff @moradza
-/experiments/datamodules/dali_imagenet_fused.py     @farhadrgh @Dafidofff @moradza
-/experiments/datamodules/tinyimagenet.py            @farhadrgh @Dafidofff @moradza
+/benchmarks/vit5_imagenet/                          @farhadrgh @saeepaliwal @Dafidofff @moradza
+/examples/imagenet_classification/                  @farhadrgh @saeepaliwal @Dafidofff @moradza
+/examples/vit5_imagenet/                            @farhadrgh @saeepaliwal @Dafidofff @moradza
+/reports/vit5_imagenet_dataloader_profiling/        @farhadrgh @saeepaliwal @Dafidofff @moradza
+/experiments/datamodules/dali_imagenet_fused.py     @farhadrgh @saeepaliwal @Dafidofff @moradza
+/experiments/datamodules/tinyimagenet.py            @farhadrgh @saeepaliwal @Dafidofff @moradza
 
 # Spatial-recall experiments — @dwromero and @Dafidofff.
-/examples/spatial_recall_1d/                        @farhadrgh @dwromero @Dafidofff
-/examples/spatial_recall_2d/                        @farhadrgh @dwromero @Dafidofff
-/examples/spatial_recall_3d/                        @farhadrgh @dwromero @Dafidofff
-/examples/spatial_recall_v2/                        @farhadrgh @dwromero @Dafidofff
-/reports/spatial_recall/                            @farhadrgh @dwromero @Dafidofff
-/experiments/datamodules/spatial_recall_dataset.py  @farhadrgh @dwromero @Dafidofff
-/tests/test_spatial_recall_motion.py                @farhadrgh @dwromero @Dafidofff
+/examples/spatial_recall_1d/                        @farhadrgh @saeepaliwal @dwromero @Dafidofff
+/examples/spatial_recall_2d/                        @farhadrgh @saeepaliwal @dwromero @Dafidofff
+/examples/spatial_recall_3d/                        @farhadrgh @saeepaliwal @dwromero @Dafidofff
+/examples/spatial_recall_v2/                        @farhadrgh @saeepaliwal @dwromero @Dafidofff
+/reports/spatial_recall/                            @farhadrgh @saeepaliwal @dwromero @Dafidofff
+/experiments/datamodules/spatial_recall_dataset.py  @farhadrgh @saeepaliwal @dwromero @Dafidofff
+/tests/test_spatial_recall_motion.py                @farhadrgh @saeepaliwal @dwromero @Dafidofff
