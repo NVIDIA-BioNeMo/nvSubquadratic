@@ -33,6 +33,20 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without the attribute still receive `(q, k, v, cp_group)`. Under
   `torch.compile` `TriangleHyena` runs its short conv as a fused stencil.
 
+### Fixed
+
+- **Kernels changed at their training length once the grid cache had grown
+  twice.** The SIREN and Random Fourier positional embeddings (and the SIREN
+  variants built on them) grow their coordinate grid when asked for a length
+  beyond `L_cache`. Only the first extension kept the original grid step:
+  growing the cache again, or growing another axis afterwards, rescaled the
+  axes that had already grown. `SIRENKernelND` and `RandomFourierKernelND`
+  then returned a different kernel at every length, including `L_cache`, and
+  so did the `CKConvND` layers and Gaussian or exponential windows built on
+  them. This affected every release since 0.1.0. Fixed-size training never
+  grows the cache twice and was not affected. Every extension now keeps the
+  original step, and results that were already correct are bit-identical.
+
 ### Changed
 
 - The `[cuda]` extra now requires `subquadratic-ops-torch-cu13>=0.3.1`; only the

@@ -323,7 +323,8 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         Each axis is extended independently while preserving its original
         step size: along an extended axis the new range becomes
         ``[-max_limit, +max_limit]`` with
-        ``max_limit = 1.0 + step_size * (seq_len - L_cache_orig)``.  Axes
+        ``max_limit = step_size * (seq_len - 1)``, so every point stays at a
+        multiple of the original step however the cache grew.  Axes
         that are not extended are rebuilt at their existing extent so the
         cache remains a single rectangular tensor.
 
@@ -339,9 +340,7 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         if all(L >= sl for L, sl in zip(self.L_cache_per_axis, seq_lens)):
             return
         new_L_per_axis = tuple(max(L, sl) for L, sl in zip(self.L_cache_per_axis, seq_lens))
-        max_limits = tuple(
-            1.0 + step * (new_L - L) for L, new_L, step in zip(self.L_cache_per_axis, new_L_per_axis, self.step_sizes)
-        )
+        max_limits = tuple(step * (new_L - 1) for new_L, step in zip(new_L_per_axis, self.step_sizes))
         with torch.inference_mode(False):
             with torch.no_grad():
                 self.grid_cache = self._build_grid_cache(
@@ -364,8 +363,10 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
                 - torch.Tensor: The positional embeddings,
                   ``[cos(Wx+b), sin(Wx+b)]`` concatenated along the last axis.
                   Shape ``[1, *spatial_dims, embedding_dim]``.
-                - torch.Tensor: The coordinate grid of positions normalised to
-                  ``[-1, 1]`` per axis.  Shape ``[1, *spatial_dims, data_dim]``.
+                - torch.Tensor: The coordinate grid: multiples of
+                  ``1 / (L_cache_i - 1)`` along axis ``i``, within ``[-1, 1]``
+                  while ``seq_lens[i]`` does not exceed the constructor's
+                  ``L_cache``.  Shape ``[1, *spatial_dims, data_dim]``.
 
         Raises:
             AssertionError: If ``len(seq_lens) != self.data_dim``.
@@ -787,7 +788,8 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         Each axis is extended independently while preserving its original
         step size: along an extended axis the new range becomes
         ``[-max_limit, +max_limit]`` with
-        ``max_limit = 1.0 + step_size * (seq_len - L_cache_orig)``.  Axes
+        ``max_limit = step_size * (seq_len - 1)``, so every point stays at a
+        multiple of the original step however the cache grew.  Axes
         that already cover their requested ``seq_len`` are rebuilt at their
         existing extent so the cache stays a single rectangular tensor.
 
@@ -803,9 +805,7 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         if all(L >= sl for L, sl in zip(self.L_cache_per_axis, seq_lens)):
             return
         new_L_per_axis = tuple(max(L, sl) for L, sl in zip(self.L_cache_per_axis, seq_lens))
-        max_limits = tuple(
-            1.0 + step * (new_L - L) for L, new_L, step in zip(self.L_cache_per_axis, new_L_per_axis, self.step_sizes)
-        )
+        max_limits = tuple(step * (new_L - 1) for new_L, step in zip(new_L_per_axis, self.step_sizes))
         with torch.inference_mode(False):
             with torch.no_grad():
                 self.grid_cache = self._build_grid_cache(
@@ -829,8 +829,10 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
                   where the linear projection is computed in float32 and the
                   result is cast back to the weight dtype.
                   Shape ``[1, *spatial_dims, embedding_dim]``.
-                - torch.Tensor: The coordinate grid of positions normalised to
-                  ``[-1, 1]`` per axis.  Shape ``[1, *spatial_dims, data_dim]``.
+                - torch.Tensor: The coordinate grid: multiples of
+                  ``1 / (L_cache_i - 1)`` along axis ``i``, within ``[-1, 1]``
+                  while ``seq_lens[i]`` does not exceed the constructor's
+                  ``L_cache``.  Shape ``[1, *spatial_dims, data_dim]``.
 
         Raises:
             AssertionError: If ``len(seq_lens) != self.data_dim``.
