@@ -38,7 +38,18 @@ official `mamba_chunk_scan_combined` Mamba2 kernel, and `nSubQ`:
 ![Forward time vs. sequence length for HyenaND, Attention, and Mamba](_static/throughput_scaling.png)
 
 HyenaND reaches million-token sequences at 265 ms (1M tokens), while attention
-takes ~90 s (a **339×** gap) and the Mamba2 kernel runs out of memory.
+takes ~90 s (a **339×** gap) and the Mamba2 kernel fails before reaching 1M.
+
+```{note}
+**The Mamba2 curve stops for an implementation reason, not a memory one.** An
+earlier revision of this page said the kernel "runs out of memory"; measured on a
+GB200 (184 GiB) with mamba-ssm 2.3.2.post1, it does not. It fails with a CUDA
+*illegal memory access* while using 22 GiB — 12% of available memory — because the
+Triton kernels index with 32-bit arithmetic and overflow at ~2^31 elements. See
+[Mamba-2 sequence-length limits](mamba2_limits.md) for the diagnosis and the
+reproduction. The observed reach still matches this plot; only the stated cause
+was wrong.
+```
 
 ## CUDA kernels (`nSubQ`)
 
