@@ -412,50 +412,62 @@ class TestRepeatedCacheExtension:
         torch.testing.assert_close(grid[0, 0, :, 1], _multiples_of_step(20, 1 / 15))
 
 
-def _siren_kernel() -> SIRENKernelND:
+def _siren_kernel(L_cache: tuple[int, ...]) -> SIRENKernelND:
     return SIRENKernelND(
         out_dim=4,
-        data_dim=1,
+        data_dim=len(L_cache),
         mlp_hidden_dim=8,
         num_layers=2,
         embedding_dim=8,
         omega_0=1.0,
-        L_cache=8,
+        L_cache=L_cache,
         use_bias=True,
     )
 
 
-def _random_fourier_kernel() -> RandomFourierKernelND:
+def _random_fourier_kernel(L_cache: tuple[int, ...]) -> RandomFourierKernelND:
     return RandomFourierKernelND(
         out_dim=4,
-        data_dim=1,
+        data_dim=len(L_cache),
         mlp_hidden_dim=4,
         num_layers=2,
         embedding_dim=4,
         omega_0=1.0,
-        L_cache=8,
+        L_cache=L_cache,
         use_bias=True,
         nonlinear_cfg=LazyConfig(torch.nn.GELU)(),
     )
 
 
+# (L_cache, calls that grow the cache). In 2D and 3D each call grows a
+# different axis and asks for less than the cache on an axis that already grew.
+EXTENSION_HISTORIES = {
+    "1d": ((8,), [(12,), (16,)]),
+    "2d": ((8, 16), [(12, 16), (4, 20), (14, 6)]),
+    "3d": ((4, 6, 8), [(6, 6, 8), (2, 9, 8), (5, 3, 12)]),
+}
+
+
+@pytest.mark.parametrize("history", EXTENSION_HISTORIES.values(), ids=EXTENSION_HISTORIES.keys())
 @pytest.mark.parametrize("build_kernel", [_siren_kernel, _random_fourier_kernel], ids=["siren", "random_fourier"])
-def test_kernel_does_not_depend_on_extension_history(build_kernel):
-    """A kernel grown 8 -> 12 -> 16 must equal one grown straight to 16, at every length."""
+def test_kernel_does_not_depend_on_extension_history(build_kernel, history):
+    """A kernel grown call by call must equal one grown straight to the final cache, at every size."""
+    L_cache, calls = history
+    final = tuple(max(sizes) for sizes in zip(L_cache, *calls))
     torch.manual_seed(0)
-    stepwise = build_kernel()
+    stepwise = build_kernel(L_cache)
     torch.manual_seed(0)
-    direct = build_kernel()
-    before, _ = stepwise(seq_lens=(8,))
-    stepwise(seq_lens=(12,))
-    stepwise(seq_lens=(16,))
-    direct(seq_lens=(16,))
-    for seq_len in (8, 16):
-        assert torch.equal(stepwise(seq_lens=(seq_len,))[0], direct(seq_lens=(seq_len,))[0])
+    direct = build_kernel(L_cache)
+    before, _ = stepwise(seq_lens=L_cache)
+    for seq_lens in calls:
+        stepwise(seq_lens=seq_lens)
+    direct(seq_lens=final)
+    for seq_lens in (L_cache, final, *calls):
+        assert torch.equal(stepwise(seq_lens=seq_lens)[0], direct(seq_lens=seq_lens)[0]), seq_lens
     # Rebuilding the grid moves its points by float32 rounding only, so the
     # kernel at L_cache keeps its pre-extension value. omega_0=1 keeps that
     # rounding well inside the default tolerance.
-    torch.testing.assert_close(stepwise(seq_lens=(8,))[0], before)
+    torch.testing.assert_close(stepwise(seq_lens=L_cache)[0], before)
 
 
 # ---------------------------------------------------------------------------
