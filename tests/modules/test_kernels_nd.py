@@ -31,6 +31,10 @@ Covers:
       (not ``L**data_dim``), gradient flow.
     - Subclasses (``MultiOmegaSIRENKernelND``, learnable-ω variants):
       sequence ``L_cache`` flows through.
+    - Repeated runtime cache extension: growing an axis a second time, or
+      growing another axis later, keeps every point at a multiple of the
+      original step, so the kernel at ``L_cache`` does not depend on which
+      longer inputs came before.
     - ``CKConvND``: scalar and sequence ``L_cache`` both reach the kernel
       and mask correctly under ``grid_type='single'`` and ``'double'``.
 
@@ -50,6 +54,7 @@ from nvsubquadratic.modules.kernels_nd import (
     BlockDiagonalLearnableOmegaSIRENKernelND,
     BlockDiagonalMultiOmegaSIRENKernelND,
     LearnableOmegaSIRENKernelND,
+    LearnableOmegaSIRENPositionalEmbeddingND,
     MultiOmegaSIRENKernelND,
     RandomFourierKernelND,
     RandomFourierPositionalEmbeddingND,
@@ -364,6 +369,105 @@ class TestSubclassPassThrough:
         )
         out, _ = kern(seq_lens=(8, 16, 32))
         assert out.shape == (1, 15, 31, 63, 8)
+
+
+# ---------------------------------------------------------------------------
+# Repeated runtime cache extension: the grid must not depend on call history
+# ---------------------------------------------------------------------------
+
+EXTENDING_EMBEDDINGS = [
+    SIRENPositionalEmbeddingND,
+    LearnableOmegaSIRENPositionalEmbeddingND,
+    RandomFourierPositionalEmbeddingND,
+]
+
+
+def _multiples_of_step(seq_len: int, step: float) -> torch.Tensor:
+    """Coordinates ``k * step`` for ``k = -(seq_len - 1), ..., seq_len - 1``, as float32."""
+    return (torch.arange(-(seq_len - 1), seq_len, dtype=torch.float64) * step).to(torch.float32)
+
+
+@pytest.mark.parametrize("embedding_cls", EXTENDING_EMBEDDINGS, ids=lambda cls: cls.__name__)
+class TestRepeatedCacheExtension:
+    """Every grid point stays at ``k / (L_cache - 1)`` however the cache grew.
+
+    ``test_per_axis_cache_extension_preserves_step`` covers a single extension.
+    These grow the cache again, which must not rescale an axis that already
+    grew.
+    """
+
+    def test_second_extension_keeps_original_step(self, embedding_cls):
+        emb = embedding_cls(data_dim=1, embedding_dim=4, L_cache=8, omega_0=1.0)
+        emb(seq_lens=(12,))
+        _, grid = emb(seq_lens=(16,))
+        torch.testing.assert_close(grid[0, :, 0], _multiples_of_step(16, 1 / 7))
+
+    def test_growing_another_axis_keeps_extended_axis_step(self, embedding_cls):
+        emb = embedding_cls(data_dim=2, embedding_dim=4, L_cache=(8, 16), omega_0=1.0)
+        emb(seq_lens=(12, 16))  # grow axis 0 only
+        # Then grow axis 1 only, asking for less than the cache on axis 0, so
+        # the rebuild cannot take axis 0's extent from the request.
+        _, grid = emb(seq_lens=(4, 20))
+        torch.testing.assert_close(grid[0, :, 0, 0], _multiples_of_step(4, 1 / 7))
+        torch.testing.assert_close(grid[0, 0, :, 1], _multiples_of_step(20, 1 / 15))
+
+
+def _siren_kernel(L_cache: tuple[int, ...]) -> SIRENKernelND:
+    return SIRENKernelND(
+        out_dim=4,
+        data_dim=len(L_cache),
+        mlp_hidden_dim=8,
+        num_layers=2,
+        embedding_dim=8,
+        omega_0=1.0,
+        L_cache=L_cache,
+        use_bias=True,
+    )
+
+
+def _random_fourier_kernel(L_cache: tuple[int, ...]) -> RandomFourierKernelND:
+    return RandomFourierKernelND(
+        out_dim=4,
+        data_dim=len(L_cache),
+        mlp_hidden_dim=4,
+        num_layers=2,
+        embedding_dim=4,
+        omega_0=1.0,
+        L_cache=L_cache,
+        use_bias=True,
+        nonlinear_cfg=LazyConfig(torch.nn.GELU)(),
+    )
+
+
+# (L_cache, calls that grow the cache). In 2D and 3D each call grows a
+# different axis and asks for less than the cache on an axis that already grew.
+EXTENSION_HISTORIES = {
+    "1d": ((8,), [(12,), (16,)]),
+    "2d": ((8, 16), [(12, 16), (4, 20), (14, 6)]),
+    "3d": ((4, 6, 8), [(6, 6, 8), (2, 9, 8), (5, 3, 12)]),
+}
+
+
+@pytest.mark.parametrize("history", EXTENSION_HISTORIES.values(), ids=EXTENSION_HISTORIES.keys())
+@pytest.mark.parametrize("build_kernel", [_siren_kernel, _random_fourier_kernel], ids=["siren", "random_fourier"])
+def test_kernel_does_not_depend_on_extension_history(build_kernel, history):
+    """A kernel grown call by call must equal one grown straight to the final cache, at every size."""
+    L_cache, calls = history
+    final = tuple(max(sizes) for sizes in zip(L_cache, *calls))
+    torch.manual_seed(0)
+    stepwise = build_kernel(L_cache)
+    torch.manual_seed(0)
+    direct = build_kernel(L_cache)
+    before, _ = stepwise(seq_lens=L_cache)
+    for seq_lens in calls:
+        stepwise(seq_lens=seq_lens)
+    direct(seq_lens=final)
+    for seq_lens in (L_cache, final, *calls):
+        assert torch.equal(stepwise(seq_lens=seq_lens)[0], direct(seq_lens=seq_lens)[0]), seq_lens
+    # Rebuilding the grid moves its points by float32 rounding only, so the
+    # kernel at L_cache keeps its pre-extension value. omega_0=1 keeps that
+    # rounding well inside the default tolerance.
+    torch.testing.assert_close(stepwise(seq_lens=L_cache)[0], before)
 
 
 # ---------------------------------------------------------------------------
