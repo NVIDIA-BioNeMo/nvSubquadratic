@@ -1,0 +1,14 @@
+# Slurm job logs — one pair per run, large and specific to a job id.
+*.out
+
+# Plots — regenerable from the JSONL beside them:
+#   PYTHONPATH=. python scripts/visualization/visualize_forward_time_nd.py \
+#       --input <stem>.jsonl --out <stem>.png
+*.png
+*.pdf
+
+# The JSONL rows and BENCHMARK_RESULTS.md are the primary record and ARE tracked.
+
+# Smoke / bring-up runs — superseded by the production sweeps, and some contain
+# rows from since-fixed harness bugs. Kept on disk, out of the record.
+*smoke*
