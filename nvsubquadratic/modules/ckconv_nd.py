@@ -101,6 +101,20 @@ where ``shortcut`` is a learnable ``[hidden_dim]`` parameter vector.  This
 algebraic shortcut is fused into the FFT convolution op (no extra kernel
 launch) and matches the design used throughout Hyena-style operators.
 
+Precision
+---------
+By default each FFT backend keeps its own precision for bfloat16 and float16
+activations: ``subq_ops_fused`` and ``subq_ops`` for 1D non-causal
+convolution run in the input dtype, while ``torch_fft`` and the 2D and 1D
+causal ``subq_ops`` paths convolve in float32, round the result to the input
+dtype and add the shortcut term in that dtype.  ``allow_reduced_precision=False``
+instead hands every backend bfloat16 and float16 activations and kernels in
+float32, so the convolution and the shortcut term are computed in float32 and
+the result is rounded once to the input's dtype, whatever the backend.
+Float32 and float64 activations are passed through unchanged.  Either way
+the float32 ``shortcut`` parameter is cast to the dtype the backend computes
+in, so every backend accepts low-precision activations.
+
 Related modules
 ---------------
 * ``nvsubquadratic.modules.kernels_nd`` — implicit kernel parametrisation
@@ -488,6 +502,11 @@ class CKConvND(torch.nn.Module):
     the input, and the ``shortcut`` parameter is sliced accordingly.  Causal
     mode is not verified to be correct under CP.
 
+    **Precision**: by default each backend keeps its own precision for
+    bfloat16 and float16 inputs; ``allow_reduced_precision=False`` computes
+    the convolution and the shortcut term in float32 on every backend and
+    rounds the output once to the input's dtype (see ``__init__``).
+
     Attributes:
         data_dim (int): Spatial rank of the input (1 for sequences, 2 for
             images, 3 for volumes).
@@ -501,6 +520,9 @@ class CKConvND(torch.nn.Module):
             reduce peak GPU memory.
         fft_backend (str): FFT backend identifier, ``"torch_fft"``,
             ``"subq_ops"``, or ``"subq_ops_fused"``.
+        allow_reduced_precision (bool): If ``False``, bfloat16 and float16
+            inputs are computed in float32 on every backend (see
+            ``__init__``).
         grid_type (str or None): Kernel grid size mode (``"single"``,
             ``"double"``, or ``None`` for per-axis auto-derivation).
         kernel (nn.Module): Implicit kernel generator (produces
@@ -535,6 +557,7 @@ class CKConvND(torch.nn.Module):
         use_chunked_fftconv: bool = False,
         fft_backend: Literal["torch_fft", "subq_ops", "subq_ops_fused"] = "torch_fft",
         use_shortcut: bool = True,
+        allow_reduced_precision: bool = True,
     ):
         """Construct a CKConvND operator.
 
@@ -617,7 +640,9 @@ class CKConvND(torch.nn.Module):
                     (1D "same" conv): ``fft_conv1d``, or the Toeplitz-GEMM
                     ``explicit_conv1d`` for bf16/fp16 inputs on compute capability
                     10.x at its supported sequence lengths.  Runs in the input
-                    dtype; no per-sample weights.  Raises on the first forward
+                    dtype (bf16/fp16 inputs run in float32, without
+                    ``explicit_conv1d``, when ``allow_reduced_precision=False``);
+                    no per-sample weights.  Raises on the first forward
                     beyond its length cap and specialises compiled graphs on
                     the length (see
                     :func:`~nvsubquadratic.ops.fftconv_custom.fftconv1d_bhl`).
@@ -629,7 +654,8 @@ class CKConvND(torch.nn.Module):
                   kernel from ``subquadratic_ops_torch``, which runs the whole
                   rfft2 → multiply → irfft2 pipeline in a single launch and
                   **natively in the input dtype** (fp32/fp16/bf16) instead of
-                  upcasting to fp32.  Measured at 1.9-4.9x over ``"torch_fft"``
+                  upcasting to fp32 (``allow_reduced_precision=False`` hands
+                  it float32 instead).  Measured at 1.9-4.9x over ``"torch_fft"``
                   and 1.3-2.5x over ``"subq_ops"`` on an H100 across spatial
                   extents 16-64 (batch 8, hidden 768, forward+backward, bf16);
                   the margin over ``"torch_fft"`` grows with spatial extent.
@@ -643,6 +669,21 @@ class CKConvND(torch.nn.Module):
                   Per-sample (FiLM) batched kernel weights are supported.
             use_shortcut: If ``False``, no ``shortcut`` parameter is created and the
                 output is the plain convolution ``y = IFFT(FFT(x) ⊙ FFT(k_θ))``.
+            allow_reduced_precision: Precision of the FFT convolution and the
+                shortcut term for bfloat16 and float16 inputs.  ``True``
+                (default): each backend keeps its own precision.
+                ``"subq_ops_fused"`` and ``"subq_ops"`` for 1D non-causal
+                convolution run in the input dtype; the others compute the
+                convolution in float32, round it to the input dtype and add
+                the shortcut in that dtype.  ``False``: every backend receives
+                float32 activations and kernels, computes both in float32,
+                and the output is rounded once to the input's dtype, so the
+                compute precision does not depend on ``fft_backend``.  This is
+                more precise and, on the native backends, slower.  Float32
+                and float64 inputs give the same results either way, except
+                under the opt-in fused-FFT ``torch.compile`` lowering, which
+                rewrites a float32 input with a low-precision kernel only when
+                this is ``False`` (the kernel is cast first).
 
         Raises:
             AssertionError: If ``fft_backend`` is not one of the recognised
@@ -780,6 +821,7 @@ class CKConvND(torch.nn.Module):
         self.is_causal = is_causal
         self.use_chunked_fftconv = use_chunked_fftconv
         self.fft_backend = fft_backend
+        self.allow_reduced_precision = allow_reduced_precision
         # Per-axis BC: single source of truth used by forward() and flop_count().
         # Always present (length == data_dim), even in legacy single-mode form.
         self._periodic_per_axis: tuple[bool, ...] = self_periodic_per_axis
@@ -904,7 +946,8 @@ class CKConvND(torch.nn.Module):
                 )
         elif fft_backend == "subq_ops_fused":
             # 2D-only (enforced above). The fused op keeps the input dtype end
-            # to end, so unlike the 2D "subq_ops" path there is no fp32 round-trip.
+            # to end, so unlike the 2D "subq_ops" path there is no fp32 round-trip
+            # (unless allow_reduced_precision=False; see apply_convolution).
             from nvsubquadratic.ops.fftconv_custom import (
                 fused_fftconv2d_bhl,
                 fused_fftconv2d_bhl_chunked,
@@ -972,7 +1015,7 @@ class CKConvND(torch.nn.Module):
             ``data_dim``, ``hidden_dim``, ``fft_padding``,
             ``periodic_per_axis`` (only when in per-axis list mode),
             ``grid_type``, ``is_causal``, ``use_chunked_fftconv``,
-            ``fft_backend`` and ``use_shortcut``.
+            ``fft_backend``, ``use_shortcut`` and ``allow_reduced_precision``.
         """
         bc_repr = f"fft_padding={self.fft_padding!r}"
         if self._is_tuple_mode:
@@ -981,7 +1024,8 @@ class CKConvND(torch.nn.Module):
             f"data_dim={self.data_dim}, hidden_dim={self.hidden_dim}, "
             f"{bc_repr}, grid_type={self.grid_type!r}, is_causal={self.is_causal}, "
             f"use_chunked_fftconv={self.use_chunked_fftconv}, "
-            f"fft_backend={self.fft_backend!r}, use_shortcut={self.use_shortcut}"
+            f"fft_backend={self.fft_backend!r}, use_shortcut={self.use_shortcut}, "
+            f"allow_reduced_precision={self.allow_reduced_precision}"
         )
 
     def flop_count(self, spatial_dims: tuple[int, ...], inference: bool = False) -> int:
@@ -1112,6 +1156,13 @@ class CKConvND(torch.nn.Module):
         The ``shortcut`` term is fused inside the FFT op (no extra kernel
         launch).
 
+        The shortcut is cast to the dtype of the ``x`` handed to the op, so a
+        float32 parameter works with low-precision activations on every
+        backend.  With ``allow_reduced_precision=False``, low-precision ``x``
+        and kernels are handed to the op in float32, whatever the backend, and
+        the result is rounded once to ``x.dtype``; float32 and float64 inputs
+        pass through unchanged.
+
         Args:
             x: Input signal.
 
@@ -1136,10 +1187,19 @@ class CKConvND(torch.nn.Module):
                 internally).
 
         Returns:
-            Output tensor in the same memory layout as the input ``x``:
-            ``(B, *spatial, C)`` when ``is_bhl_input=False``, or
+            Output tensor in the same memory layout and dtype as the input
+            ``x``: ``(B, *spatial, C)`` when ``is_bhl_input=False``, or
             ``(B, C, *spatial)`` when ``is_bhl_input=True``.
         """
+        input_dtype = x.dtype
+        if not self.allow_reduced_precision:
+            compute_dtype = torch.promote_types(input_dtype, torch.float32)
+            x = x.to(compute_dtype)
+            conv_kernel = conv_kernel.to(compute_dtype)
+        if shortcut is not None:
+            # A cast view: gradients still reach the (typically fp32) parameter.
+            shortcut = shortcut.to(x.dtype)
+
         if is_bhl_input:
             conv_kernel = rearrange(
                 conv_kernel, "b ... c -> b c ..."
@@ -1148,7 +1208,7 @@ class CKConvND(torch.nn.Module):
         else:
             _conv_fn = self.fftconv_fn
 
-        return _conv_fn(x, conv_kernel, shortcut)
+        return _conv_fn(x, conv_kernel, shortcut).to(input_dtype)
 
     def forward(
         self,

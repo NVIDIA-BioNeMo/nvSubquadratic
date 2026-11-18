@@ -28,6 +28,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backend, eager / compiled, starting / ending node).
 - `CKConvND(use_shortcut=False)` drops the learnable `shortcut` parameter and
   the fused `shortcut * x` term; the default and existing state dicts are unchanged.
+- `CKConvND(allow_reduced_precision=False)` computes bf16/fp16 activations in
+  float32 on every FFT backend: it hands the backend float32 activations and
+  kernels, so the convolution and the shortcut term run in float32 and the
+  result is rounded once to the input dtype. The default, `True`, keeps each
+  backend's own precision: `subq_ops_fused` and 1D non-causal `subq_ops` run in
+  the input dtype, and the others convolve in float32 and round before adding
+  the shortcut.
 - `QKVSequenceMixer` hands an inner mixer that sets `takes_fused_qkv = True` the
   un-split `[B, *spatial, 3C]` projection (`TriangleHyena` opts in); mixers
   without the attribute still receive `(q, k, v, cp_group)`. Under
@@ -71,6 +78,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rounding. The embedding is now returned in the weight dtype (float32 under
   `bf16-mixed`) instead of bf16, which costs some memory in eager mode;
   `torch.compile` fuses the first layer into one kernel.
+- **`CKConvND` with `fft_backend="torch_fft"` rejected bf16/fp16 activations.**
+  Its float32 `shortcut` parameter tripped the `torch_fft` ops'
+  `shortcut.dtype == x.dtype` assertion unless the parameters were cast as
+  well. `CKConvND` now casts the shortcut to the activations' dtype itself (a
+  cast view, so gradients still reach the float32 parameter), as the `subq_ops`
+  wrappers already did; results are otherwise unchanged bit for bit. The
+  `hyenand-retrofit` asset no longer needs its `CKConvND` subclass, and the
+  ViT-5 benchmark no longer patches the FFT functions.
 
 ### Changed
 

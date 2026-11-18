@@ -250,33 +250,6 @@ def build_hyena(*, film: bool = False) -> nn.Module:
 # ──────────────────────────────────────────────────────────────────────────────
 # Monkey-patching helpers
 # ──────────────────────────────────────────────────────────────────────────────
-def _align_dtypes(fn):
-    """Wrap an fftconv function so that x, kernel, shortcut share the same dtype.
-
-    Under ``torch.amp.autocast`` certain ops (SiLU, Sigmoid) promote tensors
-    to fp32 while others (Linear) cast to bf16, causing a dtype mismatch that
-    the fftconv assertions reject.  This wrapper aligns everything to ``x.dtype``
-    before forwarding.
-    """
-
-    def wrapper(x, kernel, shortcut=None):
-        kernel = kernel.to(x.dtype)
-        if shortcut is not None:
-            shortcut = shortcut.to(x.dtype)
-        return fn(x, kernel, shortcut)
-
-    return wrapper
-
-
-def patch_model_align_dtypes(model: nn.Module) -> nn.Module:
-    """Wrap CKConvND fftconv functions with dtype alignment (in-place)."""
-    for module in model.modules():
-        if isinstance(module, CKConvND):
-            module.fftconv_fn_bhl_input = _align_dtypes(module.fftconv_fn_bhl_input)
-            module.fftconv_fn = _align_dtypes(module.fftconv_fn)
-    return model
-
-
 def _make_subq_adapter():
     """Return a drop-in replacement for ``fftconv2d_fp32_bhl`` using subq_ops."""
     from subquadratic_ops_torch.fft_conv2d import fft_conv2d
@@ -402,10 +375,8 @@ def _build_model(cfg: BenchConfig) -> nn.Module:
     model = build_hyena(film=film)
     if cfg.needs_subq:
         patch_model_subq(model)
-    else:
-        # Under autocast, SiLU/Sigmoid promote x to fp32 while SIREN kernel
-        # stays bf16 → align dtypes before the fftconv assertion.
-        patch_model_align_dtypes(model)
+    # No dtype patch is needed otherwise: CKConvND casts the shortcut to the
+    # activations' dtype, and the FFT ops cast the kernel themselves.
     return model
 
 
