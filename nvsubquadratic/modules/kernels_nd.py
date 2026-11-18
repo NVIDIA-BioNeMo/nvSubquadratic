@@ -58,6 +58,16 @@ covers ``[-1, 1]^D`` normalised across all axes; the ``L_cache`` parameter
 controls the number of discrete grid positions cached per axis, and the cache
 grows automatically at runtime whenever a larger input is encountered.
 
+Precision
+---------
+The coordinate grid is stored in float32, and each positional embedding's
+first layer (the projection ``W x + b`` and its sine or cosine) is computed in
+at least float32 under autocast and any matmul-precision setting (in float64
+when the first-layer weight is float64): the phase is of order ``2π·ω₀``
+radians or more and the coordinates are spaced ``1 / (L_cache - 1)`` apart,
+which bf16 cannot resolve.  The later MLP layers follow the surrounding
+autocast policy.
+
 Input-dependent / conditional kernels
 --------------------------------------
 ``SIRENKernelND`` and all its subclasses accept an optional
@@ -113,7 +123,6 @@ from collections.abc import Sequence
 from typing import Callable
 
 import torch
-import torch.nn.functional as torch_F
 from einops import rearrange
 
 from nvsubquadratic.lazy_config import LazyConfig, instantiate
@@ -164,6 +173,60 @@ def _normalize_l_cache(L_cache: int | Sequence[int], data_dim: int) -> tuple[int
     return per_axis
 
 
+def _first_layer_projection(grid: torch.Tensor, linear: torch.nn.Linear) -> torch.Tensor:
+    """Evaluate a positional embedding's first-layer projection ``W x + b`` in at least float32.
+
+    The first layer maps coordinates spaced ``1 / (L_cache - 1)`` apart to
+    phases of order ``2π·ω₀`` radians or more, so both need float32.
+    ``F.linear`` cannot guarantee that: ``torch.autocast`` runs it in bf16/fp16
+    even on float32 operands, which rounds the coordinates (merging
+    neighbouring grid points on long axes) and the phase, and a float32 matmul
+    may still use TF32 under ``torch.set_float32_matmul_precision("high")``.
+    With only ``data_dim`` input features, the projection is instead
+    ``data_dim`` elementwise multiply-adds (``torch.addcmul``), which keep their
+    dtype under every autocast and matmul-precision setting.  Under
+    ``torch.compile`` they fuse into one pointwise kernel.  In eager mode each
+    is a separate kernel that writes a float32 ``[1, *spatial_dims,
+    out_features]`` tensor, so the first layer takes more time and memory than
+    a single bf16 matmul.
+
+    Args:
+        grid: Float32 coordinate grid of shape ``[1, *spatial_dims, data_dim]``.
+        linear: First-layer projection with ``in_features == data_dim``.  Its
+            weight ``[out_features, data_dim]`` and optional bias are read in
+            float32, or in float64 if the weight is float64.
+
+    Returns:
+        torch.Tensor: ``grid @ W.T + b`` in float32 (float64 for a float64
+        weight), of shape ``[1, *spatial_dims, out_features]``.
+    """
+    dtype = torch.promote_types(linear.weight.dtype, torch.float32)
+    weight = linear.weight.to(dtype)
+    grid = grid.to(dtype)
+    if linear.bias is None:
+        out = grid[..., 0:1] * weight[:, 0]
+    else:
+        out = torch.addcmul(linear.bias.to(dtype), grid[..., 0:1], weight[:, 0])
+    for i in range(1, weight.shape[1]):
+        out = torch.addcmul(out, grid[..., i : i + 1], weight[:, i])
+    return out
+
+
+class _FirstLayerLinear(torch.nn.Linear):
+    """``nn.Linear`` that evaluates ``W x + b`` in at least float32.
+
+    The first layer of the SIREN and random-Fourier positional embeddings.  Its
+    forward is ``_first_layer_projection``, so autocast and TF32 cannot lower
+    it, and it is still called as a module, so forward hooks and pre-hooks on
+    ``positional_embedding.linear`` keep firing.  Parameters, initialisation
+    and state-dict keys are those of ``nn.Linear``.
+    """
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Return ``input @ weight.T + bias`` in ``promote_types(weight.dtype, float32)``."""
+        return _first_layer_projection(input, self)
+
+
 class RandomFourierPositionalEmbeddingND(torch.nn.Module):
     """N-dimensional positional embedding using Random Fourier Features (RFF).
 
@@ -197,6 +260,11 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
     via ``_maybe_extend_grid_cache``, preserving the original step size on
     each axis.
 
+    Note: the projection ``W x + b`` and its cosine and sine are computed in
+    at least float32 under any autocast or matmul-precision setting (see
+    ``_FirstLayerLinear``); the embedding is cast to the weight's dtype on
+    return.
+
     Note: the ``W`` and ``b`` parameters have ``_no_weight_decay = True`` set
     so that any weight-decay optimizer does not shrink the random projection.
 
@@ -213,7 +281,8 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
             init and for diagnostics.
         use_bias (bool): Whether a bias is present in the linear projection.
         linear (torch.nn.Linear): The frozen random frequency projection
-            ``W`` (and optionally ``b``), shape ``[embedding_dim//2, data_dim]``.
+            ``W`` (and optionally ``b``), shape ``[embedding_dim//2, data_dim]``;
+            a ``_FirstLayerLinear``, so it computes in at least float32.
         grid_cache (torch.Tensor): Non-persistent float32 buffer of shape
             ``[1, 2*L_0-1, ..., 2*L_{d-1}-1, data_dim]``.
         step_sizes (tuple[float, ...]): Per-axis grid step
@@ -260,7 +329,7 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
 
         # Construct linear projection
         linear_out_channels = embedding_dim // 2
-        self.linear = torch.nn.Linear(in_features=data_dim, out_features=linear_out_channels, bias=use_bias)
+        self.linear = _FirstLayerLinear(in_features=data_dim, out_features=linear_out_channels, bias=use_bias)
 
         # Initialize linear projection to be normal with mean 0 and std 2 * pi * omega_0.
         self.linear.weight.data.normal_(mean=0.0, std=2 * torch.pi * self.omega_0)
@@ -361,7 +430,9 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         Returns:
             tuple:
                 - torch.Tensor: The positional embeddings,
-                  ``[cos(Wx+b), sin(Wx+b)]`` concatenated along the last axis.
+                  ``[cos(Wx+b), sin(Wx+b)]`` concatenated along the last axis,
+                  computed in at least float32 and returned in the weight's
+                  dtype.
                   Shape ``[1, *spatial_dims, embedding_dim]``.
                 - torch.Tensor: The coordinate grid: multiples of
                   ``1 / (L_cache_i - 1)`` along axis ``i``, within ``[-1, 1]``
@@ -394,19 +465,10 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
         slices = [slice(offset, offset + (seq_len * 2) - 1) for offset, seq_len in zip(offsets, seq_lens)]
         grid = self.grid_cache[(slice(None), *slices)]
 
-        # Compute the linear projection. We need to ensure that the linear projection is done in float32.
-        linear_dtype = self.linear.weight.dtype
-        if linear_dtype != torch.float32:
-            out = torch_F.linear(
-                grid,
-                self.linear.weight.to(torch.float32),
-                self.linear.bias.to(torch.float32) if self.linear.bias is not None else None,
-            ).to(linear_dtype)
-        else:
-            out = self.linear(grid)
-
-        # Concatenate the sine and cosine values.
-        return torch.cat([torch.cos(out), torch.sin(out)], dim=-1), grid
+        # Phase, cosine and sine in at least fp32 (see ``_FirstLayerLinear``); cast once at the end.
+        out = self.linear(grid)
+        embedding = torch.cat([torch.cos(out), torch.sin(out)], dim=-1)
+        return embedding.to(self.linear.weight.dtype), grid
 
 
 class RandomFourierKernelND(torch.nn.Module):
@@ -676,9 +738,10 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
     central ``[2*seq_len_i - 1]`` entries per axis and calls
     ``_maybe_extend_grid_cache`` if any axis is larger than the current cache.
 
-    Note: the linear projection is forced to float32 internally (even under
-    autocast) to avoid quantisation errors in the SIREN's high-frequency sine.
-    The output is cast back to the weight's dtype before return.
+    Note: the projection ``W x + b`` and the sine are computed in at least
+    float32 under any autocast or matmul-precision setting (see
+    ``_FirstLayerLinear``), so neither the coordinates nor the high-frequency
+    phase are quantised.  The output is cast to the weight's dtype on return.
 
     Attributes:
         data_dim (int): Number of spatial / temporal input dimensions.
@@ -688,7 +751,8 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         omega_0 (float): Frequency scaling factor used for SIREN init.
         use_bias (bool): Whether a bias is present in the linear projection.
         linear (torch.nn.Linear): Trainable SIREN first-layer projection,
-            shape ``[embedding_dim, data_dim]``.
+            shape ``[embedding_dim, data_dim]``; a ``_FirstLayerLinear``, so it
+            computes in at least float32.
         grid_cache (torch.Tensor): Non-persistent float32 buffer of shape
             ``[1, 2*L_0-1, ..., 2*L_{d-1}-1, data_dim]``.
         step_sizes (tuple[float, ...]): Per-axis grid step ``1/(L_i - 1)``
@@ -728,7 +792,7 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         self.use_bias = use_bias
 
         # Construct linear projection
-        self.linear = torch.nn.Linear(in_features=data_dim, out_features=embedding_dim, bias=use_bias)
+        self.linear = _FirstLayerLinear(in_features=data_dim, out_features=embedding_dim, bias=use_bias)
 
         # Initialize linear projection following SIREN initialization.
         _init_siren_weights(self.linear, is_first_layer=True, w0=self.omega_0)
@@ -826,8 +890,8 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         Returns:
             tuple:
                 - torch.Tensor: The positional embeddings ``sin(W x + b)``,
-                  where the linear projection is computed in float32 and the
-                  result is cast back to the weight dtype.
+                  where the projection and the sine are computed in at least
+                  float32 and the result is cast to the weight dtype.
                   Shape ``[1, *spatial_dims, embedding_dim]``.
                 - torch.Tensor: The coordinate grid: multiples of
                   ``1 / (L_cache_i - 1)`` along axis ``i``, within ``[-1, 1]``
@@ -860,19 +924,9 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
         slices = [slice(offset, offset + (seq_len * 2) - 1) for offset, seq_len in zip(offsets, seq_lens)]
         grid = self.grid_cache[(slice(None), *slices)]  # type: ignore
 
-        # Compute the linear projection.
-        linear_dtype = self.linear.weight.dtype
-        if linear_dtype != torch.float32:
-            out = torch_F.linear(
-                grid,
-                self.linear.weight.to(torch.float32),
-                self.linear.bias.to(torch.float32) if self.linear.bias is not None else None,
-            ).to(linear_dtype)
-        else:
-            out = self.linear(grid)
-
-        # Apply sine activation in place.
-        return out.sin_(), grid
+        # Phase and sine in at least fp32 (see ``_FirstLayerLinear``); cast once at the end.
+        out = torch.sin(self.linear(grid))
+        return out.to(self.linear.weight.dtype), grid
 
 
 class SIRENKernelND(torch.nn.Module):
@@ -1683,7 +1737,7 @@ class BlockDiagonalMultiOmegaSIRENKernelND(MultiOmegaSIRENKernelND):
 class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
     """SIREN positional embedding with a learnable per-row ω₀ multiplier.
 
-    Forward computes (in float32, regardless of input dtype):
+    Forward computes (in at least float32, regardless of autocast):
 
         sin( 2π · ω₀ · ω₀_scale · (W·x + b) )
 
@@ -1705,10 +1759,11 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
         effective ω₀ ranges from roughly ``0.01·ω₀`` to ``2·ω₀`` and the
         total multiplier inside the sine reaches ``4π·ω₀``.
 
-    The float32 path covers the linear projection, the multiplier, and the
-    sine; the result is cast back to the original input dtype after the sine.
-    This matches the precision discipline already used for the grid cache in
-    the parent ``SIRENPositionalEmbeddingND``.
+    The full-precision path covers the projection (via
+    ``_first_layer_projection``, so autocast cannot lower it), the float32
+    multiplier, and the sine; the result is cast to the first-layer weight's
+    dtype after the sine.  The parent ``SIRENPositionalEmbeddingND`` follows
+    the same discipline.
 
     Args:
         data_dim: Number of spatial/temporal input dimensions.
@@ -1872,7 +1927,7 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
             self.omega_0_scale.data.clamp_(min=self.omega_0_scale_min, max=self.omega_0_scale_max)
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
-        """Compute the positional embedding with a fp32-internal learnable-ω₀ first layer.
+        """Compute the positional embedding with a learnable-ω₀ first layer computed in at least fp32.
 
         Args:
             seq_lens: Lengths of the input grid for which to compute the positional embeddings.
@@ -1902,17 +1957,20 @@ class LearnableOmegaSIRENPositionalEmbeddingND(SIRENPositionalEmbeddingND):
         slices = [slice(off, off + (sl * 2) - 1) for off, sl in zip(offsets, seq_lens)]
         grid = self.grid_cache[(slice(None), *slices)]  # type: ignore
 
-        # ── float32 inner block: linear → multiplier → sin ────────────────
-        # We force fp32 for the matmul, the per-row multiplier, and the sine
-        # to keep the SIREN's high-frequency content well-resolved at the
-        # boundary (otherwise bf16 would quantize the phase ``2π·ω₀·s·...``
-        # too coarsely along the grid).  We then cast back to whatever dtype
-        # the first-layer weight was stored in (typically the surrounding
-        # autocast dtype, e.g. bf16 in mixed-precision training).
+        # ── float32 inner block: projection → multiplier → sin ────────────
+        # The projection and the sine run in at least fp32 (fp64 for fp64
+        # weights) and the per-row multiplier is fp32, to keep the SIREN's
+        # high-frequency content well-resolved at the boundary (bf16 would
+        # quantize the phase ``2π·ω₀·s·...`` too coarsely along the grid).
+        # ``F.linear`` would run in bf16 under autocast even on fp32 operands,
+        # hence ``_first_layer_projection``.  It is called as a function rather
+        # than as ``self.linear(grid)`` because its output is not the sine's
+        # argument here (that also includes the multiplier), so hooks on
+        # ``self.linear`` that read the sine argument would record the wrong
+        # value.  The result is cast to the first-layer weight's dtype (fp32
+        # under autocast with fp32 parameters).
         target_dtype = self.linear.weight.dtype
-        weight_fp32 = self.linear.weight.to(torch.float32)
-        bias_fp32 = self.linear.bias.to(torch.float32) if self.linear.bias is not None else None
-        pre = torch_F.linear(grid, weight_fp32, bias_fp32)  # [1, *spatial, embedding_dim], fp32
+        pre = _first_layer_projection(grid, self.linear)  # [1, *spatial, embedding_dim], fp32 or fp64
 
         # Total multiplier inside the sine: ``2π·ω₀ · ω₀_scale``.
         # Both factors are fp32; broadcasting ``[embedding_dim]`` over the
@@ -1950,9 +2008,9 @@ class LearnableOmegaSIRENKernelND(SIRENKernelND):
 
     With ``omega_0_scale_init = 1.0`` (the default) the kernel produced at
     init is **bit-for-bit identical** to a :class:`SIRENKernelND` built with
-    the same scalar ``omega_0`` and seed (modulo the float32-mid-cast in the
-    new positional embedding's forward, which is numerically more accurate
-    than the parent's path under autocast).  During training the model can
+    the same scalar ``omega_0`` and seed (modulo float32 rounding, because
+    this embedding applies the ``2π·ω₀`` multiplier after the projection
+    instead of folding it into the weight).  During training the model can
     learn an effective per-row ω₀ in
     ``[omega_0 · omega_0_scale_min, omega_0 · omega_0_scale_max]``.
 

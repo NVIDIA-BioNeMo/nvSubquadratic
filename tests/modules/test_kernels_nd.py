@@ -37,12 +37,18 @@ Covers:
       longer inputs came before.
     - ``CKConvND``: scalar and sequence ``L_cache`` both reach the kernel
       and mask correctly under ``grid_type='single'`` and ``'double'``.
+    - First-layer precision: every positional embedding's projection and
+      sine/cosine stay in float32 under bf16 autocast (values and parameter
+      gradients against a float64 reference), with bf16 or float64 weights,
+      under ``torch.compile`` and TF32 on CUDA, and hooks on the first layer
+      still fire.
 
 Usage (CPU only):
     PYTHONPATH=. conda run -n nv-subq python -m pytest \\
         tests/modules/test_kernels_nd.py -v -o addopts=""
 """
 
+import contextlib
 import math
 
 import pytest
@@ -56,6 +62,7 @@ from nvsubquadratic.modules.kernels_nd import (
     LearnableOmegaSIRENKernelND,
     LearnableOmegaSIRENPositionalEmbeddingND,
     MultiOmegaSIRENKernelND,
+    MultiOmegaSIRENPositionalEmbeddingND,
     RandomFourierKernelND,
     RandomFourierPositionalEmbeddingND,
     SIRENKernelND,
@@ -567,3 +574,185 @@ class TestCKConvAnisotropic:
         x = torch.randn(1, 4, 4, 8, 16)
         out = ck(x, is_bhl_input=True)
         assert out.shape == x.shape
+
+
+# ---------------------------------------------------------------------------
+# First-layer precision: the phase and its sine stay in float32
+# ---------------------------------------------------------------------------
+
+
+def _with_bias(emb):
+    """Give the first layer a non-zero bias (every constructor initialises it to zero)."""
+    with torch.no_grad():
+        emb.linear.bias.uniform_(-1.0, 1.0)
+    return emb
+
+
+FIRST_LAYER_EMBEDDINGS = {
+    "siren": lambda data_dim, L_cache: _with_bias(
+        SIRENPositionalEmbeddingND(data_dim=data_dim, embedding_dim=16, L_cache=L_cache, omega_0=10.0)
+    ),
+    "multi_omega_siren": lambda data_dim, L_cache: _with_bias(
+        MultiOmegaSIRENPositionalEmbeddingND(
+            data_dim=data_dim, embedding_dim=16, L_cache=L_cache, omega_0_per_row=[1.0] * 8 + [30.0] * 8
+        )
+    ),
+    "learnable_omega_siren": lambda data_dim, L_cache: _with_bias(
+        LearnableOmegaSIRENPositionalEmbeddingND(data_dim=data_dim, embedding_dim=16, L_cache=L_cache, omega_0=10.0)
+    ),
+    "random_fourier": lambda data_dim, L_cache: _with_bias(
+        RandomFourierPositionalEmbeddingND(data_dim=data_dim, embedding_dim=16, L_cache=L_cache, omega_0=10.0)
+    ),
+}
+FIRST_LAYER_GRIDS = [(1, 4096), (2, (64, 48)), (3, 12)]
+
+
+def _first_layer_reference(name, grid, weight, bias, omega_0_multiplier=None):
+    """Float64 embedding computed directly from the first-layer parameters."""
+    phase = grid.double() @ weight.double().T + bias.double()
+    if name == "learnable_omega_siren":
+        phase = phase * omega_0_multiplier.double()
+    if name == "random_fourier":
+        return torch.cat([torch.cos(phase), torch.sin(phase)], dim=-1)
+    return torch.sin(phase)
+
+
+def _relative_l2(got, want):
+    return ((got.double() - want).norm() / want.norm()).item()
+
+
+@pytest.mark.parametrize("data_dim, L_cache", FIRST_LAYER_GRIDS, ids=["1d", "2d", "3d"])
+@pytest.mark.parametrize("name", FIRST_LAYER_EMBEDDINGS)
+def test_first_layer_is_unaffected_by_autocast(name, data_dim, L_cache):
+    """Autocast leaves the first layer in float32 (``F.linear`` used to run it in bf16)."""
+    torch.manual_seed(0)
+    emb = FIRST_LAYER_EMBEDDINGS[name](data_dim, L_cache)
+    seq_lens = _normalize_l_cache(L_cache, data_dim)
+    want, _ = emb(seq_lens)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        got, _ = emb(seq_lens)
+    assert got.dtype == torch.float32
+    assert torch.equal(got, want)
+
+
+@pytest.mark.parametrize("name", FIRST_LAYER_EMBEDDINGS)
+def test_first_layer_with_bf16_weights_rounds_only_the_output(name):
+    """bf16 parameters still get a float32 phase and sine; only the returned embedding is rounded."""
+    torch.manual_seed(0)
+    emb = FIRST_LAYER_EMBEDDINGS[name](1, 4096)
+    for param in emb.parameters():
+        param.data = param.data.to(torch.bfloat16).to(torch.float32)
+    want, _ = emb((4096,))
+    for param in emb.parameters():
+        param.data = param.data.to(torch.bfloat16)
+    got, _ = emb((4096,))
+    assert got.dtype == torch.bfloat16
+    assert torch.equal(got, want.to(torch.bfloat16))
+
+
+@pytest.mark.parametrize("data_dim, L_cache", FIRST_LAYER_GRIDS, ids=["1d", "2d", "3d"])
+@pytest.mark.parametrize("name", FIRST_LAYER_EMBEDDINGS)
+def test_first_layer_and_its_gradients_match_float64_under_autocast(name, data_dim, L_cache):
+    """Under bf16 autocast the embedding and its parameter gradients match a float64 reference.
+
+    With ``F.linear`` both were off by 4-40% (relative L2); now they agree to
+    float32 rounding.
+    """
+    torch.manual_seed(0)
+    emb = FIRST_LAYER_EMBEDDINGS[name](data_dim, L_cache)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        got, grid = emb(_normalize_l_cache(L_cache, data_dim))
+    cotangent = torch.randn(got.shape, dtype=torch.float64)
+    got.backward(cotangent.to(got.dtype))
+
+    params = {"weight": emb.linear.weight, "bias": emb.linear.bias}
+    if name == "learnable_omega_siren":
+        params["omega_0_scale"] = emb.omega_0_scale
+    ref = {key: param.detach().double().requires_grad_() for key, param in params.items()}
+    multiplier = emb.omega_0_const * ref["omega_0_scale"] if name == "learnable_omega_siren" else None
+    want = _first_layer_reference(name, grid, ref["weight"], ref["bias"], multiplier)
+    want.backward(cotangent)
+
+    assert _relative_l2(got, want) < 1e-5
+    for key, param in params.items():
+        assert _relative_l2(param.grad, ref[key].grad) < 2e-5, key
+
+
+@pytest.mark.parametrize("name", ["siren", "multi_omega_siren", "random_fourier"])
+def test_first_layer_hooks_see_the_float32_phase(name):
+    """``positional_embedding.linear`` is still called as a module, so its forward hooks fire.
+
+    ``FiLMMonitorCallback`` reads the sine's argument through such a hook.
+    """
+    torch.manual_seed(0)
+    emb = FIRST_LAYER_EMBEDDINGS[name](2, (64, 48))
+    seen = []
+    emb.linear.register_forward_hook(lambda module, args, output: seen.append(output))
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        _, grid = emb((64, 48))
+    assert len(seen) == 1
+    assert seen[0].dtype == torch.float32
+    phase = grid.double() @ emb.linear.weight.double().T + emb.linear.bias.double()
+    assert (seen[0].double() - phase).abs().max() < 1e-4
+
+
+def test_siren_first_layer_keeps_every_coordinate_under_autocast():
+    """At ``L_cache=8192`` all 16383 coordinates keep their own phase under bf16 autocast.
+
+    bf16 has 8 significant bits, so rounding the coordinates merged up to 32
+    neighbouring grid points into one value, and rounding the phase (up to
+    about 63 rad here, where bf16 values are 0.25 apart) moved it by up to
+    0.125 rad.
+    """
+    torch.manual_seed(0)
+    emb = _with_bias(SIRENPositionalEmbeddingND(data_dim=1, embedding_dim=32, L_cache=8192, omega_0=10.0))
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        got, grid = emb((8192,))
+    want = torch.sin(grid.double() @ emb.linear.weight.double().T + emb.linear.bias.double())
+    assert (got.double() - want).abs().max() < 2e-5
+    assert (got[0, 1:] != got[0, :-1]).any(dim=-1).all()
+
+
+def test_siren_first_layer_with_float64_weights_stays_float64():
+    """float64 parameters get a float64 phase and sine, not a float32 one."""
+    torch.manual_seed(0)
+    emb = _with_bias(SIRENPositionalEmbeddingND(data_dim=2, embedding_dim=16, L_cache=(64, 48), omega_0=10.0))
+    emb.linear.double()
+    got, grid = emb((64, 48))
+    want = torch.sin(grid.double() @ emb.linear.weight.T + emb.linear.bias)
+    assert got.dtype == torch.float64
+    assert (got - want).abs().max() < 1e-12
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("data_dim, L_cache", FIRST_LAYER_GRIDS, ids=["1d", "2d", "3d"])
+@pytest.mark.parametrize("setting", ["bf16_autocast", "tf32_matmul"])
+def test_siren_first_layer_on_cuda_matches_float64(setting, data_dim, L_cache):
+    """On CUDA, eager and ``torch.compile`` both match a float64 reference under bf16 autocast or TF32.
+
+    With ``F.linear``, CUDA autocast ran the first layer in bf16, except that
+    Inductor rewrites a one-feature (1D) projection into float32 elementwise
+    math, so only compiled 1D was correct.  Without autocast, a float32 matmul
+    may run in TF32 under ``torch.set_float32_matmul_precision("high")``, which
+    ``experiments/run.py`` sets.
+    """
+    torch.manual_seed(0)
+    emb = SIRENPositionalEmbeddingND(data_dim=data_dim, embedding_dim=32, L_cache=L_cache, omega_0=10.0)
+    emb = _with_bias(emb).cuda()
+    seq_lens = _normalize_l_cache(L_cache, data_dim)
+    compiled = torch.compile(emb)
+    previous_precision = torch.get_float32_matmul_precision()
+    try:
+        if setting == "tf32_matmul":
+            torch.set_float32_matmul_precision("high")
+            context = contextlib.nullcontext()
+        else:
+            context = torch.autocast("cuda", dtype=torch.bfloat16)
+        with context:
+            eager, grid = emb(seq_lens)
+            got, _ = compiled(seq_lens)
+    finally:
+        torch.set_float32_matmul_precision(previous_precision)
+    want = torch.sin(grid.double() @ emb.linear.weight.double().T + emb.linear.bias.double())
+    assert (eager.double() - want).abs().max() < 2e-5
+    assert (got.double() - want).abs().max() < 2e-5

@@ -46,6 +46,31 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them. This affected every release since 0.1.0. Fixed-size training never
   grows the cache twice and was not affected. Every extension now keeps the
   original step, and results that were already correct are bit-identical.
+- **The positional embeddings' first layer ran in bf16 under autocast.**
+  `SIRENPositionalEmbeddingND` (and `MultiOmegaSIRENPositionalEmbeddingND`),
+  `LearnableOmegaSIRENPositionalEmbeddingND` and
+  `RandomFourierPositionalEmbeddingND` are meant to compute their first-layer
+  projection `W x + b` in float32, but `F.linear` runs in bf16 under
+  `torch.autocast` even on float32 operands. With float32 parameters under
+  autocast (the usual `bf16-mixed` setup), the coordinates and the phase (of
+  order `2π·ω₀` radians or more) were rounded to bf16. On long axes,
+  neighbouring grid points merged: up to 32 taps shared one coordinate at
+  `L_cache=8192`. At `ω₀=10` the SIREN embeddings were off by 3–6% (relative
+  L2) and random Fourier features by 9–18%, and the kernel inherited that
+  error. With bf16 parameters, all but the learnable-ω₀ embedding rounded the
+  phase to bf16 before the sine. On CUDA, Inductor turns a single-coordinate
+  (1D) projection into float32 elementwise math, so compiled 1D was not
+  affected; eager 1D and both modes in 2D and 3D were. The first layer is now
+  a `torch.nn.Linear` subclass that computes the projection as float32
+  multiply-adds (float64 for float64 parameters), which neither autocast nor
+  TF32 lowers, and the sine or cosine runs in the same dtype. Eager and
+  compiled now agree in every dimension. Parameters and state dicts are
+  unchanged, and forward hooks on `positional_embedding.linear` still fire.
+  Under autocast, kernels computed from existing checkpoints change by the
+  removed rounding error; compiled 1D results on CUDA stay the same to float32
+  rounding. The embedding is now returned in the weight dtype (float32 under
+  `bf16-mixed`) instead of bf16, which costs some memory in eager mode;
+  `torch.compile` fuses the first layer into one kernel.
 
 ### Changed
 
