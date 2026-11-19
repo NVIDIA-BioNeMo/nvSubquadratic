@@ -86,6 +86,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wrappers already did; results are otherwise unchanged bit for bit. The
   `hyenand-retrofit` asset no longer needs its `CKConvND` subclass, and the
   ViT-5 benchmark no longer patches the FFT functions.
+- **`GaussianModulationND` computed its exponent in bf16 under autocast.** Its
+  docstring promises a float32 window, but the exponent
+  `-0.5 Σ_d (p_d / σ_{d,c})²` came from an `einsum`, which autocast runs as a
+  bf16 matmul (and which can run in TF32 without autocast), and the
+  exponential was then taken of the rounded result. With float32 parameters
+  under bf16 autocast on an H100, the window was off by 0.2–0.3% (relative
+  L2), by up to 4% where it is above 1e-3, and the `std_param` gradient by
+  0.4–1.4%. The exponent is now a sum of float32 multiply-adds over the axes
+  and the exponential runs in float32, so autocast and TF32 no longer change
+  the window.
 
 ### Changed
 

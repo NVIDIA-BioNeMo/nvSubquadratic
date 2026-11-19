@@ -568,8 +568,9 @@ class GaussianModulationND(torch.nn.Module):
             \text{out}[\ldots, c] = x[\ldots, c] \cdot
                 \exp\!\Bigl(-\tfrac{1}{2} \sum_{d} \bigl(p_d / \sigma_{d,c}\bigr)^2\Bigr)
 
-        The exponent is computed as a single einsum (sum over axes) for
-        efficiency, avoiding the intermediate ``prod(exp)`` formulation.
+        The exponent is a sum over axes (one exponential of a sum rather than
+        a product of exponentials), computed with elementwise multiply-adds in
+        ``float32`` so that neither autocast nor TF32 lowers it.
 
         Mask convention: **1 = fully included** (origin), **0 = fully
         excluded** (large displacement).
@@ -594,11 +595,17 @@ class GaussianModulationND(torch.nn.Module):
         # Compute the standard deviation for each channel based on the learned weights. Compute on float32 and cast to x.dtype.
         std = self._compute_std()  # [data_dim, num_channels]
 
-        # Compute mask
-        # Faster: exp(sum) instead of prod(exp); avoid pow/div; one einsum + one exp
+        # Compute mask: exp(sum) instead of prod(exp).  The sum over axes is
+        # ``data_dim`` elementwise multiply-adds in float32: an einsum would run
+        # as a bf16/fp16 matmul under autocast (or in TF32), rounding the
+        # exponent before the exp.
         # grid.shape: [b, ..., data_dim], std.shape: [data_dim, num_channels], exponent.shape: [b, ..., num_channels]
-        exponent = -0.5 * torch.einsum("b...d,dc->b...c", grid.square(), std.square().reciprocal())
-        gauss = exponent.exp_().to(x.dtype)
+        grid_sq = grid.square()
+        inv_var = std.square().reciprocal()
+        exponent = grid_sq[..., 0:1] * inv_var[0]
+        for axis in range(1, grid.shape[-1]):
+            exponent = torch.addcmul(exponent, grid_sq[..., axis : axis + 1], inv_var[axis])
+        gauss = torch.exp(-0.5 * exponent).to(x.dtype)
 
         # Apply the Gaussian modulation to the input features.
         return x * gauss
