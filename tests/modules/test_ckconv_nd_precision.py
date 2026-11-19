@@ -186,25 +186,61 @@ def test_bf16_forward_and_backward_reach_the_fp32_shortcut(mode):
 
 
 @pytest.mark.parametrize(
-    "fft_padding, grid_type", [("circular", "single"), (["circular", "zero"], None)], ids=["circular", "mixed"]
+    "fft_padding, grid_type, use_chunked_fftconv",
+    [
+        ("zero", "double", False),
+        ("zero", "double", True),
+        ("circular", "single", False),
+        (["circular", "zero"], None, False),
+        (["circular", "zero"], None, True),
+    ],
+    ids=["zero", "zero-chunked", "circular", "mixed", "mixed-chunked"],
 )
 @pytest.mark.parametrize("is_bhl_input", [True, False], ids=["bhl", "blh"])
-def test_default_matches_casting_the_shortcut_parameter(fft_padding, grid_type, is_bhl_input):
-    """Circular and mixed boundaries, both layouts: bf16 activations work with the fp32 shortcut.
+def test_default_matches_casting_the_shortcut_parameter(fft_padding, grid_type, use_chunked_fftconv, is_bhl_input):
+    """Every ``torch_fft`` path, both layouts: bf16 activations work with the fp32 shortcut.
 
-    The output equals that of the same module with its shortcut parameter cast
-    to bf16, the workaround these ``torch_fft`` ops needed before ``CKConvND``
-    cast the shortcut.
+    The output and the input and kernel gradients equal those of the same
+    module with its shortcut parameter cast to bf16, the workaround these ops
+    needed before ``CKConvND`` cast the shortcut; so does the shortcut
+    gradient, which now stays fp32.
     """
     torch.manual_seed(0)
-    ck = _ckconv(data_dim=2, spatial=(8, 6), fft_padding=fft_padding, grid_type=grid_type)
+    ck = _ckconv(
+        data_dim=2,
+        spatial=(8, 6),
+        fft_padding=fft_padding,
+        grid_type=grid_type,
+        use_chunked_fftconv=use_chunked_fftconv,
+    )
     cast = copy.deepcopy(ck)
     cast.shortcut.data = cast.shortcut.data.to(torch.bfloat16)
     shape = (2, HIDDEN, 8, 6) if is_bhl_input else (2, 8, 6, HIDDEN)
     x = torch.randn(shape, generator=torch.Generator().manual_seed(1)).to(torch.bfloat16)
-    got = ck(x, is_bhl_input=is_bhl_input)
+    results = []
+    for module in (ck, cast):
+        x_leaf = x.clone().requires_grad_()
+        y = module(x_leaf, is_bhl_input=is_bhl_input)
+        y.float().square().sum().backward()
+        results.append((y, x_leaf.grad))
+    (got, got_grad), (want, want_grad) = results
     assert got.dtype == torch.bfloat16
-    assert torch.equal(got, cast(x, is_bhl_input=is_bhl_input))
+    assert torch.equal(got, want)
+    assert torch.equal(got_grad, want_grad)
+    assert ck.shortcut.grad.dtype == torch.float32
+    assert torch.equal(ck.shortcut.grad, cast.shortcut.grad.float())
+    for (name, param), other in zip(ck.kernel.named_parameters(), cast.kernel.parameters()):
+        assert torch.equal(param.grad, other.grad), name
+
+
+def test_module_pickled_before_the_option_runs_with_the_default():
+    """A whole ``CKConvND`` unpickled from before ``allow_reduced_precision`` existed uses the default."""
+    ck = _ckconv(data_dim=1, spatial=(16,))
+    del ck.__dict__["allow_reduced_precision"]  # what unpickling an older module leaves behind
+    assert ck.allow_reduced_precision is True
+    x, kernel = _operands((16,), False, torch.bfloat16)
+    got = ck.apply_convolution(x, kernel, ck.shortcut, is_bhl_input=True)
+    assert torch.equal(got, _backend_op(ck, x, kernel, ck.shortcut.to(torch.bfloat16)))
 
 
 def test_extra_repr_reports_precision():

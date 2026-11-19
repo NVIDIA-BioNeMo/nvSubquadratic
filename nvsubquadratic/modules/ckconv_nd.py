@@ -547,6 +547,10 @@ class CKConvND(torch.nn.Module):
             a sequence of mode strings (mixed-BC path).
     """
 
+    # Class-level default: a whole module pickled before this option existed
+    # has no instance attribute and falls back to the default behaviour.
+    allow_reduced_precision: bool = True
+
     def __init__(
         self,
         data_dim: int,

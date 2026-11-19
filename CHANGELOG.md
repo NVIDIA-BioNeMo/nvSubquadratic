@@ -87,9 +87,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   well. `CKConvND` now casts the shortcut to the activations' dtype itself (a
   differentiable cast, so the parameter stays float32 and receives the
   gradient), as the `subq_ops` wrappers already did; results are otherwise
-  unchanged bit for bit. The
-  `hyenand-retrofit` asset no longer needs its `CKConvND` subclass, and the
-  ViT-5 benchmark no longer patches the FFT functions.
+  unchanged bit for bit. (Under `python -O`, which strips that assertion,
+  such activations used to come back as float32 with the shortcut term
+  promoted; they now keep their dtype.) The `hyenand-retrofit` asset no
+  longer needs its `CKConvND` subclass, and the ViT-5 benchmark no longer
+  patches the FFT functions.
 - **`GaussianModulationND` computed its exponent in bf16 under autocast.** Its
   docstring promises a float32 window, but the exponent
   `-0.5 Σ_d (p_d / σ_{d,c})²` came from an `einsum`, which autocast runs as a
