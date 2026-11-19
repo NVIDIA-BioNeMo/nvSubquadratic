@@ -31,6 +31,7 @@ Usage:
 
 import copy
 import importlib.util
+import pickle
 
 import pytest
 import torch
@@ -236,7 +237,8 @@ def test_default_matches_casting_the_shortcut_parameter(fft_padding, grid_type, 
 def test_module_pickled_before_the_option_runs_with_the_default():
     """A whole ``CKConvND`` unpickled from before ``allow_reduced_precision`` existed uses the default."""
     ck = _ckconv(data_dim=1, spatial=(16,))
-    del ck.__dict__["allow_reduced_precision"]  # what unpickling an older module leaves behind
+    del ck.allow_reduced_precision  # an older module's pickled state has no such attribute
+    ck = pickle.loads(pickle.dumps(ck))
     assert ck.allow_reduced_precision is True
     x, kernel = _operands((16,), False, torch.bfloat16)
     got = ck.apply_convolution(x, kernel, ck.shortcut, is_bhl_input=True)

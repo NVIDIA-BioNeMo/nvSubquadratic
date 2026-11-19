@@ -547,10 +547,6 @@ class CKConvND(torch.nn.Module):
             a sequence of mode strings (mixed-BC path).
     """
 
-    # Class-level default: a whole module pickled before this option existed
-    # has no instance attribute and falls back to the default behaviour.
-    allow_reduced_precision: bool = True
-
     def __init__(
         self,
         data_dim: int,
@@ -1012,6 +1008,19 @@ class CKConvND(torch.nn.Module):
         # the per-axis grid is computed from ``self._periodic_per_axis`` via
         # ``_grid_is_single_per_axis``).
         self.grid_type = grid_type
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore a pickled module, giving it the defaults of options it predates.
+
+        A whole ``CKConvND`` pickled before ``allow_reduced_precision`` existed
+        has no such attribute; it gets the default, ``True``.
+
+        Args:
+            state: The instance ``__dict__`` saved by pickle.
+        """
+        super().__setstate__(state)
+        if not hasattr(self, "allow_reduced_precision"):
+            self.allow_reduced_precision = True
 
     def extra_repr(self) -> str:
         """Return a concise summary string for ``print(module)`` and ``repr(module)``.
