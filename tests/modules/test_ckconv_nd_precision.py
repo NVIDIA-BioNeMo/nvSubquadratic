@@ -51,15 +51,21 @@ CPU_CASES = {
     "3d": {"data_dim": 3, "spatial": (4, 4, 4)},
 }
 
+# subquadratic-ops-torch supports Ampere or newer GPUs (its README and this repo's).
+# An installed package does not show that its kernels run on this device.
 _requires_cuda_subq_ops = pytest.mark.skipif(
-    not torch.cuda.is_available() or importlib.util.find_spec("subquadratic_ops_torch") is None,
-    reason="needs CUDA and subquadratic_ops_torch",
+    not torch.cuda.is_available()
+    or torch.cuda.get_device_capability() < (8, 0)
+    or importlib.util.find_spec("subquadratic_ops_torch") is None,
+    reason="needs subquadratic_ops_torch and a CUDA GPU of compute capability 8.0+ (Ampere or newer)",
 )
 
 GPU_CASES = {
     "subq_ops-2d": {"fft_backend": "subq_ops", "data_dim": 2, "spatial": (16, 12)},
     "subq_ops-1d-causal": {"fft_backend": "subq_ops", "data_dim": 1, "spatial": (64,), "is_causal": True},
     "subq_ops-1d": {"fft_backend": "subq_ops", "data_dim": 1, "spatial": (64,)},
+    # With its 31x23 kernel this selects the fused kernel's 32-point FFT tile, which runs on
+    # Ampere; only the 128 tile (extents above 32 per axis) needs requires_sm90.
     "subq_ops_fused-2d": {"fft_backend": "subq_ops_fused", "data_dim": 2, "spatial": (16, 12)},
 }
 # The default constructor, and the float32 mode.
