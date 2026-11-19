@@ -73,17 +73,21 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   TF32 lowers, and the sine or cosine runs in the same dtype. Eager and
   compiled now agree in every dimension. Parameters and state dicts are
   unchanged, and forward hooks on `positional_embedding.linear` still fire.
-  Under autocast, kernels computed from existing checkpoints change by the
-  removed rounding error; compiled 1D results on CUDA stay the same to float32
-  rounding. The embedding is now returned in the weight dtype (float32 under
+  Kernels computed from existing checkpoints change by the removed rounding
+  error under autocast (compiled 1D on CUDA stays the same to float32
+  rounding), with bf16 or fp16 first-layer parameters (for example from a
+  parameter-only cast), and in float32 runs with TF32 matmuls enabled
+  (`torch.set_float32_matmul_precision("high")`, which `experiments/run.py`
+  sets). The embedding is now returned in the weight dtype (float32 under
   `bf16-mixed`) instead of bf16, which costs some memory in eager mode;
   `torch.compile` fuses the first layer into one kernel.
 - **`CKConvND` with `fft_backend="torch_fft"` rejected bf16/fp16 activations.**
   Its float32 `shortcut` parameter tripped the `torch_fft` ops'
   `shortcut.dtype == x.dtype` assertion unless the parameters were cast as
   well. `CKConvND` now casts the shortcut to the activations' dtype itself (a
-  cast view, so gradients still reach the float32 parameter), as the `subq_ops`
-  wrappers already did; results are otherwise unchanged bit for bit. The
+  differentiable cast, so the parameter stays float32 and receives the
+  gradient), as the `subq_ops` wrappers already did; results are otherwise
+  unchanged bit for bit. The
   `hyenand-retrofit` asset no longer needs its `CKConvND` subclass, and the
   ViT-5 benchmark no longer patches the FFT functions.
 - **`GaussianModulationND` computed its exponent in bf16 under autocast.** Its

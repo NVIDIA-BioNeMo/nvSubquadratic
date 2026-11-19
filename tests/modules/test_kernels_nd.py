@@ -37,11 +37,12 @@ Covers:
       longer inputs came before.
     - ``CKConvND``: scalar and sequence ``L_cache`` both reach the kernel
       and mask correctly under ``grid_type='single'`` and ``'double'``.
-    - First-layer precision: every positional embedding's projection and
-      sine/cosine stay in float32 under bf16 autocast (values and parameter
-      gradients against a float64 reference), with bf16 or float64 weights,
-      under ``torch.compile`` and TF32 on CUDA, and hooks on the first layer
-      still fire.
+    - First-layer precision: the SIREN, multi-ω₀, learnable-ω₀ and
+      random-Fourier embeddings keep their projection and sine/cosine in
+      float32 under bf16 autocast (values and parameter gradients against a
+      float64 reference, with and without a bias) and with bf16 weights; the
+      SIREN embedding also with float64 weights and, on CUDA, under
+      ``torch.compile`` and TF32.  Hooks on the first layer still fire.
 
 Usage (CPU only):
     PYTHONPATH=. conda run -n nv-subq python -m pytest \\
@@ -655,7 +656,7 @@ def test_first_layer_with_bf16_weights_rounds_only_the_output(name):
 def test_first_layer_and_its_gradients_match_float64_under_autocast(name, data_dim, L_cache):
     """Under bf16 autocast the embedding and its parameter gradients match a float64 reference.
 
-    With ``F.linear`` both were off by 4-40% (relative L2); now they agree to
+    With ``F.linear`` both were off by 3.5-22% (relative L2); now they agree to
     float32 rounding.
     """
     torch.manual_seed(0)
@@ -676,6 +677,26 @@ def test_first_layer_and_its_gradients_match_float64_under_autocast(name, data_d
     assert _relative_l2(got, want) < 1e-5
     for key, param in params.items():
         assert _relative_l2(param.grad, ref[key].grad) < 2e-5, key
+
+
+NO_BIAS_EMBEDDINGS = {
+    "siren": SIRENPositionalEmbeddingND,
+    "learnable_omega_siren": LearnableOmegaSIRENPositionalEmbeddingND,
+    "random_fourier": RandomFourierPositionalEmbeddingND,
+}
+
+
+@pytest.mark.parametrize("name", NO_BIAS_EMBEDDINGS)
+def test_first_layer_without_bias_matches_float64_under_autocast(name):
+    """``use_bias=False`` takes the projection's bias-free branch and still stays in float32."""
+    torch.manual_seed(0)
+    emb = NO_BIAS_EMBEDDINGS[name](data_dim=2, embedding_dim=16, L_cache=(64, 48), omega_0=10.0, use_bias=False)
+    assert emb.linear.bias is None
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        got, grid = emb((64, 48))
+    multiplier = emb.omega_0_const * emb.omega_0_scale if name == "learnable_omega_siren" else None
+    want = _first_layer_reference(name, grid, emb.linear.weight, torch.zeros(()), multiplier)
+    assert _relative_l2(got, want) < 1e-5
 
 
 @pytest.mark.parametrize("name", ["siren", "multi_omega_siren", "random_fourier"])

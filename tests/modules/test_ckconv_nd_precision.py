@@ -19,8 +19,9 @@ activations, and ``CKConvND`` casts the float32 ``shortcut`` parameter to the
 activations' dtype, so every backend accepts them.  With
 ``allow_reduced_precision=False`` every backend computes the long convolution
 and the shortcut term in float32 and the result is rounded once to the input
-dtype.  Each test compares against the backend op that ``CKConvND``
-dispatches to, called directly.
+dtype.  The value tests compare against the backend op that ``CKConvND``
+dispatches to, called directly, or against the same module with its shortcut
+parameter cast to the activations' dtype.
 
 The CPU tests use ``torch_fft``; the GPU tests cover the ``subq_ops`` backends.
 
@@ -28,6 +29,7 @@ Usage:
     PYTHONPATH=. python -m pytest tests/modules/test_ckconv_nd_precision.py -v -o addopts=""
 """
 
+import copy
 import importlib.util
 
 import pytest
@@ -73,8 +75,10 @@ def _gpu_params(names):
     ]
 
 
-def _ckconv(data_dim, spatial, fft_backend="torch_fft", is_causal=False, **kwargs):
-    """A small zero-padded, double-grid ``CKConvND`` with a SIREN kernel."""
+def _ckconv(
+    data_dim, spatial, fft_backend="torch_fft", is_causal=False, fft_padding="zero", grid_type="double", **kwargs
+):
+    """A small ``CKConvND`` with a SIREN kernel, zero-padded on a double grid unless told otherwise."""
     return CKConvND(
         data_dim=data_dim,
         hidden_dim=HIDDEN,
@@ -89,8 +93,8 @@ def _ckconv(data_dim, spatial, fft_backend="torch_fft", is_causal=False, **kwarg
             use_bias=True,
         ),
         mask_cfg=LazyConfig(torch.nn.Identity)(),
-        grid_type="double",
-        fft_padding="zero",
+        grid_type=grid_type,
+        fft_padding=fft_padding,
         is_causal=is_causal,
         fft_backend=fft_backend,
         **kwargs,
@@ -179,6 +183,28 @@ def test_bf16_forward_and_backward_reach_the_fp32_shortcut(mode):
     assert shortcut.grad.dtype == torch.float32
     assert torch.isfinite(shortcut.grad).all() and torch.count_nonzero(shortcut.grad) > 0
     assert x.grad.dtype == torch.bfloat16
+
+
+@pytest.mark.parametrize(
+    "fft_padding, grid_type", [("circular", "single"), (["circular", "zero"], None)], ids=["circular", "mixed"]
+)
+@pytest.mark.parametrize("is_bhl_input", [True, False], ids=["bhl", "blh"])
+def test_default_matches_casting_the_shortcut_parameter(fft_padding, grid_type, is_bhl_input):
+    """Circular and mixed boundaries, both layouts: bf16 activations work with the fp32 shortcut.
+
+    The output equals that of the same module with its shortcut parameter cast
+    to bf16, the workaround these ``torch_fft`` ops needed before ``CKConvND``
+    cast the shortcut.
+    """
+    torch.manual_seed(0)
+    ck = _ckconv(data_dim=2, spatial=(8, 6), fft_padding=fft_padding, grid_type=grid_type)
+    cast = copy.deepcopy(ck)
+    cast.shortcut.data = cast.shortcut.data.to(torch.bfloat16)
+    shape = (2, HIDDEN, 8, 6) if is_bhl_input else (2, 8, 6, HIDDEN)
+    x = torch.randn(shape, generator=torch.Generator().manual_seed(1)).to(torch.bfloat16)
+    got = ck(x, is_bhl_input=is_bhl_input)
+    assert got.dtype == torch.bfloat16
+    assert torch.equal(got, cast(x, is_bhl_input=is_bhl_input))
 
 
 def test_extra_repr_reports_precision():

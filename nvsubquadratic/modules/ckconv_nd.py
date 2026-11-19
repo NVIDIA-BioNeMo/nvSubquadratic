@@ -112,8 +112,10 @@ instead hands every backend bfloat16 and float16 activations and kernels in
 float32, so the convolution and the shortcut term are computed in float32 and
 the result is rounded once to the input's dtype, whatever the backend.
 Float32 and float64 activations are passed through unchanged.  Either way
-the float32 ``shortcut`` parameter is cast to the dtype the backend computes
-in, so every backend accepts low-precision activations.
+the float32 ``shortcut`` parameter is cast to the dtype of the activations
+handed to the backend (the input dtype by default, float32 with
+``allow_reduced_precision=False``), so every backend accepts low-precision
+activations.
 
 Related modules
 ---------------
@@ -1197,7 +1199,7 @@ class CKConvND(torch.nn.Module):
             x = x.to(compute_dtype)
             conv_kernel = conv_kernel.to(compute_dtype)
         if shortcut is not None:
-            # A cast view: gradients still reach the (typically fp32) parameter.
+            # A differentiable cast: the parameter stays fp32 and receives the gradient.
             shortcut = shortcut.to(x.dtype)
 
         if is_bhl_input:

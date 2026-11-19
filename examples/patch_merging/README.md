@@ -38,9 +38,8 @@ separate so consolidation does not silently redefine experiments. Set
 
 ImageNet training configs retain their Apex/DALI requirements. CPU model tests
 use `fft_backend="torch_fft"`, without downloading datasets or launching training.
-The FFT backend on current main has a separate CPU bf16 shortcut-dtype limitation;
-real Hyena/FiLM smoke tests therefore use float32, while merger and hierarchy
-wiring tests cover CPU bf16 autocast independently.
+Real Hyena/FiLM smoke tests use float32, while merger and hierarchy wiring tests
+cover CPU bf16 autocast.
 
 ## Loading pretrained weights with a new classifier
 

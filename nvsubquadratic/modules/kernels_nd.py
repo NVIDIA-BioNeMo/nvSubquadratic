@@ -2006,11 +2006,13 @@ class LearnableOmegaSIRENKernelND(SIRENKernelND):
     :class:`LearnableOmegaSIRENPositionalEmbeddingND`.  The hidden and output
     layers retain the usual SIREN init at ``hidden_omega_0``.
 
-    With ``omega_0_scale_init = 1.0`` (the default) the kernel produced at
-    init is **bit-for-bit identical** to a :class:`SIRENKernelND` built with
-    the same scalar ``omega_0`` and seed (modulo float32 rounding, because
-    this embedding applies the ``2π·ω₀`` multiplier after the projection
-    instead of folding it into the weight).  During training the model can
+    With ``omega_0_scale_init = 1.0`` (the default) the first layer is
+    initialised from the same distribution as a :class:`SIRENKernelND` with
+    the same scalar ``omega_0``: its weight is drawn without the ``2π·ω₀``
+    factor, which the forward applies after the projection.  The two kernels
+    agree to float32 rounding when this weight equals the SIREN weight divided
+    by ``2π·ω₀``; with the same seed they differ, because this class redraws
+    the first-layer weight.  During training the model can
     learn an effective per-row ω₀ in
     ``[omega_0 · omega_0_scale_min, omega_0 · omega_0_scale_max]``.
 
