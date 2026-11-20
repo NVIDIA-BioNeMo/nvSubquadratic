@@ -570,7 +570,11 @@ class GaussianModulationND(torch.nn.Module):
 
         The exponent is a sum over axes (one exponential of a sum rather than
         a product of exponentials), computed with elementwise multiply-adds in
-        ``float32`` so that neither autocast nor TF32 lowers it.
+        ``float32`` so that neither autocast nor TF32 lowers it.  In eager mode
+        each axis is a separate kernel over a ``float32`` tensor of the
+        kernel's size, so the window's time grows with ``data_dim`` and it
+        takes more memory than one bf16 matmul; under ``torch.compile`` the
+        multiply-adds fuse into one pointwise kernel.
 
         Mask convention: **1 = fully included** (origin), **0 = fully
         excluded** (large displacement).

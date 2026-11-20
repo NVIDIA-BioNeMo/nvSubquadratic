@@ -104,7 +104,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   L2), by up to 4% where it is above 1e-3, and the `std_param` gradient by
   0.4–1.4%. The exponent is now a sum of float32 multiply-adds over the axes
   and the exponential runs in float32, so autocast and TF32 no longer change
-  the window.
+  the window. In eager mode each axis is one pass over a float32 tensor of
+  the kernel's size; `torch.compile` fuses them into one kernel.
 
 ### Changed
 
