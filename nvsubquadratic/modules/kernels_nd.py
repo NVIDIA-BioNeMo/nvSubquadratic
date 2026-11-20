@@ -419,6 +419,24 @@ class RandomFourierPositionalEmbeddingND(torch.nn.Module):
                 )
         self.L_cache_per_axis = new_L_per_axis
 
+    def __setstate__(self, state: dict) -> None:
+        """Restore a pickled embedding, giving an older first layer the float32 projection.
+
+        Pickle stores the class of each child module, so a whole embedding
+        pickled before ``_FirstLayerLinear`` existed (``torch.save(module)``,
+        not a state dict) comes back with ``self.linear`` as a plain
+        ``torch.nn.Linear``.  Its ``F.linear`` runs in bf16 under autocast and
+        fails for bf16 weights on the float32 grid.  Such a layer becomes a
+        ``_FirstLayerLinear``; its parameters and hooks are kept.
+
+        Args:
+            state: The instance ``__dict__`` saved by pickle.
+        """
+        super().__setstate__(state)
+        linear = self._modules.get("linear")
+        if type(linear) is torch.nn.Linear:
+            linear.__class__ = _FirstLayerLinear
+
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the RFF positional embeddings for a given spatial grid.
 
@@ -878,6 +896,25 @@ class SIRENPositionalEmbeddingND(torch.nn.Module):
                     device=self.grid_cache.device,
                 )
         self.L_cache_per_axis = new_L_per_axis
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore a pickled embedding, giving an older first layer the float32 projection.
+
+        Pickle stores the class of each child module, so a whole embedding
+        pickled before ``_FirstLayerLinear`` existed (``torch.save(module)``,
+        not a state dict) comes back with ``self.linear`` as a plain
+        ``torch.nn.Linear``.  Its ``F.linear`` runs in bf16 under autocast and
+        fails for bf16 weights on the float32 grid.  Such a layer becomes a
+        ``_FirstLayerLinear``; its parameters and hooks are kept.  The
+        multi-ω₀ and learnable-ω₀ embeddings inherit this.
+
+        Args:
+            state: The instance ``__dict__`` saved by pickle.
+        """
+        super().__setstate__(state)
+        linear = self._modules.get("linear")
+        if type(linear) is torch.nn.Linear:
+            linear.__class__ = _FirstLayerLinear
 
     def forward(self, seq_lens: tuple[int, ...]) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the SIREN positional embeddings for a given spatial grid.

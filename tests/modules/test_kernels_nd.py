@@ -42,7 +42,9 @@ Covers:
       float32 under bf16 autocast (values and parameter gradients against a
       float64 reference, with and without a bias) and with bf16 weights; the
       SIREN embedding also with float64 weights and, on CUDA, under
-      ``torch.compile`` and TF32.  Hooks on the first layer still fire.
+      ``torch.compile`` and TF32.  Hooks on the first layer still fire, and
+      whole embeddings or kernels pickled with the older plain
+      ``torch.nn.Linear`` first layer get the float32 one when unpickled.
 
 Usage (CPU only):
     PYTHONPATH=. conda run -n nv-subq python -m pytest \\
@@ -50,7 +52,9 @@ Usage (CPU only):
 """
 
 import contextlib
+import copy
 import math
+import pickle
 
 import pytest
 import torch
@@ -68,6 +72,7 @@ from nvsubquadratic.modules.kernels_nd import (
     RandomFourierPositionalEmbeddingND,
     SIRENKernelND,
     SIRENPositionalEmbeddingND,
+    _FirstLayerLinear,
     _normalize_l_cache,
 )
 from nvsubquadratic.modules.masks_nd import GaussianModulationND
@@ -715,6 +720,56 @@ def test_first_layer_hooks_see_the_float32_phase(name):
     assert seen[0].dtype == torch.float32
     phase = grid.double() @ emb.linear.weight.double().T + emb.linear.bias.double()
     assert (seen[0].double() - phase).abs().max() < 1e-4
+
+
+def _as_older_pickle(module):
+    """Pickle round trip of ``module`` as saved before ``_FirstLayerLinear`` existed.
+
+    Pickle stores each child module's class, so an older whole module came
+    back with a plain ``torch.nn.Linear`` first layer.
+    """
+    older = copy.deepcopy(module)
+    for child in older.modules():
+        if type(child) is _FirstLayerLinear:
+            child.__class__ = torch.nn.Linear
+    return pickle.loads(pickle.dumps(older))
+
+
+def _bf16_parameters(module):
+    """Cast only the parameters to bf16 (as a parameter-only cast does); the float32 grid stays."""
+    for param in module.parameters():
+        param.data = param.data.to(torch.bfloat16)
+    return module
+
+
+@pytest.mark.parametrize("name", FIRST_LAYER_EMBEDDINGS)
+def test_first_layer_of_an_older_pickled_embedding_runs_in_float32(name):
+    """A whole embedding pickled with the older plain ``torch.nn.Linear`` gets the float32 first layer.
+
+    Without ``__setstate__`` the SIREN, multi-ω₀ and random-Fourier embeddings
+    kept the bf16 projection under autocast (here 3.9%, 8.9% and 17% relative
+    L2), and with bf16 parameters ``F.linear`` failed on the float32 grid.  The
+    learnable-ω₀ embedding calls ``_first_layer_projection`` itself, so for it
+    only the class changes.
+    """
+    torch.manual_seed(0)
+    emb = FIRST_LAYER_EMBEDDINGS[name](2, (64, 48))
+    older = _as_older_pickle(emb)
+    assert type(older.linear) is _FirstLayerLinear
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        assert torch.equal(older((64, 48))[0], emb((64, 48))[0])
+    assert torch.equal(_bf16_parameters(older)((64, 48))[0], _bf16_parameters(emb)((64, 48))[0])
+
+
+@pytest.mark.parametrize("build_kernel", [_siren_kernel, _random_fourier_kernel], ids=["siren", "random_fourier"])
+def test_first_layer_of_an_older_pickled_kernel_runs_in_float32(build_kernel):
+    """Unpickling a whole kernel restores its embedding's float32 first layer too."""
+    torch.manual_seed(0)
+    kernel = build_kernel((16, 12))
+    older = _as_older_pickle(kernel)
+    assert type(older.positional_embedding.linear) is _FirstLayerLinear
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        assert torch.equal(older(seq_lens=(16, 12))[0], kernel(seq_lens=(16, 12))[0])
 
 
 def test_siren_first_layer_keeps_every_coordinate_under_autocast():

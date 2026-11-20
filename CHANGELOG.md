@@ -73,6 +73,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   TF32 lowers, and the sine or cosine runs in the same dtype. Eager and
   compiled now agree in every dimension. Parameters and state dicts are
   unchanged, and forward hooks on `positional_embedding.linear` still fire.
+  Embeddings, kernels and models pickled whole before this fix
+  (`torch.save(model)` rather than a state dict) get the new first layer when
+  they are unpickled.
   Kernels computed from existing checkpoints change by the removed rounding
   error under autocast (compiled 1D on CUDA stays the same to float32
   rounding), with bf16 or fp16 first-layer parameters (for example from a
