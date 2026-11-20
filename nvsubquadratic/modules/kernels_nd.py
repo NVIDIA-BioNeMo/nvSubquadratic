@@ -199,7 +199,12 @@ def _first_layer_projection(grid: torch.Tensor, linear: torch.nn.Linear) -> torc
     Returns:
         torch.Tensor: ``grid @ W.T + b`` in float32 (float64 for a float64
         weight), of shape ``[1, *spatial_dims, out_features]``.
+
+    Raises:
+        AssertionError: If the last dimension of ``grid`` is not
+            ``linear.in_features`` (``F.linear`` raised too).
     """
+    assert grid.shape[-1] == linear.in_features, f"expected {linear.in_features} input features, got {grid.shape[-1]}"
     dtype = torch.promote_types(linear.weight.dtype, torch.float32)
     weight = linear.weight.to(dtype)
     grid = grid.to(dtype)

@@ -722,6 +722,18 @@ def test_first_layer_hooks_see_the_float32_phase(name):
     assert (seen[0].double() - phase).abs().max() < 1e-4
 
 
+@pytest.mark.parametrize("columns", [1, 3])
+def test_first_layer_rejects_the_wrong_number_of_input_features(columns):
+    """Called directly with other than ``in_features`` columns, the first layer raises, as ``F.linear`` did.
+
+    The projection loops over the weight's columns, so without the check
+    extra input columns were silently ignored.
+    """
+    emb = SIRENPositionalEmbeddingND(data_dim=2, embedding_dim=16, L_cache=(64, 48), omega_0=10.0)
+    with pytest.raises(AssertionError, match=f"expected 2 input features, got {columns}"):
+        emb.linear(torch.zeros(1, 5, columns))
+
+
 def _as_older_pickle(module):
     """Pickle round trip of ``module`` as saved before ``_FirstLayerLinear`` existed.
 
