@@ -23,11 +23,14 @@ Covers:
     - CKConvND grid_size injection for grid_type="single" and "double"
     - ExponentialModulationND basic sanity
     - BoxModulationND hard window: exact 0/1 taps, ND product, errors
+    - GaussianModulationND precision: the window and its std gradient stay
+      float32 under bf16 autocast and TF32 (CPU, and CUDA eager / compiled)
 
 Usage (CPU only, no GPU needed):
     PYTHONPATH=. conda run -n nv-subq python -m pytest tests/modules/test_masks_nd.py -v -o addopts=""
 """
 
+import contextlib
 import math
 
 import pytest
@@ -637,3 +640,84 @@ class TestBoxModulation:
         """A grid whose rank does not match ``data_dim`` raises ``ValueError``."""
         with pytest.raises(ValueError, match="spatial axes"):
             BoxModulationND(data_dim=2, max_offset=1)(grid=self._grid(5), x=torch.ones(1, 5, 2))
+
+
+# ---------------------------------------------------------------------------
+# GaussianModulationND precision: the exponent stays in float32
+# ---------------------------------------------------------------------------
+
+GAUSSIAN_GRIDS = [(1, 255), (2, 63), (3, 31)]
+
+
+def _gaussian_case(data_dim, grid_size, device="cpu"):
+    """A Gaussian window, its coordinate grid ``[1, *spatial, data_dim]`` and an all-ones input."""
+    torch.manual_seed(0)
+    mask = GaussianModulationND(data_dim=data_dim, num_channels=16, grid_size=grid_size, parametrization="direct").to(
+        device
+    )
+    lin = torch.linspace(-1, 1, grid_size, device=device)
+    grid = torch.stack(torch.meshgrid(*([lin] * data_dim), indexing="ij"), dim=-1).unsqueeze(0)
+    return mask, grid, torch.ones(1, *([grid_size] * data_dim), 16, device=device)
+
+
+def _gaussian_reference(grid, std):
+    """``exp(-0.5 * sum_d (p_d / std_dc)^2)`` in float64."""
+    return torch.exp(-0.5 * (grid.double()[..., :, None] ** 2 / std.double() ** 2).sum(-2))
+
+
+def _relative_l2(got, want):
+    return ((got.double() - want).norm() / want.norm()).item()
+
+
+@pytest.mark.parametrize("data_dim, grid_size", GAUSSIAN_GRIDS, ids=["1d", "2d", "3d"])
+def test_gaussian_mask_is_unaffected_by_autocast(data_dim, grid_size):
+    """Autocast leaves the window in float32 (the einsum it used ran as a bf16 matmul)."""
+    mask, grid, x = _gaussian_case(data_dim, grid_size)
+    want = mask(grid, x)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        got = mask(grid, x)
+    assert got.dtype == torch.float32
+    assert torch.equal(got, want)
+
+
+@pytest.mark.parametrize("data_dim, grid_size", GAUSSIAN_GRIDS, ids=["1d", "2d", "3d"])
+def test_gaussian_mask_and_std_gradient_match_float64_under_autocast(data_dim, grid_size):
+    """Under bf16 autocast the window and the ``std_param`` gradient match a float64 reference."""
+    mask, grid, x = _gaussian_case(data_dim, grid_size)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        got = mask(grid, x)
+    cotangent = torch.randn(got.shape, dtype=torch.float64)
+    got.backward(cotangent.float())
+    std = mask._compute_std().detach().double().requires_grad_()
+    want = _gaussian_reference(grid, std)
+    want.backward(cotangent)
+    assert _relative_l2(got, want) < 1e-6
+    assert _relative_l2(mask.std_param.grad, std.grad) < 1e-6
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("data_dim, grid_size", GAUSSIAN_GRIDS, ids=["1d", "2d", "3d"])
+@pytest.mark.parametrize("setting", ["bf16_autocast", "tf32_matmul"])
+def test_gaussian_mask_on_cuda_matches_float64(setting, data_dim, grid_size):
+    """On CUDA, eager and ``torch.compile`` both match a float64 reference under bf16 autocast or TF32.
+
+    The einsum this used ran as a bf16 matmul under CUDA autocast, and could
+    run in TF32 under ``torch.set_float32_matmul_precision("high")``.
+    """
+    mask, grid, x = _gaussian_case(data_dim, grid_size, device="cuda")
+    compiled = torch.compile(mask)
+    previous_precision = torch.get_float32_matmul_precision()
+    try:
+        if setting == "tf32_matmul":
+            torch.set_float32_matmul_precision("high")
+            context = contextlib.nullcontext()
+        else:
+            context = torch.autocast("cuda", dtype=torch.bfloat16)
+        with context:
+            eager = mask(grid, x)
+            got = compiled(grid, x)
+    finally:
+        torch.set_float32_matmul_precision(previous_precision)
+    want = _gaussian_reference(grid, mask._compute_std().detach())
+    assert _relative_l2(eager, want) < 1e-6
+    assert _relative_l2(got, want) < 1e-6

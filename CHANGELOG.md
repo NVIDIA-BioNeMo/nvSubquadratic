@@ -28,6 +28,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backend, eager / compiled, starting / ending node).
 - `CKConvND(use_shortcut=False)` drops the learnable `shortcut` parameter and
   the fused `shortcut * x` term; the default and existing state dicts are unchanged.
+- `CKConvND(allow_reduced_precision=False)` computes bf16/fp16 activations in
+  float32 on every FFT backend: it hands the backend float32 activations and
+  kernels, so the convolution and the shortcut term run in float32 and the
+  result is rounded once to the input dtype. The default, `True`, keeps each
+  backend's own precision: `subq_ops_fused` and 1D non-causal `subq_ops` run in
+  the input dtype, and the others convolve in float32 and round before adding
+  the shortcut.
 - `QKVSequenceMixer` hands an inner mixer that sets `takes_fused_qkv = True` the
   un-split `[B, *spatial, 3C]` projection (`TriangleHyena` opts in); mixers
   without the attribute still receive `(q, k, v, cp_group)`. Under
@@ -46,6 +53,59 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them. This affected every release since 0.1.0. Fixed-size training never
   grows the cache twice and was not affected. Every extension now keeps the
   original step, and results that were already correct are bit-identical.
+- **The positional embeddings' first layer ran in bf16 under autocast.**
+  `SIRENPositionalEmbeddingND` (and `MultiOmegaSIRENPositionalEmbeddingND`),
+  `LearnableOmegaSIRENPositionalEmbeddingND` and
+  `RandomFourierPositionalEmbeddingND` are meant to compute their first-layer
+  projection `W x + b` in float32, but `F.linear` runs in bf16 under
+  `torch.autocast` even on float32 operands. With float32 parameters under
+  autocast (the usual `bf16-mixed` setup), the coordinates and the phase (of
+  order `2π·ω₀` radians or more) were rounded to bf16. On long axes,
+  neighbouring grid points merged: up to 32 taps shared one coordinate at
+  `L_cache=8192`. At `ω₀=10` the SIREN embeddings were off by 3–6% (relative
+  L2) and random Fourier features by 9–18%, and the kernel inherited that
+  error. With bf16 parameters, all but the learnable-ω₀ embedding rounded the
+  phase to bf16 before the sine. On CUDA, Inductor turns a single-coordinate
+  (1D) projection into float32 elementwise math, so compiled 1D was not
+  affected; eager 1D and both modes in 2D and 3D were. The first layer is now
+  a `torch.nn.Linear` subclass that computes the projection as float32
+  multiply-adds (float64 for float64 parameters), which neither autocast nor
+  TF32 lowers, and the sine or cosine runs in the same dtype. Eager and
+  compiled now agree in every dimension. Parameters and state dicts are
+  unchanged, and forward hooks on `positional_embedding.linear` still fire.
+  Embeddings, kernels and models pickled whole before this fix
+  (`torch.save(model)` rather than a state dict) get the new first layer when
+  they are unpickled.
+  Kernels computed from existing checkpoints change by the removed rounding
+  error under autocast (compiled 1D on CUDA stays the same to float32
+  rounding), with bf16 or fp16 first-layer parameters (for example from a
+  parameter-only cast), and in float32 runs with TF32 matmuls enabled
+  (`torch.set_float32_matmul_precision("high")`, which `experiments/run.py`
+  sets). The embedding is now returned in the weight dtype (float32 under
+  `bf16-mixed`) instead of bf16, which costs some memory in eager mode;
+  `torch.compile` fuses the first layer into one kernel.
+- **`CKConvND` with `fft_backend="torch_fft"` rejected bf16/fp16 activations.**
+  Its float32 `shortcut` parameter tripped the `torch_fft` ops'
+  `shortcut.dtype == x.dtype` assertion unless the parameters were cast as
+  well. `CKConvND` now casts the shortcut to the activations' dtype itself (a
+  differentiable cast, so the parameter stays float32 and receives the
+  gradient), as the `subq_ops` wrappers already did; results are otherwise
+  unchanged bit for bit. (Under `python -O`, which strips that assertion,
+  such activations used to come back as float32 with the shortcut term
+  promoted; they now keep their dtype.) The `hyenand-retrofit` asset no
+  longer needs its `CKConvND` subclass, and the ViT-5 benchmark no longer
+  patches the FFT functions.
+- **`GaussianModulationND` computed its exponent in bf16 under autocast.** Its
+  docstring promises a float32 window, but the exponent
+  `-0.5 Σ_d (p_d / σ_{d,c})²` came from an `einsum`, which autocast runs as a
+  bf16 matmul (and which can run in TF32 without autocast), and the
+  exponential was then taken of the rounded result. With float32 parameters
+  under bf16 autocast on an H100, the window was off by 0.2–0.3% (relative
+  L2), by up to 4% where it is above 1e-3, and the `std_param` gradient by
+  0.4–1.4%. The exponent is now a sum of float32 multiply-adds over the axes
+  and the exponential runs in float32, so autocast and TF32 no longer change
+  the window. In eager mode each axis is one pass over a float32 tensor of
+  the kernel's size; `torch.compile` fuses them into one kernel.
 
 ### Changed
 

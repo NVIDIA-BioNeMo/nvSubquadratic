@@ -49,14 +49,6 @@ from nvsubquadratic.modules.sequence_mixer import QKVSequenceMixer
 from nvsubquadratic.utils.qk_norm import L2Norm
 
 
-class _AutocastCKConv2D(CKConvND):
-    """Match the FFT shortcut dtype under autocast without replacing its parameter."""
-
-    def apply_convolution(self, x, conv_kernel, shortcut, is_bhl_input):
-        """Cast the local shortcut view so gradients still reach the FP32 parameter."""
-        return super().apply_convolution(x, conv_kernel, shortcut.to(dtype=x.dtype), is_bhl_input)
-
-
 class Hyena2DTokenMixer(nn.Module):
     """Mix ``[B, H*W, C]`` patch tokens and return a tensor of the same shape.
 
@@ -124,7 +116,7 @@ class Hyena2DTokenMixer(nn.Module):
             qkv_bias=qkv_bias,
             out_proj_bias=out_proj_bias,
             mixer_cfg=LazyConfig(Hyena)(
-                global_conv_cfg=LazyConfig(_AutocastCKConv2D)(
+                global_conv_cfg=LazyConfig(CKConvND)(
                     data_dim=2,
                     hidden_dim=hidden_dim,
                     kernel_cfg=LazyConfig(SIRENKernelND)(
