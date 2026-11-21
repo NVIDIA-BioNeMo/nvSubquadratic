@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+set\_default\_chunk\_size
+=========================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_chunked
+
+.. autofunction:: set_default_chunk_size

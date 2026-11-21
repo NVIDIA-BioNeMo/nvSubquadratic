@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ClassificationWrapper
+=====================
+
+.. currentmodule:: experiments.lightning_wrappers.classification_wrapper
+
+.. autoclass:: ClassificationWrapper
+   :members:
+   :show-inheritance:

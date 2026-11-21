@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+trunc\_normal\_init\_factory
+============================
+
+.. currentmodule:: nvsubquadratic.utils.init
+
+.. autofunction:: trunc_normal_init_factory

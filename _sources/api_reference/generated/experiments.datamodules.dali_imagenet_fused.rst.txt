@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+experiments.datamodules.dali\_imagenet\_fused
+=============================================
+
+.. currentmodule:: experiments.datamodules.dali_imagenet_fused
+
+.. autoclass:: experiments.datamodules.dali_imagenet_fused
+   :members:
+   :show-inheritance:

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+compute\_relative\_error
+========================
+
+.. currentmodule:: nvsubquadratic.testing.utils
+
+.. autofunction:: compute_relative_error

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+load\_conv1d\_kernels
+=====================
+
+.. currentmodule:: nvsubquadratic.ops.fftconv_custom
+
+.. autofunction:: load_conv1d_kernels

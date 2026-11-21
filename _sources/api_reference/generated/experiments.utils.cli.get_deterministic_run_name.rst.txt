@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+get\_deterministic\_run\_name
+=============================
+
+.. currentmodule:: experiments.utils.cli
+
+.. autofunction:: get_deterministic_run_name

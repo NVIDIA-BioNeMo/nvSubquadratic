@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+experiments.datamodules.mnist
+=============================
+
+.. currentmodule:: experiments.datamodules.mnist
+
+.. autoclass:: experiments.datamodules.mnist
+   :members:
+   :show-inheritance:

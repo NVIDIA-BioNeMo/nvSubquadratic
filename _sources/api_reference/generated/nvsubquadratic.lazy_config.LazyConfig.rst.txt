@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+LazyConfig
+==========
+
+.. currentmodule:: nvsubquadratic.lazy_config
+
+.. autoclass:: LazyConfig
+   :members:
+   :show-inheritance:

@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+OmegaScaleMonitorCallback
+=========================
+
+.. currentmodule:: experiments.callbacks.omega_scale_monitor
+
+.. autoclass:: OmegaScaleMonitorCallback
+   :members:
+   :show-inheritance:

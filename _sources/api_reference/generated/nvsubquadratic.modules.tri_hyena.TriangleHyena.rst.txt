@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+TriangleHyena
+=============
+
+.. currentmodule:: nvsubquadratic.modules.tri_hyena
+
+.. autoclass:: TriangleHyena
+   :members:
+   :show-inheritance:

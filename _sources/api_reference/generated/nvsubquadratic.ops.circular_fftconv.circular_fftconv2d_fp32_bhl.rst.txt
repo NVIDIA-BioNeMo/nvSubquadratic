@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+circular\_fftconv2d\_fp32\_bhl
+==============================
+
+.. currentmodule:: nvsubquadratic.ops.circular_fftconv
+
+.. autofunction:: circular_fftconv2d_fp32_bhl

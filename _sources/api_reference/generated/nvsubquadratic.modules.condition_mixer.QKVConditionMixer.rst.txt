@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+QKVConditionMixer
+=================
+
+.. currentmodule:: nvsubquadratic.modules.condition_mixer
+
+.. autoclass:: QKVConditionMixer
+   :members:
+   :show-inheritance:

@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+load\_checkpoint\_state\_dict
+=============================
+
+.. currentmodule:: experiments.utils.checkpointing
+
+.. autofunction:: load_checkpoint_state_dict

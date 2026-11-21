@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ResidualNetwork
+===============
+
+.. currentmodule:: nvsubquadratic.networks.general_purpose_resnet
+
+.. autoclass:: ResidualNetwork
+   :members:
+   :show-inheritance:

@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+SchedulerConfig
+===============
+
+.. currentmodule:: experiments.default_cfg
+
+.. autoclass:: SchedulerConfig
+   :members:
+   :show-inheritance:

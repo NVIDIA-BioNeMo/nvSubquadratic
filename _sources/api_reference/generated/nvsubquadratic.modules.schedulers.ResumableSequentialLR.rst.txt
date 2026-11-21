@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ResumableSequentialLR
+=====================
+
+.. currentmodule:: nvsubquadratic.modules.schedulers
+
+.. autoclass:: ResumableSequentialLR
+   :members:
+   :show-inheritance:

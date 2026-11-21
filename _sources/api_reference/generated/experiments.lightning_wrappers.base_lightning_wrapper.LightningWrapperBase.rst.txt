@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+LightningWrapperBase
+====================
+
+.. currentmodule:: experiments.lightning_wrappers.base_lightning_wrapper
+
+.. autoclass:: LightningWrapperBase
+   :members:
+   :show-inheritance:

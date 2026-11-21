@@ -1,0 +1,8 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+setup\_rank0\_logging
+=====================
+
+.. currentmodule:: nvsubquadratic.parallel.utils
+
+.. autofunction:: setup_rank0_logging

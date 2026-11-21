@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+AdaLNZeroResidualBlock
+======================
+
+.. currentmodule:: nvsubquadratic.modules.residual_block
+
+.. autoclass:: AdaLNZeroResidualBlock
+   :members:
+   :show-inheritance:

@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+AutoResumeConfig
+================
+
+.. currentmodule:: experiments.default_cfg
+
+.. autoclass:: AutoResumeConfig
+   :members:
+   :show-inheritance:

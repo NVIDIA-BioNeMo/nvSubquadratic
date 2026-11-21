@@ -1,0 +1,10 @@
+﻿.. SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+ClassificationResNet
+====================
+
+.. currentmodule:: nvsubquadratic.networks.classification_resnet
+
+.. autoclass:: ClassificationResNet
+   :members:
+   :show-inheritance:
